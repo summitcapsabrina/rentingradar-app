@@ -543,21 +543,21 @@ h1 .hero-edit-input{font-size:1.35rem}
 .profile-card-header.clickable-edit:hover{background:var(--primary-light)}
 .card-readonly.clickable-edit:hover{background:rgba(99,129,250,.04)}
 .card-readonly .cr-row{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:10px}
-.card-readonly .cr-field{flex:1;min-width:140px;cursor:pointer;border-radius:var(--radius);padding:4px 6px;margin:-4px -6px;transition:background .15s}
-.card-readonly .cr-field:hover{background:var(--primary-light)}
-.card-readonly .cr-field.editing{background:transparent;cursor:default}
-.card-readonly .cr-field.editing:hover{background:transparent}
+.card-readonly .cr-field{flex:1;min-width:140px}
 .card-readonly .cr-label{font-size:.75rem;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px}
 .card-readonly .cr-value{font-size:1rem;font-weight:500;color:var(--text)}
 .card-readonly .cr-value.empty{color:var(--text3);font-style:italic;font-weight:400;font-size:.9rem}
 .card-readonly .cr-value a{color:var(--primary);font-weight:500}
-.cr-inline-input{width:100%;font-size:.95rem;padding:4px 8px;border:1px solid var(--primary);border-radius:var(--radius);background:var(--input-bg);color:var(--text);outline:none;font-family:inherit}
-.cr-inline-input:focus{box-shadow:0 0 0 2px rgba(99,102,241,.2)}
+.card-readonly .cr-value.email-val{color:var(--primary);font-weight:500}
+.card-readonly .clickable-edit{cursor:pointer;border-radius:var(--radius);padding:4px 6px;margin:-4px -6px;transition:background .15s}
+.card-readonly .clickable-edit:hover{background:var(--primary-light)}
 .cr-value-wrap{display:flex;align-items:center;gap:6px}
 .cr-copy-btn{opacity:0;border:none;background:transparent;cursor:pointer;color:var(--text3);padding:2px;border-radius:4px;transition:opacity .15s,color .15s,background .15s;flex-shrink:0;display:flex;align-items:center}
 .cr-field:hover .cr-copy-btn{opacity:1}
 .cr-copy-btn:hover{color:var(--primary);background:var(--primary-light)}
 .cr-copy-btn.copied{color:var(--success,#22c55e)!important;opacity:1}
+.ce-email-error{color:var(--danger);font-size:.72rem;margin-top:3px;display:none}
+.ce-email-error.visible{display:block}
 .inline-status{cursor:pointer;position:relative;display:inline-block}
 .inline-status:hover{opacity:.85}
 .inline-status-dd{position:fixed;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 8px 24px rgba(0,0,0,.25);z-index:300;min-width:190px;max-height:360px;overflow-y:auto;padding:4px 0;display:none}
@@ -1457,21 +1457,21 @@ function renderProfile(){
         <h3>👤 Contact & Status</h3>
         <button class="card-edit-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
       </div>
-      <div class="profile-card-body card-readonly">
+      <div class="profile-card-body card-readonly clickable-edit" onclick="if(!event.target.closest('.cr-copy-btn'))openCardEditor('${r.id}','contact')" title="Click to edit contact & status">
         <div class="cr-row">
-          <div class="cr-field" onclick="startInlineEdit('${r.id}','name',this)" title="Click to edit"><div class="cr-label">Contact Name</div><div class="cr-value ${r.name?'':'empty'}">${esc(r.name)||'Not set'}</div></div>
-          <div class="cr-field" onclick="if(!event.target.closest('.cr-copy-btn'))startInlineEdit('${r.id}','phone',this)" title="Click to edit"><div class="cr-label">Phone</div><div class="cr-value-wrap"><div class="cr-value ${r.phone?'':'empty'}" style="flex:1;min-width:0">${r.phone?esc(r.phone):'Not set'}</div>${r.phone?`<button class="cr-copy-btn" onclick="event.stopPropagation();copyRecordField(this,'${r.id}','phone')" title="Copy phone"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>`:''}</div></div>
+          <div class="cr-field"><div class="cr-label">Contact Name</div><div class="cr-value ${r.name?'':'empty'}">${esc(r.name)||'Not set'}</div></div>
+          <div class="cr-field"><div class="cr-label">Phone</div><div class="cr-value-wrap"><div class="cr-value ${r.phone?'':'empty'}" style="flex:1;min-width:0">${r.phone?fmtPhone(r.phone):'Not set'}</div>${r.phone?`<button class="cr-copy-btn" onclick="event.stopPropagation();copyRecordField(this,'${r.id}','phone')" title="Copy phone"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>`:''}</div></div>
         </div>
         <div class="cr-row">
-          <div class="cr-field" onclick="if(!event.target.closest('.cr-copy-btn'))startInlineEdit('${r.id}','email',this)" title="Click to edit"><div class="cr-label">Email</div><div class="cr-value-wrap"><div class="cr-value ${r.email?'':'empty'}" style="flex:1;min-width:0">${r.email?esc(r.email):'Not set'}</div>${r.email?`<button class="cr-copy-btn" onclick="event.stopPropagation();copyRecordField(this,'${r.id}','email')" title="Copy email"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>`:''}</div></div>
-          <div class="cr-field" onclick="openCardEditor('${r.id}','contact')" title="Click to edit status"><div class="cr-label">Status</div><div class="cr-value">${statusPill(r.status)}</div></div>
+          <div class="cr-field"><div class="cr-label">Email</div><div class="cr-value-wrap"><div class="cr-value ${r.email?'':'empty'} ${r.email?'email-val':''}" style="flex:1;min-width:0">${r.email?esc(r.email):'Not set'}</div>${r.email?`<button class="cr-copy-btn" onclick="event.stopPropagation();copyRecordField(this,'${r.id}','email')" title="Copy email"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>`:''}</div></div>
+          <div class="cr-field"><div class="cr-label">Status</div><div class="cr-value">${statusPill(r.status)}</div></div>
         </div>
         <div class="cr-row">
-          <div class="cr-field" onclick="openCardEditor('${r.id}','contact')" title="Click to edit"><div class="cr-label">Follow-Up Date</div><div class="cr-value ${r.followUpDate?'':'empty'}">${r.followUpDate?fmtDate(r.followUpDate):'Not set'}</div></div>
-          <div class="cr-field" onclick="openCardEditor('${r.id}','contact')" title="Click to edit"><div class="cr-label">Date Added</div><div class="cr-value ${r.date?'':'empty'}">${r.date?fmtDate(r.date):'Not set'}</div></div>
+          <div class="cr-field"><div class="cr-label">Follow-Up Date</div><div class="cr-value ${r.followUpDate?'':'empty'}">${r.followUpDate?fmtDate(r.followUpDate):'Not set'}</div></div>
+          <div class="cr-field"><div class="cr-label">Date Added</div><div class="cr-value ${r.date?'':'empty'}">${r.date?fmtDate(r.date):'Not set'}</div></div>
         </div>
         <div class="cr-row">
-          <div class="cr-field" style="flex:1 1 100%" onclick="openCardEditor('${r.id}','contact')" title="Click to edit"><div class="cr-label">Listing Link</div><div class="cr-value ${r.link?'':'empty'}">${r.link?esc(r.link.length>60?r.link.substring(0,60)+'...':r.link):'Not set'}</div></div>
+          <div class="cr-field" style="flex:1 1 100%"><div class="cr-label">Listing Link</div><div class="cr-value ${r.link?'':'empty'}">${r.link?esc(r.link.length>60?r.link.substring(0,60)+'...':r.link):'Not set'}</div></div>
         </div>
       </div>
       <div style="padding:10px 16px 14px;border-top:1px solid var(--border)">
@@ -2666,6 +2666,13 @@ function downloadFile(content, filename, type){
 /* ===== UTILS ===== */
 function truncate(s, n){ return s && s.length > n ? s.substring(0,n)+'…' : (s||'') }
 function esc(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') }
+function fmtPhone(s){
+  if(!s) return '';
+  const digits = s.replace(/\D/g,'');
+  if(digits.length === 10) return '('+digits.slice(0,3)+') '+digits.slice(3,6)+'-'+digits.slice(6);
+  if(digits.length === 11 && digits[0]==='1') return '('+digits.slice(1,4)+') '+digits.slice(4,7)+'-'+digits.slice(7);
+  return esc(s);
+}
 function fmtDate(d){
   if(!d) return '—';
   try {
@@ -4196,7 +4203,7 @@ function openCardEditor(recId, cardType){
       <div class="prop-field-grid">
         <div class="prop-field"><label>Contact Name</label><input type="text" id="ce_name" value="${esc(r.name)}"></div>
         <div class="prop-field"><label>Phone</label><input type="text" id="ce_phone" value="${esc(r.phone)}"></div>
-        <div class="prop-field"><label>Email</label><input type="email" id="ce_email" value="${esc(r.email)}"></div>
+        <div class="prop-field"><label>Email</label><input type="email" id="ce_email" value="${esc(r.email)}" oninput="validateEmailField()"><div class="ce-email-error" id="ce_email_error">Please enter a valid email address</div></div>
         <div class="prop-field"><label>Status</label><select id="ce_status">${SELECTABLE_STATUSES.map(s=>`<option value="${s}" ${r.status===s?'selected':''}>${s}</option>`).join('')}</select></div>
         <div class="prop-field"><label>Follow-Up Date</label><input type="date" id="ce_followup" value="${r.followUpDate||''}"></div>
         <div class="prop-field"><label>Date Added</label><input type="date" id="ce_date" value="${r.date?r.date.split('T')[0]:''}"></div>
@@ -4228,9 +4235,23 @@ function openCardEditor(recId, cardType){
   setTimeout(() => overlay.querySelector('input,select')?.focus(), 100);
 }
 
+function isValidEmail(email){
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+function validateEmailField(){
+  const emailInput = document.getElementById('ce_email');
+  const errorEl = document.getElementById('ce_email_error');
+  if(!emailInput || !errorEl) return true;
+  const val = emailInput.value.trim();
+  const valid = !val || isValidEmail(val);
+  errorEl.classList.toggle('visible', !valid);
+  emailInput.style.borderColor = valid ? '' : 'var(--danger)';
+  return valid;
+}
 function saveContactCard(recId){
   const r = records.find(x => x.id === recId);
   if(!r) return;
+  if(!validateEmailField()) return;
   const oldStatus = r.status;
   r.name = document.getElementById('ce_name')?.value?.trim() || '';
   r.phone = document.getElementById('ce_phone')?.value?.trim() || '';
@@ -4290,6 +4311,9 @@ document.addEventListener('click', function(e){
 });
 
 /* ===== COPY FIELD VALUE ===== */
+const COPY_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>';
+const CHECK_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>';
+
 function copyRecordField(btn, recId, field){
   const r = records.find(x => x.id === recId);
   if(!r) return;
@@ -4299,82 +4323,13 @@ function copyRecordField(btn, recId, field){
     btn.classList.add('copied');
     const origTitle = btn.title;
     btn.title = 'Copied!';
-    const svg = btn.querySelector('svg');
-    if(svg) svg.outerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>';
+    btn.innerHTML = CHECK_ICON;
     setTimeout(() => {
       btn.classList.remove('copied');
       btn.title = origTitle;
-      btn.querySelector('svg').outerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>';
+      btn.innerHTML = COPY_ICON;
     }, 1500);
   });
-}
-
-/* ===== INLINE FIELD EDITING ===== */
-function startInlineEdit(recId, field, el){
-  if(el.classList.contains('editing')) return;
-  const r = records.find(x => x.id === recId);
-  if(!r) return;
-  el.classList.add('editing');
-  // Hide copy button during editing
-  const copyBtn = el.querySelector('.cr-copy-btn');
-  if(copyBtn) copyBtn.style.display = 'none';
-  const valueEl = el.querySelector('.cr-value');
-  if(!valueEl) return;
-
-  // Determine input type and current value
-  let inputType = 'text', currentVal = '';
-  switch(field){
-    case 'name': currentVal = r.name || ''; break;
-    case 'phone': currentVal = r.phone || ''; inputType = 'tel'; break;
-    case 'email': currentVal = r.email || ''; inputType = 'email'; break;
-  }
-
-  const input = document.createElement('input');
-  input.type = inputType;
-  input.value = currentVal;
-  input.className = 'cr-inline-input';
-  if(inputType === 'tel') input.placeholder = '(555) 123-4567';
-  if(inputType === 'email') input.placeholder = 'email@example.com';
-  if(field === 'name') input.placeholder = 'Contact name';
-
-  const origHTML = valueEl.innerHTML;
-  valueEl.innerHTML = '';
-  valueEl.appendChild(input);
-  input.focus();
-  if(inputType !== 'date') input.select();
-
-  function save(){
-    const newVal = input.value.trim();
-    let changed = false;
-    switch(field){
-      case 'name':
-        if(r.name !== newVal){ r.name = newVal; changed = true; }
-        break;
-      case 'phone':
-        if(r.phone !== newVal){ r.phone = newVal; changed = true; }
-        break;
-      case 'email':
-        if(r.email !== newVal){ r.email = newVal; changed = true; }
-        break;
-    }
-    if(changed){
-      saveData();
-      render();
-    } else {
-      cancel();
-    }
-  }
-
-  function cancel(){
-    el.classList.remove('editing');
-    valueEl.innerHTML = origHTML;
-  }
-
-  input.addEventListener('keydown', function(e){
-    if(e.key === 'Enter'){ e.preventDefault(); save(); }
-    if(e.key === 'Escape'){ e.preventDefault(); cancel(); }
-  });
-  input.addEventListener('blur', function(){ save(); });
 }
 
 
