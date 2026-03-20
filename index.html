@@ -752,22 +752,9 @@ async function loadDataFromFirestore(userUid){
   _currentUid = userUid;
   if(!userUid || typeof db === 'undefined') { records = []; render(); return; }
   try {
-    // Check for localStorage data to migrate
-    const localData = window.localStorage.getItem('arbflow_records');
-    if(localData){
-      const parsed = JSON.parse(localData);
-      if(parsed && parsed.length > 0){
-        // Migrate localStorage data to Firestore
-        await db.collection('users').doc(userUid).collection('properties').doc('records').set({ data: JSON.stringify(parsed) });
-        // Clear localStorage after successful migration
-        window.localStorage.removeItem('arbflow_records');
-        window.localStorage.removeItem('arbflow_data_version');
-        records = parsed;
-        records.forEach(r => { if(!r.propertyDetails) r.propertyDetails={}; if(!r.propertyNotes) r.propertyNotes=[]; });
-        render();
-        return;
-      }
-    }
+    // Clear any leftover localStorage data
+    window.localStorage.removeItem('arbflow_records');
+    window.localStorage.removeItem('arbflow_data_version');
     // Load from Firestore
     const doc = await db.collection('users').doc(userUid).collection('properties').doc('records').get();
     if(doc.exists){
