@@ -597,7 +597,10 @@ h1 .hero-edit-input{font-size:1.35rem}
 .an-section{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:14px}
 .an-section-hdr{font-size:.78rem;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:.5px;padding:8px 12px;background:rgba(99,129,250,.06);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px}
 .an-section-body{padding:10px 12px}
-.an-top-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+.an-top-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;align-items:stretch}
+.an-top-grid .an-section{display:flex;flex-direction:column;margin-bottom:0}
+.an-top-grid .an-section-body{flex:1;display:flex;flex-direction:column;justify-content:stretch}
+.an-top-grid .an-req-bar{flex:1}
 @media(max-width:900px){.an-top-grid{grid-template-columns:1fr}}
 .an-field-row{display:flex;gap:8px;margin-bottom:6px;align-items:flex-start}
 .an-field-label{font-size:.68rem;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;min-width:70px;padding-top:4px;flex-shrink:0}
@@ -607,7 +610,7 @@ h1 .hero-edit-input{font-size:1.35rem}
 .an-field-val textarea:focus{border-color:var(--primary);outline:none;background:var(--surface)}
 /* Required Revenue bar */
 .an-req-bar{display:flex;gap:0;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:14px;font-size:.75rem}
-.an-req-item{flex:1;text-align:center;padding:8px 6px;border-right:1px solid var(--border)}
+.an-req-item{flex:1;text-align:center;padding:14px 6px;border-right:1px solid var(--border);display:flex;flex-direction:column;justify-content:center}
 .an-req-item:last-child{border-right:none}
 .an-req-item.total{background:rgba(99,129,250,.06)}
 .an-req-item .req-label{font-size:.6rem;text-transform:uppercase;letter-spacing:.3px;color:var(--text3);font-weight:600}
@@ -661,7 +664,7 @@ h1 .hero-edit-input{font-size:1.35rem}
 .comp-inline-input{width:100%;padding:2px 4px;border:1px solid transparent;border-radius:3px;font-size:.72rem;background:transparent;color:var(--text);text-align:right;font-family:inherit;transition:border-color .15s}
 .comp-inline-input:hover{border-color:var(--border)}
 .comp-inline-input:focus{border-color:var(--primary);outline:none;background:var(--surface)}
-.comp-inline-input.sm{width:50px}
+.comp-inline-input.sm{width:58px}
 .proj-input{width:100%;padding:4px 6px;border:1px solid transparent;border-radius:4px;font-size:1rem;font-weight:700;background:transparent;color:inherit;text-align:center;font-family:inherit;transition:border-color .15s}
 .proj-input:hover{border-color:var(--border)}
 .proj-input:focus{border-color:var(--primary);outline:none;background:var(--surface)}
@@ -3539,15 +3542,37 @@ let currentUser = null;
 
 function handleGoogleLogin(){
   const provider = new firebase.auth.GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: 'select_account' });
   firebase.auth().signInWithPopup(provider).then(result => {
     setUser(result.user);
   }).catch(err => {
-    console.error('Login error:', err);
-    if(err.code !== 'auth/popup-closed-by-user'){
-      alert('Login failed: ' + err.message);
+    console.error('Login error:', err.code, err.message, err);
+    if(err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') return;
+    if(err.code === 'auth/unauthorized-domain'){
+      alert('This domain is not authorized for sign-in.\n\nPlease add "' + window.location.hostname + '" to:\nFirebase Console → Authentication → Settings → Authorized domains');
+    } else if(err.code === 'auth/invalid-api-key'){
+      alert('Invalid Firebase API key. Please check your Firebase configuration.');
+    } else if(err.code === 'auth/operation-not-allowed'){
+      alert('Google Sign-In is not enabled.\n\nPlease enable it in:\nFirebase Console → Authentication → Sign-in method');
+    } else if(err.code === 'auth/popup-blocked'){
+      // Fallback to redirect
+      firebase.auth().signInWithRedirect(provider);
+    } else if(err.code === 'auth/internal-error' || err.code === 'auth/invalid-credential'){
+      alert('Sign-in failed. This may happen if your Google Cloud OAuth consent screen is in "Testing" mode and this Google account is not listed as a test user.\n\nTo fix: Go to Google Cloud Console → APIs & Services → OAuth consent screen → either publish the app or add this email as a test user.');
+    } else {
+      alert('Login failed (' + err.code + '): ' + err.message);
     }
   });
 }
+
+// Handle redirect result (fallback for popup-blocked)
+firebase.auth().getRedirectResult().then(result => {
+  if(result.user) setUser(result.user);
+}).catch(err => {
+  if(err.code && err.code !== 'auth/popup-closed-by-user'){
+    console.error('Redirect login error:', err.code, err.message);
+  }
+});
 
 function handleSignOut(){
   firebase.auth().signOut().then(() => {
@@ -4186,9 +4211,6 @@ function renderAnalysisTab(r){
 
   // Build Design & Amenities summary from Property Details key highlights
   const highlights = [];
-  if(pd.bedrooms) highlights.push(pd.bedrooms + ' Beds');
-  if(pd.bathrooms) highlights.push(pd.bathrooms + ' Baths');
-  if(pd.sqft) highlights.push(Number(pd.sqft).toLocaleString() + ' sq ft');
   if(pd.flooring && pd.flooring.length) highlights.push('Flooring: ' + (Array.isArray(pd.flooring) ? pd.flooring.join(', ') : pd.flooring));
   if(pd.countertops) highlights.push('Countertops: ' + pd.countertops);
   if(pd.appliances && pd.appliances.length) highlights.push('Appliances: ' + (Array.isArray(pd.appliances) ? pd.appliances.join(', ') : pd.appliances));
@@ -4197,7 +4219,7 @@ function renderAnalysisTab(r){
   if(pd.parking) highlights.push('Parking: ' + pd.parking);
   if(pd.pool && pd.pool !== 'None') highlights.push('Pool: ' + pd.pool);
   if(pd.communityAmenities && pd.communityAmenities.length) highlights.push('Community: ' + (Array.isArray(pd.communityAmenities) ? pd.communityAmenities.join(', ') : pd.communityAmenities));
-  const amenitySummary = highlights.length > 0 ? highlights.join(' · ') : 'No details entered yet — fill out Property Details to auto-populate.';
+  const amenitySummary = highlights.length > 0 ? highlights.join(' · ') : 'No amenities entered yet — fill out Property Details to auto-populate.';
 
   let h = '';
 
@@ -4206,7 +4228,7 @@ function renderAnalysisTab(r){
 
   // Left: Property snapshot (Design/Amenities read-only + Notes)
   h += '<div class="an-section"><div class="an-section-hdr">Property Notes</div><div class="an-section-body">';
-  h += '<div class="an-field-row"><div class="an-field-label">Design & Amenities</div><div class="an-field-val"><div class="an-readonly-summary">'+esc(amenitySummary)+'</div></div></div>';
+  h += '<div class="an-field-row"><div class="an-field-label">Amenities</div><div class="an-field-val"><div class="an-readonly-summary">'+esc(amenitySummary)+'</div></div></div>';
   h += '<div class="an-field-row"><div class="an-field-label">Notes</div><div class="an-field-val"><textarea placeholder="Any notes or concerns about this property..." onchange="updateAnalysisField(\''+r.id+'\',\'concerns\',this.value)">'+esc(an.concerns||'')+'</textarea></div></div>';
   h += '</div></div>';
 
