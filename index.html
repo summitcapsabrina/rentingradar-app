@@ -894,6 +894,8 @@ function saveData(){
 }
 
 /* ===== VIEW ROUTER ===== */
+let _handlingPopstate = false;
+
 function switchView(view){
   currentView = view;
   currentProfileId = null;
@@ -901,6 +903,7 @@ function switchView(view){
   document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.view === view));
   const titles = { dashboard:'Dashboard', pipeline:'Funnel', contacts:'All Contacts', notifications:'Notifications', pricing:'Your Plan', settings:'Settings' };
   document.getElementById('headerTitle').textContent = titles[view] || '';
+  if(!_handlingPopstate) history.pushState({ view: view, profileId: null }, '', '#' + view);
   saveViewState();
   render();
 }
@@ -1329,6 +1332,7 @@ function openDetail(id){
   document.getElementById('searchAutocomplete')?.classList.remove('visible');
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.getElementById('headerTitle').textContent = 'Property Profile';
+  if(!_handlingPopstate) history.pushState({ view: 'profile', profileId: id }, '', '#profile/' + id);
   saveViewState();
   render();
   window.scrollTo(0,0);
@@ -5068,17 +5072,40 @@ if(currentView === 'profile' && currentProfileId){
 }
 render();
 
+// Set initial history state
+history.replaceState({ view: currentView, profileId: currentProfileId || null }, '', currentView === 'profile' && currentProfileId ? '#profile/' + currentProfileId : '#' + currentView);
+
+// Handle browser back/forward buttons
+window.addEventListener('popstate', function(e){
+  const state = e.state;
+  if(!state) return;
+  _handlingPopstate = true;
+  if(state.view === 'profile' && state.profileId){
+    const r = records.find(x => x.id === state.profileId);
+    if(r){
+      openProfile(state.profileId);
+    } else {
+      switchView('dashboard');
+    }
+  } else if(state.view){
+    switchView(state.view);
+  }
+  _handlingPopstate = false;
+});
+
 // Handle hash-based navigation (e.g., #pricing from extension)
 function checkHash(){
   const hash = location.hash.replace('#','');
+  if(!hash) return;
   const validViews = ['dashboard','pipeline','contacts','notifications','pricing','settings'];
-  if(hash && validViews.includes(hash)){
+  if(validViews.includes(hash)){
     switchView(hash);
-    history.replaceState(null, '', location.pathname);
+  } else if(hash.startsWith('profile/')){
+    const pid = hash.substring(8);
+    if(pid && records.find(x => x.id === pid)) openProfile(pid);
   }
 }
 checkHash();
-window.addEventListener('hashchange', checkHash);
 </script>
 </body>
 </html>
