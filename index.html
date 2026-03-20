@@ -559,7 +559,9 @@ h1 .hero-edit-input{font-size:1.35rem}
 .calc-row.total-row .calc-val{font-weight:700;font-size:.85rem}
 .calc-label{font-size:.78rem;color:var(--text2);flex:1;min-width:0;line-height:1.3}
 .calc-label-hint{font-size:.65rem;color:var(--text3);font-style:italic;display:block}
-.calc-val{width:110px;flex-shrink:0;text-align:right}
+.calc-val{width:130px;flex-shrink:0;text-align:right;display:flex;align-items:center;justify-content:flex-end;gap:0}
+.calc-dollar-sign{font-size:.78rem;color:var(--text3);font-weight:500;margin-right:1px;flex-shrink:0}
+.calc-pct-sign{font-size:.78rem;color:var(--text3);font-weight:500;margin-left:1px;flex-shrink:0}
 .calc-val input{width:100%;text-align:right;padding:4px 6px;border:1px solid transparent;border-radius:4px;font-size:.82rem;background:transparent;color:var(--text);font-family:inherit;transition:all .15s;cursor:pointer}
 .calc-val input:hover{border-color:var(--border);background:rgba(148,163,184,.06)}
 .calc-val input:focus{border-color:var(--primary);outline:none;background:var(--surface);box-shadow:0 0 0 2px rgba(99,129,250,.15)}
@@ -573,6 +575,7 @@ h1 .hero-edit-input{font-size:1.35rem}
 .calc-kpi{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;text-align:center}
 .calc-kpi .kpi-label{font-size:.68rem;text-transform:uppercase;letter-spacing:.4px;color:var(--text3);font-weight:600;margin-bottom:2px}
 .calc-kpi .kpi-monthly{font-size:1rem;font-weight:700;color:var(--text)}
+.calc-kpi .kpi-per{font-size:.7rem;font-weight:400;color:var(--text3);margin-left:2px}
 .calc-kpi .kpi-annual{font-size:.7rem;color:var(--text3);margin-top:1px}
 .calc-kpi.positive .kpi-monthly{color:var(--success, #10b981)}
 .calc-kpi.negative .kpi-monthly{color:var(--danger, #ef4444)}
@@ -1566,9 +1569,8 @@ function renderProfile(){
   const hasDetails = Object.keys(d).some(k => d[k] && (Array.isArray(d[k]) ? d[k].length > 0 : true));
   const showImport = r.link && !hasDetails;
   const activeTab = profileActiveTab || 'details';
-  const calcOk = requireTier('basic','Rental Calculator');
+  const calcOk = requireTier('basic','ROI Calculator');
   const proOk = requireTier('basic','Property Analysis');
-  const advOk = requireTier('pro','ROI Calculator');
 
   let html = `
   <div class="profile-hero profile-sticky-header">
@@ -1600,9 +1602,8 @@ function renderProfile(){
         ${r.followUpDate ? (()=>{ const fp = new Date(r.followUpDate+'T'+(r.followUpTime||'23:59')) < new Date(); return `<span style="font-size:.75rem;color:${fp?'var(--text3)':'var(--danger, #ef4444)'};display:inline-flex;align-items:center;gap:3px"><span style="font-size:.8rem">${fp?'\uD83D\uDD15':'\uD83D\uDD14'}</span> Follow-up: ${fmtDateTimeForCard(r.followUpDate, r.followUpTime)}</span>`; })() : ''}
         <div class="profile-tabs">
           <div class="profile-tab ${activeTab==='details'?'active':''}" data-tab="details" onclick="setProfileTab('details')">🏠 Property Details</div>
-          <div class="profile-tab ${activeTab==='calculator'?'active':''}" data-tab="calculator" onclick="setProfileTab('calculator')">🔢 Calculator ${!calcOk?'<span class=\\"tab-lock basic\\">BASIC</span>':''}</div>
           <div class="profile-tab ${activeTab==='analysis'?'active':''}" data-tab="analysis" onclick="setProfileTab('analysis')">📊 Analysis ${!proOk?'<span class=\\"tab-lock basic\\">BASIC</span>':''}</div>
-          <div class="profile-tab ${activeTab==='roi'?'active':''}" data-tab="roi" onclick="setProfileTab('roi')">💰 ROI ${!advOk?'<span class=\\"tab-lock pro\\">PRO</span>':''}</div>
+          <div class="profile-tab ${activeTab==='calculator'?'active':''}" data-tab="calculator" onclick="setProfileTab('calculator')">💰 ROI Calculator ${!calcOk?'<span class=\\"tab-lock basic\\">BASIC</span>':''}</div>
         </div>
       </div>
     </div>
@@ -1724,25 +1725,7 @@ function renderProfile(){
 
   html += `</div>`; // end details tab
 
-  // ── TAB: Calculator ──
-  html += `<div class="tab-content ${activeTab==='calculator'?'active':''}" data-tab="calculator">`;
-  if(calcOk){
-    html += renderCalculatorTab(r);
-  } else {
-    html += `<div class="profile-card profile-full">
-      <div class="profile-card-body">
-        <div class="tab-locked-overlay">
-          <div class="tlo-icon">🔒</div>
-          <div class="tlo-title">Rental Calculator</div>
-          <div class="tlo-desc">Calculate investment costs, forecasted revenue, and monthly operating expenses for this property. Available on the Basic plan.</div>
-          <button class="btn btn-primary" onclick="switchView('pricing')">Upgrade to Basic — $10.99/mo</button>
-        </div>
-      </div>
-    </div>`;
-  }
-  html += `</div>`;
-
-  // ── TAB: Competitor Analysis ──
+  // ── TAB: Analysis ──
   html += `<div class="tab-content ${activeTab==='analysis'?'active':''}" data-tab="analysis">`;
   if(proOk){
     html += renderAnalysisTab(r);
@@ -1761,29 +1744,23 @@ function renderProfile(){
   html += `</div>`;
 
   // ── TAB: ROI Calculator ──
-  html += `<div class="tab-content ${activeTab==='roi'?'active':''}" data-tab="roi">`;
-  if(advOk){
-    html += `<div class="profile-card profile-full">
-      <div class="profile-card-body" style="text-align:center;padding:40px 20px;color:var(--text3)">
-        <div style="font-size:2rem;margin-bottom:8px">💰</div>
-        <div style="font-size:1rem;font-weight:600;color:var(--text);margin-bottom:6px">ROI Calculator</div>
-        <div style="font-size:.85rem;max-width:400px;margin:0 auto">Calculate projected revenue, expenses, cash flow, and return on investment for this property's rental arbitrage potential.</div>
-        <div style="font-size:.8rem;color:var(--text3);margin-top:12px;font-style:italic">Coming soon — this feature is under development.</div>
-      </div>
-    </div>`;
+  html += `<div class="tab-content ${activeTab==='calculator'?'active':''}" data-tab="calculator">`;
+  if(calcOk){
+    html += renderCalculatorTab(r);
   } else {
     html += `<div class="profile-card profile-full">
       <div class="profile-card-body">
         <div class="tab-locked-overlay">
           <div class="tlo-icon">🔒</div>
           <div class="tlo-title">ROI Calculator</div>
-          <div class="tlo-desc">Calculate projected revenue, expenses, cash flow, and return on investment. Get data-driven insights on whether this deal is worth pursuing. Available on the Pro plan.</div>
-          <button class="btn btn-primary" onclick="switchView('pricing')">Upgrade to Pro — $17.99/mo</button>
+          <div class="tlo-desc">Calculate investment costs, forecasted revenue, operating expenses, cash flow, and return on investment for this property. Available on the Basic plan.</div>
+          <button class="btn btn-primary" onclick="switchView('pricing')">Upgrade to Basic — $10.99/mo</button>
         </div>
       </div>
     </div>`;
   }
   html += `</div>`;
+
 
   // Delete button at bottom
   html += `<div style="margin-top:32px;text-align:right">
@@ -1863,6 +1840,14 @@ function savePropDetail(recId, field, value){
   if(!r.propertyDetails) r.propertyDetails = {};
   r.propertyDetails[field] = value;
   saveData();
+  // Re-render Calculator/Analysis tabs when relevant fields change
+  const crossTabFields = ['monthlyRent','bedrooms','bathrooms','sqft','deposit','applicationFee'];
+  if(crossTabFields.includes(field)){
+    const calcEl = document.querySelector('.tab-content[data-tab="calculator"]');
+    if(calcEl && calcEl.classList.contains('active')){ calcEl.innerHTML = renderCalculatorTab(r); }
+    const anEl = document.querySelector('.tab-content[data-tab="analysis"]');
+    if(anEl && anEl.classList.contains('active')){ anEl.innerHTML = renderAnalysisTab(r); }
+  }
 }
 
 function togglePropCheck(label, recId, field, opt){
@@ -3940,7 +3925,7 @@ function getCalc(r){
     if(c[k] === undefined || c[k] === null) c[k] = v;
   }
   if(c.cleaning === undefined || c.cleaning === null){
-    const br = parseInt(r.details.bedrooms) || 2;
+    const br = parseInt((r.propertyDetails||{}).bedrooms) || 2;
     c.cleaning = CLEANING_DEFAULTS[Math.min(br,4)] || 650;
   }
   return c;
@@ -3978,7 +3963,9 @@ function cInput(id, value, opts={}){
   const cls = opts.pct ? ' calc-pct' : '';
   const min = opts.min !== undefined ? ' min="'+opts.min+'"' : '';
   const max = opts.max !== undefined ? ' max="'+opts.max+'"' : '';
-  return '<div class="calc-val'+cls+'"><input type="number" id="calc_'+id+'" value="'+value+'" step="'+step+'"'+min+max+' onchange="onCalcChange(\''+id+'\',this.value)" /></div>';
+  const prefix = opts.pct || opts.noDollar ? '' : '<span class="calc-dollar-sign">$</span>';
+  const suffix = opts.pct ? '<span class="calc-pct-sign">%</span>' : '';
+  return '<div class="calc-val'+cls+'">'+prefix+'<input type="number" id="calc_'+id+'" value="'+value+'" step="'+step+'"'+min+max+' onchange="onCalcChange(\''+id+'\',this.value)" />'+suffix+'</div>';
 }
 function cDisplay(value, opts={}){
   const cls = opts.computed ? ' computed' : (opts.muted ? ' muted' : '');
@@ -3986,10 +3973,10 @@ function cDisplay(value, opts={}){
 }
 
 function calcComputeAll(r){
-  const d = r.details || {};
+  const pd = r.propertyDetails || {};
   const c = getCalc(r);
-  const br = parseInt(d.bedrooms) || 0;
-  const monthlyRent = parseFloat(d.monthlyRent) || 0;
+  const br = parseInt(pd.bedrooms) || 0;
+  const monthlyRent = parseFloat(pd.monthlyRent) || 0;
   const furnishCost = (br * c.costPerBR) + (c.extraCommonSpaces * c.costPerExtraSpace);
   const totalInvested = c.applicationFees + c.securityDeposit + c.firstLastRent + c.additionalFee1 + c.additionalFee2 + furnishCost;
   const daysOccupied = 365 * (c.estOccupancyRate / 100);
@@ -4009,7 +3996,7 @@ function calcComputeAll(r){
 }
 
 function renderCalculatorTab(r){
-  const d = r.details || {};
+  const pd = r.propertyDetails || {};
   const v = calcComputeAll(r);
   const c = v.c;
   const isProUser = requireTier('pro','AI Estimates');
@@ -4028,7 +4015,7 @@ function renderCalculatorTab(r){
   h += cRow('Additional Fee #2', cInput('additionalFee2', c.additionalFee2));
   h += cRow('# of Bedrooms', cDisplay(v.br || '—'), {hint:'from Property Details'});
   h += cRow('Est. Cost Per Bedroom', cInput('costPerBR', c.costPerBR), {hint:'incl. common spaces'});
-  h += cRow('# Extra Common Spaces', cInput('extraCommonSpaces', c.extraCommonSpaces), {hint:'patios, bonus rooms'});
+  h += cRow('# Extra Common Spaces', cInput('extraCommonSpaces', c.extraCommonSpaces, {noDollar:true}), {hint:'patios, bonus rooms'});
   h += cRow('Cost Per Extra Space', cInput('costPerExtraSpace', c.costPerExtraSpace));
   h += cRow('Est. Cost to Furnish', cDisplay(fmtAcct(v.furnishCost), {computed:true}));
   h += cRow('Total Money Invested', cDisplay(fmtAcct(v.totalInvested), {computed:true}), {total:true});
@@ -4076,25 +4063,29 @@ function renderCalculatorTab(r){
   const cfClass = v.monthlyCF >= 0 ? 'positive' : 'negative';
   const cocClass = v.cocReturn >= 0 ? 'positive' : 'negative';
   h += '<div class="calc-kpi-grid">';
-  h += '<div class="calc-kpi"><div class="kpi-label">Net Operating Income</div><div class="kpi-monthly">'+fmtMoney(Math.round(v.monthlyNOI))+'</div><div class="kpi-annual">/mo &nbsp;|&nbsp; '+fmtMoney(Math.round(v.annualNOI))+'/yr</div></div>';
-  h += '<div class="calc-kpi"><div class="kpi-label">Monthly Rent</div><div class="kpi-monthly">'+fmtMoney(v.monthlyRent)+'</div><div class="kpi-annual">/mo &nbsp;|&nbsp; '+fmtMoney(v.monthlyRent*12)+'/yr</div></div>';
-  h += '<div class="calc-kpi '+cfClass+'"><div class="kpi-label">Cash Flow</div><div class="kpi-monthly">'+fmtMoney(Math.round(v.monthlyCF))+'</div><div class="kpi-annual">/mo &nbsp;|&nbsp; '+fmtMoney(Math.round(v.annualCF))+'/yr</div></div>';
+  h += '<div class="calc-kpi"><div class="kpi-label">Net Operating Income</div><div class="kpi-monthly">'+fmtMoney(Math.round(v.monthlyNOI))+'<span class="kpi-per">/mo</span></div><div class="kpi-annual">'+fmtMoney(Math.round(v.annualNOI))+'/yr</div></div>';
+  h += '<div class="calc-kpi"><div class="kpi-label">Monthly Rent</div><div class="kpi-monthly">'+(v.monthlyRent ? fmtMoney(v.monthlyRent) : '<span style="color:var(--text3);font-style:italic">Set in Property Details</span>')+'<span class="kpi-per">/mo</span></div><div class="kpi-annual">'+fmtMoney(v.monthlyRent*12)+'/yr</div></div>';
+  h += '<div class="calc-kpi '+cfClass+'"><div class="kpi-label">Cash Flow</div><div class="kpi-monthly">'+fmtMoney(Math.round(v.monthlyCF))+'<span class="kpi-per">/mo</span></div><div class="kpi-annual">'+fmtMoney(Math.round(v.annualCF))+'/yr</div></div>';
   h += '<div class="calc-kpi '+cocClass+'"><div class="kpi-label">Cash on Cash Return</div><div class="kpi-monthly">'+v.cocReturn.toFixed(1)+'%</div><div class="kpi-annual">'+fmtMoney(Math.round(v.totalInvested))+' invested</div></div>';
   h += '</div>';
+
+  // Monthly Rent section (below NOI, above Payback)
+  h += '<div class="calc-section"><div class="calc-section-header">Monthly Rent</div><div class="calc-section-body">';
+  h += cRow('Monthly Rent', cDisplay(v.monthlyRent ? fmtAcct(v.monthlyRent) : '<span style="color:var(--text3);font-style:italic">Set in Property Details</span>'), {hint:'from Property Details'});
+  h += cRow('Annual Rent', cDisplay(fmtAcct(v.monthlyRent * 12), {muted:true}));
+  h += '</div></div>';
 
   // Payback Period Table
   h += '<div class="calc-section"><div class="calc-section-header">Pay-Back Period (From Cash Flows)</div><div class="calc-section-body" style="padding:6px 4px;overflow-x:auto">';
   h += '<table class="calc-payback"><thead><tr><th></th>';
   for(let y=0; y<=10; y++) h += '<th>Yr '+y+'</th>';
   h += '</tr></thead><tbody>';
-  // Row: Initial Investment
   const inv = v.totalInvested;
   const acf = Math.round(v.annualCF);
   h += '<tr><td>Initial Investment</td>';
   h += '<td class="neg">'+fmtMoney(-inv)+'</td>';
   for(let y=1; y<=10; y++) h += '<td>'+fmtMoney(0)+'</td>';
   h += '</tr>';
-  // Row: Future Cash Flows
   h += '<tr><td>Future Cash Flows</td>';
   h += '<td>'+fmtMoney(0)+'</td>';
   for(let y=1; y<=10; y++){
@@ -4102,7 +4093,6 @@ function renderCalculatorTab(r){
     h += '<td class="'+cls+'">'+fmtMoney(acf)+'</td>';
   }
   h += '</tr>';
-  // Row: Total Cash Flows
   h += '<tr><td>Total Cash Flows</td>';
   h += '<td class="neg">'+fmtMoney(-inv)+'</td>';
   for(let y=1; y<=10; y++){
@@ -4110,7 +4100,6 @@ function renderCalculatorTab(r){
     h += '<td class="'+cls+'">'+fmtMoney(acf)+'</td>';
   }
   h += '</tr>';
-  // Row: Cumulative Cash Flows
   h += '<tr class="cumulative"><td>Cumulative</td>';
   let cum = -inv;
   h += '<td class="'+(cum<0?'neg':'pos')+'">'+fmtMoney(Math.round(cum))+'</td>';
@@ -4120,12 +4109,6 @@ function renderCalculatorTab(r){
   }
   h += '</tr>';
   h += '</tbody></table>';
-  h += '</div></div>';
-
-  // Monthly Rent reminder
-  h += '<div class="calc-section"><div class="calc-section-header">Monthly Rent</div><div class="calc-section-body">';
-  h += cRow('Monthly Rent', cDisplay(v.monthlyRent ? fmtAcct(v.monthlyRent) : '<span style="color:var(--text3);font-style:italic">Set in Property Details</span>'), {hint:'from Property Details'});
-  h += cRow('Annual Rent', cDisplay(fmtAcct(v.monthlyRent * 12), {muted:true}));
   h += '</div></div>';
 
   h += '</div>'; // end right panel
@@ -4155,7 +4138,7 @@ function onCalcChange(field, value){
 function estimateExpensesAI(recId){
   const r = records.find(x => x.id === recId);
   if(!r) return;
-  const addr = r.details?.address || r.details?.street || '';
+  const addr = r.propertyDetails?.address || r.propertyDetails?.street || r.name || '';
   alert('AI estimation coming soon! Will analyze market data for ' + (addr || 'this area') + '.');
 }
 
@@ -4172,7 +4155,7 @@ function getAnalysis(r){
 }
 
 function renderAnalysisTab(r){
-  const d = r.details || {};
+  const pd = r.propertyDetails || {};
   const an = getAnalysis(r);
   const comps = getComps(r);
   const v = calcComputeAll(r);
