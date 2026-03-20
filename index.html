@@ -1511,11 +1511,12 @@ function renderProfile(){
         <div class="cr-row">
           <div class="cr-field" style="flex:1 1 100%"><div class="cr-label">Address</div><div class="cr-value ${r.property?'':'empty'}">${r.property?esc(r.property):'Not set'}</div></div>
         </div>
-        <div class="cr-row" style="gap:16px">
+        <div class="cr-row" style="gap:16px;align-items:flex-end">
           <div class="cr-field" style="min-width:50px;flex:0 1 auto"><div class="cr-label">Beds</div><div class="cr-value ${d.bedrooms?'':'empty'}">${d.bedrooms||'—'}</div></div>
           <div class="cr-field" style="min-width:50px;flex:0 1 auto"><div class="cr-label">${d.bathrooms==='1'?'Bath':'Baths'}</div><div class="cr-value ${d.bathrooms?'':'empty'}">${d.bathrooms||'—'}</div></div>
           <div class="cr-field" style="min-width:55px;flex:0 1 auto"><div class="cr-label">Sq Ft</div><div class="cr-value ${d.sqft?'':'empty'}">${d.sqft ? Number(d.sqft).toLocaleString() : '—'}</div></div>
           <div class="cr-field" style="min-width:70px;flex:0 1 auto"><div class="cr-label">Available</div><div class="cr-value ${d.availableDate?'':'empty'}">${d.availableDate==='now'?'Now':d.availableDate ? fmtDate(d.availableDate) : '—'}</div></div>
+          <div class="cr-field" style="min-width:auto;flex:0 1 auto;margin-left:auto"><div class="cr-label">Status</div><div class="inline-status" onclick="toggleInlineStatus(event,'${r.id}')">${statusPill(r.status)}<div class="inline-status-dd" id="inlineStatusDD">${SELECTABLE_STATUSES.map(s=>`<div class="isd-item ${r.status===s?'current':''}" onclick="setInlineStatus(event,'${r.id}','${s}')">${statusPill(s)}</div>`).join('')}</div></div></div>
         </div>
         <div class="cr-row">
           <div class="cr-field"><div class="cr-label">Contact Name</div><div class="cr-value ${r.name?'':'empty'}">${esc(r.name)||'Not set'}</div>${r.name?`<button class="cr-copy-btn" onclick="event.stopPropagation();copyRecordField(this,'${r.id}','name')" title="Copy name"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>`:''}</div>
@@ -1527,10 +1528,7 @@ function renderProfile(){
           <div class="cr-field"><div class="cr-label">Listing Link</div><div class="cr-value ${r.link?'':'empty'}" style="font-size:.78rem">${r.link?`<a href="${esc(r.link)}" target="_blank" style="color:var(--primary);text-decoration:none">${esc(r.link.length>40?r.link.substring(0,40)+'...':r.link)}</a>`:'Not set'}</div></div>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:6px;padding-top:5px;border-top:1px solid var(--border)">
-          <div style="display:flex;flex-direction:column;gap:3px">
-            <div><span style="font-size:.65rem;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.4px">Status</span> ${statusPill(r.status)}</div>
-            ${r.followUpDate?`<span style="font-size:.65rem;color:var(--text3);display:inline-flex;align-items:center;gap:3px"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg> Follow-Up: ${fmtDateTimeForCard(r.followUpDate, r.followUpTime)}</span>`:''}
-          </div>
+          <div>${renderFollowUpSubtle(r)}</div>
           <div>
             ${r.date?`<span style="font-size:.65rem;color:var(--text3)">First Contacted: ${fmtDate(r.date)}</span>`:''}
           </div>
@@ -4284,11 +4282,24 @@ function fmtDateTimeForCard(dateStr, timeStr){
   return datePart + ' at ' + h12 + ':' + String(mi).padStart(2,'0') + ' ' + ampm;
 }
 
+function renderFollowUpSubtle(r){
+  if(!r.followUpDate) return '';
+  const fuDate = new Date(r.followUpDate + 'T' + (r.followUpTime || '23:59'));
+  const isPast = fuDate < new Date();
+  const bellColor = isPast ? 'var(--text3)' : '#d4a017';
+  const bellStyle = isPast ? 'opacity:.5' : '';
+  const strikethrough = isPast ? '<line x1="3" y1="3" x2="21" y2="21"/>' : '';
+  return '<span style="font-size:.65rem;color:var(--text3);display:inline-flex;align-items:center;gap:3px">'
+    + '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="' + bellColor + '" stroke-width="2" style="' + bellStyle + '">'
+    + '<path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/>' + strikethrough + '</svg>'
+    + ' Follow-Up: ' + fmtDateTimeForCard(r.followUpDate, r.followUpTime) + '</span>';
+}
+
 function setupDateTimePicker(triggerId, opts){
-  // opts: { showTime:bool, dateVal:'', timeVal:'' }
+  // opts: { showTime:bool, autoClose:bool, dateVal:'', timeVal:'' }
   const trigger = document.getElementById(triggerId);
   if(!trigger) return;
-  const state = { date: opts.dateVal || '', time: opts.timeVal || '', showTime: opts.showTime !== false, viewMonth: null, viewYear: null };
+  const state = { date: opts.dateVal || '', time: opts.timeVal || '', showTime: opts.showTime !== false, autoClose: !!opts.autoClose, viewMonth: null, viewYear: null };
   if(state.date){
     const [y,m] = state.date.split('-').map(Number);
     state.viewMonth = m - 1; state.viewYear = y;
@@ -4477,6 +4488,12 @@ function dtSelectDay(dateStr){
   const state = _dtPickers[triggerId];
   if(!state) return;
   state.date = dateStr;
+  if(state.autoClose){
+    // Auto-close mode: confirm immediately on date select
+    updateDtTriggerText(triggerId);
+    closeDtPopup();
+    return;
+  }
   const showTime = !!popup.querySelector('.rr-time-row');
   renderDtCalendar(popup, state, showTime);
 }
@@ -4554,12 +4571,14 @@ function openCardEditor(recId, cardType){
         <div class="prop-field"><label>State</label><input type="text" id="ce_state" value="${esc(ceAddr.state||'')}" placeholder="AZ" maxlength="2" style="text-transform:uppercase"></div>
         <div class="prop-field"><label>ZIP Code</label><input type="text" id="ce_zip" value="${esc(ceAddr.zip||'')}" placeholder="85001" maxlength="10"></div>
       </div>
+      <div style="display:flex;gap:8px;margin-bottom:8px">
+        <div class="prop-field" style="flex:1;min-width:0"><label>Beds</label><input type="number" id="ce_beds" value="${esc(d.bedrooms||'')}" placeholder="3" min="0" step="1" style="font-size:.82rem;padding:5px 6px"></div>
+        <div class="prop-field" style="flex:1;min-width:0"><label>Baths</label><input type="number" id="ce_baths" value="${esc(d.bathrooms||'')}" placeholder="2" min="0" step="0.5" style="font-size:.82rem;padding:5px 6px"></div>
+        <div class="prop-field" style="flex:1;min-width:0"><label>Sq Ft</label><input type="number" id="ce_sqft" value="${esc(d.sqft||'')}" placeholder="1200" min="0" style="font-size:.82rem;padding:5px 6px"></div>
+        <div class="prop-field" style="flex:1;min-width:0"><label>Rent</label><input type="number" id="ce_rent" value="${esc(d.monthlyRent||'')}" placeholder="2500" min="0" style="font-size:.82rem;padding:5px 6px"></div>
+      </div>
       <div class="prop-field-grid" style="margin-bottom:10px">
-        <div class="prop-field"><label>Beds</label><input type="number" id="ce_beds" value="${esc(d.bedrooms||'')}" placeholder="e.g. 3" min="0" step="1"></div>
-        <div class="prop-field"><label>Baths</label><input type="number" id="ce_baths" value="${esc(d.bathrooms||'')}" placeholder="e.g. 2" min="0" step="0.5"></div>
-        <div class="prop-field"><label>Sq Ft</label><input type="number" id="ce_sqft" value="${esc(d.sqft||'')}" placeholder="e.g. 1200" min="0"></div>
-        <div class="prop-field"><label>Monthly Rent</label><input type="number" id="ce_rent" value="${esc(d.monthlyRent||'')}" placeholder="e.g. 2500" min="0"></div>
-        <div class="prop-field"><label>Available Date</label><div style="display:flex;align-items:center;gap:8px"><input type="date" id="ce_available" value="${isAvailNow?'':esc(d.availableDate||'')}" style="flex:1${isAvailNow?';opacity:.4':''}"><label style="display:flex;align-items:center;gap:4px;font-size:.78rem;font-weight:400;text-transform:none;letter-spacing:0;color:var(--text2);cursor:pointer;white-space:nowrap"><input type="checkbox" id="ce_avail_now" ${isAvailNow?'checked':''} onchange="document.getElementById('ce_available').style.opacity=this.checked?'.4':'1';if(this.checked)document.getElementById('ce_available').value=''"> Now</label></div></div>
+        <div class="prop-field"><label>Available Date</label><div style="display:flex;align-items:center;gap:8px"><div class="rr-dt-trigger${isAvailNow?' rr-dt-disabled':''}" id="dt_available" style="flex:1${isAvailNow?';opacity:.4;pointer-events:none':''}"><span class="rr-dt-icon">${CALENDAR_ICON}</span><span class="rr-dt-text empty">--/--/----</span><span class="rr-dt-clear" title="Clear">${CLEAR_X_ICON}</span></div><label style="display:flex;align-items:center;gap:4px;font-size:.78rem;font-weight:400;text-transform:none;letter-spacing:0;color:var(--text2);cursor:pointer;white-space:nowrap"><input type="checkbox" id="ce_avail_now" ${isAvailNow?'checked':''} onchange="const t=document.getElementById('dt_available');if(this.checked){t.style.opacity='.4';t.style.pointerEvents='none';t.classList.add('rr-dt-disabled');const s=window._dtPickers&&window._dtPickers['dt_available'];if(s){s.date='';updateDtTriggerText('dt_available')}}else{t.style.opacity='1';t.style.pointerEvents='';t.classList.remove('rr-dt-disabled')}"> Now</label></div></div>
       </div>
       <div class="prop-field-grid">
         <div class="prop-field"><label>Contact Name</label><input type="text" id="ce_name" value="${esc(r.name)}"></div>
@@ -4615,7 +4634,9 @@ function openCardEditor(recId, cardType){
       const rec = records.find(x => x.id === recId);
       setupDateTimePicker('dt_followup', { showTime:true, dateVal: rec?.followUpDate||'', timeVal: rec?.followUpTime||'' });
       setupDateTimePicker('dt_meeting', { showTime:true, dateVal: rec?.meetingDate||'', timeVal: rec?.meetingTime||'' });
-      setupDateTimePicker('dt_firstcontact', { showTime:false, dateVal: rec?.date ? rec.date.split('T')[0] : '', timeVal:'' });
+      setupDateTimePicker('dt_firstcontact', { showTime:false, autoClose:true, dateVal: rec?.date ? rec.date.split('T')[0] : '', timeVal:'' });
+      const availDateVal = (rec?.propertyDetails?.availableDate && rec.propertyDetails.availableDate !== 'now') ? rec.propertyDetails.availableDate : '';
+      setupDateTimePicker('dt_available', { showTime:false, autoClose:true, dateVal: availDateVal, timeVal:'' });
     }
     overlay.querySelector('input,select')?.focus();
   }, 100);
@@ -4671,7 +4692,8 @@ function saveContactCard(recId){
   const ceSqft = document.getElementById('ce_sqft')?.value?.trim();
   const ceRent = document.getElementById('ce_rent')?.value?.trim();
   const ceAvailNow = document.getElementById('ce_avail_now')?.checked;
-  const ceAvailDate = document.getElementById('ce_available')?.value || '';
+  const ceAvailVal = getDtValue('dt_available');
+  const ceAvailDate = ceAvailVal.date || '';
   if(ceBeds !== undefined) r.propertyDetails.bedrooms = ceBeds;
   if(ceBaths !== undefined) r.propertyDetails.bathrooms = ceBaths;
   if(ceSqft !== undefined) r.propertyDetails.sqft = ceSqft;
