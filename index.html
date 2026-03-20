@@ -362,12 +362,9 @@ tr.clickable:hover{background:var(--primary-light)}
 
 /* ===== PROFILE PAGE ===== */
 .profile-hero{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:20px;flex-wrap:wrap}
-.profile-sticky-header{position:sticky;top:0;z-index:50;background:var(--bg);padding-bottom:12px;border-bottom:1px solid var(--border);margin-bottom:16px}
+.profile-sticky-header{position:sticky;top:-20px;z-index:50;background:var(--bg);padding-top:20px;padding-bottom:12px;border-bottom:1px solid var(--border);margin-bottom:16px}
 .profile-hero-left{flex:1;min-width:0}
 .hero-contact-name{font-size:1.05rem;color:var(--text2);margin-top:2px}
-.profile-delete-zone{margin-top:32px;padding:16px;border:1px solid rgba(239,68,68,.3);border-radius:var(--radius);background:rgba(239,68,68,.04);display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
-.profile-delete-warning{display:flex;align-items:center;gap:8px;font-size:.85rem;color:var(--danger)}
-.profile-delete-warning svg{flex-shrink:0}
 .btn-danger{background:var(--danger);color:#fff;border:none}
 .btn-danger:hover{background:#dc2626}
 .profile-hero h1{font-size:1.65rem;font-weight:700;line-height:1.3;margin-bottom:2px}
@@ -420,7 +417,8 @@ tr.clickable:hover{background:var(--primary-light)}
 .import-loading{text-align:center;padding:24px;color:var(--text2)}
 .import-loading .spinner{display:inline-block;width:24px;height:24px;border:3px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin .8s linear infinite;margin-bottom:8px}
 @keyframes spin{to{transform:rotate(360deg)}}
-.prop-note-item{background:var(--input-bg);border-radius:var(--radius);padding:10px 14px;border-left:3px solid var(--info);margin-bottom:6px}
+.prop-note-item{background:var(--input-bg);border-radius:var(--radius);padding:10px 14px;border-left:3px solid var(--info);margin-bottom:6px;position:relative}
+.prop-note-item:hover .note-actions{opacity:1}
 .prop-note-item .pn-date{font-size:.73rem;color:var(--text3);margin-bottom:3px}
 .prop-note-item .pn-text{font-size:.88rem;line-height:1.5}
 .profile-full{margin-bottom:16px}
@@ -1462,6 +1460,24 @@ function renderProfile(){
           <div class="cr-field" style="flex:1 1 100%"><div class="cr-label">Listing Link</div><div class="cr-value ${r.link?'':'empty'}">${r.link?`<a href="${esc(r.link)}" target="_blank">${esc(r.link.length>50?r.link.substring(0,50)+'...':r.link)}</a>`:'Not set'}</div></div>
         </div>
       </div>
+      <div style="padding:10px 16px 14px;border-top:1px solid var(--border)">
+        <div class="cr-label" style="margin-bottom:6px">Property Notes</div>
+        <div style="display:flex;gap:8px">
+          <div style="flex:1">
+            ${buildRteToolbarHtml('propNoteRte_'+r.id)}
+            <div class="rte-editor" contenteditable="true" id="propNoteRte_${r.id}" data-placeholder="Add a property note..." onkeydown="if(event.shiftKey&&event.key==='Enter'){event.preventDefault();addPropertyNoteRte('${r.id}')}"></div>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="addPropertyNoteRte('${r.id}')" style="align-self:flex-end;white-space:nowrap">Add</button>
+        </div>
+        <div style="font-size:.6rem;color:var(--text3);opacity:.6;margin-top:3px;text-align:right">Shift + Enter to save</div>
+        <div id="propNoteList_${r.id}" style="margin-top:8px;max-height:200px;overflow-y:auto">
+          ${(r.propertyNotes||[]).length ? r.propertyNotes.slice().reverse().map(n => `<div class="prop-note-item">
+            <div class="note-actions"><button onclick="editPropertyNote('${r.id}','${n.id}')" title="Edit"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="del" onclick="deletePropertyNote('${r.id}','${n.id}')" title="Delete"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button></div>
+            <div class="pn-date">${fmtDateTime(n.date)} • ${n.source||'Manual'}</div>
+            <div class="pn-text">${n.html||esc(n.text)}</div>
+          </div>`).join('') : '<div style="color:var(--text3);font-size:.82rem">No property notes yet.</div>'}
+        </div>
+      </div>
     </div>
     <div class="profile-card" style="display:flex;flex-direction:column">
       <div class="profile-card-header"><h3>📝 Activity Log</h3></div>
@@ -1543,23 +1559,6 @@ function renderProfile(){
     </div>`;
   });
 
-  // Property Notes
-  html += `<div class="profile-card profile-full">
-    <div class="profile-card-header" onclick="toggleSection(this)">
-      <h3>📌 Property Notes <span style="font-size:.7rem;color:var(--text3);font-weight:400">(auto-extracted & listing details)</span></h3>
-      <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
-    </div>
-    <div class="profile-card-body">
-      <div class="note-input-wrap" style="margin-bottom:10px">
-        <textarea id="propNote_${r.id}" placeholder="Add a property note (listing details, rent specials, etc.)..." rows="2"></textarea>
-        <button class="btn btn-primary btn-sm" onclick="addPropertyNote('${r.id}')" style="align-self:flex-end;white-space:nowrap">Add</button>
-      </div>
-      <div id="propNoteList_${r.id}">
-        ${(r.propertyNotes||[]).length ? r.propertyNotes.slice().reverse().map(n => `<div class="prop-note-item"><div class="pn-date">${fmtDateTime(n.date)} • ${n.source||'Manual'}</div><div class="pn-text">${esc(n.text)}</div></div>`).join('') : '<div style="color:var(--text3);font-size:.82rem">No property notes yet.</div>'}
-      </div>
-    </div>
-  </div>`;
-
   html += `</div>`; // end details tab
 
   // ── TAB: Competitor Analysis ──
@@ -1612,12 +1611,8 @@ function renderProfile(){
   }
   html += `</div>`;
 
-  // Delete zone at bottom
-  html += `<div class="profile-delete-zone">
-    <div class="profile-delete-warning">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-      <span>Deleting this property is permanent and cannot be undone.</span>
-    </div>
+  // Delete button at bottom
+  html += `<div style="margin-top:32px;text-align:right">
     <button class="btn btn-danger btn-sm" onclick="confirmDeleteProperty('${r.id}')">Delete Property</button>
   </div>`;
 
@@ -1785,6 +1780,41 @@ function addPropertyNote(recId){
   if(!r) return;
   if(!r.propertyNotes) r.propertyNotes = [];
   r.propertyNotes.push({ id:uid(), text:ta.value.trim(), date:new Date().toISOString(), source:'Manual' });
+  saveData();
+  render();
+}
+function addPropertyNoteRte(recId){
+  const ed = document.getElementById('propNoteRte_'+recId);
+  if(!ed) return;
+  const html = ed.innerHTML.trim();
+  const text = ed.innerText.trim();
+  if(!text) return;
+  const r = records.find(x => x.id === recId);
+  if(!r) return;
+  if(!r.propertyNotes) r.propertyNotes = [];
+  r.propertyNotes.push({ id:uid(), text:text, html:html, date:new Date().toISOString(), source:'Manual' });
+  saveData();
+  render();
+}
+function editPropertyNote(recId, noteId){
+  const r = records.find(x => x.id === recId);
+  if(!r || !r.propertyNotes) return;
+  const n = r.propertyNotes.find(x => x.id === noteId);
+  if(!n) return;
+  const newText = prompt('Edit note:', n.text);
+  if(newText === null) return;
+  if(!newText.trim()){ deletePropertyNote(recId, noteId); return; }
+  n.text = newText.trim();
+  n.html = esc(newText.trim());
+  n.editedAt = new Date().toISOString();
+  saveData();
+  render();
+}
+function deletePropertyNote(recId, noteId){
+  const r = records.find(x => x.id === recId);
+  if(!r || !r.propertyNotes) return;
+  if(!confirm('Delete this note?')) return;
+  r.propertyNotes = r.propertyNotes.filter(x => x.id !== noteId);
   saveData();
   render();
 }
@@ -2234,9 +2264,29 @@ function confirmDeleteProperty(id){
   const r = records.find(x => x.id === id);
   if(!r) return;
   const name = r.property || r.name || 'this property';
-  if(confirm('Are you sure you want to permanently delete "'+name+'"? This action cannot be undone.')){
-    deleteRecord(id);
-  }
+  const overlay = document.createElement('div');
+  overlay.className = 'multi-editor-overlay';
+  overlay.id = 'deleteConfirmOverlay';
+  overlay.innerHTML = `<div class="multi-editor" style="max-width:420px">
+    <div class="multi-editor-header">
+      <h3 style="color:var(--danger)">Delete Property</h3>
+      <button class="modal-close" onclick="document.getElementById('deleteConfirmOverlay').remove()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+    </div>
+    <div class="multi-editor-body" style="text-align:center;padding:20px 16px">
+      <div style="margin-bottom:12px">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="1.5"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      </div>
+      <div style="font-size:.95rem;font-weight:600;margin-bottom:6px">Are you sure you want to delete "${esc(name)}"?</div>
+      <div style="font-size:.82rem;color:var(--text3);margin-bottom:16px">This action is permanent and cannot be undone. All property data, notes, and activity history will be lost.</div>
+      <label style="display:flex;align-items:center;gap:8px;justify-content:center;margin-bottom:14px;font-size:.82rem;cursor:pointer">
+        <input type="checkbox" id="deleteUnderstandCheck" onchange="document.getElementById('deleteConfirmInput').disabled=!this.checked;document.getElementById('deleteConfirmInput').focus()"> I understand this cannot be undone
+      </label>
+      <input type="text" id="deleteConfirmInput" disabled placeholder='Type "DELETE" to confirm' style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius);background:var(--input-bg);color:var(--text);text-align:center;font-size:.88rem;margin-bottom:12px" oninput="document.getElementById('deleteConfirmBtn').disabled=this.value!=='DELETE'">
+      <button class="btn btn-danger" id="deleteConfirmBtn" disabled onclick="document.getElementById('deleteConfirmOverlay').remove();deleteRecord('${id}')" style="width:100%">Confirm Deletion</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('keydown', function(e){ if(e.key==='Escape') overlay.remove(); });
 }
 
 /* ===== ADD NEW RECORD ===== */
