@@ -83,9 +83,9 @@ textarea{resize:vertical;min-height:80px}
 .sidebar.collapsed .nav-section{color:transparent;transition:color .1s ease}
 .sidebar.collapsed .nav-item span{opacity:0;width:0;overflow:hidden;transition:opacity .1s ease}
 .sidebar.collapsed .nav-item .nav-badge{position:absolute;top:4px;right:6px;font-size:.55rem;min-width:14px;height:14px}
-.sidebar.collapsed .su-info{opacity:0;width:0;overflow:hidden;transition:opacity .1s ease}
+.sidebar.collapsed .su-info{opacity:0;position:absolute;pointer-events:none;transition:opacity .1s ease}
 .sidebar.collapsed .sidebar-user{padding:12px 14px}
-.sidebar.collapsed .su-profile{flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:4px 0}
+.sidebar.collapsed .su-profile{flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:2px 0}
 .su-collapsed-tier{opacity:0;height:0;overflow:hidden;text-align:center;transition:opacity .15s ease .1s;width:100%}
 .sidebar.collapsed .su-collapsed-tier{opacity:1;height:auto}
 .sidebar.collapsed .login-btn span{opacity:0;width:0;overflow:hidden;position:absolute}
@@ -97,7 +97,7 @@ textarea{resize:vertical;min-height:80px}
 .sidebar-user .su-profile:hover{background:rgba(255,255,255,.06)}
 .sidebar-user .su-avatar{width:32px;height:32px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:700;color:#fff}
 .sidebar-user .su-avatar img{width:32px;height:32px;border-radius:50%;object-fit:cover}
-.sidebar-user .su-info{flex:1;min-width:0;overflow:hidden;opacity:1;width:auto;transition:opacity .15s ease .05s,width .15s ease .05s}
+.sidebar-user .su-info{flex:1;min-width:0;overflow:hidden;opacity:1;position:relative;pointer-events:auto;transition:opacity .15s ease .05s}
 .sidebar-user .su-name{font-size:.82rem;font-weight:600;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sidebar-user .su-tier{display:inline-flex}
 .sidebar-user .user-menu{position:absolute;bottom:calc(100% + 6px);left:14px;right:14px;top:auto}
