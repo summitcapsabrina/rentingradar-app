@@ -602,7 +602,7 @@ h1 .hero-edit-input{font-size:1.35rem}
 .rr-dt-popup .rr-dt-actions .rr-dt-cancel:hover{background:var(--primary-light)}
 .inline-status{cursor:pointer;position:relative;display:inline-block}
 .inline-status:hover{opacity:.85}
-.inline-status-dd{position:fixed;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 12px 40px rgba(0,0,0,.35);z-index:500;min-width:190px;max-height:360px;overflow-y:auto;padding:4px 0;display:none}
+.inline-status-dd{position:fixed;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 12px 40px rgba(0,0,0,.35);z-index:9999;min-width:190px;max-height:360px;overflow-y:auto;padding:4px 0;display:none}
 .inline-status-dd.open{display:block}
 .inline-status-dd .isd-item{padding:7px 12px;cursor:pointer;transition:background .1s;font-size:.82rem}
 .inline-status-dd .isd-item:hover{background:var(--primary-light)}
@@ -930,6 +930,7 @@ function restoreViewState(){
 }
 
 function render(){
+  closeInlineStatusDD();
   const area = document.getElementById('contentArea');
   area.style.paddingTop = currentView === 'profile' ? '0' : '';
   switch(currentView){
@@ -1332,7 +1333,7 @@ function openDetail(id){
   document.getElementById('searchAutocomplete')?.classList.remove('visible');
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.getElementById('headerTitle').textContent = 'Property Profile';
-  if(!_handlingPopstate) history.pushState({ view: 'profile', profileId: id }, '', '#profile/' + id);
+  if(!_handlingPopstate) history.pushState({ view: 'profile', profileId: id, previousView: previousView }, '', '#profile/' + id);
   saveViewState();
   render();
   window.scrollTo(0,0);
@@ -1520,7 +1521,7 @@ function renderProfile(){
           <div class="cr-field" style="min-width:50px;flex:0 1 auto"><div class="cr-label">${d.bathrooms==='1'?'Bath':'Baths'}</div><div class="cr-value ${d.bathrooms?'':'empty'}">${d.bathrooms||'—'}</div></div>
           <div class="cr-field" style="min-width:55px;flex:0 1 auto"><div class="cr-label">Sq Ft</div><div class="cr-value ${d.sqft?'':'empty'}">${d.sqft ? Number(d.sqft).toLocaleString() : '—'}</div></div>
           <div class="cr-field" style="min-width:70px;flex:0 1 auto"><div class="cr-label">Available</div><div class="cr-value ${d.availableDate?'':'empty'}">${d.availableDate==='now'?'Now':d.availableDate ? fmtDate(d.availableDate) : '—'}</div></div>
-          <div class="cr-field" style="min-width:auto;flex:0 1 auto"><div class="cr-label">Status</div><div class="inline-status" onclick="toggleInlineStatus(event,'${r.id}')">${statusPill(r.status)}<div class="inline-status-dd" id="inlineStatusDD">${SELECTABLE_STATUSES.map(s=>`<div class="isd-item ${r.status===s?'current':''}" onclick="setInlineStatus(event,'${r.id}','${s}')">${statusPill(s)}</div>`).join('')}</div></div></div>
+          <div class="cr-field" style="min-width:auto;flex:0 1 auto"><div class="cr-label">Status</div><div class="inline-status" onclick="toggleInlineStatus(event,'${r.id}')">${statusPill(r.status)}</div></div>
         </div>
         <div class="cr-row">
           <div class="cr-field"><div class="cr-label">Contact Name</div><div class="cr-value ${r.name?'':'empty'}">${esc(r.name)||'Not set'}</div>${r.name?`<button class="cr-copy-btn" onclick="event.stopPropagation();copyRecordField(this,'${r.id}','name')" title="Copy name"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>`:''}</div>
@@ -4729,33 +4730,61 @@ function saveContactCard(recId){
 }
 
 /* ===== INLINE STATUS DROPDOWN ===== */
-function toggleInlineStatus(e, recId){
-  e.stopPropagation();
-  const dd = document.getElementById('inlineStatusDD');
-  if(!dd) return;
-  const isOpen = dd.classList.toggle('open');
-  if(isOpen){
-    // Position fixed dropdown below the status pill
-    const trigger = dd.parentElement;
-    const rect = trigger.getBoundingClientRect();
-    dd.style.top = (rect.bottom + 4) + 'px';
-    dd.style.left = rect.left + 'px';
-    // Ensure it doesn't go off-screen at the bottom
-    requestAnimationFrame(() => {
-      const ddRect = dd.getBoundingClientRect();
-      if(ddRect.bottom > window.innerHeight - 10){
-        dd.style.top = (rect.top - ddRect.height - 4) + 'px';
-      }
-    });
+let _inlineStatusDDEl = null;
+
+function closeInlineStatusDD(){
+  if(_inlineStatusDDEl){
+    _inlineStatusDDEl.remove();
+    _inlineStatusDDEl = null;
   }
 }
 
-function setInlineStatus(e, recId, newStatus){
+function toggleInlineStatus(e, recId){
   e.stopPropagation();
+  // If already open, close it
+  if(_inlineStatusDDEl){
+    closeInlineStatusDD();
+    return;
+  }
+  const r = records.find(x => x.id === recId);
+  if(!r) return;
+  // Create dropdown and append to body (escapes all stacking contexts)
+  const dd = document.createElement('div');
+  dd.className = 'inline-status-dd open';
+  dd.id = 'inlineStatusDD';
+  dd.innerHTML = SELECTABLE_STATUSES.map(s =>
+    `<div class="isd-item ${r.status===s?'current':''}" data-status="${s}">${statusPill(s)}</div>`
+  ).join('');
+  document.body.appendChild(dd);
+  _inlineStatusDDEl = dd;
+  // Position below the trigger
+  const trigger = e.currentTarget;
+  const rect = trigger.getBoundingClientRect();
+  dd.style.top = (rect.bottom + 4) + 'px';
+  dd.style.left = rect.left + 'px';
+  // If it goes off-screen bottom, allow scrolling within dropdown rather than flipping up
+  requestAnimationFrame(() => {
+    const ddRect = dd.getBoundingClientRect();
+    if(ddRect.bottom > window.innerHeight - 10){
+      dd.style.maxHeight = (window.innerHeight - rect.bottom - 14) + 'px';
+    }
+  });
+  // Click handler for items
+  dd.addEventListener('click', function(ev){
+    ev.stopPropagation();
+    const item = ev.target.closest('.isd-item');
+    if(!item) return;
+    const newStatus = item.dataset.status;
+    setInlineStatus(recId, newStatus);
+  });
+}
+
+function setInlineStatus(recId, newStatus){
   const r = records.find(x => x.id === recId);
   if(!r) return;
   const oldStatus = r.status;
-  if(oldStatus === newStatus){ document.getElementById('inlineStatusDD')?.classList.remove('open'); return }
+  closeInlineStatusDD();
+  if(oldStatus === newStatus) return;
   r.status = newStatus;
   r.notes.push({ id:uid(), text:`Status changed: ${oldStatus} → ${newStatus}`, date:new Date().toISOString(), type:'status' });
   saveData();
@@ -4764,10 +4793,12 @@ function setInlineStatus(e, recId, newStatus){
 
 // Close inline status dropdown on outside click
 document.addEventListener('click', function(e){
-  if(!e.target.closest('.inline-status')){
-    document.getElementById('inlineStatusDD')?.classList.remove('open');
+  if(_inlineStatusDDEl && !e.target.closest('.inline-status') && !e.target.closest('#inlineStatusDD')){
+    closeInlineStatusDD();
   }
 });
+// Close on scroll so fixed dropdown doesn't drift from trigger
+window.addEventListener('scroll', function(){ closeInlineStatusDD(); }, true);
 
 /* ===== COPY FIELD VALUE ===== */
 const COPY_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>';
@@ -5078,25 +5109,51 @@ history.replaceState({ view: currentView, profileId: currentProfileId || null },
 // Handle browser back/forward buttons
 window.addEventListener('popstate', function(e){
   const state = e.state;
-  if(!state) return;
-  _handlingPopstate = true;
-  if(state.view === 'profile' && state.profileId){
-    const r = records.find(x => x.id === state.profileId);
-    if(r){
-      openProfile(state.profileId);
-    } else {
-      switchView('dashboard');
-    }
-  } else if(state.view){
-    switchView(state.view);
+  if(!state){
+    // No state — fallback to dashboard
+    _handlingPopstate = true;
+    switchView('dashboard');
+    _handlingPopstate = false;
+    return;
   }
-  _handlingPopstate = false;
+  _handlingPopstate = true;
+  try {
+    if(state.view === 'profile' && state.profileId){
+      const r = records.find(x => x.id === state.profileId);
+      if(r){
+        previousView = state.previousView || 'dashboard';
+        currentProfileId = state.profileId;
+        currentView = 'profile';
+        document.getElementById('searchAutocomplete')?.classList.remove('visible');
+        document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+        document.getElementById('headerTitle').textContent = 'Property Profile';
+        saveViewState();
+        render();
+        window.scrollTo(0,0);
+      } else {
+        switchView('dashboard');
+      }
+    } else if(state.view){
+      currentView = state.view;
+      currentProfileId = null;
+      clearSearch();
+      document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.view === state.view));
+      const titles = { dashboard:'Dashboard', pipeline:'Funnel', contacts:'All Contacts', notifications:'Notifications', pricing:'Your Plan', settings:'Settings' };
+      document.getElementById('headerTitle').textContent = titles[state.view] || '';
+      saveViewState();
+      render();
+    }
+  } finally {
+    _handlingPopstate = false;
+  }
 });
 
-// Handle hash-based navigation (e.g., #pricing from extension)
-function checkHash(){
+// Handle hash-based navigation on initial load only (e.g., #pricing from extension)
+(function checkInitialHash(){
   const hash = location.hash.replace('#','');
   if(!hash) return;
+  // Only process if no history state was set (fresh navigation from external link)
+  if(history.state) return;
   const validViews = ['dashboard','pipeline','contacts','notifications','pricing','settings'];
   if(validViews.includes(hash)){
     switchView(hash);
@@ -5104,8 +5161,7 @@ function checkHash(){
     const pid = hash.substring(8);
     if(pid && records.find(x => x.id === pid)) openProfile(pid);
   }
-}
-checkHash();
+})();
 </script>
 </body>
 </html>
