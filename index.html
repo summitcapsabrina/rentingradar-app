@@ -362,7 +362,7 @@ tr.clickable:hover{background:var(--primary-light)}
 
 /* ===== PROFILE PAGE ===== */
 .profile-hero{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:20px;flex-wrap:wrap}
-.profile-sticky-header{position:sticky;top:0;z-index:50;background:var(--bg);padding-top:20px;padding-bottom:12px;border-bottom:1px solid var(--border);margin:-20px -24px 16px;padding-left:24px;padding-right:24px}
+.profile-sticky-header{position:sticky;top:0;z-index:50;background:var(--bg);padding:8px 24px 12px;border-bottom:1px solid var(--border);margin:-20px -24px 16px}
 .profile-hero-left{flex:1;min-width:0}
 .hero-contact-name{font-size:1.05rem;color:var(--text2);margin-top:2px}
 .btn-danger{background:var(--danger);color:#fff;border:none}
@@ -421,7 +421,9 @@ tr.clickable:hover{background:var(--primary-light)}
 .prop-note-item:hover .note-actions{opacity:1}
 .prop-note-item .pn-date{font-size:.73rem;color:var(--text3);margin-bottom:3px}
 .prop-note-item .pn-text{font-size:.88rem;line-height:1.5}
-.prop-note-display{font-size:.88rem;line-height:1.5;max-height:3em;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;color:var(--text)}
+.prop-note-display{font-size:.85rem;line-height:1.5;max-height:4.5em;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;color:var(--text)}
+.prop-note-clickable{border-radius:var(--radius);padding:4px 6px;margin:-4px -6px;transition:background .15s}
+.prop-note-clickable:hover{background:var(--primary-light)}
 .profile-full{margin-bottom:16px}
 .profile-section-title{font-size:.95rem;font-weight:600;margin-bottom:10px;display:flex;align-items:center;gap:8px}
 .profile-contact-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
@@ -1461,10 +1463,10 @@ function renderProfile(){
           <div class="cr-field" style="flex:1 1 100%"><div class="cr-label">Listing Link</div><div class="cr-value ${r.link?'':'empty'}">${r.link?`<a href="${esc(r.link)}" target="_blank">${esc(r.link.length>50?r.link.substring(0,50)+'...':r.link)}</a>`:'Not set'}</div></div>
         </div>
       </div>
-      <div class="prop-note-section" style="padding:10px 16px 14px;border-top:1px solid var(--border)">
-        <div class="hero-editable" onclick="openPropertyNoteEditor('${r.id}')" title="Click to edit property notes" style="cursor:pointer">
-          <div class="cr-label" style="margin-bottom:4px">Property Notes</div>
-          ${r.propertyNote ? `<div class="prop-note-display">${r.propertyNote.html || esc(r.propertyNote.text)}</div>` : '<div style="color:var(--text3);font-size:.82rem;font-style:italic">Click to add property notes...</div>'}
+      <div style="padding:10px 16px 14px;border-top:1px solid var(--border)">
+        <div class="cr-label" style="margin-bottom:4px">Property Notes</div>
+        <div class="hero-editable prop-note-clickable" onclick="openPropertyNoteEditor('${r.id}')" title="Click to ${r.propertyNote ? 'view/edit' : 'add'} property notes" style="cursor:pointer">
+          ${r.propertyNote ? `<div class="prop-note-display">${r.propertyNote.html || esc(r.propertyNote.text)}</div>` : '<div style="color:var(--text3);font-size:.82rem;font-style:italic">No property notes yet</div>'}
           <svg class="hero-edit-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
         </div>
       </div>
