@@ -364,13 +364,12 @@ tr.clickable:hover{background:var(--primary-light)}
 .profile-hero{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:20px;flex-wrap:wrap}
 .profile-sticky-header{position:sticky;top:0;z-index:40;background:var(--bg);padding:20px 24px 12px;border-bottom:1px solid var(--border);margin:0 -24px 16px}
 .profile-hero-left{flex:1;min-width:0}
-.hero-contact-name{font-size:1.05rem;color:var(--text2);margin-top:2px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.hero-contact-name{font-size:1.05rem;color:var(--text2);margin-top:2px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
 .hero-contact-item{display:inline-flex;align-items:center;gap:4px}
 .hero-contact-item .hero-copy-btn{opacity:0;border:none;background:transparent;cursor:pointer;color:var(--text3);padding:2px;border-radius:4px;transition:opacity .15s,color .15s;display:inline-flex;align-items:center;flex-shrink:0}
 .hero-contact-item:hover .hero-copy-btn{opacity:1}
 .hero-contact-item .hero-copy-btn:hover{color:var(--primary)}
 .hero-contact-item .hero-copy-btn.copied{color:var(--success,#22c55e)!important;opacity:1}
-.hero-contact-sep{color:var(--text3);opacity:.4;font-size:.9rem}
 .hero-address-wrap{position:relative;display:inline-flex;align-items:flex-start;gap:6px}
 .hero-address-wrap .hero-copy-btn{opacity:0;border:none;background:transparent;cursor:pointer;color:var(--text3);padding:2px;border-radius:4px;transition:opacity .15s,color .15s;display:inline-flex;align-items:center;flex-shrink:0;align-self:center}
 .hero-address-wrap:hover .hero-copy-btn{opacity:1}
@@ -1431,16 +1430,8 @@ function renderProfile(){
   <div class="profile-hero profile-sticky-header">
     <div class="profile-hero-left">
       <div class="hero-address-wrap">
-        <div class="hero-editable" id="heroAddress" onclick="startHeroEdit('${r.id}','property','heroAddress')">
-          <div id="heroAddressDisplay">${renderHeroAddress(r)}</div>
-          <svg class="hero-edit-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-        </div>
+        <div id="heroAddressDisplay">${renderHeroAddress(r)}</div>
         <button class="hero-copy-btn" onclick="event.stopPropagation();copyAddress(this,'${r.id}')" title="Copy address"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>
-      </div>
-      <div class="hero-contact-name">
-        <span class="hero-contact-item">${esc(r.name) || '<span style="opacity:.4">No contact name</span>'}${r.name?`<button class="hero-copy-btn" onclick="copyRecordField(this,'${r.id}','name')" title="Copy name"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>`:''}</span>
-        ${r.phone?`<span class="hero-contact-sep">|</span><span class="hero-contact-item" style="font-size:.95rem">${fmtPhone(r.phone)}<button class="hero-copy-btn" onclick="copyRecordField(this,'${r.id}','phone')" title="Copy phone"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button></span>`:''}
-        ${r.email?`<span class="hero-contact-sep">|</span><span class="hero-contact-item" style="font-size:.95rem;color:var(--primary)">${esc(r.email)}<button class="hero-copy-btn" onclick="copyRecordField(this,'${r.id}','email')" title="Copy email"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button></span>`:''}
       </div>
       <div style="display:flex;align-items:center;gap:16px;margin-top:4px;flex-wrap:wrap">
         <div class="hero-editable" id="heroRent" onclick="startHeroEdit('${r.id}','monthlyRent','heroRent')">
@@ -1462,6 +1453,11 @@ function renderProfile(){
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
           </div>
         </div>
+      </div>
+      <div class="hero-contact-name">
+        <span class="hero-contact-item">${esc(r.name) || '<span style="opacity:.4">No contact name</span>'}${r.name?`<button class="hero-copy-btn" onclick="copyRecordField(this,'${r.id}','name')" title="Copy name"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>`:''}</span>
+        ${r.phone?`<span class="hero-contact-item" style="font-size:.95rem">${fmtPhone(r.phone)}<button class="hero-copy-btn" onclick="copyRecordField(this,'${r.id}','phone')" title="Copy phone"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button></span>`:''}
+        ${r.email?`<span class="hero-contact-item" style="font-size:.95rem;color:var(--primary)">${esc(r.email)}<button class="hero-copy-btn" onclick="copyRecordField(this,'${r.id}','email')" title="Copy email"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button></span>`:''}
       </div>
       <div class="profile-hero-meta" style="margin-top:8px">
         ${statusPill(r.status)}
@@ -1489,6 +1485,9 @@ function renderProfile(){
         <button class="card-edit-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
       </div>
       <div class="profile-card-body card-readonly">
+        <div class="cr-row">
+          <div class="cr-field" style="flex:1 1 100%"><div class="cr-label">Address</div><div class="cr-value ${r.property?'':'empty'}">${r.property?esc(r.property):'Not set'}</div></div>
+        </div>
         <div class="cr-row">
           <div class="cr-field"><div class="cr-label">Contact Name</div><div class="cr-value-wrap"><div class="cr-value ${r.name?'':'empty'}" style="flex:1;min-width:0">${esc(r.name)||'Not set'}</div>${r.name?`<button class="cr-copy-btn" onclick="copyRecordField(this,'${r.id}','name')" title="Copy name"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>`:''}</div></div>
           <div class="cr-field"><div class="cr-label">Phone</div><div class="cr-value-wrap"><div class="cr-value ${r.phone?'':'empty'}" style="flex:1;min-width:0">${r.phone?fmtPhone(r.phone):'Not set'}</div>${r.phone?`<button class="cr-copy-btn" onclick="copyRecordField(this,'${r.id}','phone')" title="Copy phone"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>`:''}</div></div>
@@ -4218,6 +4217,7 @@ function openCardEditor(recId, cardType){
   if(cardType === 'contact'){
     title = 'Edit Contact & Status';
     fieldsHtml = `
+      <div class="prop-field" style="margin-bottom:10px"><label>Address</label><input type="text" id="ce_address" value="${esc(r.property)}"></div>
       <div class="prop-field-grid">
         <div class="prop-field"><label>Contact Name</label><input type="text" id="ce_name" value="${esc(r.name)}"></div>
         <div class="prop-field"><label>Phone</label><input type="text" id="ce_phone" value="${esc(r.phone)}"></div>
@@ -4272,6 +4272,8 @@ function saveContactCard(recId){
   if(!r) return;
   if(!validateEmailField()) return;
   const oldStatus = r.status;
+  const newAddr = document.getElementById('ce_address')?.value?.trim() || '';
+  if(newAddr !== r.property){ r.property = newAddr; r.addressParts = parseAddressParts(newAddr); }
   r.name = document.getElementById('ce_name')?.value?.trim() || '';
   r.phone = document.getElementById('ce_phone')?.value?.trim() || '';
   r.email = document.getElementById('ce_email')?.value?.trim() || '';
