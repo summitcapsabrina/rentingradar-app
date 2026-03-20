@@ -552,22 +552,54 @@ h1 .hero-edit-input{font-size:1.35rem}
 .clickable-edit{cursor:pointer;transition:background .15s}
 .profile-card-header.clickable-edit:hover{background:var(--primary-light)}
 .card-readonly.clickable-edit:hover{background:rgba(99,129,250,.04)}
-.card-readonly .cr-row{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:10px}
-.card-readonly .cr-field{flex:1;min-width:140px}
-.card-readonly .cr-label{font-size:.75rem;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px}
-.card-readonly .cr-value{font-size:1rem;font-weight:500;color:var(--text)}
-.card-readonly .cr-value.empty{color:var(--text3);font-style:italic;font-weight:400;font-size:.9rem}
+.card-readonly .cr-row{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:6px}
+.card-readonly .cr-field{flex:1;min-width:80px;position:relative}
+.card-readonly .cr-label{font-size:.68rem;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px}
+.card-readonly .cr-value{font-size:.85rem;font-weight:500;color:var(--text)}
+.card-readonly .cr-value.empty{color:var(--text3);font-style:italic;font-weight:400;font-size:.78rem}
 .card-readonly .cr-value a{color:var(--primary);font-weight:500}
 .card-readonly .cr-value.email-val{color:var(--primary);font-weight:500}
 .card-readonly .clickable-edit{cursor:pointer;border-radius:var(--radius);padding:4px 6px;margin:-4px -6px;transition:background .15s}
 .card-readonly .clickable-edit:hover{background:var(--primary-light)}
-.cr-value-wrap{display:flex;align-items:center;gap:6px}
-.cr-copy-btn{opacity:0;border:none;background:transparent;cursor:pointer;color:var(--text3);padding:2px;border-radius:4px;transition:opacity .15s,color .15s,background .15s;flex-shrink:0;display:flex;align-items:center}
+.cr-value-wrap{display:flex;align-items:center;gap:4px}
+.cr-copy-btn{opacity:0;border:none;background:transparent;cursor:pointer;color:var(--text3);padding:1px;border-radius:3px;transition:opacity .15s,color .15s,background .15s;flex-shrink:0;display:flex;align-items:center;position:absolute;top:0;right:0}
 .cr-field:hover .cr-copy-btn{opacity:1}
 .cr-copy-btn:hover{color:var(--primary);background:var(--primary-light)}
 .cr-copy-btn.copied{color:var(--success,#22c55e)!important;opacity:1}
 .ce-email-error{color:var(--danger);font-size:.72rem;margin-top:3px;display:none}
 .ce-email-error.visible{display:block}
+/* ===== CUSTOM DATE/TIME PICKER ===== */
+.rr-dt-trigger{display:flex;align-items:center;gap:6px;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;font-size:.85rem;color:var(--text);background:var(--surface);transition:border-color .15s;user-select:none;width:100%}
+.rr-dt-trigger:hover{border-color:var(--primary)}
+.rr-dt-trigger .rr-dt-icon{color:var(--text3);flex-shrink:0;display:flex;align-items:center}
+.rr-dt-trigger .rr-dt-text{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rr-dt-trigger .rr-dt-text.empty{color:var(--text3)}
+.rr-dt-trigger .rr-dt-clear{color:var(--text3);display:flex;align-items:center;padding:2px;border-radius:3px;flex-shrink:0;transition:color .15s,background .15s}
+.rr-dt-trigger .rr-dt-clear:hover{color:var(--danger);background:rgba(239,68,68,.1)}
+.rr-dt-popup{position:fixed;z-index:400;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 12px 40px rgba(0,0,0,.3);padding:12px;width:280px;display:none}
+.rr-dt-popup.visible{display:block}
+.rr-dt-popup .rr-cal-nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.rr-dt-popup .rr-cal-nav button{border:none;background:transparent;cursor:pointer;color:var(--text2);padding:4px 8px;border-radius:var(--radius);font-size:.85rem;display:flex;align-items:center}
+.rr-dt-popup .rr-cal-nav button:hover{background:var(--primary-light);color:var(--primary)}
+.rr-dt-popup .rr-cal-title{font-size:.82rem;font-weight:600;color:var(--text)}
+.rr-dt-popup .rr-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:1px;margin-bottom:10px}
+.rr-dt-popup .rr-cal-dow{font-size:.65rem;font-weight:600;color:var(--text3);text-align:center;padding:4px 0;text-transform:uppercase}
+.rr-dt-popup .rr-cal-day{font-size:.78rem;text-align:center;padding:5px 0;border-radius:var(--radius);cursor:pointer;color:var(--text);transition:background .1s,color .1s}
+.rr-dt-popup .rr-cal-day:hover{background:var(--primary-light)}
+.rr-dt-popup .rr-cal-day.other{color:var(--text3);opacity:.4}
+.rr-dt-popup .rr-cal-day.today{font-weight:700;color:var(--primary)}
+.rr-dt-popup .rr-cal-day.selected{background:var(--primary);color:#fff;font-weight:600}
+.rr-dt-popup .rr-time-row{display:flex;align-items:center;gap:6px;padding-top:8px;border-top:1px solid var(--border)}
+.rr-dt-popup .rr-time-row label{font-size:.72rem;font-weight:600;color:var(--text3);text-transform:uppercase;white-space:nowrap}
+.rr-dt-popup .rr-time-sel{display:flex;align-items:center;gap:3px;flex:1}
+.rr-dt-popup .rr-time-sel select{font-size:.8rem;padding:4px 6px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);color:var(--text);cursor:pointer;flex:1}
+.rr-dt-popup .rr-time-sel select:focus{border-color:var(--primary);outline:none}
+.rr-dt-popup .rr-dt-actions{display:flex;justify-content:flex-end;gap:6px;margin-top:10px;padding-top:8px;border-top:1px solid var(--border)}
+.rr-dt-popup .rr-dt-actions button{font-size:.75rem;padding:5px 12px;border-radius:var(--radius);cursor:pointer;border:1px solid var(--border);transition:all .15s}
+.rr-dt-popup .rr-dt-actions .rr-dt-done{background:var(--primary);color:#fff;border-color:var(--primary);font-weight:600}
+.rr-dt-popup .rr-dt-actions .rr-dt-done:hover{opacity:.9}
+.rr-dt-popup .rr-dt-actions .rr-dt-cancel{background:var(--surface);color:var(--text2)}
+.rr-dt-popup .rr-dt-actions .rr-dt-cancel:hover{background:var(--primary-light)}
 .inline-status{cursor:pointer;position:relative;display:inline-block}
 .inline-status:hover{opacity:.85}
 .inline-status-dd{position:fixed;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 8px 24px rgba(0,0,0,.25);z-index:300;min-width:190px;max-height:360px;overflow-y:auto;padding:4px 0;display:none}
@@ -1453,7 +1485,7 @@ function renderProfile(){
       <div class="profile-hero-meta" style="margin-top:8px">
         ${statusPill(r.status)}
         ${r.link ? `<a class="profile-platform" href="${esc(r.link)}" target="_blank">${plat.icon} ${plat.name} <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"/></svg></a>` : '<span style="font-size:.8rem;color:var(--text3)">No listing link</span>'}
-        ${r.followUpDate ? `<span class="kc-followup ${(getFollowUpStatus(r)||{}).type||''}" style="font-size:.75rem">Follow-up: ${fmtDate(r.followUpDate)}${r.followUpTime?' at '+r.followUpTime:''}</span>` : ''}
+        ${r.followUpDate ? `<span class="kc-followup ${(getFollowUpStatus(r)||{}).type||''}" style="font-size:.75rem">Follow-up: ${fmtDateTimeForCard(r.followUpDate, r.followUpTime)}</span>` : ''}
         <div class="profile-tabs">
           <div class="profile-tab ${activeTab==='details'?'active':''}" data-tab="details" onclick="setProfileTab('details')">🏠 Property Details</div>
           <div class="profile-tab ${activeTab==='analysis'?'active':''}" data-tab="analysis" onclick="setProfileTab('analysis')">📊 Analysis ${!proOk?'<span class=\\"tab-lock basic\\">BASIC</span>':''}</div>
@@ -1475,34 +1507,32 @@ function renderProfile(){
         <h3>👤 Contact & Status</h3>
         <button class="card-edit-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
       </div>
-      <div class="profile-card-body card-readonly">
+      <div class="profile-card-body card-readonly" style="padding:10px 16px 8px">
         <div class="cr-row">
           <div class="cr-field" style="flex:1 1 100%"><div class="cr-label">Address</div><div class="cr-value ${r.property?'':'empty'}">${r.property?esc(r.property):'Not set'}</div></div>
         </div>
-        <div class="cr-row">
-          <div class="cr-field"><div class="cr-label">Beds</div><div class="cr-value ${d.bedrooms?'':'empty'}">${d.bedrooms||'Not set'}</div></div>
-          <div class="cr-field"><div class="cr-label">${d.bathrooms==='1'?'Bath':'Baths'}</div><div class="cr-value ${d.bathrooms?'':'empty'}">${d.bathrooms||'Not set'}</div></div>
-          <div class="cr-field"><div class="cr-label">Sq Ft</div><div class="cr-value ${d.sqft?'':'empty'}">${d.sqft ? Number(d.sqft).toLocaleString() : 'Not set'}</div></div>
-          <div class="cr-field"><div class="cr-label">Available</div><div class="cr-value ${d.availableDate?'':'empty'}">${d.availableDate==='now'?'Now':d.availableDate ? fmtDate(d.availableDate) : 'Not set'}</div></div>
+        <div class="cr-row" style="gap:16px">
+          <div class="cr-field" style="min-width:50px;flex:0 1 auto"><div class="cr-label">Beds</div><div class="cr-value ${d.bedrooms?'':'empty'}">${d.bedrooms||'—'}</div></div>
+          <div class="cr-field" style="min-width:50px;flex:0 1 auto"><div class="cr-label">${d.bathrooms==='1'?'Bath':'Baths'}</div><div class="cr-value ${d.bathrooms?'':'empty'}">${d.bathrooms||'—'}</div></div>
+          <div class="cr-field" style="min-width:55px;flex:0 1 auto"><div class="cr-label">Sq Ft</div><div class="cr-value ${d.sqft?'':'empty'}">${d.sqft ? Number(d.sqft).toLocaleString() : '—'}</div></div>
+          <div class="cr-field" style="min-width:70px;flex:0 1 auto"><div class="cr-label">Available</div><div class="cr-value ${d.availableDate?'':'empty'}">${d.availableDate==='now'?'Now':d.availableDate ? fmtDate(d.availableDate) : '—'}</div></div>
         </div>
         <div class="cr-row">
-          <div class="cr-field"><div class="cr-label">Contact Name</div><div class="cr-value-wrap"><div class="cr-value ${r.name?'':'empty'}" style="flex:1;min-width:0">${esc(r.name)||'Not set'}</div>${r.name?`<button class="cr-copy-btn" onclick="copyRecordField(this,'${r.id}','name')" title="Copy name"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>`:''}</div></div>
-          <div class="cr-field"><div class="cr-label">Phone</div><div class="cr-value-wrap"><div class="cr-value ${r.phone?'':'empty'}" style="flex:1;min-width:0">${r.phone?fmtPhone(r.phone):'Not set'}</div>${r.phone?`<button class="cr-copy-btn" onclick="copyRecordField(this,'${r.id}','phone')" title="Copy phone"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>`:''}</div></div>
+          <div class="cr-field"><div class="cr-label">Contact Name</div><div class="cr-value ${r.name?'':'empty'}">${esc(r.name)||'Not set'}</div>${r.name?`<button class="cr-copy-btn" onclick="event.stopPropagation();copyRecordField(this,'${r.id}','name')" title="Copy name"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>`:''}</div>
+          <div class="cr-field"><div class="cr-label">Phone</div><div class="cr-value ${r.phone?'':'empty'}">${r.phone?fmtPhone(r.phone):'Not set'}</div>${r.phone?`<button class="cr-copy-btn" onclick="event.stopPropagation();copyRecordField(this,'${r.id}','phone')" title="Copy phone"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>`:''}</div>
+          <div class="cr-field"><div class="cr-label">Email</div><div class="cr-value ${r.email?'':'empty'} ${r.email?'email-val':''}">${r.email?esc(r.email):'Not set'}</div>${r.email?`<button class="cr-copy-btn" onclick="event.stopPropagation();copyRecordField(this,'${r.id}','email')" title="Copy email"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>`:''}</div>
         </div>
         <div class="cr-row">
-          <div class="cr-field"><div class="cr-label">Email</div><div class="cr-value-wrap"><div class="cr-value ${r.email?'':'empty'} ${r.email?'email-val':''}" style="flex:1;min-width:0">${r.email?esc(r.email):'Not set'}</div>${r.email?`<button class="cr-copy-btn" onclick="copyRecordField(this,'${r.id}','email')" title="Copy email"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>`:''}</div></div>
-          <div class="cr-field"><div class="cr-label">Meeting Date</div><div class="cr-value ${r.meetingDate?'':'empty'}">${r.meetingDate?fmtDate(r.meetingDate):'Not set'}</div></div>
+          <div class="cr-field"><div class="cr-label">Meeting Date</div><div class="cr-value ${r.meetingDate?'':'empty'}">${r.meetingDate?fmtDateTimeForCard(r.meetingDate, r.meetingTime):'Not set'}</div></div>
+          <div class="cr-field"><div class="cr-label">Listing Link</div><div class="cr-value ${r.link?'':'empty'}" style="font-size:.78rem">${r.link?`<a href="${esc(r.link)}" target="_blank" style="color:var(--primary);text-decoration:none">${esc(r.link.length>40?r.link.substring(0,40)+'...':r.link)}</a>`:'Not set'}</div></div>
         </div>
-        <div class="cr-row">
-          <div class="cr-field"><div class="cr-label">Listing Link</div><div class="cr-value ${r.link?'':'empty'}" style="font-size:.85rem">${r.link?`<a href="${esc(r.link)}" target="_blank" style="color:var(--primary);text-decoration:none">${esc(r.link.length>45?r.link.substring(0,45)+'...':r.link)}</a>`:'Not set'}</div></div>
-        </div>
-        <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:8px;padding-top:6px;border-top:1px solid var(--border)">
-          <div style="display:flex;flex-direction:column;gap:4px">
-            ${statusPill(r.status)}
-            ${r.followUpDate?`<span style="font-size:.7rem;color:var(--text3);display:inline-flex;align-items:center;gap:3px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg> Follow-Up: ${fmtDate(r.followUpDate)}${r.followUpTime?' at '+r.followUpTime:''}</span>`:''}
+        <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:6px;padding-top:5px;border-top:1px solid var(--border)">
+          <div style="display:flex;flex-direction:column;gap:3px">
+            <div><span style="font-size:.65rem;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.4px">Status</span> ${statusPill(r.status)}</div>
+            ${r.followUpDate?`<span style="font-size:.65rem;color:var(--text3);display:inline-flex;align-items:center;gap:3px"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg> Follow-Up: ${fmtDateTimeForCard(r.followUpDate, r.followUpTime)}</span>`:''}
           </div>
           <div>
-            ${r.date?`<span style="font-size:.7rem;color:var(--text3)">First Contacted: ${fmtDate(r.date)}</span>`:''}
+            ${r.date?`<span style="font-size:.65rem;color:var(--text3)">First Contacted: ${fmtDate(r.date)}</span>`:''}
           </div>
         </div>
       </div>
@@ -4219,6 +4249,275 @@ function saveStatsEditor(recId){
 }
 
 
+/* ===== CUSTOM DATE/TIME PICKER ===== */
+const CALENDAR_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>';
+const CLEAR_X_ICON = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>';
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const DOWS = ['Su','Mo','Tu','We','Th','Fr','Sa'];
+
+// Store picker state per input
+const _dtPickers = {};
+
+function fmtDtDisplay(dateStr, timeStr){
+  if(!dateStr) return '';
+  // dateStr is YYYY-MM-DD, timeStr is HH:MM or empty
+  const [y,m,d] = dateStr.split('-').map(Number);
+  const mm = String(m).padStart(2,'0');
+  const dd = String(d).padStart(2,'0');
+  let s = mm+'/'+dd+'/'+y;
+  if(timeStr){
+    const [hh,mi] = timeStr.split(':').map(Number);
+    const ampm = hh >= 12 ? 'PM' : 'AM';
+    const h12 = hh === 0 ? 12 : hh > 12 ? hh - 12 : hh;
+    s += ' ' + h12 + ':' + String(mi).padStart(2,'0') + ' ' + ampm;
+  }
+  return s;
+}
+
+function fmtDateTimeForCard(dateStr, timeStr){
+  if(!dateStr) return '';
+  const datePart = fmtDate(dateStr);
+  if(!timeStr) return datePart;
+  const [hh,mi] = timeStr.split(':').map(Number);
+  const ampm = hh >= 12 ? 'PM' : 'AM';
+  const h12 = hh === 0 ? 12 : hh > 12 ? hh - 12 : hh;
+  return datePart + ' at ' + h12 + ':' + String(mi).padStart(2,'0') + ' ' + ampm;
+}
+
+function setupDateTimePicker(triggerId, opts){
+  // opts: { showTime:bool, dateVal:'', timeVal:'' }
+  const trigger = document.getElementById(triggerId);
+  if(!trigger) return;
+  const state = { date: opts.dateVal || '', time: opts.timeVal || '', showTime: opts.showTime !== false, viewMonth: null, viewYear: null };
+  if(state.date){
+    const [y,m] = state.date.split('-').map(Number);
+    state.viewMonth = m - 1; state.viewYear = y;
+  } else {
+    const now = new Date(); state.viewMonth = now.getMonth(); state.viewYear = now.getFullYear();
+  }
+  _dtPickers[triggerId] = state;
+  updateDtTriggerText(triggerId);
+
+  trigger.addEventListener('click', function(e){
+    e.stopPropagation();
+    // Don't open if clicking the clear button
+    if(e.target.closest('.rr-dt-clear')) return;
+    openDtPopup(triggerId, state.showTime);
+  });
+  // Clear button
+  const clearBtn = trigger.querySelector('.rr-dt-clear');
+  if(clearBtn){
+    clearBtn.addEventListener('click', function(e){
+      e.stopPropagation();
+      state.date = ''; state.time = '';
+      updateDtTriggerText(triggerId);
+      closeDtPopup();
+    });
+  }
+}
+
+function updateDtTriggerText(triggerId){
+  const state = _dtPickers[triggerId];
+  const trigger = document.getElementById(triggerId);
+  if(!trigger || !state) return;
+  const textEl = trigger.querySelector('.rr-dt-text');
+  const clearEl = trigger.querySelector('.rr-dt-clear');
+  if(!textEl) return;
+  if(state.date){
+    textEl.textContent = fmtDtDisplay(state.date, state.time);
+    textEl.classList.remove('empty');
+    if(clearEl) clearEl.style.display = 'flex';
+  } else {
+    textEl.textContent = state.showTime ? '--/--/---- --:--' : '--/--/----';
+    textEl.classList.add('empty');
+    if(clearEl) clearEl.style.display = 'none';
+  }
+}
+
+function openDtPopup(triggerId, showTime){
+  closeDtPopup();
+  const trigger = document.getElementById(triggerId);
+  const state = _dtPickers[triggerId];
+  if(!trigger || !state) return;
+
+  const popup = document.createElement('div');
+  popup.className = 'rr-dt-popup visible';
+  popup.id = 'rrDtPopup';
+  popup.dataset.triggerId = triggerId;
+  document.body.appendChild(popup);
+
+  // Position below trigger
+  const rect = trigger.getBoundingClientRect();
+  popup.style.top = (rect.bottom + 4) + 'px';
+  popup.style.left = rect.left + 'px';
+  // Ensure it doesn't overflow right
+  requestAnimationFrame(() => {
+    const pr = popup.getBoundingClientRect();
+    if(pr.right > window.innerWidth - 10) popup.style.left = (window.innerWidth - pr.width - 10) + 'px';
+    if(pr.bottom > window.innerHeight - 10) popup.style.top = (rect.top - pr.height - 4) + 'px';
+  });
+
+  renderDtCalendar(popup, state, showTime);
+
+  // Close on outside click
+  setTimeout(() => {
+    document.addEventListener('click', _dtOutsideClick);
+  }, 50);
+}
+
+function _dtOutsideClick(e){
+  const popup = document.getElementById('rrDtPopup');
+  if(popup && !popup.contains(e.target) && !e.target.closest('.rr-dt-trigger')){
+    closeDtPopup();
+  }
+}
+
+function closeDtPopup(){
+  document.removeEventListener('click', _dtOutsideClick);
+  document.getElementById('rrDtPopup')?.remove();
+}
+
+function renderDtCalendar(popup, state, showTime){
+  const today = new Date();
+  const todayStr = today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0')+'-'+String(today.getDate()).padStart(2,'0');
+
+  // Calendar navigation
+  let html = `<div class="rr-cal-nav">
+    <button onclick="dtNavMonth(-1)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg></button>
+    <span class="rr-cal-title">${MONTHS[state.viewMonth]} ${state.viewYear}</span>
+    <button onclick="dtNavMonth(1)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></button>
+  </div>`;
+
+  // Day-of-week headers
+  html += '<div class="rr-cal-grid">';
+  DOWS.forEach(d => { html += `<div class="rr-cal-dow">${d}</div>`; });
+
+  // Calendar days
+  const firstDay = new Date(state.viewYear, state.viewMonth, 1).getDay();
+  const daysInMonth = new Date(state.viewYear, state.viewMonth + 1, 0).getDate();
+  const prevMonthDays = new Date(state.viewYear, state.viewMonth, 0).getDate();
+
+  // Previous month fill
+  for(let i = firstDay - 1; i >= 0; i--){
+    const d = prevMonthDays - i;
+    html += `<div class="rr-cal-day other">${d}</div>`;
+  }
+  // Current month
+  for(let d = 1; d <= daysInMonth; d++){
+    const ds = state.viewYear+'-'+String(state.viewMonth+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');
+    const cls = ['rr-cal-day'];
+    if(ds === todayStr) cls.push('today');
+    if(ds === state.date) cls.push('selected');
+    html += `<div class="${cls.join(' ')}" onclick="dtSelectDay('${ds}')">${d}</div>`;
+  }
+  // Next month fill
+  const totalCells = firstDay + daysInMonth;
+  const remaining = totalCells % 7 === 0 ? 0 : 7 - (totalCells % 7);
+  for(let i = 1; i <= remaining; i++){
+    html += `<div class="rr-cal-day other">${i}</div>`;
+  }
+  html += '</div>';
+
+  // Time selector
+  if(showTime){
+    const curH = state.time ? parseInt(state.time.split(':')[0]) : '';
+    const curM = state.time ? parseInt(state.time.split(':')[1]) : '';
+    const curAmPm = curH !== '' ? (curH >= 12 ? 'PM' : 'AM') : '';
+    const displayH = curH !== '' ? (curH === 0 ? 12 : curH > 12 ? curH - 12 : curH) : '';
+
+    let hourOpts = '<option value="">--</option>';
+    for(let h = 1; h <= 12; h++){
+      hourOpts += `<option value="${h}" ${displayH===h?'selected':''}>${h}</option>`;
+    }
+    let minOpts = '<option value="">--</option>';
+    for(let m = 0; m < 60; m += 5){
+      const mv = String(m).padStart(2,'0');
+      minOpts += `<option value="${mv}" ${curM!==''&&curM===m?'selected':''}>${mv}</option>`;
+    }
+    html += `<div class="rr-time-row">
+      <label>Time</label>
+      <div class="rr-time-sel">
+        <select id="rrDtHour" onchange="dtUpdateTime()">${hourOpts}</select>
+        <span style="color:var(--text3);font-weight:600">:</span>
+        <select id="rrDtMin" onchange="dtUpdateTime()">${minOpts}</select>
+        <select id="rrDtAmPm" onchange="dtUpdateTime()">
+          <option value="AM" ${curAmPm==='AM'?'selected':''}>AM</option>
+          <option value="PM" ${curAmPm==='PM'?'selected':''}>PM</option>
+        </select>
+      </div>
+    </div>`;
+  }
+
+  // Actions
+  html += `<div class="rr-dt-actions">
+    <button class="rr-dt-cancel" onclick="closeDtPopup()">Cancel</button>
+    <button class="rr-dt-done" onclick="dtConfirm()">Done</button>
+  </div>`;
+
+  popup.innerHTML = html;
+}
+
+function dtNavMonth(dir){
+  const popup = document.getElementById('rrDtPopup');
+  if(!popup) return;
+  const triggerId = popup.dataset.triggerId;
+  const state = _dtPickers[triggerId];
+  if(!state) return;
+  state.viewMonth += dir;
+  if(state.viewMonth < 0){ state.viewMonth = 11; state.viewYear--; }
+  if(state.viewMonth > 11){ state.viewMonth = 0; state.viewYear++; }
+  const showTime = !!popup.querySelector('.rr-time-row');
+  renderDtCalendar(popup, state, showTime);
+}
+
+function dtSelectDay(dateStr){
+  const popup = document.getElementById('rrDtPopup');
+  if(!popup) return;
+  const triggerId = popup.dataset.triggerId;
+  const state = _dtPickers[triggerId];
+  if(!state) return;
+  state.date = dateStr;
+  const showTime = !!popup.querySelector('.rr-time-row');
+  renderDtCalendar(popup, state, showTime);
+}
+
+function dtUpdateTime(){
+  const popup = document.getElementById('rrDtPopup');
+  if(!popup) return;
+  const triggerId = popup.dataset.triggerId;
+  const state = _dtPickers[triggerId];
+  if(!state) return;
+  const h = document.getElementById('rrDtHour')?.value;
+  const m = document.getElementById('rrDtMin')?.value;
+  const ap = document.getElementById('rrDtAmPm')?.value;
+  if(h && m !== ''){
+    let h24 = parseInt(h);
+    if(ap === 'PM' && h24 !== 12) h24 += 12;
+    if(ap === 'AM' && h24 === 12) h24 = 0;
+    state.time = String(h24).padStart(2,'0') + ':' + m;
+  } else {
+    state.time = '';
+  }
+}
+
+function dtConfirm(){
+  const popup = document.getElementById('rrDtPopup');
+  if(!popup) return;
+  const triggerId = popup.dataset.triggerId;
+  const state = _dtPickers[triggerId];
+  if(!state) return;
+  // Ensure time is captured from selects before closing
+  if(popup.querySelector('.rr-time-row')) dtUpdateTime();
+  updateDtTriggerText(triggerId);
+  closeDtPopup();
+}
+
+function getDtValue(triggerId){
+  const state = _dtPickers[triggerId];
+  if(!state) return { date:'', time:'' };
+  return { date: state.date || '', time: state.time || '' };
+}
+
 /* ===== CARD EDIT POPUPS ===== */
 function openCardEditor(recId, cardType){
   const r = records.find(x => x.id === recId);
@@ -4260,16 +4559,16 @@ function openCardEditor(recId, cardType){
         <div class="prop-field"><label>Baths</label><input type="number" id="ce_baths" value="${esc(d.bathrooms||'')}" placeholder="e.g. 2" min="0" step="0.5"></div>
         <div class="prop-field"><label>Sq Ft</label><input type="number" id="ce_sqft" value="${esc(d.sqft||'')}" placeholder="e.g. 1200" min="0"></div>
         <div class="prop-field"><label>Monthly Rent</label><input type="number" id="ce_rent" value="${esc(d.monthlyRent||'')}" placeholder="e.g. 2500" min="0"></div>
-        <div class="prop-field"><label>Available Date</label><div style="display:flex;align-items:center;gap:8px"><input type="date" id="ce_available" value="${isAvailNow?'':esc(d.availableDate||'')}" style="flex:1${isAvailNow?' ;opacity:.4':''}"></div><label style="display:flex;align-items:center;gap:4px;margin-top:4px;font-size:.78rem;font-weight:400;text-transform:none;letter-spacing:0;color:var(--text2);cursor:pointer"><input type="checkbox" id="ce_avail_now" ${isAvailNow?'checked':''} onchange="document.getElementById('ce_available').style.opacity=this.checked?'.4':'1';if(this.checked)document.getElementById('ce_available').value=''"> Available Now</label></div>
+        <div class="prop-field"><label>Available Date</label><div style="display:flex;align-items:center;gap:8px"><input type="date" id="ce_available" value="${isAvailNow?'':esc(d.availableDate||'')}" style="flex:1${isAvailNow?';opacity:.4':''}"><label style="display:flex;align-items:center;gap:4px;font-size:.78rem;font-weight:400;text-transform:none;letter-spacing:0;color:var(--text2);cursor:pointer;white-space:nowrap"><input type="checkbox" id="ce_avail_now" ${isAvailNow?'checked':''} onchange="document.getElementById('ce_available').style.opacity=this.checked?'.4':'1';if(this.checked)document.getElementById('ce_available').value=''"> Now</label></div></div>
       </div>
       <div class="prop-field-grid">
         <div class="prop-field"><label>Contact Name</label><input type="text" id="ce_name" value="${esc(r.name)}"></div>
         <div class="prop-field"><label>Phone</label><input type="text" id="ce_phone" value="${esc(r.phone)}"></div>
         <div class="prop-field"><label>Email</label><input type="email" id="ce_email" value="${esc(r.email)}" oninput="validateEmailField()"><div class="ce-email-error" id="ce_email_error">Please enter a valid email address</div></div>
         <div class="prop-field"><label>Status</label><select id="ce_status">${SELECTABLE_STATUSES.map(s=>`<option value="${s}" ${r.status===s?'selected':''}>${s}</option>`).join('')}</select></div>
-        <div class="prop-field"><label>Follow-Up Date</label><input type="date" id="ce_followup" value="${r.followUpDate||''}"><div style="margin-top:4px"><label style="font-size:.75rem;font-weight:400;text-transform:none;letter-spacing:0;color:var(--text3)">Time (optional)</label><input type="time" id="ce_followup_time" value="${r.followUpTime||''}" style="font-size:.85rem;padding:5px 8px;margin-top:2px"></div></div>
-        <div class="prop-field"><label>Meeting Date</label><input type="date" id="ce_meeting" value="${r.meetingDate||''}"></div>
-        <div class="prop-field"><label>First Contacted</label><input type="date" id="ce_date" value="${r.date?r.date.split('T')[0]:''}"></div>
+        <div class="prop-field"><label>Follow-Up Date</label><div class="rr-dt-trigger" id="dt_followup"><span class="rr-dt-icon">${CALENDAR_ICON}</span><span class="rr-dt-text empty">--/--/---- --:--</span><span class="rr-dt-clear" title="Clear">${CLEAR_X_ICON}</span></div></div>
+        <div class="prop-field"><label>Meeting Date</label><div class="rr-dt-trigger" id="dt_meeting"><span class="rr-dt-icon">${CALENDAR_ICON}</span><span class="rr-dt-text empty">--/--/---- --:--</span><span class="rr-dt-clear" title="Clear">${CLEAR_X_ICON}</span></div></div>
+        <div class="prop-field"><label>First Contacted</label><div class="rr-dt-trigger" id="dt_firstcontact"><span class="rr-dt-icon">${CALENDAR_ICON}</span><span class="rr-dt-text empty">--/--/---- --:--</span><span class="rr-dt-clear" title="Clear">${CLEAR_X_ICON}</span></div></div>
       </div>
       <div class="prop-field" style="margin-top:10px"><label>Listing Link</label><input type="url" id="ce_link" value="${esc(r.link)}"></div>`;
     saveHandler = 'saveContactCard';
@@ -4312,6 +4611,11 @@ function openCardEditor(recId, cardType){
           if(ceUtSelect.value) ceUnInput.focus();
         });
       }
+      // Setup custom date/time pickers
+      const rec = records.find(x => x.id === recId);
+      setupDateTimePicker('dt_followup', { showTime:true, dateVal: rec?.followUpDate||'', timeVal: rec?.followUpTime||'' });
+      setupDateTimePicker('dt_meeting', { showTime:true, dateVal: rec?.meetingDate||'', timeVal: rec?.meetingTime||'' });
+      setupDateTimePicker('dt_firstcontact', { showTime:false, dateVal: rec?.date ? rec.date.split('T')[0] : '', timeVal:'' });
     }
     overlay.querySelector('input,select')?.focus();
   }, 100);
@@ -4378,10 +4682,14 @@ function saveContactCard(recId){
   r.phone = document.getElementById('ce_phone')?.value?.trim() || '';
   r.email = document.getElementById('ce_email')?.value?.trim() || '';
   r.status = document.getElementById('ce_status')?.value || r.status;
-  r.followUpDate = document.getElementById('ce_followup')?.value || null;
-  r.followUpTime = document.getElementById('ce_followup_time')?.value || null;
-  r.meetingDate = document.getElementById('ce_meeting')?.value || null;
-  r.date = document.getElementById('ce_date')?.value || r.date;
+  const fuVal = getDtValue('dt_followup');
+  r.followUpDate = fuVal.date || null;
+  r.followUpTime = fuVal.time || null;
+  const mtVal = getDtValue('dt_meeting');
+  r.meetingDate = mtVal.date || null;
+  r.meetingTime = mtVal.time || null;
+  const fcVal = getDtValue('dt_firstcontact');
+  r.date = fcVal.date || r.date;
   const newLink = document.getElementById('ce_link')?.value?.trim() || '';
   if(newLink !== r.link){ r.link = newLink }
   if(r.status !== oldStatus){
