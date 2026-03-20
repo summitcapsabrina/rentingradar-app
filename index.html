@@ -361,12 +361,16 @@ tr.clickable:hover{background:var(--primary-light)}
 .setup-step-content img{max-width:100%;border-radius:var(--radius);margin-top:6px;border:1px solid var(--border)}
 
 /* ===== PROFILE PAGE ===== */
-.profile-back{display:flex;align-items:center;gap:6px;color:var(--text2);font-size:.85rem;cursor:pointer;padding:4px 0;margin-bottom:12px;transition:color .15s;width:fit-content}
-.profile-back:hover{color:var(--primary)}
-.profile-back svg{width:16px;height:16px}
 .profile-hero{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:20px;flex-wrap:wrap}
+.profile-sticky-header{position:sticky;top:0;z-index:50;background:var(--bg);padding-bottom:12px;border-bottom:1px solid var(--border);margin-bottom:16px}
 .profile-hero-left{flex:1;min-width:0}
-.profile-hero h1{font-size:1.35rem;font-weight:700;line-height:1.3;margin-bottom:6px}
+.hero-contact-name{font-size:1.05rem;color:var(--text2);margin-top:2px}
+.profile-delete-zone{margin-top:32px;padding:16px;border:1px solid rgba(239,68,68,.3);border-radius:var(--radius);background:rgba(239,68,68,.04);display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.profile-delete-warning{display:flex;align-items:center;gap:8px;font-size:.85rem;color:var(--danger)}
+.profile-delete-warning svg{flex-shrink:0}
+.btn-danger{background:var(--danger);color:#fff;border:none}
+.btn-danger:hover{background:#dc2626}
+.profile-hero h1{font-size:1.65rem;font-weight:700;line-height:1.3;margin-bottom:2px}
 .profile-hero-meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .profile-hero-actions{display:flex;gap:8px;flex-shrink:0;align-items:flex-start}
 .profile-platform{display:inline-flex;align-items:center;gap:6px;font-size:.8rem;padding:5px 12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);color:var(--primary);transition:all .15s}
@@ -1398,16 +1402,13 @@ function renderProfile(){
   const showImport = r.link && !hasDetails;
 
   let html = `
-  <div class="profile-back" onclick="closeDetail()">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-    Back to ${previousView.charAt(0).toUpperCase()+previousView.slice(1)}
-  </div>
-  <div class="profile-hero">
+  <div class="profile-hero profile-sticky-header">
     <div class="profile-hero-left">
       <div class="hero-editable" id="heroAddress" onclick="startHeroEdit('${r.id}','property','heroAddress')">
         <div id="heroAddressDisplay">${renderHeroAddress(r)}</div>
         <svg class="hero-edit-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
       </div>
+      <div class="hero-contact-name">${esc(r.name) || '<span style="opacity:.4">No contact name</span>'}</div>
       <div style="display:flex;align-items:center;gap:16px;margin-top:4px;flex-wrap:wrap">
         <div class="hero-editable" id="heroRent" onclick="startHeroEdit('${r.id}','monthlyRent','heroRent')">
           <div class="hero-rent" id="heroRentDisplay">${d.monthlyRent ? '$'+Number(d.monthlyRent).toLocaleString()+'/mo' : '<span class=&quot;no-rent&quot;>No rent listed — click to add</span>'}</div>
@@ -1434,9 +1435,6 @@ function renderProfile(){
         ${r.link ? `<a class="profile-platform" href="${esc(r.link)}" target="_blank">${plat.icon} ${plat.name} <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"/></svg></a>` : '<span style="font-size:.8rem;color:var(--text3)">No listing link</span>'}
         ${r.followUpDate ? `<span class="kc-followup ${(getFollowUpStatus(r)||{}).type||''}" style="font-size:.75rem">Follow-up: ${fmtDate(r.followUpDate)}</span>` : ''}
       </div>
-    </div>
-    <div class="profile-hero-actions">
-      <button class="btn btn-secondary btn-sm" onclick="if(confirm('Delete this record?')){deleteRecord('${r.id}')}">Delete</button>
     </div>
   </div>`;
 
@@ -1613,6 +1611,15 @@ function renderProfile(){
     </div>`;
   }
   html += `</div>`;
+
+  // Delete zone at bottom
+  html += `<div class="profile-delete-zone">
+    <div class="profile-delete-warning">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      <span>Deleting this property is permanent and cannot be undone.</span>
+    </div>
+    <button class="btn btn-danger btn-sm" onclick="confirmDeleteProperty('${r.id}')">Delete Property</button>
+  </div>`;
 
   return html;
 }
@@ -2222,6 +2229,14 @@ function deleteRecord(id){
   saveData();
   if(currentView === 'profile') closeDetail();
   else { document.getElementById('detailModal').classList.remove('open'); render(); }
+}
+function confirmDeleteProperty(id){
+  const r = records.find(x => x.id === id);
+  if(!r) return;
+  const name = r.property || r.name || 'this property';
+  if(confirm('Are you sure you want to permanently delete "'+name+'"? This action cannot be undone.')){
+    deleteRecord(id);
+  }
 }
 
 /* ===== ADD NEW RECORD ===== */
@@ -3702,13 +3717,13 @@ function renderHeroAddress(r){
   const addr = r.addressParts || parseAddressParts(r.property);
   let streetLine = esc(addr.street || r.property);
   if(addr.unit) streetLine += ', ' + esc(addr.unit);
-  let html = '<h1 style="font-size:1.35rem;font-weight:700;line-height:1.2;margin:0">' + streetLine + '</h1>';
+  let html = '<h1 style="font-size:1.65rem;font-weight:700;line-height:1.2;margin:0">' + streetLine + '</h1>';
   let csz = '';
   if(addr.city) csz += addr.city + ',';
   if(addr.state) csz += ' ' + addr.state;
   if(addr.zip) csz += ' ' + addr.zip;
   if(csz.trim()){
-    html += '<div style="font-size:1.05rem;color:var(--text);font-weight:600;margin-top:2px">' + esc(csz.trim()) + '</div>';
+    html += '<div style="font-size:1.35rem;color:var(--text);font-weight:600;margin-top:2px">' + esc(csz.trim()) + '</div>';
   }
   return html;
 }
