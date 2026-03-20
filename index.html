@@ -114,6 +114,7 @@ textarea{resize:vertical;min-height:80px}
 .st-not-good-fit{background:rgba(236,72,153,.15);color:#f472b6}.st-not-good-fit::before{background:#f472b6}
 .st-hoa-issues{background:rgba(251,146,60,.15);color:#fb923c}.st-hoa-issues::before{background:#fb923c}
 .st-lost{background:rgba(100,116,139,.15);color:#94a3b8}.st-lost::before{background:#94a3b8}
+.st-un-listed{background:rgba(100,116,139,.1);color:#78716c}.st-un-listed::before{background:#78716c}
 .st-no-longer-interested{background:rgba(239,68,68,.12);color:#fca5a5}.st-no-longer-interested::before{background:#fca5a5}
 .st-new{background:rgba(99,129,250,.15);color:#818cf8}.st-new::before{background:#818cf8}
 
@@ -129,6 +130,7 @@ textarea{resize:vertical;min-height:80px}
 :root.light .st-not-good-fit{background:#fce7f3;color:#9d174d}:root.light .st-not-good-fit::before{background:#9d174d}
 :root.light .st-hoa-issues{background:#ffedd5;color:#9a3412}:root.light .st-hoa-issues::before{background:#9a3412}
 :root.light .st-lost{background:#f1f5f9;color:#64748b}:root.light .st-lost::before{background:#64748b}
+:root.light .st-un-listed{background:#f5f5f4;color:#78716c}:root.light .st-un-listed::before{background:#78716c}
 :root.light .st-no-longer-interested{background:#fef2f2;color:#b91c1c}:root.light .st-no-longer-interested::before{background:#b91c1c}
 :root.light .st-new{background:#e0e7ff;color:#3730a3}:root.light .st-new::before{background:#3730a3}
 
@@ -719,12 +721,14 @@ h1 .hero-edit-input{font-size:1.35rem}
 /* ===== DATA LAYER ===== */
 const INITIAL_DATA = [];
 
-const STATUSES = ['New','No Contact','Messaged','Left Voicemail','Follow Up','Interested','Meeting','HOA Issues','Not Good Fit','Not Interested','No Longer Interested','Lost'];
+const STATUSES = ['New','No Contact','Messaged','Left Voicemail','Follow Up','Interested','Meeting','HOA Issues','Not Good Fit','Not Interested','No Longer Interested','Lost','Un-Listed'];
 const STATUS_ORDER = {};
 STATUSES.forEach((s,i) => STATUS_ORDER[s] = i);
 
 const PIPELINE_STAGES = ['New','No Contact','Messaged','Left Voicemail','Follow Up','Interested','Meeting'];
-const CLOSED_STAGES = ['HOA Issues','Not Good Fit','Not Interested','No Longer Interested','Lost'];
+const CLOSED_STAGES = ['HOA Issues','Not Good Fit','Not Interested','No Longer Interested','Lost','Un-Listed'];
+
+const SELECTABLE_STATUSES = STATUSES.filter(s => s !== 'Lost');
 
 function statusClass(s){ return 'st-' + (s||'new').toLowerCase().replace(/\s+/g,'-') }
 function statusPill(s){ return `<span class="status-pill ${statusClass(s)}">${s||'New'}</span>` }
@@ -1405,7 +1409,7 @@ function renderProfile(){
         </div>
         <div class="cr-row">
           <div class="cr-field"><div class="cr-label">Email</div><div class="cr-value ${r.email?'':'empty'}">${r.email?`<a href="mailto:${esc(r.email)}">${esc(r.email)}</a>`:'Not set'}</div></div>
-          <div class="cr-field"><div class="cr-label">Status</div><div class="cr-value"><div class="inline-status" onclick="toggleInlineStatus(event,'${r.id}')">${statusPill(r.status)} <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;opacity:.4"><path d="M6 9l6 6 6-6"/></svg><div class="inline-status-dd" id="inlineStatusDD">${STATUSES.map(s=>`<div class="isd-item ${s===r.status?'current':''}" onclick="setInlineStatus(event,'${r.id}','${s}')">${statusPill(s)}</div>`).join('')}</div></div></div></div>
+          <div class="cr-field"><div class="cr-label">Status</div><div class="cr-value"><div class="inline-status" onclick="toggleInlineStatus(event,'${r.id}')">${statusPill(r.status)} <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;opacity:.4"><path d="M6 9l6 6 6-6"/></svg><div class="inline-status-dd" id="inlineStatusDD">${SELECTABLE_STATUSES.map(s=>`<div class="isd-item ${s===r.status?'current':''}" onclick="setInlineStatus(event,'${r.id}','${s}')">${statusPill(s)}</div>`).join('')}</div></div></div></div>
         </div>
         <div class="cr-row">
           <div class="cr-field"><div class="cr-label">Follow-Up Date</div><div class="cr-value ${r.followUpDate?'':'empty'}">${r.followUpDate?fmtDate(r.followUpDate):'Not set'}</div></div>
@@ -2339,7 +2343,7 @@ function showManualAddForm(){
       </div>
       <div class="field-row">
         <div class="field-group"><label class="field-label">Email</label><input id="add_email" type="email"></div>
-        <div class="field-group"><label class="field-label">Status</label><select id="add_status">${STATUSES.map(s=>`<option value="${s}" ${s==='New'?'selected':''}>${s}</option>`).join('')}</select></div>
+        <div class="field-group"><label class="field-label">Status</label><select id="add_status">${SELECTABLE_STATUSES.map(s=>`<option value="${s}" ${s==='New'?'selected':''}>${s}</option>`).join('')}</select></div>
       </div>
       <div class="field-group"><label class="field-label">Listing Link</label><input id="add_link2" type="url" value="${esc(url)}" placeholder="https://..."></div>
       <div class="field-group"><label class="field-label">Notes</label><textarea id="add_note" rows="3"></textarea></div>
@@ -2371,7 +2375,7 @@ function showManualAddForm(){
       </div>
       <div class="field-row">
         <div class="field-group"><label class="field-label">Email</label><input id="add_email" type="email"></div>
-        <div class="field-group"><label class="field-label">Status</label><select id="add_status">${STATUSES.map(s=>`<option value="${s}" ${s==='New'?'selected':''}>${s}</option>`).join('')}</select></div>
+        <div class="field-group"><label class="field-label">Status</label><select id="add_status">${SELECTABLE_STATUSES.map(s=>`<option value="${s}" ${s==='New'?'selected':''}>${s}</option>`).join('')}</select></div>
       </div>
       <div class="field-group"><label class="field-label">Listing Link</label><input id="add_link2" type="url" value="${esc(url)}" placeholder="https://..."></div>
       <div class="field-group"><label class="field-label">Notes</label><textarea id="add_note" rows="3"></textarea></div>
@@ -3950,7 +3954,7 @@ function openCardEditor(recId, cardType){
         <div class="prop-field"><label>Contact Name</label><input type="text" id="ce_name" value="${esc(r.name)}"></div>
         <div class="prop-field"><label>Phone</label><input type="text" id="ce_phone" value="${esc(r.phone)}"></div>
         <div class="prop-field"><label>Email</label><input type="email" id="ce_email" value="${esc(r.email)}"></div>
-        <div class="prop-field"><label>Status</label><select id="ce_status">${STATUSES.map(s=>`<option value="${s}" ${r.status===s?'selected':''}>${s}</option>`).join('')}</select></div>
+        <div class="prop-field"><label>Status</label><select id="ce_status">${SELECTABLE_STATUSES.map(s=>`<option value="${s}" ${r.status===s?'selected':''}>${s}</option>`).join('')}</select></div>
         <div class="prop-field"><label>Follow-Up Date</label><input type="date" id="ce_followup" value="${r.followUpDate||''}"></div>
         <div class="prop-field"><label>Date Added</label><input type="date" id="ce_date" value="${r.date?r.date.split('T')[0]:''}"></div>
       </div>
@@ -4161,7 +4165,7 @@ function renderSettings(){
         <div class="settings-row">
           <div class="settings-row-left"><div class="sr-label">Default Status for New Properties</div><div class="sr-desc">The status assigned to manually added properties</div></div>
           <div class="settings-row-right"><select style="font-size:.82rem;padding:4px 8px;width:auto" onchange="settingsPrefs.defaultStatus=this.value;saveSettingsPrefs()">
-            ${STATUSES.map(s => `<option value="${s}" ${(settingsPrefs.defaultStatus||'New')===s?'selected':''}>${s}</option>`).join('')}
+            ${SELECTABLE_STATUSES.map(s => `<option value="${s}" ${(settingsPrefs.defaultStatus||'New')===s?'selected':''}>${s}</option>`).join('')}
           </select></div>
         </div>
         <div class="settings-row">
