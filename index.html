@@ -363,6 +363,7 @@ tr.clickable:hover{background:var(--primary-light)}
 /* ===== PROFILE PAGE ===== */
 .profile-hero{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:20px;flex-wrap:wrap}
 .profile-sticky-header{position:sticky;top:0;z-index:50;background:var(--bg);padding:8px 24px 12px;border-bottom:1px solid var(--border);margin:-20px -24px 16px}
+.profile-sticky-header::before{content:'';position:absolute;top:-40px;left:0;right:0;height:40px;background:var(--bg)}
 .profile-hero-left{flex:1;min-width:0}
 .hero-contact-name{font-size:1.05rem;color:var(--text2);margin-top:2px}
 .btn-danger{background:var(--danger);color:#fff;border:none}
@@ -1464,9 +1465,9 @@ function renderProfile(){
         </div>
       </div>
       <div style="padding:10px 16px 14px;border-top:1px solid var(--border)">
-        <div class="cr-label" style="margin-bottom:4px">Property Notes</div>
-        <div class="hero-editable prop-note-clickable" onclick="openPropertyNoteEditor('${r.id}')" title="Click to ${r.propertyNote ? 'view/edit' : 'add'} property notes" style="cursor:pointer">
-          ${r.propertyNote ? `<div class="prop-note-display">${r.propertyNote.html || esc(r.propertyNote.text)}</div>` : '<div style="color:var(--text3);font-size:.82rem;font-style:italic">No property notes yet</div>'}
+        <div class="cr-label" style="margin-bottom:4px">Property Note</div>
+        <div class="hero-editable prop-note-clickable" onclick="openPropertyNoteEditor('${r.id}')" title="Click to ${r.propertyNote ? 'view/edit' : 'add'} property note" style="cursor:pointer">
+          ${r.propertyNote ? `<div class="prop-note-display">${r.propertyNote.html || esc(r.propertyNote.text)}</div>` : '<div style="color:var(--text3);font-size:.82rem;font-style:italic">No property note yet</div>'}
           <svg class="hero-edit-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
         </div>
       </div>
@@ -1784,12 +1785,12 @@ function openPropertyNoteEditor(recId){
   overlay.id = 'propNoteEditorOverlay';
   overlay.innerHTML = `<div class="multi-editor" style="max-width:560px">
     <div class="multi-editor-header">
-      <h3>Property Notes</h3>
+      <h3>Property Note</h3>
       <button class="modal-close" onclick="document.getElementById('propNoteEditorOverlay').remove()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
     </div>
     <div class="multi-editor-body" style="padding:12px 16px">
       ${buildRteToolbarHtml('propNoteEditorRte')}
-      <div class="rte-editor" contenteditable="true" id="propNoteEditorRte" data-placeholder="Add property notes (listing details, rent specials, etc.)..." style="min-height:120px"></div>
+      <div class="rte-editor" contenteditable="true" id="propNoteEditorRte" data-placeholder="Add property note (listing details, rent specials, etc.)..." style="min-height:120px"></div>
     </div>
     <div class="multi-editor-actions">
       <div class="me-hint">Shift + Enter to save</div>
@@ -1899,7 +1900,7 @@ function parsePastedSource(recId){
   applyParsedData(recId, parsed);
   const container = document.getElementById('importContainer_'+recId);
   if(container){
-    container.innerHTML = '<div style="padding:12px;background:var(--success-light);border-radius:var(--radius);color:var(--success);font-size:.85rem;font-weight:500">✓ Parsed! '+parsed.fieldsFound+' fields found. Check property notes for additional details.</div>';
+    container.innerHTML = '<div style="padding:12px;background:var(--success-light);border-radius:var(--radius);color:var(--success);font-size:.85rem;font-weight:500">✓ Parsed! '+parsed.fieldsFound+' fields found. Check property note for additional details.</div>';
     setTimeout(() => { if(container) container.style.display = 'none' }, 4000);
   }
   render();
