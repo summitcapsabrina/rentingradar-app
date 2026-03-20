@@ -1440,13 +1440,9 @@ function renderProfile(){
         </div>
         <div class="hero-stats-wrap" onclick="openStatsEditor('${r.id}')" title="Click to edit property details">
           <div class="hero-stats">
-            <div class="hero-stat-divider"></div>
             <div class="hero-stat"><strong>${d.bedrooms||'—'}</strong> Beds</div>
-            <div class="hero-stat-divider"></div>
-            <div class="hero-stat"><strong>${d.bathrooms||'—'}</strong> Baths</div>
-            <div class="hero-stat-divider"></div>
+            <div class="hero-stat"><strong>${d.bathrooms||'—'}</strong> ${d.bathrooms==='1'?'Bath':'Baths'}</div>
             <div class="hero-stat"><strong>${d.sqft ? Number(d.sqft).toLocaleString() : '—'}</strong> Sq Ft</div>
-            <div class="hero-stat-divider"></div>
             <div class="hero-stat"><strong>${d.availableDate ? fmtDate(d.availableDate) : '—'}</strong> Available</div>
           </div>
           <div class="stats-edit-btn">
@@ -1454,7 +1450,7 @@ function renderProfile(){
           </div>
         </div>
       </div>
-      <div class="hero-contact-name">
+      <div class="hero-contact-name" style="margin-top:4px">
         <span class="hero-contact-item">${esc(r.name) || '<span style="opacity:.4">No contact name</span>'}${r.name?`<button class="hero-copy-btn" onclick="copyRecordField(this,'${r.id}','name')" title="Copy name"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>`:''}</span>
         ${r.phone?`<span class="hero-contact-item" style="font-size:.95rem">${fmtPhone(r.phone)}<button class="hero-copy-btn" onclick="copyRecordField(this,'${r.id}','phone')" title="Copy phone"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button></span>`:''}
         ${r.email?`<span class="hero-contact-item" style="font-size:.95rem;color:var(--primary)">${esc(r.email)}<button class="hero-copy-btn" onclick="copyRecordField(this,'${r.id}','email')" title="Copy email"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button></span>`:''}
