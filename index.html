@@ -4271,6 +4271,18 @@ if(currentView === 'profile' && currentProfileId){
   document.getElementById('headerTitle').textContent = titles[currentView] || '';
 }
 render();
+
+// Handle hash-based navigation (e.g., #pricing from extension)
+function checkHash(){
+  const hash = location.hash.replace('#','');
+  const validViews = ['dashboard','pipeline','contacts','notifications','pricing','settings'];
+  if(hash && validViews.includes(hash)){
+    switchView(hash);
+    history.replaceState(null, '', location.pathname);
+  }
+}
+checkHash();
+window.addEventListener('hashchange', checkHash);
 </script>
 </body>
 </html>
