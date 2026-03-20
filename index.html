@@ -546,32 +546,110 @@ h1 .hero-edit-input{font-size:1.35rem}
 
 
 /* ===== CALCULATOR TAB ===== */
-.calc-section{margin-bottom:20px}
-.calc-section-header{font-size:.82rem;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:.5px;padding-bottom:6px;border-bottom:1px solid var(--border);margin-bottom:10px;display:flex;align-items:center;gap:6px}
-.calc-row{display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(148,163,184,.08);gap:8px}
-.calc-row:last-child{border-bottom:none}
-.calc-row.total-row{border-top:2px solid var(--border);border-bottom:none;padding-top:8px;margin-top:4px}
+.calc-layout{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:900px){.calc-layout{grid-template-columns:1fr}}
+.calc-panel{min-width:0}
+.calc-section{margin-bottom:16px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.calc-section-header{font-size:.78rem;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:.5px;padding:8px 12px;background:rgba(99,129,250,.06);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px}
+.calc-section-body{padding:6px 12px}
+.calc-row{display:flex;align-items:center;justify-content:space-between;padding:4px 0;gap:8px}
+.calc-row+.calc-row{border-top:1px solid rgba(148,163,184,.06)}
+.calc-row.total-row{border-top:2px solid var(--border);padding-top:6px;margin-top:2px}
 .calc-row.total-row .calc-label{font-weight:700;color:var(--text)}
-.calc-row.total-row .calc-val{font-weight:700;color:var(--primary);font-size:.88rem}
-.calc-label{font-size:.8rem;color:var(--text2);flex:1;min-width:0}
-.calc-label-hint{font-size:.68rem;color:var(--text3);font-style:italic}
-.calc-val{width:100px;flex-shrink:0;text-align:right}
-.calc-val input{width:100%;text-align:right;padding:3px 6px;border:1px solid var(--border);border-radius:4px;font-size:.82rem;background:var(--surface);color:var(--text);font-family:inherit;transition:border-color .15s}
-.calc-val input:focus{border-color:var(--primary);outline:none}
-.calc-val input:disabled{background:rgba(148,163,184,.06);color:var(--text2);cursor:default;border-color:transparent}
-.calc-val .calc-display{font-size:.82rem;color:var(--text);font-weight:500;padding:3px 6px}
+.calc-row.total-row .calc-val{font-weight:700;font-size:.85rem}
+.calc-label{font-size:.78rem;color:var(--text2);flex:1;min-width:0;line-height:1.3}
+.calc-label-hint{font-size:.65rem;color:var(--text3);font-style:italic;display:block}
+.calc-val{width:110px;flex-shrink:0;text-align:right}
+.calc-val input{width:100%;text-align:right;padding:4px 6px;border:1px solid transparent;border-radius:4px;font-size:.82rem;background:transparent;color:var(--text);font-family:inherit;transition:all .15s;cursor:pointer}
+.calc-val input:hover{border-color:var(--border);background:rgba(148,163,184,.06)}
+.calc-val input:focus{border-color:var(--primary);outline:none;background:var(--surface);box-shadow:0 0 0 2px rgba(99,129,250,.15)}
+.calc-val .calc-display{font-size:.82rem;color:var(--text);font-weight:500;padding:4px 6px;display:block}
 .calc-val .calc-display.computed{color:var(--primary);font-weight:600}
-.calc-pct input{width:60px}
-.calc-summary-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
-.calc-summary-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px;text-align:center}
-.calc-summary-card .csc-label{font-size:.7rem;text-transform:uppercase;letter-spacing:.4px;color:var(--text3);font-weight:600;margin-bottom:4px}
-.calc-summary-card .csc-value{font-size:1.1rem;font-weight:700;color:var(--text)}
-.calc-summary-card .csc-sub{font-size:.72rem;color:var(--text3);margin-top:2px}
-.calc-summary-card.positive .csc-value{color:var(--success, #10b981)}
-.calc-summary-card.negative .csc-value{color:var(--danger, #ef4444)}
-.calc-ai-btn{display:inline-flex;align-items:center;gap:4px;font-size:.72rem;padding:3px 8px;border-radius:12px;border:1px solid rgba(16,185,129,.3);background:rgba(16,185,129,.08);color:#10b981;cursor:pointer;font-weight:600;transition:all .15s;margin-left:auto}
+.calc-val .calc-display.muted{color:var(--text3);font-size:.78rem}
+.calc-pct{width:70px}
+.calc-pct input{width:100%}
+/* Summary boxes on right panel */
+.calc-kpi-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px}
+.calc-kpi{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;text-align:center}
+.calc-kpi .kpi-label{font-size:.68rem;text-transform:uppercase;letter-spacing:.4px;color:var(--text3);font-weight:600;margin-bottom:2px}
+.calc-kpi .kpi-monthly{font-size:1rem;font-weight:700;color:var(--text)}
+.calc-kpi .kpi-annual{font-size:.7rem;color:var(--text3);margin-top:1px}
+.calc-kpi.positive .kpi-monthly{color:var(--success, #10b981)}
+.calc-kpi.negative .kpi-monthly{color:var(--danger, #ef4444)}
+/* Payback table */
+.calc-payback{width:100%;font-size:.72rem;border-collapse:collapse}
+.calc-payback th{padding:4px 6px;text-align:right;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.3px;border-bottom:1px solid var(--border);font-size:.65rem}
+.calc-payback th:first-child{text-align:left}
+.calc-payback td{padding:3px 6px;text-align:right;color:var(--text);border-bottom:1px solid rgba(148,163,184,.06)}
+.calc-payback td:first-child{text-align:left;font-weight:600;color:var(--text2)}
+.calc-payback td.neg{color:var(--danger, #ef4444)}
+.calc-payback td.pos{color:var(--success, #10b981)}
+.calc-payback tr.cumulative td{font-weight:700}
+/* AI button */
+.calc-ai-btn{display:inline-flex;align-items:center;gap:4px;font-size:.68rem;padding:2px 8px;border-radius:12px;border:1px solid rgba(16,185,129,.3);background:rgba(16,185,129,.08);color:#10b981;cursor:pointer;font-weight:600;transition:all .15s;margin-left:auto}
 .calc-ai-btn:hover{background:rgba(16,185,129,.15);border-color:#10b981}
 .calc-ai-btn.locked{opacity:.5;cursor:not-allowed;border-color:var(--border);background:rgba(148,163,184,.06);color:var(--text3)}
+
+/* ===== ANALYSIS TAB ===== */
+.an-section{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:14px}
+.an-section-hdr{font-size:.78rem;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:.5px;padding:8px 12px;background:rgba(99,129,250,.06);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px}
+.an-section-body{padding:10px 12px}
+.an-top-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+@media(max-width:900px){.an-top-grid{grid-template-columns:1fr}}
+.an-field-row{display:flex;gap:8px;margin-bottom:6px;align-items:flex-start}
+.an-field-label{font-size:.68rem;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;min-width:70px;padding-top:4px;flex-shrink:0}
+.an-field-val{font-size:.82rem;color:var(--text);flex:1}
+.an-field-val textarea{width:100%;padding:4px 6px;border:1px solid transparent;border-radius:4px;font-size:.8rem;background:transparent;color:var(--text);resize:vertical;font-family:inherit;min-height:28px;transition:border-color .15s}
+.an-field-val textarea:hover{border-color:var(--border)}
+.an-field-val textarea:focus{border-color:var(--primary);outline:none;background:var(--surface)}
+/* Required Revenue bar */
+.an-req-bar{display:flex;gap:0;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:14px;font-size:.75rem}
+.an-req-item{flex:1;text-align:center;padding:8px 6px;border-right:1px solid var(--border)}
+.an-req-item:last-child{border-right:none}
+.an-req-item.total{background:rgba(99,129,250,.06)}
+.an-req-item .req-label{font-size:.6rem;text-transform:uppercase;letter-spacing:.3px;color:var(--text3);font-weight:600}
+.an-req-item .req-yr{font-size:.85rem;font-weight:700;color:var(--text);margin-top:1px}
+.an-req-item .req-mo{font-size:.68rem;color:var(--text3)}
+/* Comp add */
+.comp-add-row{display:flex;gap:8px;margin-bottom:10px}
+.comp-add-row input{flex:1;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius);font-size:.82rem;background:var(--surface);color:var(--text)}
+.comp-add-row input:focus{border-color:var(--primary);outline:none}
+.comp-add-row button{padding:7px 14px;border-radius:var(--radius);border:none;background:var(--primary);color:#fff;font-size:.78rem;font-weight:600;cursor:pointer;white-space:nowrap}
+.comp-add-row button:hover{opacity:.9}
+/* Comp table */
+.comp-table-wrap{overflow-x:auto;margin-bottom:10px}
+.comp-table{width:100%;border-collapse:collapse;font-size:.72rem}
+.comp-table th{padding:5px 6px;text-align:left;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.3px;border-bottom:2px solid var(--border);font-size:.6rem;white-space:nowrap}
+.comp-table th.r{text-align:right}
+.comp-table td{padding:4px 6px;border-bottom:1px solid rgba(148,163,184,.08);vertical-align:middle}
+.comp-table td.r{text-align:right;font-variant-numeric:tabular-nums}
+.comp-table tr:hover{background:rgba(99,129,250,.04)}
+.comp-link{color:var(--primary);text-decoration:none;font-size:.68rem;max-width:120px;display:inline-block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle}
+.comp-link:hover{text-decoration:underline}
+.comp-rating{font-size:.68rem;padding:2px 6px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);cursor:pointer}
+.comp-remove{background:none;border:none;color:var(--text3);cursor:pointer;font-size:.75rem;padding:2px;border-radius:4px;line-height:1}
+.comp-remove:hover{color:var(--danger,#ef4444);background:rgba(239,68,68,.08)}
+.comp-notes-cell{min-width:140px;max-width:220px}
+.comp-notes{width:100%;padding:3px 5px;border:1px solid transparent;border-radius:4px;font-size:.7rem;background:transparent;color:var(--text2);resize:none;font-family:inherit;min-height:18px;line-height:1.3}
+.comp-notes:hover{border-color:var(--border)}
+.comp-notes:focus{border-color:var(--primary);outline:none;background:var(--surface)}
+/* Averages */
+.comp-avg-bar{display:flex;gap:0;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:10px}
+.comp-avg-item{flex:1;text-align:center;padding:8px 6px;border-right:1px solid var(--border)}
+.comp-avg-item:last-child{border-right:none}
+.comp-avg-item .avg-label{font-size:.6rem;text-transform:uppercase;letter-spacing:.3px;color:var(--text3);font-weight:600}
+.comp-avg-item .avg-value{font-size:.95rem;font-weight:700;color:var(--primary);margin-top:1px}
+/* Revenue projections */
+.an-proj-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:10px}
+.an-proj-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:10px;text-align:center}
+.an-proj-card .proj-label{font-size:.65rem;text-transform:uppercase;letter-spacing:.4px;color:var(--text3);font-weight:600;margin-bottom:3px}
+.an-proj-card .proj-value{font-size:1.05rem;font-weight:700}
+.an-proj-card.likely .proj-value{color:var(--text)}
+.an-proj-card.best .proj-value{color:var(--success,#10b981)}
+.an-proj-card.worst .proj-value{color:var(--danger,#ef4444)}
+.an-why{width:100%;padding:6px 8px;border:1px solid transparent;border-radius:var(--radius);font-size:.82rem;background:transparent;color:var(--text);resize:vertical;font-family:inherit;min-height:36px;transition:border-color .15s}
+.an-why:hover{border-color:var(--border)}
+.an-why:focus{border-color:var(--primary);outline:none;background:var(--surface)}
 
 /* ===== CARD EDIT HOVER ===== */
 .profile-card-header .card-edit-btn{opacity:0;transition:opacity .15s;width:30px;height:30px;display:flex;align-items:center;justify-content:center;border-radius:var(--radius);color:var(--text3);margin-left:auto;flex-shrink:0;cursor:pointer;z-index:2}
@@ -1522,7 +1600,7 @@ function renderProfile(){
         ${r.followUpDate ? (()=>{ const fp = new Date(r.followUpDate+'T'+(r.followUpTime||'23:59')) < new Date(); return `<span style="font-size:.75rem;color:${fp?'var(--text3)':'var(--danger, #ef4444)'};display:inline-flex;align-items:center;gap:3px"><span style="font-size:.8rem">${fp?'\uD83D\uDD15':'\uD83D\uDD14'}</span> Follow-up: ${fmtDateTimeForCard(r.followUpDate, r.followUpTime)}</span>`; })() : ''}
         <div class="profile-tabs">
           <div class="profile-tab ${activeTab==='details'?'active':''}" data-tab="details" onclick="setProfileTab('details')">🏠 Property Details</div>
-          <div class="profile-tab ${activeTab==='calculator'?'active':''}" data-tab="calculator" onclick="setProfileTab('calculator')">🧮 Calculator ${!calcOk?'<span class=\\"tab-lock basic\\">BASIC</span>':''}</div>
+          <div class="profile-tab ${activeTab==='calculator'?'active':''}" data-tab="calculator" onclick="setProfileTab('calculator')">🔢 Calculator ${!calcOk?'<span class=\\"tab-lock basic\\">BASIC</span>':''}</div>
           <div class="profile-tab ${activeTab==='analysis'?'active':''}" data-tab="analysis" onclick="setProfileTab('analysis')">📊 Analysis ${!proOk?'<span class=\\"tab-lock basic\\">BASIC</span>':''}</div>
           <div class="profile-tab ${activeTab==='roi'?'active':''}" data-tab="roi" onclick="setProfileTab('roi')">💰 ROI ${!advOk?'<span class=\\"tab-lock pro\\">PRO</span>':''}</div>
         </div>
@@ -1667,21 +1745,14 @@ function renderProfile(){
   // ── TAB: Competitor Analysis ──
   html += `<div class="tab-content ${activeTab==='analysis'?'active':''}" data-tab="analysis">`;
   if(proOk){
-    html += `<div class="profile-card profile-full">
-      <div class="profile-card-body" style="text-align:center;padding:40px 20px;color:var(--text3)">
-        <div style="font-size:2rem;margin-bottom:8px">📊</div>
-        <div style="font-size:1rem;font-weight:600;color:var(--text);margin-bottom:6px">Competitor Analysis</div>
-        <div style="font-size:.85rem;max-width:400px;margin:0 auto">Compare this property against nearby listings. Analyze rental rates, occupancy projections, and market positioning.</div>
-        <div style="font-size:.8rem;color:var(--text3);margin-top:12px;font-style:italic">Coming soon — this feature is under development.</div>
-      </div>
-    </div>`;
+    html += renderAnalysisTab(r);
   } else {
     html += `<div class="profile-card profile-full">
       <div class="profile-card-body">
         <div class="tab-locked-overlay">
           <div class="tlo-icon">🔒</div>
           <div class="tlo-title">Competitor Analysis</div>
-          <div class="tlo-desc">Compare this property against nearby listings, analyze rental rates, and understand market positioning. Available on the Basic plan.</div>
+          <div class="tlo-desc">Compare this property against nearby Airbnb listings, analyze rental rates, occupancy, and understand market positioning. Available on the Basic plan.</div>
           <button class="btn btn-primary" onclick="switchView('pricing')">Upgrade to Basic — $10.99/mo</button>
         </div>
       </div>
@@ -3859,18 +3930,15 @@ const CALC_DEFAULTS = {
   garbageRecycling:20, channelManager:25, cityPermit:20.83,
   coHostPct:0
 };
-
 const CLEANING_DEFAULTS = {1:500, 2:650, 3:900, 4:1200};
 
 function getCalc(r){
   if(!r.details) r.details = {};
   if(!r.details.calculator) r.details.calculator = {};
   const c = r.details.calculator;
-  // Fill missing fields with defaults
   for(const [k,v] of Object.entries(CALC_DEFAULTS)){
     if(c[k] === undefined || c[k] === null) c[k] = v;
   }
-  // Cleaning defaults from bedroom count
   if(c.cleaning === undefined || c.cleaning === null){
     const br = parseInt(r.details.bedrooms) || 2;
     c.cleaning = CLEANING_DEFAULTS[Math.min(br,4)] || 650;
@@ -3878,127 +3946,190 @@ function getCalc(r){
   return c;
 }
 
-function calcInput(id, value, opts={}){
-  const prefix = opts.prefix || '';
-  const suffix = opts.suffix || '';
-  const disabled = opts.disabled || false;
-  const cls = opts.cls || '';
-  const step = opts.step || 'any';
-  const w = opts.width || '';
-  const wStyle = w ? `width:${w}` : '';
-  return `<div class="calc-val ${cls}" ${wStyle?'style="'+wStyle+'"':''}>
-    ${disabled
-      ? `<span class="calc-display computed">${prefix}${typeof value==='number'?fmtNum(value):value}${suffix}</span>`
-      : `<input type="number" id="calc_${id}" value="${value}" step="${step}" onchange="onCalcChange('${id}',this.value)" ${prefix?'data-prefix="'+prefix+'"':''} />`
-    }
-  </div>`;
+function fmtAcct(n){
+  if(n===undefined||n===null||isNaN(n)) return '$ —';
+  const abs = Math.abs(n);
+  const s = '$' + abs.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0});
+  return n < 0 ? '(' + s + ')' : ' ' + s + ' ';
 }
-
+function fmtAcct2(n){
+  if(n===undefined||n===null||isNaN(n)) return '$ —';
+  const abs = Math.abs(n);
+  const s = '$' + abs.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  return n < 0 ? '(' + s + ')' : ' ' + s + ' ';
+}
 function fmtNum(n){
   if(n===undefined||n===null||isNaN(n)) return '—';
   return Number(n).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:2});
 }
-
 function fmtMoney(n){
   if(n===undefined||n===null||isNaN(n)) return '$—';
   const neg = n < 0;
-  return (neg?'-':'')+'$'+Math.abs(n).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:2});
+  return (neg?'(':'')+'$'+Math.abs(n).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0})+(neg?')':'');
 }
 
-function renderCalculatorTab(r){
+function cRow(label, valHtml, opts={}){
+  const cls = opts.total ? ' total-row' : '';
+  const hint = opts.hint ? '<span class="calc-label-hint">'+opts.hint+'</span>' : '';
+  return '<div class="calc-row'+cls+'"><div class="calc-label">'+label+hint+'</div>'+valHtml+'</div>';
+}
+function cInput(id, value, opts={}){
+  const step = opts.step || 'any';
+  const cls = opts.pct ? ' calc-pct' : '';
+  const min = opts.min !== undefined ? ' min="'+opts.min+'"' : '';
+  const max = opts.max !== undefined ? ' max="'+opts.max+'"' : '';
+  return '<div class="calc-val'+cls+'"><input type="number" id="calc_'+id+'" value="'+value+'" step="'+step+'"'+min+max+' onchange="onCalcChange(\''+id+'\',this.value)" /></div>';
+}
+function cDisplay(value, opts={}){
+  const cls = opts.computed ? ' computed' : (opts.muted ? ' muted' : '');
+  return '<div class="calc-val"><span class="calc-display'+cls+'">'+value+'</span></div>';
+}
+
+function calcComputeAll(r){
   const d = r.details || {};
   const c = getCalc(r);
   const br = parseInt(d.bedrooms) || 0;
   const monthlyRent = parseFloat(d.monthlyRent) || 0;
-  const isProUser = requireTier('pro','AI Estimates');
-
-  // Computed values
   const furnishCost = (br * c.costPerBR) + (c.extraCommonSpaces * c.costPerExtraSpace);
   const totalInvested = c.applicationFees + c.securityDeposit + c.firstLastRent + c.additionalFee1 + c.additionalFee2 + furnishCost;
-  const daysOccupied = Math.round(365 * (c.estOccupancyRate / 100) * 100) / 100;
-  const annualRevenue = Math.round(c.avgDailyRate * daysOccupied);
-  const monthlyRevenue = Math.round(annualRevenue / 12);
-  const coHostFee = Math.round(monthlyRevenue * (c.coHostPct / 100) * 100) / 100;
-  const airbnbFee = Math.round(monthlyRevenue * 0.03 * 100) / 100;
-  const cleaning = c.cleaning !== undefined ? c.cleaning : (CLEANING_DEFAULTS[Math.min(br||2,4)] || 650);
-  const totalMonthlyExpenses = c.insurance + c.strFee + c.water + c.gas + c.electric + c.wifiTv + c.futureRepairs + c.incidentals + c.parking + cleaning + c.garbageRecycling + c.channelManager + c.cityPermit + coHostFee + airbnbFee;
-  const annualExpenses = Math.round(totalMonthlyExpenses * 12);
-  const monthlyNOI = monthlyRevenue - totalMonthlyExpenses;
-  const annualNOI = Math.round(monthlyNOI * 12);
-  const monthlyCashFlow = monthlyNOI - monthlyRent;
-  const annualCashFlow = Math.round(monthlyCashFlow * 12);
-  const cocReturn = totalInvested > 0 ? ((annualCashFlow / totalInvested) * 100) : 0;
+  const daysOccupied = 365 * (c.estOccupancyRate / 100);
+  const annualRevenue = c.avgDailyRate * daysOccupied;
+  const monthlyRevenue = annualRevenue / 12;
+  const cleaning = c.cleaning;
+  const coHostFee = monthlyRevenue * (c.coHostPct / 100);
+  const airbnbFee = monthlyRevenue * 0.03;
+  const totalMonthlyExp = c.insurance + c.strFee + c.water + c.gas + c.electric + c.wifiTv + c.futureRepairs + c.incidentals + c.parking + cleaning + c.garbageRecycling + c.channelManager + c.cityPermit + coHostFee + airbnbFee;
+  const annualExp = totalMonthlyExp * 12;
+  const monthlyNOI = monthlyRevenue - totalMonthlyExp;
+  const annualNOI = monthlyNOI * 12;
+  const monthlyCF = monthlyNOI - monthlyRent;
+  const annualCF = monthlyCF * 12;
+  const cocReturn = totalInvested > 0 ? (annualCF / totalInvested * 100) : 0;
+  return { c, br, monthlyRent, furnishCost, totalInvested, daysOccupied, annualRevenue, monthlyRevenue, cleaning, coHostFee, airbnbFee, totalMonthlyExp, annualExp, monthlyNOI, annualNOI, monthlyCF, annualCF, cocReturn };
+}
 
-  let h = `<div class="profile-card profile-full" style="margin-bottom:12px">
-    <div class="profile-card-body" style="padding:16px">`;
+function renderCalculatorTab(r){
+  const d = r.details || {};
+  const v = calcComputeAll(r);
+  const c = v.c;
+  const isProUser = requireTier('pro','AI Estimates');
 
-  // ── Summary Cards at Top ──
-  h += `<div class="calc-summary-grid" style="margin-top:0;margin-bottom:16px;grid-template-columns:repeat(4,1fr)">
-    <div class="calc-summary-card"><div class="csc-label">Monthly Revenue</div><div class="csc-value">${fmtMoney(monthlyRevenue)}</div><div class="csc-sub">${fmtMoney(annualRevenue)}/yr</div></div>
-    <div class="calc-summary-card"><div class="csc-label">Net Operating Income</div><div class="csc-value">${fmtMoney(monthlyNOI)}</div><div class="csc-sub">${fmtMoney(annualNOI)}/yr</div></div>
-    <div class="calc-summary-card ${monthlyCashFlow>=0?'positive':'negative'}"><div class="csc-label">Cash Flow</div><div class="csc-value">${fmtMoney(monthlyCashFlow)}</div><div class="csc-sub">${fmtMoney(annualCashFlow)}/yr</div></div>
-    <div class="calc-summary-card ${cocReturn>=0?'positive':'negative'}"><div class="csc-label">Cash on Cash Return</div><div class="csc-value">${cocReturn.toFixed(1)}%</div><div class="csc-sub">${fmtMoney(totalInvested)} invested</div></div>
-  </div>`;
+  let h = '<div class="calc-layout">';
 
-  // ── Investment Details ──
-  h += `<div class="calc-section">
-    <div class="calc-section-header">💼 Investment Details</div>
-    <div class="calc-row"><div class="calc-label">Application Fees</div>${calcInput('applicationFees',c.applicationFees)}</div>
-    <div class="calc-row"><div class="calc-label">Security Deposit</div>${calcInput('securityDeposit',c.securityDeposit)}</div>
-    <div class="calc-row"><div class="calc-label">First & Last Month's Rent <span class="calc-label-hint">(if required up front)</span></div>${calcInput('firstLastRent',c.firstLastRent)}</div>
-    <div class="calc-row"><div class="calc-label">Additional Fee #1</div>${calcInput('additionalFee1',c.additionalFee1)}</div>
-    <div class="calc-row"><div class="calc-label">Additional Fee #2</div>${calcInput('additionalFee2',c.additionalFee2)}</div>
-    <div class="calc-row"><div class="calc-label"># of Bedrooms <span class="calc-label-hint">(from Property Details)</span></div><div class="calc-val"><span class="calc-display">${br||'—'}</span></div></div>
-    <div class="calc-row"><div class="calc-label">Est. Cost Per Bedroom <span class="calc-label-hint">(incl. common spaces)</span></div>${calcInput('costPerBR',c.costPerBR)}</div>
-    <div class="calc-row"><div class="calc-label"># of Extra Common Spaces <span class="calc-label-hint">(patios, bonus rooms)</span></div>${calcInput('extraCommonSpaces',c.extraCommonSpaces)}</div>
-    <div class="calc-row"><div class="calc-label">Est. Cost Per Additional Space</div>${calcInput('costPerExtraSpace',c.costPerExtraSpace)}</div>
-    <div class="calc-row"><div class="calc-label">Estimated Cost to Furnish</div><div class="calc-val"><span class="calc-display computed">${fmtMoney(furnishCost)}</span></div></div>
-    <div class="calc-row total-row"><div class="calc-label">Total Money Invested</div><div class="calc-val"><span class="calc-display computed">${fmtMoney(totalInvested)}</span></div></div>
-  </div>`;
+  // ══════ LEFT PANEL: INPUTS ══════
+  h += '<div class="calc-panel">';
 
-  // ── Forecasted Revenue ──
-  h += `<div class="calc-section">
-    <div class="calc-section-header">📈 Forecasted Revenue</div>
-    <div class="calc-row"><div class="calc-label">Average Daily Rate</div>${calcInput('avgDailyRate',c.avgDailyRate)}</div>
-    <div class="calc-row"><div class="calc-label">Estimated Occupancy Rate (%)</div><div class="calc-val calc-pct"><input type="number" id="calc_estOccupancyRate" value="${c.estOccupancyRate}" step="1" min="0" max="100" onchange="onCalcChange('estOccupancyRate',this.value)" /></div></div>
-    <div class="calc-row"><div class="calc-label">Estimated Days/Year Occupied</div><div class="calc-val"><span class="calc-display computed">${fmtNum(daysOccupied)}</span></div></div>
-    <div class="calc-row"><div class="calc-label">Annual Revenue</div><div class="calc-val"><span class="calc-display computed">${fmtMoney(annualRevenue)}</span></div></div>
-    <div class="calc-row total-row"><div class="calc-label">Monthly Revenue</div><div class="calc-val"><span class="calc-display computed">${fmtMoney(monthlyRevenue)}</span></div></div>
-  </div>`;
+  // Investment Details
+  h += '<div class="calc-section"><div class="calc-section-header">Investment Details</div><div class="calc-section-body">';
+  h += cRow('Application Fees', cInput('applicationFees', c.applicationFees));
+  h += cRow('Security Deposit', cInput('securityDeposit', c.securityDeposit));
+  h += cRow('First & Last Month Rent', cInput('firstLastRent', c.firstLastRent), {hint:'if required up front'});
+  h += cRow('Additional Fee #1', cInput('additionalFee1', c.additionalFee1));
+  h += cRow('Additional Fee #2', cInput('additionalFee2', c.additionalFee2));
+  h += cRow('# of Bedrooms', cDisplay(v.br || '—'), {hint:'from Property Details'});
+  h += cRow('Est. Cost Per Bedroom', cInput('costPerBR', c.costPerBR), {hint:'incl. common spaces'});
+  h += cRow('# Extra Common Spaces', cInput('extraCommonSpaces', c.extraCommonSpaces), {hint:'patios, bonus rooms'});
+  h += cRow('Cost Per Extra Space', cInput('costPerExtraSpace', c.costPerExtraSpace));
+  h += cRow('Est. Cost to Furnish', cDisplay(fmtAcct(v.furnishCost), {computed:true}));
+  h += cRow('Total Money Invested', cDisplay(fmtAcct(v.totalInvested), {computed:true}), {total:true});
+  h += '</div></div>';
 
-  // ── Monthly Operating Expenses ──
-  h += `<div class="calc-section">
-    <div class="calc-section-header">🏗️ Monthly Operating Expenses
-      <button class="calc-ai-btn ${isProUser?'':'locked'}" onclick="${isProUser?`estimateExpensesAI('${r.id}')`:`alert('AI expense estimation requires Pro plan. Upgrade to unlock.')`}" title="${isProUser?'Estimate expenses using AI for this market':'Requires Pro plan'}">✨ Estimate with AI${!isProUser?' 🔒':''}</button>
-    </div>
-    <div class="calc-row"><div class="calc-label">Insurance</div>${calcInput('insurance',c.insurance)}</div>
-    <div class="calc-row"><div class="calc-label">STR Fee <span class="calc-label-hint">(to landlord, if any)</span></div>${calcInput('strFee',c.strFee)}</div>
-    <div class="calc-row"><div class="calc-label">Water</div>${calcInput('water',c.water)}</div>
-    <div class="calc-row"><div class="calc-label">Gas</div>${calcInput('gas',c.gas)}</div>
-    <div class="calc-row"><div class="calc-label">Electric</div>${calcInput('electric',c.electric)}</div>
-    <div class="calc-row"><div class="calc-label">Wifi + TV/Cable</div>${calcInput('wifiTv',c.wifiTv)}</div>
-    <div class="calc-row"><div class="calc-label">Future Repairs</div>${calcInput('futureRepairs',c.futureRepairs)}</div>
-    <div class="calc-row"><div class="calc-label">Incidentals <span class="calc-label-hint">(soap, coffee, toilet paper)</span></div>${calcInput('incidentals',c.incidentals)}</div>
-    <div class="calc-row"><div class="calc-label">Parking</div>${calcInput('parking',c.parking)}</div>
-    <div class="calc-row"><div class="calc-label">Cleaning (Monthly) <span class="calc-label-hint">(default by BR count)</span></div>${calcInput('cleaning',cleaning)}</div>
-    <div class="calc-row"><div class="calc-label">Garbage / Recycling</div>${calcInput('garbageRecycling',c.garbageRecycling)}</div>
-    <div class="calc-row"><div class="calc-label">Channel Manager <span class="calc-label-hint">(Hospitable, Guesty, etc.)</span></div>${calcInput('channelManager',c.channelManager)}</div>
-    <div class="calc-row"><div class="calc-label">City Permit <span class="calc-label-hint">(annual ÷ 12)</span></div>${calcInput('cityPermit',c.cityPermit,{step:'0.01'})}</div>
-    <div class="calc-row"><div class="calc-label">Co-Host / PM Fee (%)</div><div class="calc-val calc-pct"><input type="number" id="calc_coHostPct" value="${c.coHostPct}" step="1" min="0" max="100" onchange="onCalcChange('coHostPct',this.value)" /></div></div>
-    <div class="calc-row"><div class="calc-label">Co-Host / PM Fee Amount</div><div class="calc-val"><span class="calc-display computed">${fmtMoney(coHostFee)}</span></div></div>
-    <div class="calc-row"><div class="calc-label">Airbnb Service Fee <span class="calc-label-hint">(3% of revenue)</span></div><div class="calc-val"><span class="calc-display computed">${fmtMoney(airbnbFee)}</span></div></div>
-    <div class="calc-row total-row"><div class="calc-label">Total Monthly Expenses</div><div class="calc-val"><span class="calc-display computed">${fmtMoney(totalMonthlyExpenses)}</span></div></div>
-    <div class="calc-row"><div class="calc-label" style="color:var(--text3);font-size:.75rem">Annual Operating Expenses</div><div class="calc-val"><span class="calc-display" style="color:var(--text3);font-size:.78rem">${fmtMoney(annualExpenses)}</span></div></div>
-  </div>`;
+  // Forecasted Revenue
+  h += '<div class="calc-section"><div class="calc-section-header">Forecasted Revenue</div><div class="calc-section-body">';
+  h += cRow('Average Daily Rate', cInput('avgDailyRate', c.avgDailyRate));
+  h += cRow('Est. Occupancy Rate (%)', cInput('estOccupancyRate', c.estOccupancyRate, {step:'1',min:0,max:100,pct:true}));
+  h += cRow('Est. Days/Year Occupied', cDisplay(fmtNum(v.daysOccupied), {computed:true}));
+  h += cRow('Annual Revenue', cDisplay(fmtAcct(Math.round(v.annualRevenue)), {computed:true}));
+  h += cRow('Monthly Revenue', cDisplay(fmtAcct(Math.round(v.monthlyRevenue)), {computed:true}), {total:true});
+  h += '</div></div>';
 
-  // ── Monthly Rent (from Property Details) ──
-  h += `<div class="calc-section">
-    <div class="calc-section-header">🏠 Monthly Rent</div>
-    <div class="calc-row"><div class="calc-label">Monthly Rent <span class="calc-label-hint">(from Property Details)</span></div><div class="calc-val"><span class="calc-display">${monthlyRent ? fmtMoney(monthlyRent) : '<span style=\\"color:var(--text3);font-style:italic\\">Not set</span>'}</span></div></div>
-    <div class="calc-row"><div class="calc-label" style="color:var(--text3);font-size:.75rem">Annual Rent</div><div class="calc-val"><span class="calc-display" style="color:var(--text3);font-size:.78rem">${fmtMoney(monthlyRent*12)}</span></div></div>
-  </div>`;
+  // Monthly Operating Expenses
+  h += '<div class="calc-section"><div class="calc-section-header">Monthly Operating Expenses';
+  h += '<button class="calc-ai-btn '+(isProUser?'':'locked')+'" onclick="'+(isProUser?'estimateExpensesAI(\''+r.id+'\')':'alert(\'AI expense estimation requires Pro plan.\')')+'" title="'+(isProUser?'Estimate for this market':'Pro plan required')+'">✨ AI Estimate'+(isProUser?'':' 🔒')+'</button>';
+  h += '</div><div class="calc-section-body">';
+  h += cRow('Insurance', cInput('insurance', c.insurance));
+  h += cRow('STR Fee', cInput('strFee', c.strFee), {hint:'to landlord, if any'});
+  h += cRow('Water', cInput('water', c.water));
+  h += cRow('Gas', cInput('gas', c.gas));
+  h += cRow('Electric', cInput('electric', c.electric));
+  h += cRow('Wifi + TV/Cable', cInput('wifiTv', c.wifiTv));
+  h += cRow('Future Repairs', cInput('futureRepairs', c.futureRepairs));
+  h += cRow('Incidentals', cInput('incidentals', c.incidentals), {hint:'soap, coffee, etc.'});
+  h += cRow('Parking', cInput('parking', c.parking));
+  h += cRow('Cleaning (Monthly)', cInput('cleaning', v.cleaning), {hint:'default by BR count'});
+  h += cRow('Garbage / Recycling', cInput('garbageRecycling', c.garbageRecycling));
+  h += cRow('Channel Manager', cInput('channelManager', c.channelManager), {hint:'Hospitable, Guesty'});
+  h += cRow('City Permit', cInput('cityPermit', c.cityPermit, {step:'0.01'}), {hint:'annual ÷ 12'});
+  h += cRow('Co-Host / PM Fee (%)', cInput('coHostPct', c.coHostPct, {step:'1',min:0,max:100,pct:true}));
+  h += cRow('Co-Host / PM Fee', cDisplay(fmtAcct2(v.coHostFee), {computed:true}));
+  h += cRow('Airbnb Service Fee', cDisplay(fmtAcct2(v.airbnbFee), {computed:true}), {hint:'3% of revenue'});
+  h += cRow('Total Monthly Expenses', cDisplay(fmtAcct2(v.totalMonthlyExp), {computed:true}), {total:true});
+  h += cRow('Annual Operating Expenses', cDisplay(fmtAcct(Math.round(v.annualExp)), {muted:true}));
+  h += '</div></div>';
 
-  h += `</div></div>`;
+  h += '</div>'; // end left panel
+
+  // ══════ RIGHT PANEL: SUMMARY + PAYBACK ══════
+  h += '<div class="calc-panel">';
+
+  // KPI Cards
+  const cfClass = v.monthlyCF >= 0 ? 'positive' : 'negative';
+  const cocClass = v.cocReturn >= 0 ? 'positive' : 'negative';
+  h += '<div class="calc-kpi-grid">';
+  h += '<div class="calc-kpi"><div class="kpi-label">Net Operating Income</div><div class="kpi-monthly">'+fmtMoney(Math.round(v.monthlyNOI))+'</div><div class="kpi-annual">/mo &nbsp;|&nbsp; '+fmtMoney(Math.round(v.annualNOI))+'/yr</div></div>';
+  h += '<div class="calc-kpi"><div class="kpi-label">Monthly Rent</div><div class="kpi-monthly">'+fmtMoney(v.monthlyRent)+'</div><div class="kpi-annual">/mo &nbsp;|&nbsp; '+fmtMoney(v.monthlyRent*12)+'/yr</div></div>';
+  h += '<div class="calc-kpi '+cfClass+'"><div class="kpi-label">Cash Flow</div><div class="kpi-monthly">'+fmtMoney(Math.round(v.monthlyCF))+'</div><div class="kpi-annual">/mo &nbsp;|&nbsp; '+fmtMoney(Math.round(v.annualCF))+'/yr</div></div>';
+  h += '<div class="calc-kpi '+cocClass+'"><div class="kpi-label">Cash on Cash Return</div><div class="kpi-monthly">'+v.cocReturn.toFixed(1)+'%</div><div class="kpi-annual">'+fmtMoney(Math.round(v.totalInvested))+' invested</div></div>';
+  h += '</div>';
+
+  // Payback Period Table
+  h += '<div class="calc-section"><div class="calc-section-header">Pay-Back Period (From Cash Flows)</div><div class="calc-section-body" style="padding:6px 4px;overflow-x:auto">';
+  h += '<table class="calc-payback"><thead><tr><th></th>';
+  for(let y=0; y<=10; y++) h += '<th>Yr '+y+'</th>';
+  h += '</tr></thead><tbody>';
+  // Row: Initial Investment
+  const inv = v.totalInvested;
+  const acf = Math.round(v.annualCF);
+  h += '<tr><td>Initial Investment</td>';
+  h += '<td class="neg">'+fmtMoney(-inv)+'</td>';
+  for(let y=1; y<=10; y++) h += '<td>'+fmtMoney(0)+'</td>';
+  h += '</tr>';
+  // Row: Future Cash Flows
+  h += '<tr><td>Future Cash Flows</td>';
+  h += '<td>'+fmtMoney(0)+'</td>';
+  for(let y=1; y<=10; y++){
+    const cls = acf < 0 ? 'neg' : 'pos';
+    h += '<td class="'+cls+'">'+fmtMoney(acf)+'</td>';
+  }
+  h += '</tr>';
+  // Row: Total Cash Flows
+  h += '<tr><td>Total Cash Flows</td>';
+  h += '<td class="neg">'+fmtMoney(-inv)+'</td>';
+  for(let y=1; y<=10; y++){
+    const cls = acf < 0 ? 'neg' : 'pos';
+    h += '<td class="'+cls+'">'+fmtMoney(acf)+'</td>';
+  }
+  h += '</tr>';
+  // Row: Cumulative Cash Flows
+  h += '<tr class="cumulative"><td>Cumulative</td>';
+  let cum = -inv;
+  h += '<td class="'+(cum<0?'neg':'pos')+'">'+fmtMoney(Math.round(cum))+'</td>';
+  for(let y=1; y<=10; y++){
+    cum += acf;
+    h += '<td class="'+(cum<0?'neg':'pos')+'">'+fmtMoney(Math.round(cum))+'</td>';
+  }
+  h += '</tr>';
+  h += '</tbody></table>';
+  h += '</div></div>';
+
+  // Monthly Rent reminder
+  h += '<div class="calc-section"><div class="calc-section-header">Monthly Rent</div><div class="calc-section-body">';
+  h += cRow('Monthly Rent', cDisplay(v.monthlyRent ? fmtAcct(v.monthlyRent) : '<span style="color:var(--text3);font-style:italic">Set in Property Details</span>'), {hint:'from Property Details'});
+  h += cRow('Annual Rent', cDisplay(fmtAcct(v.monthlyRent * 12), {muted:true}));
+  h += '</div></div>';
+
+  h += '</div>'; // end right panel
+  h += '</div>'; // end calc-layout
   return h;
 }
 
@@ -4007,10 +4138,8 @@ function onCalcChange(field, value){
   if(!r) return;
   if(!r.details) r.details = {};
   if(!r.details.calculator) r.details.calculator = {};
-  const numVal = parseFloat(value) || 0;
-  r.details.calculator[field] = numVal;
+  r.details.calculator[field] = parseFloat(value) || 0;
   saveData();
-  // Re-render the calculator tab content without losing focus
   const tabEl = document.querySelector('.tab-content[data-tab="calculator"]');
   if(tabEl){
     const wasActive = document.activeElement?.id;
@@ -4024,11 +4153,190 @@ function onCalcChange(field, value){
 }
 
 function estimateExpensesAI(recId){
-  // Placeholder for AI expense estimation (Pro feature)
   const r = records.find(x => x.id === recId);
   if(!r) return;
   const addr = r.details?.address || r.details?.street || '';
   alert('AI estimation coming soon! Will analyze market data for ' + (addr || 'this area') + '.');
+}
+
+/* ===== ANALYSIS TAB ===== */
+function getComps(r){
+  if(!r.details) r.details = {};
+  if(!r.details.comps) r.details.comps = [];
+  return r.details.comps;
+}
+function getAnalysis(r){
+  if(!r.details) r.details = {};
+  if(!r.details.analysis) r.details.analysis = {};
+  return r.details.analysis;
+}
+
+function renderAnalysisTab(r){
+  const d = r.details || {};
+  const an = getAnalysis(r);
+  const comps = getComps(r);
+  const v = calcComputeAll(r);
+  const c = v.c;
+  const profitReq = parseFloat(an.profitRequirement) || 1000;
+  const utilities = parseFloat(an.utilities) || (v.totalMonthlyExp - v.cleaning);
+
+  let h = '';
+
+  // ── Top: Property Snapshot + Required Revenue side by side ──
+  h += '<div class="an-top-grid">';
+
+  // Left: Property snapshot (Design/Amenities + Concerns)
+  h += '<div class="an-section"><div class="an-section-hdr">Property Notes</div><div class="an-section-body">';
+  h += '<div class="an-field-row"><div class="an-field-label">Design & Amenities</div><div class="an-field-val"><textarea placeholder="Describe design, amenities, standout features..." onchange="updateAnalysisField(\''+r.id+'\',\'designAmenities\',this.value)">'+esc(an.designAmenities||'')+'</textarea></div></div>';
+  h += '<div class="an-field-row"><div class="an-field-label">Concerns</div><div class="an-field-val"><textarea placeholder="Any concerns about this property..." onchange="updateAnalysisField(\''+r.id+'\',\'concerns\',this.value)">'+esc(an.concerns||'')+'</textarea></div></div>';
+  h += '</div></div>';
+
+  // Right: Required Revenue
+  h += '<div class="an-section"><div class="an-section-hdr">Required Revenue</div><div class="an-section-body" style="padding:0">';
+  h += '<div class="an-req-bar" style="border:none;border-radius:0;margin:0">';
+  h += '<div class="an-req-item"><div class="req-label">Rent</div><div class="req-yr">'+fmtMoney(v.monthlyRent*12)+'</div><div class="req-mo">'+fmtMoney(v.monthlyRent)+'/mo</div></div>';
+  h += '<div class="an-req-item"><div class="req-label">Cleaning</div><div class="req-yr">'+fmtMoney(Math.round(v.cleaning*12))+'</div><div class="req-mo">'+fmtMoney(Math.round(v.cleaning))+'/mo</div></div>';
+  h += '<div class="an-req-item"><div class="req-label">Utilities</div><div class="req-yr">'+fmtMoney(Math.round(utilities*12))+'</div><div class="req-mo">'+fmtMoney(Math.round(utilities))+'/mo</div></div>';
+  h += '<div class="an-req-item"><div class="req-label">Profit Req</div><div class="req-yr">'+fmtMoney(profitReq*12)+'</div><div class="req-mo">'+fmtMoney(profitReq)+'/mo</div></div>';
+  const monthlyReqRev = v.monthlyRent + v.cleaning + utilities + profitReq;
+  h += '<div class="an-req-item total"><div class="req-label">Required Rev</div><div class="req-yr" style="color:var(--primary)">'+fmtMoney(Math.round(monthlyReqRev*12))+'</div><div class="req-mo">'+fmtMoney(Math.round(monthlyReqRev))+'/mo</div></div>';
+  h += '</div>';
+  h += '</div></div>';
+
+  h += '</div>'; // end an-top-grid
+
+  // ── Averages Bar (from comps) ──
+  if(comps.length > 0){
+    const avgOcc = comps.reduce((s,x)=>s+(x.occupancy||0),0)/comps.length;
+    const avgRate = comps.reduce((s,x)=>s+(x.nightlyRate||0),0)/comps.length;
+    h += '<div class="comp-avg-bar" style="margin-bottom:14px">';
+    h += '<div class="comp-avg-item"><div class="avg-label">Avg Occ Rate</div><div class="avg-value">'+avgOcc.toFixed(1)+'%</div></div>';
+    h += '<div class="comp-avg-item"><div class="avg-label">Avg Nightly Rate</div><div class="avg-value">$'+avgRate.toFixed(2)+'</div></div>';
+    h += '</div>';
+  }
+
+  // ── Comparable Airbnb Analysis ──
+  h += '<div class="an-section"><div class="an-section-hdr">Comparable Airbnb Analysis <span style="font-size:.62rem;color:var(--text3);font-weight:400;text-transform:none;letter-spacing:0">('+comps.length+'/20)</span></div>';
+  h += '<div class="an-section-body">';
+
+  if(comps.length < 20){
+    h += '<div class="comp-add-row">';
+    h += '<input type="text" id="compLinkInput" placeholder="Paste Airbnb link here..." />';
+    h += '<button onclick="addComp(\''+r.id+'\')">+ Add Comp</button>';
+    h += '</div>';
+  }
+
+  if(comps.length > 0){
+    h += '<div class="comp-table-wrap"><table class="comp-table">';
+    h += '<thead><tr><th>#</th><th>Link</th><th class="r">Rev</th><th class="r">Days</th><th class="r">Occ</th><th class="r">Rate</th><th class="r">Gst</th><th class="r">BR</th><th class="r">Ba</th><th>Host</th><th>Rating</th><th class="comp-notes-cell">Notes</th><th></th></tr></thead>';
+    h += '<tbody>';
+    comps.forEach((comp, i) => {
+      const rating = comp.rating || 'competes';
+      h += '<tr>';
+      h += '<td style="color:var(--text3)">'+(i+1)+'</td>';
+      h += '<td><a class="comp-link" href="'+esc(comp.link||'')+'" target="_blank" title="'+esc(comp.link||'')+'">'+esc(comp.linkShort||'Link')+'</a></td>';
+      h += '<td class="r">'+fmtMoney(comp.annualRevenue||0)+'</td>';
+      h += '<td class="r">'+(comp.daysAvailable||'—')+'</td>';
+      h += '<td class="r">'+(comp.occupancy||0)+'%</td>';
+      h += '<td class="r">$'+(comp.nightlyRate||0)+'</td>';
+      h += '<td class="r">'+(comp.guests||'—')+'</td>';
+      h += '<td class="r">'+(comp.bedrooms||'—')+'</td>';
+      h += '<td class="r">'+(comp.bathrooms||'—')+'</td>';
+      h += '<td>'+esc(comp.host||'—')+'</td>';
+      h += '<td><select class="comp-rating" onchange="updateCompField(\''+r.id+'\','+i+',\'rating\',this.value)">';
+      h += '<option value="beats" '+(rating==='beats'?'selected':'')+'>Beats</option>';
+      h += '<option value="competes" '+(rating==='competes'?'selected':'')+'>Competes</option>';
+      h += '<option value="loses" '+(rating==='loses'?'selected':'')+'>Loses</option>';
+      h += '</select></td>';
+      h += '<td class="comp-notes-cell"><textarea class="comp-notes" rows="1" placeholder="Notes..." onchange="updateCompField(\''+r.id+'\','+i+',\'notes\',this.value)">'+esc(comp.notes||'')+'</textarea></td>';
+      h += '<td><button class="comp-remove" onclick="removeComp(\''+r.id+'\','+i+')" title="Remove">✕</button></td>';
+      h += '</tr>';
+    });
+    h += '</tbody></table></div>';
+  } else {
+    h += '<div style="text-align:center;padding:20px 16px;color:var(--text3);font-size:.85rem">';
+    h += '<div style="font-size:1.5rem;margin-bottom:6px">📊</div>';
+    h += 'No comparables added yet. Paste an Airbnb link above to start your analysis.';
+    h += '</div>';
+  }
+  h += '</div></div>';
+
+  // ── Revenue Projections ──
+  h += '<div class="an-section"><div class="an-section-hdr">Revenue Projections</div><div class="an-section-body">';
+  if(comps.length > 0){
+    const avgOcc = comps.reduce((s,x)=>s+(x.occupancy||0),0)/comps.length;
+    const avgRate = comps.reduce((s,x)=>s+(x.nightlyRate||0),0)/comps.length;
+    const beats = comps.filter(x=>x.rating==='beats').length;
+    const loses = comps.filter(x=>x.rating==='loses').length;
+    const total = comps.length;
+    const ratio = total > 0 ? (beats - loses) / total : 0;
+    const baseRev = avgRate * 365 * (avgOcc / 100);
+    const likely = Math.round(baseRev * (1 + ratio * 0.05));
+    const best = Math.round(baseRev * 1.1);
+    const worst = Math.round(baseRev * 0.85);
+    h += '<div class="an-proj-grid">';
+    h += '<div class="an-proj-card likely"><div class="proj-label">Likely Revenue</div><div class="proj-value">'+fmtMoney(likely)+'</div></div>';
+    h += '<div class="an-proj-card best"><div class="proj-label">Best Case</div><div class="proj-value">'+fmtMoney(best)+'</div></div>';
+    h += '<div class="an-proj-card worst"><div class="proj-label">Worst Case</div><div class="proj-value">'+fmtMoney(worst)+'</div></div>';
+    h += '</div>';
+  } else {
+    h += '<div style="text-align:center;padding:12px;color:var(--text3);font-size:.82rem;font-style:italic">Add comparables above to generate revenue projections.</div>';
+  }
+  h += '<div style="margin-top:10px"><div style="font-size:.7rem;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.3px;margin-bottom:4px">Why? (Your reasoning)</div>';
+  h += '<textarea class="an-why" placeholder="Explain your revenue projection reasoning..." onchange="updateAnalysisField(\''+r.id+'\',\'projectionWhy\',this.value)">'+esc(an.projectionWhy||'')+'</textarea>';
+  h += '</div>';
+  h += '</div></div>';
+
+  return h;
+}
+
+function addComp(recId){
+  const r = records.find(x => x.id === recId);
+  if(!r) return;
+  const input = document.getElementById('compLinkInput');
+  const link = input?.value?.trim();
+  if(!link){ alert('Please paste an Airbnb link'); return }
+  const comps = getComps(r);
+  if(comps.length >= 20){ alert('Maximum 20 comparables reached'); return }
+  const shortLink = link.replace(/\?.*$/,'').replace(/https?:\/\/(www\.)?airbnb\.com\/rooms\//,'').substring(0,18)+'...';
+  comps.push({
+    link: link, linkShort: shortLink,
+    annualRevenue:0, daysAvailable:365, occupancy:0, nightlyRate:0,
+    guests:0, bedrooms:0, beds:0, bathrooms:0, host:'',
+    rating:'competes', notes:''
+  });
+  saveData();
+  render();
+}
+
+function removeComp(recId, idx){
+  const r = records.find(x => x.id === recId);
+  if(!r) return;
+  getComps(r).splice(idx, 1);
+  saveData();
+  render();
+}
+
+function updateCompField(recId, idx, field, value){
+  const r = records.find(x => x.id === recId);
+  if(!r) return;
+  const comps = getComps(r);
+  if(!comps[idx]) return;
+  if(['annualRevenue','occupancy','nightlyRate','guests','bedrooms','beds','bathrooms','daysAvailable'].includes(field)){
+    comps[idx][field] = parseFloat(value) || 0;
+  } else {
+    comps[idx][field] = value;
+  }
+  saveData();
+  if(field === 'rating') render();
+}
+
+function updateAnalysisField(recId, field, value){
+  const r = records.find(x => x.id === recId);
+  if(!r) return;
+  const an = getAnalysis(r);
+  an[field] = value;
+  saveData();
 }
 
 /* ===== ADDRESS AUTOCOMPLETE (Google Places REST API) ===== */
