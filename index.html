@@ -1457,22 +1457,23 @@ function renderProfile(){
         <h3>👤 Contact & Status</h3>
         <button class="card-edit-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
       </div>
-      <div class="profile-card-body card-readonly clickable-edit" onclick="if(!event.target.closest('.cr-copy-btn'))openCardEditor('${r.id}','contact')" title="Click to edit contact & status">
+      <div class="profile-card-body card-readonly">
         <div class="cr-row">
-          <div class="cr-field"><div class="cr-label">Contact Name</div><div class="cr-value ${r.name?'':'empty'}">${esc(r.name)||'Not set'}</div></div>
-          <div class="cr-field"><div class="cr-label">Phone</div><div class="cr-value-wrap"><div class="cr-value ${r.phone?'':'empty'}" style="flex:1;min-width:0">${r.phone?fmtPhone(r.phone):'Not set'}</div>${r.phone?`<button class="cr-copy-btn" onclick="event.stopPropagation();copyRecordField(this,'${r.id}','phone')" title="Copy phone"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>`:''}</div></div>
+          <div class="cr-field"><div class="cr-label">Contact Name</div><div class="cr-value-wrap"><div class="cr-value ${r.name?'':'empty'}" style="flex:1;min-width:0">${esc(r.name)||'Not set'}</div>${r.name?`<button class="cr-copy-btn" onclick="copyRecordField(this,'${r.id}','name')" title="Copy name"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>`:''}</div></div>
+          <div class="cr-field"><div class="cr-label">Phone</div><div class="cr-value-wrap"><div class="cr-value ${r.phone?'':'empty'}" style="flex:1;min-width:0">${r.phone?fmtPhone(r.phone):'Not set'}</div>${r.phone?`<button class="cr-copy-btn" onclick="copyRecordField(this,'${r.id}','phone')" title="Copy phone"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>`:''}</div></div>
         </div>
         <div class="cr-row">
-          <div class="cr-field"><div class="cr-label">Email</div><div class="cr-value-wrap"><div class="cr-value ${r.email?'':'empty'} ${r.email?'email-val':''}" style="flex:1;min-width:0">${r.email?esc(r.email):'Not set'}</div>${r.email?`<button class="cr-copy-btn" onclick="event.stopPropagation();copyRecordField(this,'${r.id}','email')" title="Copy email"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>`:''}</div></div>
+          <div class="cr-field"><div class="cr-label">Email</div><div class="cr-value-wrap"><div class="cr-value ${r.email?'':'empty'} ${r.email?'email-val':''}" style="flex:1;min-width:0">${r.email?esc(r.email):'Not set'}</div>${r.email?`<button class="cr-copy-btn" onclick="copyRecordField(this,'${r.id}','email')" title="Copy email"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>`:''}</div></div>
           <div class="cr-field"><div class="cr-label">Status</div><div class="cr-value">${statusPill(r.status)}</div></div>
         </div>
         <div class="cr-row">
           <div class="cr-field"><div class="cr-label">Follow-Up Date</div><div class="cr-value ${r.followUpDate?'':'empty'}">${r.followUpDate?fmtDate(r.followUpDate):'Not set'}</div></div>
-          <div class="cr-field"><div class="cr-label">Date Added</div><div class="cr-value ${r.date?'':'empty'}">${r.date?fmtDate(r.date):'Not set'}</div></div>
+          <div class="cr-field"><div class="cr-label">Meeting Date</div><div class="cr-value ${r.meetingDate?'':'empty'}">${r.meetingDate?fmtDate(r.meetingDate):'Not set'}</div></div>
         </div>
         <div class="cr-row">
           <div class="cr-field" style="flex:1 1 100%"><div class="cr-label">Listing Link</div><div class="cr-value ${r.link?'':'empty'}">${r.link?esc(r.link.length>60?r.link.substring(0,60)+'...':r.link):'Not set'}</div></div>
         </div>
+        ${r.date?`<div style="text-align:right;margin-top:6px"><span style="font-size:.7rem;color:var(--text3)">First Contacted: ${fmtDate(r.date)}</span></div>`:''}
       </div>
       <div style="padding:10px 16px 14px;border-top:1px solid var(--border)">
         <div class="cr-label" style="margin-bottom:4px">Property Note</div>
@@ -4206,7 +4207,8 @@ function openCardEditor(recId, cardType){
         <div class="prop-field"><label>Email</label><input type="email" id="ce_email" value="${esc(r.email)}" oninput="validateEmailField()"><div class="ce-email-error" id="ce_email_error">Please enter a valid email address</div></div>
         <div class="prop-field"><label>Status</label><select id="ce_status">${SELECTABLE_STATUSES.map(s=>`<option value="${s}" ${r.status===s?'selected':''}>${s}</option>`).join('')}</select></div>
         <div class="prop-field"><label>Follow-Up Date</label><input type="date" id="ce_followup" value="${r.followUpDate||''}"></div>
-        <div class="prop-field"><label>Date Added</label><input type="date" id="ce_date" value="${r.date?r.date.split('T')[0]:''}"></div>
+        <div class="prop-field"><label>Meeting Date</label><input type="date" id="ce_meeting" value="${r.meetingDate||''}"></div>
+        <div class="prop-field"><label>First Contacted</label><input type="date" id="ce_date" value="${r.date?r.date.split('T')[0]:''}"></div>
       </div>
       <div class="prop-field" style="margin-top:10px"><label>Listing Link</label><input type="url" id="ce_link" value="${esc(r.link)}"></div>`;
     saveHandler = 'saveContactCard';
@@ -4258,6 +4260,7 @@ function saveContactCard(recId){
   r.email = document.getElementById('ce_email')?.value?.trim() || '';
   r.status = document.getElementById('ce_status')?.value || r.status;
   r.followUpDate = document.getElementById('ce_followup')?.value || null;
+  r.meetingDate = document.getElementById('ce_meeting')?.value || null;
   r.date = document.getElementById('ce_date')?.value || r.date;
   const newLink = document.getElementById('ce_link')?.value?.trim() || '';
   if(newLink !== r.link){ r.link = newLink }
