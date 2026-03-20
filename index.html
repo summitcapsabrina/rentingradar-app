@@ -602,7 +602,7 @@ h1 .hero-edit-input{font-size:1.35rem}
 .rr-dt-popup .rr-dt-actions .rr-dt-cancel:hover{background:var(--primary-light)}
 .inline-status{cursor:pointer;position:relative;display:inline-block}
 .inline-status:hover{opacity:.85}
-.inline-status-dd{position:fixed;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 8px 24px rgba(0,0,0,.25);z-index:300;min-width:190px;max-height:360px;overflow-y:auto;padding:4px 0;display:none}
+.inline-status-dd{position:fixed;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 12px 40px rgba(0,0,0,.35);z-index:500;min-width:190px;max-height:360px;overflow-y:auto;padding:4px 0;display:none}
 .inline-status-dd.open{display:block}
 .inline-status-dd .isd-item{padding:7px 12px;cursor:pointer;transition:background .1s;font-size:.82rem}
 .inline-status-dd .isd-item:hover{background:var(--primary-light)}
@@ -1485,7 +1485,7 @@ function renderProfile(){
       <div class="profile-hero-meta" style="margin-top:8px">
         ${statusPill(r.status)}
         ${r.link ? `<a class="profile-platform" href="${esc(r.link)}" target="_blank">${plat.icon} ${plat.name} <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"/></svg></a>` : '<span style="font-size:.8rem;color:var(--text3)">No listing link</span>'}
-        ${r.followUpDate ? `<span class="kc-followup ${(getFollowUpStatus(r)||{}).type||''}" style="font-size:.75rem">Follow-up: ${fmtDateTimeForCard(r.followUpDate, r.followUpTime)}</span>` : ''}
+        ${r.followUpDate ? (()=>{ const fp = new Date(r.followUpDate+'T'+(r.followUpTime||'23:59')) < new Date(); return `<span style="font-size:.75rem;color:${fp?'var(--text3)':'var(--danger, #ef4444)'};display:inline-flex;align-items:center;gap:3px"><span style="font-size:.8rem">${fp?'\uD83D\uDD15':'\uD83D\uDD14'}</span> Follow-up: ${fmtDateTimeForCard(r.followUpDate, r.followUpTime)}</span>`; })() : ''}
         <div class="profile-tabs">
           <div class="profile-tab ${activeTab==='details'?'active':''}" data-tab="details" onclick="setProfileTab('details')">🏠 Property Details</div>
           <div class="profile-tab ${activeTab==='analysis'?'active':''}" data-tab="analysis" onclick="setProfileTab('analysis')">📊 Analysis ${!proOk?'<span class=\\"tab-lock basic\\">BASIC</span>':''}</div>
@@ -1516,7 +1516,7 @@ function renderProfile(){
           <div class="cr-field" style="min-width:50px;flex:0 1 auto"><div class="cr-label">${d.bathrooms==='1'?'Bath':'Baths'}</div><div class="cr-value ${d.bathrooms?'':'empty'}">${d.bathrooms||'—'}</div></div>
           <div class="cr-field" style="min-width:55px;flex:0 1 auto"><div class="cr-label">Sq Ft</div><div class="cr-value ${d.sqft?'':'empty'}">${d.sqft ? Number(d.sqft).toLocaleString() : '—'}</div></div>
           <div class="cr-field" style="min-width:70px;flex:0 1 auto"><div class="cr-label">Available</div><div class="cr-value ${d.availableDate?'':'empty'}">${d.availableDate==='now'?'Now':d.availableDate ? fmtDate(d.availableDate) : '—'}</div></div>
-          <div class="cr-field" style="min-width:auto;flex:0 1 auto;margin-left:auto"><div class="cr-label">Status</div><div class="inline-status" onclick="toggleInlineStatus(event,'${r.id}')">${statusPill(r.status)}<div class="inline-status-dd" id="inlineStatusDD">${SELECTABLE_STATUSES.map(s=>`<div class="isd-item ${r.status===s?'current':''}" onclick="setInlineStatus(event,'${r.id}','${s}')">${statusPill(s)}</div>`).join('')}</div></div></div>
+          <div class="cr-field" style="min-width:auto;flex:0 1 auto"><div class="cr-label">Status</div><div class="inline-status" onclick="toggleInlineStatus(event,'${r.id}')">${statusPill(r.status)}<div class="inline-status-dd" id="inlineStatusDD">${SELECTABLE_STATUSES.map(s=>`<div class="isd-item ${r.status===s?'current':''}" onclick="setInlineStatus(event,'${r.id}','${s}')">${statusPill(s)}</div>`).join('')}</div></div></div>
         </div>
         <div class="cr-row">
           <div class="cr-field"><div class="cr-label">Contact Name</div><div class="cr-value ${r.name?'':'empty'}">${esc(r.name)||'Not set'}</div>${r.name?`<button class="cr-copy-btn" onclick="event.stopPropagation();copyRecordField(this,'${r.id}','name')" title="Copy name"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>`:''}</div>
@@ -4283,16 +4283,14 @@ function fmtDateTimeForCard(dateStr, timeStr){
 }
 
 function renderFollowUpSubtle(r){
-  if(!r.followUpDate) return '';
-  const fuDate = new Date(r.followUpDate + 'T' + (r.followUpTime || '23:59'));
-  const isPast = fuDate < new Date();
-  const bellColor = isPast ? 'var(--text3)' : '#d4a017';
-  const bellStyle = isPast ? 'opacity:.5' : '';
-  const strikethrough = isPast ? '<line x1="3" y1="3" x2="21" y2="21"/>' : '';
-  return '<span style="font-size:.65rem;color:var(--text3);display:inline-flex;align-items:center;gap:3px">'
-    + '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="' + bellColor + '" stroke-width="2" style="' + bellStyle + '">'
-    + '<path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/>' + strikethrough + '</svg>'
-    + ' Follow-Up: ' + fmtDateTimeForCard(r.followUpDate, r.followUpTime) + '</span>';
+  const hasDate = !!r.followUpDate;
+  const isPast = hasDate ? new Date(r.followUpDate + 'T' + (r.followUpTime || '23:59')) < new Date() : true;
+  const bell = isPast ? '\uD83D\uDD15' : '\uD83D\uDD14';
+  const color = isPast ? 'var(--text3)' : 'var(--danger, #ef4444)';
+  const dateText = hasDate ? fmtDateTimeForCard(r.followUpDate, r.followUpTime) : '<span style="font-style:italic">Not set</span>';
+  return '<span style="font-size:.65rem;color:' + color + ';display:inline-flex;align-items:center;gap:3px">'
+    + '<span style="font-size:.7rem">' + bell + '</span>'
+    + ' Follow-Up: ' + dateText + '</span>';
 }
 
 function setupDateTimePicker(triggerId, opts){
@@ -4378,7 +4376,11 @@ function openDtPopup(triggerId, showTime){
 
 function _dtOutsideClick(e){
   const popup = document.getElementById('rrDtPopup');
-  if(popup && !popup.contains(e.target) && !e.target.closest('.rr-dt-trigger')){
+  if(!popup) return;
+  // After innerHTML re-render, e.target may be detached — check bounding rect
+  const rect = popup.getBoundingClientRect();
+  const inPopup = e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom;
+  if(!inPopup && !popup.contains(e.target) && !e.target.closest('.rr-dt-trigger')){
     closeDtPopup();
   }
 }
