@@ -653,6 +653,19 @@ h1 .hero-edit-input{font-size:1.35rem}
 .an-why{width:100%;padding:6px 8px;border:1px solid transparent;border-radius:var(--radius);font-size:.82rem;background:transparent;color:var(--text);resize:vertical;font-family:inherit;min-height:36px;transition:border-color .15s}
 .an-why:hover{border-color:var(--border)}
 .an-why:focus{border-color:var(--primary);outline:none;background:var(--surface)}
+.an-readonly-summary{font-size:.78rem;color:var(--text2);line-height:1.5;padding:4px 0}
+.an-req-editable{cursor:pointer;transition:background .15s}
+.an-req-editable:hover{background:rgba(99,129,250,.06)}
+.req-edit-hint{font-size:.55rem;color:var(--text3);opacity:0;transition:opacity .15s}
+.an-req-editable:hover .req-edit-hint{opacity:1}
+.comp-inline-input{width:100%;padding:2px 4px;border:1px solid transparent;border-radius:3px;font-size:.72rem;background:transparent;color:var(--text);text-align:right;font-family:inherit;transition:border-color .15s}
+.comp-inline-input:hover{border-color:var(--border)}
+.comp-inline-input:focus{border-color:var(--primary);outline:none;background:var(--surface)}
+.comp-inline-input.sm{width:50px}
+.proj-input{width:100%;padding:4px 6px;border:1px solid transparent;border-radius:4px;font-size:1rem;font-weight:700;background:transparent;color:inherit;text-align:center;font-family:inherit;transition:border-color .15s}
+.proj-input:hover{border-color:var(--border)}
+.proj-input:focus{border-color:var(--primary);outline:none;background:var(--surface)}
+.proj-original{font-size:.62rem;color:var(--text3);font-style:italic;margin-top:2px}
 
 /* ===== CARD EDIT HOVER ===== */
 .profile-card-header .card-edit-btn{opacity:0;transition:opacity .15s;width:30px;height:30px;display:flex;align-items:center;justify-content:center;border-radius:var(--radius);color:var(--text3);margin-left:auto;flex-shrink:0;cursor:pointer;z-index:2}
@@ -3979,8 +3992,14 @@ function calcComputeAll(r){
   const monthlyRent = parseFloat(pd.monthlyRent) || 0;
   const furnishCost = (br * c.costPerBR) + (c.extraCommonSpaces * c.costPerExtraSpace);
   const totalInvested = c.applicationFees + c.securityDeposit + c.firstLastRent + c.additionalFee1 + c.additionalFee2 + furnishCost;
-  const daysOccupied = 365 * (c.estOccupancyRate / 100);
-  const annualRevenue = c.avgDailyRate * daysOccupied;
+  // Pull ADR and occupancy from Analysis comps
+  const comps = (r.details && r.details.comps) ? r.details.comps : [];
+  const compAvgRate = comps.length > 0 ? comps.reduce((s,x)=>s+(parseFloat(x.nightlyRate)||0),0)/comps.length : 0;
+  const compAvgOcc = comps.length > 0 ? comps.reduce((s,x)=>s+(parseFloat(x.occupancy)||0),0)/comps.length : 0;
+  const avgDailyRate = compAvgRate;
+  const estOccupancyRate = compAvgOcc;
+  const daysOccupied = 365 * (estOccupancyRate / 100);
+  const annualRevenue = avgDailyRate * daysOccupied;
   const monthlyRevenue = annualRevenue / 12;
   const cleaning = c.cleaning;
   const coHostFee = monthlyRevenue * (c.coHostPct / 100);
@@ -3992,7 +4011,7 @@ function calcComputeAll(r){
   const monthlyCF = monthlyNOI - monthlyRent;
   const annualCF = monthlyCF * 12;
   const cocReturn = totalInvested > 0 ? (annualCF / totalInvested * 100) : 0;
-  return { c, br, monthlyRent, furnishCost, totalInvested, daysOccupied, annualRevenue, monthlyRevenue, cleaning, coHostFee, airbnbFee, totalMonthlyExp, annualExp, monthlyNOI, annualNOI, monthlyCF, annualCF, cocReturn };
+  return { c, br, monthlyRent, furnishCost, totalInvested, avgDailyRate, estOccupancyRate, daysOccupied, annualRevenue, monthlyRevenue, cleaning, coHostFee, airbnbFee, totalMonthlyExp, annualExp, monthlyNOI, annualNOI, monthlyCF, annualCF, cocReturn, compsCount: comps.length };
 }
 
 function renderCalculatorTab(r){
@@ -4021,13 +4040,15 @@ function renderCalculatorTab(r){
   h += cRow('Total Money Invested', cDisplay(fmtAcct(v.totalInvested), {computed:true}), {total:true});
   h += '</div></div>';
 
-  // Forecasted Revenue
+  // Forecasted Revenue (driven by Analysis comps)
   h += '<div class="calc-section"><div class="calc-section-header">Forecasted Revenue</div><div class="calc-section-body">';
-  h += cRow('Average Daily Rate', cInput('avgDailyRate', c.avgDailyRate));
-  h += cRow('Est. Occupancy Rate (%)', cInput('estOccupancyRate', c.estOccupancyRate, {step:'1',min:0,max:100,pct:true}));
-  h += cRow('Est. Days/Year Occupied', cDisplay(fmtNum(v.daysOccupied), {computed:true}));
-  h += cRow('Annual Revenue', cDisplay(fmtAcct(Math.round(v.annualRevenue)), {computed:true}));
-  h += cRow('Monthly Revenue', cDisplay(fmtAcct(Math.round(v.monthlyRevenue)), {computed:true}), {total:true});
+  const noComps = v.compsCount === 0;
+  const compHint = noComps ? 'add comps in Analysis tab' : 'avg from Analysis comps';
+  h += cRow('Average Daily Rate', cDisplay(noComps ? '$0' : fmtAcct2(v.avgDailyRate), {computed:!noComps}), {hint:compHint});
+  h += cRow('Est. Occupancy Rate', cDisplay(noComps ? '0%' : v.estOccupancyRate.toFixed(1)+'%', {computed:!noComps}), {hint:compHint});
+  h += cRow('Est. Days/Year Occupied', cDisplay(noComps ? '0' : fmtNum(v.daysOccupied), {computed:!noComps}));
+  h += cRow('Annual Revenue', cDisplay(noComps ? '$0' : fmtAcct(Math.round(v.annualRevenue)), {computed:!noComps}));
+  h += cRow('Monthly Revenue', cDisplay(noComps ? '$0' : fmtAcct(Math.round(v.monthlyRevenue)), {computed:!noComps}), {total:true});
   h += '</div></div>';
 
   // Monthly Operating Expenses
@@ -4068,12 +4089,6 @@ function renderCalculatorTab(r){
   h += '<div class="calc-kpi '+cfClass+'"><div class="kpi-label">Cash Flow</div><div class="kpi-monthly">'+fmtMoney(Math.round(v.monthlyCF))+'<span class="kpi-per">/mo</span></div><div class="kpi-annual">'+fmtMoney(Math.round(v.annualCF))+'/yr</div></div>';
   h += '<div class="calc-kpi '+cocClass+'"><div class="kpi-label">Cash on Cash Return</div><div class="kpi-monthly">'+v.cocReturn.toFixed(1)+'%</div><div class="kpi-annual">'+fmtMoney(Math.round(v.totalInvested))+' invested</div></div>';
   h += '</div>';
-
-  // Monthly Rent section (below NOI, above Payback)
-  h += '<div class="calc-section"><div class="calc-section-header">Monthly Rent</div><div class="calc-section-body">';
-  h += cRow('Monthly Rent', cDisplay(v.monthlyRent ? fmtAcct(v.monthlyRent) : '<span style="color:var(--text3);font-style:italic">Set in Property Details</span>'), {hint:'from Property Details'});
-  h += cRow('Annual Rent', cDisplay(fmtAcct(v.monthlyRent * 12), {muted:true}));
-  h += '</div></div>';
 
   // Payback Period Table
   h += '<div class="calc-section"><div class="calc-section-header">Pay-Back Period (From Cash Flows)</div><div class="calc-section-body" style="padding:6px 4px;overflow-x:auto">';
@@ -4160,28 +4175,52 @@ function renderAnalysisTab(r){
   const comps = getComps(r);
   const v = calcComputeAll(r);
   const c = v.c;
+  const isProUser = requireTier('pro','Pro Analysis Features');
+  const br = parseInt(pd.bedrooms) || 0;
+  const CLEANING_BY_BR = {0:0,1:500,2:650,3:900,4:1200,5:2000,6:3000};
+  const defaultCleaning = CLEANING_BY_BR[Math.min(br,6)] || 0;
+  const cleaningFee = (an.cleaningOverride !== undefined && an.cleaningOverride !== null) ? parseFloat(an.cleaningOverride) : defaultCleaning;
   const profitReq = parseFloat(an.profitRequirement) || 1000;
-  const utilities = parseFloat(an.utilities) || (v.totalMonthlyExp - v.cleaning);
+  // Utilities = total of Monthly Operating Expenses from ROI Calculator (excluding cleaning to avoid double count, but per user spec it's the total)
+  const utilities = v.totalMonthlyExp;
+
+  // Build Design & Amenities summary from Property Details key highlights
+  const highlights = [];
+  if(pd.bedrooms) highlights.push(pd.bedrooms + ' Beds');
+  if(pd.bathrooms) highlights.push(pd.bathrooms + ' Baths');
+  if(pd.sqft) highlights.push(Number(pd.sqft).toLocaleString() + ' sq ft');
+  if(pd.flooring && pd.flooring.length) highlights.push('Flooring: ' + (Array.isArray(pd.flooring) ? pd.flooring.join(', ') : pd.flooring));
+  if(pd.countertops) highlights.push('Countertops: ' + pd.countertops);
+  if(pd.appliances && pd.appliances.length) highlights.push('Appliances: ' + (Array.isArray(pd.appliances) ? pd.appliances.join(', ') : pd.appliances));
+  if(pd.laundry) highlights.push('Laundry: ' + pd.laundry);
+  if(pd.ac) highlights.push('A/C: ' + pd.ac);
+  if(pd.parking) highlights.push('Parking: ' + pd.parking);
+  if(pd.pool && pd.pool !== 'None') highlights.push('Pool: ' + pd.pool);
+  if(pd.communityAmenities && pd.communityAmenities.length) highlights.push('Community: ' + (Array.isArray(pd.communityAmenities) ? pd.communityAmenities.join(', ') : pd.communityAmenities));
+  const amenitySummary = highlights.length > 0 ? highlights.join(' · ') : 'No details entered yet — fill out Property Details to auto-populate.';
 
   let h = '';
 
   // ── Top: Property Snapshot + Required Revenue side by side ──
   h += '<div class="an-top-grid">';
 
-  // Left: Property snapshot (Design/Amenities + Concerns)
+  // Left: Property snapshot (Design/Amenities read-only + Notes)
   h += '<div class="an-section"><div class="an-section-hdr">Property Notes</div><div class="an-section-body">';
-  h += '<div class="an-field-row"><div class="an-field-label">Design & Amenities</div><div class="an-field-val"><textarea placeholder="Describe design, amenities, standout features..." onchange="updateAnalysisField(\''+r.id+'\',\'designAmenities\',this.value)">'+esc(an.designAmenities||'')+'</textarea></div></div>';
-  h += '<div class="an-field-row"><div class="an-field-label">Concerns</div><div class="an-field-val"><textarea placeholder="Any concerns about this property..." onchange="updateAnalysisField(\''+r.id+'\',\'concerns\',this.value)">'+esc(an.concerns||'')+'</textarea></div></div>';
+  h += '<div class="an-field-row"><div class="an-field-label">Design & Amenities</div><div class="an-field-val"><div class="an-readonly-summary">'+esc(amenitySummary)+'</div></div></div>';
+  h += '<div class="an-field-row"><div class="an-field-label">Notes</div><div class="an-field-val"><textarea placeholder="Any notes or concerns about this property..." onchange="updateAnalysisField(\''+r.id+'\',\'concerns\',this.value)">'+esc(an.concerns||'')+'</textarea></div></div>';
   h += '</div></div>';
 
   // Right: Required Revenue
   h += '<div class="an-section"><div class="an-section-hdr">Required Revenue</div><div class="an-section-body" style="padding:0">';
   h += '<div class="an-req-bar" style="border:none;border-radius:0;margin:0">';
   h += '<div class="an-req-item"><div class="req-label">Rent</div><div class="req-yr">'+fmtMoney(v.monthlyRent*12)+'</div><div class="req-mo">'+fmtMoney(v.monthlyRent)+'/mo</div></div>';
-  h += '<div class="an-req-item"><div class="req-label">Cleaning</div><div class="req-yr">'+fmtMoney(Math.round(v.cleaning*12))+'</div><div class="req-mo">'+fmtMoney(Math.round(v.cleaning))+'/mo</div></div>';
-  h += '<div class="an-req-item"><div class="req-label">Utilities</div><div class="req-yr">'+fmtMoney(Math.round(utilities*12))+'</div><div class="req-mo">'+fmtMoney(Math.round(utilities))+'/mo</div></div>';
-  h += '<div class="an-req-item"><div class="req-label">Profit Req</div><div class="req-yr">'+fmtMoney(profitReq*12)+'</div><div class="req-mo">'+fmtMoney(profitReq)+'/mo</div></div>';
-  const monthlyReqRev = v.monthlyRent + v.cleaning + utilities + profitReq;
+  // Cleaning — editable with warning
+  h += '<div class="an-req-item an-req-editable" onclick="editAnalysisCleaning(\''+r.id+'\','+defaultCleaning+')"><div class="req-label">Cleaning <span class="req-edit-hint">✎</span></div><div class="req-yr">'+fmtMoney(Math.round(cleaningFee*12))+'</div><div class="req-mo">'+fmtMoney(Math.round(cleaningFee))+'/mo</div></div>';
+  // Utilities — not editable, from ROI Calculator
+  h += '<div class="an-req-item" onclick="alert(\'Utilities are calculated from your Monthly Operating Expenses in the ROI Calculator tab. Edit individual utility amounts there.\')" style="cursor:help" title="Edit in ROI Calculator → Monthly Operating Expenses"><div class="req-label">Utilities <span style="font-size:.55rem;color:var(--text3)">ℹ</span></div><div class="req-yr">'+fmtMoney(Math.round(utilities*12))+'</div><div class="req-mo">'+fmtMoney(Math.round(utilities))+'/mo</div></div>';
+  // Profit Requirement — editable with warning under $1000
+  h += '<div class="an-req-item an-req-editable" onclick="editAnalysisProfitReq(\''+r.id+'\')"><div class="req-label">Profit Req <span class="req-edit-hint">✎</span></div><div class="req-yr">'+fmtMoney(profitReq*12)+'</div><div class="req-mo">'+fmtMoney(profitReq)+'/mo</div></div>';
+  const monthlyReqRev = v.monthlyRent + cleaningFee + utilities + profitReq;
   h += '<div class="an-req-item total"><div class="req-label">Required Rev</div><div class="req-yr" style="color:var(--primary)">'+fmtMoney(Math.round(monthlyReqRev*12))+'</div><div class="req-mo">'+fmtMoney(Math.round(monthlyReqRev))+'/mo</div></div>';
   h += '</div>';
   h += '</div></div>';
@@ -4190,8 +4229,8 @@ function renderAnalysisTab(r){
 
   // ── Averages Bar (from comps) ──
   if(comps.length > 0){
-    const avgOcc = comps.reduce((s,x)=>s+(x.occupancy||0),0)/comps.length;
-    const avgRate = comps.reduce((s,x)=>s+(x.nightlyRate||0),0)/comps.length;
+    const avgOcc = comps.reduce((s,x)=>s+(parseFloat(x.occupancy)||0),0)/comps.length;
+    const avgRate = comps.reduce((s,x)=>s+(parseFloat(x.nightlyRate)||0),0)/comps.length;
     h += '<div class="comp-avg-bar" style="margin-bottom:14px">';
     h += '<div class="comp-avg-item"><div class="avg-label">Avg Occ Rate</div><div class="avg-value">'+avgOcc.toFixed(1)+'%</div></div>';
     h += '<div class="comp-avg-item"><div class="avg-label">Avg Nightly Rate</div><div class="avg-value">$'+avgRate.toFixed(2)+'</div></div>';
@@ -4199,7 +4238,13 @@ function renderAnalysisTab(r){
   }
 
   // ── Comparable Airbnb Analysis ──
-  h += '<div class="an-section"><div class="an-section-hdr">Comparable Airbnb Analysis <span style="font-size:.62rem;color:var(--text3);font-weight:400;text-transform:none;letter-spacing:0">('+comps.length+'/20)</span></div>';
+  h += '<div class="an-section"><div class="an-section-hdr">Comparable Airbnb Analysis <span style="font-size:.62rem;color:var(--text3);font-weight:400;text-transform:none;letter-spacing:0">('+comps.length+'/20)</span>';
+  if(isProUser){
+    h += ' <span style="font-size:.58rem;color:var(--success);font-weight:500;text-transform:none;letter-spacing:0">✨ Pro: Chrome Extension auto-fills data</span>';
+  } else {
+    h += ' <span style="font-size:.58rem;color:var(--text3);font-weight:400;text-transform:none;letter-spacing:0;font-style:italic">Manual entry · <a href="#" onclick="event.preventDefault();switchView(\'pricing\')" style="color:var(--primary)">Upgrade to Pro</a> for auto-fill</span>';
+  }
+  h += '</div>';
   h += '<div class="an-section-body">';
 
   if(comps.length < 20){
@@ -4209,23 +4254,24 @@ function renderAnalysisTab(r){
     h += '</div>';
   }
 
+  // Always show table with columns (even if empty, show headers so Basic users know what to fill)
+  h += '<div class="comp-table-wrap"><table class="comp-table">';
+  h += '<thead><tr><th>#</th><th>Link</th><th class="r">Rev</th><th class="r">Days</th><th class="r">Occ</th><th class="r">Rate</th><th class="r">Gst</th><th class="r">BR</th><th class="r">Ba</th><th>Host</th><th>Rating</th><th class="comp-notes-cell">Notes</th><th></th></tr></thead>';
+  h += '<tbody>';
   if(comps.length > 0){
-    h += '<div class="comp-table-wrap"><table class="comp-table">';
-    h += '<thead><tr><th>#</th><th>Link</th><th class="r">Rev</th><th class="r">Days</th><th class="r">Occ</th><th class="r">Rate</th><th class="r">Gst</th><th class="r">BR</th><th class="r">Ba</th><th>Host</th><th>Rating</th><th class="comp-notes-cell">Notes</th><th></th></tr></thead>';
-    h += '<tbody>';
     comps.forEach((comp, i) => {
       const rating = comp.rating || 'competes';
       h += '<tr>';
       h += '<td style="color:var(--text3)">'+(i+1)+'</td>';
       h += '<td><a class="comp-link" href="'+esc(comp.link||'')+'" target="_blank" title="'+esc(comp.link||'')+'">'+esc(comp.linkShort||'Link')+'</a></td>';
-      h += '<td class="r">'+fmtMoney(comp.annualRevenue||0)+'</td>';
-      h += '<td class="r">'+(comp.daysAvailable||'—')+'</td>';
-      h += '<td class="r">'+(comp.occupancy||0)+'%</td>';
-      h += '<td class="r">$'+(comp.nightlyRate||0)+'</td>';
-      h += '<td class="r">'+(comp.guests||'—')+'</td>';
-      h += '<td class="r">'+(comp.bedrooms||'—')+'</td>';
-      h += '<td class="r">'+(comp.bathrooms||'—')+'</td>';
-      h += '<td>'+esc(comp.host||'—')+'</td>';
+      h += '<td class="r"><input type="number" class="comp-inline-input" value="'+(comp.annualRevenue||'')+'" placeholder="—" onchange="updateCompField(\''+r.id+'\','+i+',\'annualRevenue\',this.value)" /></td>';
+      h += '<td class="r"><input type="number" class="comp-inline-input sm" value="'+(comp.daysAvailable||'')+'" placeholder="—" onchange="updateCompField(\''+r.id+'\','+i+',\'daysAvailable\',this.value)" /></td>';
+      h += '<td class="r"><input type="number" class="comp-inline-input sm" value="'+(comp.occupancy||'')+'" placeholder="—" onchange="updateCompField(\''+r.id+'\','+i+',\'occupancy\',this.value)" />%</td>';
+      h += '<td class="r">$<input type="number" class="comp-inline-input sm" value="'+(comp.nightlyRate||'')+'" placeholder="—" onchange="updateCompField(\''+r.id+'\','+i+',\'nightlyRate\',this.value)" /></td>';
+      h += '<td class="r"><input type="number" class="comp-inline-input sm" value="'+(comp.guests||'')+'" placeholder="—" onchange="updateCompField(\''+r.id+'\','+i+',\'guests\',this.value)" /></td>';
+      h += '<td class="r"><input type="number" class="comp-inline-input sm" value="'+(comp.bedrooms||'')+'" placeholder="—" onchange="updateCompField(\''+r.id+'\','+i+',\'bedrooms\',this.value)" /></td>';
+      h += '<td class="r"><input type="number" class="comp-inline-input sm" value="'+(comp.bathrooms||'')+'" placeholder="—" onchange="updateCompField(\''+r.id+'\','+i+',\'bathrooms\',this.value)" /></td>';
+      h += '<td><input type="text" class="comp-inline-input" value="'+esc(comp.host||'')+'" placeholder="—" onchange="updateCompField(\''+r.id+'\','+i+',\'host\',this.value)" /></td>';
       h += '<td><select class="comp-rating" onchange="updateCompField(\''+r.id+'\','+i+',\'rating\',this.value)">';
       h += '<option value="beats" '+(rating==='beats'?'selected':'')+'>Beats</option>';
       h += '<option value="competes" '+(rating==='competes'?'selected':'')+'>Competes</option>';
@@ -4235,36 +4281,71 @@ function renderAnalysisTab(r){
       h += '<td><button class="comp-remove" onclick="removeComp(\''+r.id+'\','+i+')" title="Remove">✕</button></td>';
       h += '</tr>';
     });
-    h += '</tbody></table></div>';
   } else {
-    h += '<div style="text-align:center;padding:20px 16px;color:var(--text3);font-size:.85rem">';
-    h += '<div style="font-size:1.5rem;margin-bottom:6px">📊</div>';
+    h += '<tr><td colspan="13" style="text-align:center;padding:20px 16px;color:var(--text3);font-size:.82rem">';
+    h += '<div style="font-size:1.3rem;margin-bottom:4px">📊</div>';
     h += 'No comparables added yet. Paste an Airbnb link above to start your analysis.';
-    h += '</div>';
+    h += '</td></tr>';
   }
+  h += '</tbody></table></div>';
   h += '</div></div>';
 
   // ── Revenue Projections ──
   h += '<div class="an-section"><div class="an-section-hdr">Revenue Projections</div><div class="an-section-body">';
+
+  // Calculate projections from comps (for Pro auto-fill)
+  let projLikely = 0, projBest = 0, projWorst = 0;
   if(comps.length > 0){
-    const avgOcc = comps.reduce((s,x)=>s+(x.occupancy||0),0)/comps.length;
-    const avgRate = comps.reduce((s,x)=>s+(x.nightlyRate||0),0)/comps.length;
+    const avgOcc = comps.reduce((s,x)=>s+(parseFloat(x.occupancy)||0),0)/comps.length;
+    const avgRate = comps.reduce((s,x)=>s+(parseFloat(x.nightlyRate)||0),0)/comps.length;
     const beats = comps.filter(x=>x.rating==='beats').length;
     const loses = comps.filter(x=>x.rating==='loses').length;
     const total = comps.length;
     const ratio = total > 0 ? (beats - loses) / total : 0;
     const baseRev = avgRate * 365 * (avgOcc / 100);
-    const likely = Math.round(baseRev * (1 + ratio * 0.05));
-    const best = Math.round(baseRev * 1.1);
-    const worst = Math.round(baseRev * 0.85);
+    projLikely = Math.round(baseRev * (1 + ratio * 0.05));
+    projBest = Math.round(baseRev * 1.1);
+    projWorst = Math.round(baseRev * 0.85);
+  }
+
+  if(isProUser){
+    // Pro: auto-projected, editable with strikethrough showing original
+    const userLikely = an.userLikely !== undefined ? parseFloat(an.userLikely) : null;
+    const userBest = an.userBest !== undefined ? parseFloat(an.userBest) : null;
+    const userWorst = an.userWorst !== undefined ? parseFloat(an.userWorst) : null;
+    const showLikely = userLikely !== null ? userLikely : projLikely;
+    const showBest = userBest !== null ? userBest : projBest;
+    const showWorst = userWorst !== null ? userWorst : projWorst;
+
     h += '<div class="an-proj-grid">';
-    h += '<div class="an-proj-card likely"><div class="proj-label">Likely Revenue</div><div class="proj-value">'+fmtMoney(likely)+'</div></div>';
-    h += '<div class="an-proj-card best"><div class="proj-label">Best Case</div><div class="proj-value">'+fmtMoney(best)+'</div></div>';
-    h += '<div class="an-proj-card worst"><div class="proj-label">Worst Case</div><div class="proj-value">'+fmtMoney(worst)+'</div></div>';
+    h += '<div class="an-proj-card likely"><div class="proj-label">Likely Revenue</div>';
+    h += '<div class="proj-value"><input type="number" class="proj-input" value="'+(showLikely||'')+'" onchange="updateProjection(\''+r.id+'\',\'userLikely\',this.value,'+projLikely+')" /></div>';
+    if(userLikely !== null && userLikely !== projLikely && projLikely > 0) h += '<div class="proj-original"><s>'+fmtMoney(projLikely)+'</s> projected</div>';
+    h += '</div>';
+    h += '<div class="an-proj-card best"><div class="proj-label">Best Case</div>';
+    h += '<div class="proj-value"><input type="number" class="proj-input" value="'+(showBest||'')+'" onchange="updateProjection(\''+r.id+'\',\'userBest\',this.value,'+projBest+')" /></div>';
+    if(userBest !== null && userBest !== projBest && projBest > 0) h += '<div class="proj-original"><s>'+fmtMoney(projBest)+'</s> projected</div>';
+    h += '</div>';
+    h += '<div class="an-proj-card worst"><div class="proj-label">Worst Case</div>';
+    h += '<div class="proj-value"><input type="number" class="proj-input" value="'+(showWorst||'')+'" onchange="updateProjection(\''+r.id+'\',\'userWorst\',this.value,'+projWorst+')" /></div>';
+    if(userWorst !== null && userWorst !== projWorst && projWorst > 0) h += '<div class="proj-original"><s>'+fmtMoney(projWorst)+'</s> projected</div>';
+    h += '</div>';
     h += '</div>';
   } else {
-    h += '<div style="text-align:center;padding:12px;color:var(--text3);font-size:.82rem;font-style:italic">Add comparables above to generate revenue projections.</div>';
+    // Basic: manual input only
+    const manLikely = an.userLikely !== undefined ? an.userLikely : '';
+    const manBest = an.userBest !== undefined ? an.userBest : '';
+    const manWorst = an.userWorst !== undefined ? an.userWorst : '';
+    h += '<div class="an-proj-grid">';
+    h += '<div class="an-proj-card likely"><div class="proj-label">Likely Revenue</div>';
+    h += '<div class="proj-value"><input type="number" class="proj-input" value="'+manLikely+'" placeholder="$0" onchange="updateAnalysisField(\''+r.id+'\',\'userLikely\',this.value)" /></div></div>';
+    h += '<div class="an-proj-card best"><div class="proj-label">Best Case</div>';
+    h += '<div class="proj-value"><input type="number" class="proj-input" value="'+manBest+'" placeholder="$0" onchange="updateAnalysisField(\''+r.id+'\',\'userBest\',this.value)" /></div></div>';
+    h += '<div class="an-proj-card worst"><div class="proj-label">Worst Case</div>';
+    h += '<div class="proj-value"><input type="number" class="proj-input" value="'+manWorst+'" placeholder="$0" onchange="updateAnalysisField(\''+r.id+'\',\'userWorst\',this.value)" /></div></div>';
+    h += '</div>';
   }
+
   h += '<div style="margin-top:10px"><div style="font-size:.7rem;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.3px;margin-bottom:4px">Why? (Your reasoning)</div>';
   h += '<textarea class="an-why" placeholder="Explain your revenue projection reasoning..." onchange="updateAnalysisField(\''+r.id+'\',\'projectionWhy\',this.value)">'+esc(an.projectionWhy||'')+'</textarea>';
   h += '</div>';
@@ -4311,6 +4392,11 @@ function updateCompField(recId, idx, field, value){
     comps[idx][field] = value;
   }
   saveData();
+  // Re-render ROI Calculator if revenue-related fields change (they drive Forecasted Revenue)
+  if(['annualRevenue','occupancy','nightlyRate','daysAvailable','rating'].includes(field)){
+    const calcEl = document.querySelector('.tab-content[data-tab="calculator"]');
+    if(calcEl){ calcEl.innerHTML = renderCalculatorTab(r); }
+  }
   if(field === 'rating') render();
 }
 
@@ -4320,6 +4406,54 @@ function updateAnalysisField(recId, field, value){
   const an = getAnalysis(r);
   an[field] = value;
   saveData();
+}
+
+function editAnalysisCleaning(recId, defaultVal){
+  const r = records.find(x => x.id === recId);
+  if(!r) return;
+  const an = getAnalysis(r);
+  const current = (an.cleaningOverride !== undefined && an.cleaningOverride !== null) ? an.cleaningOverride : defaultVal;
+  if(!confirm('The cleaning fee is auto-set based on bedroom count. Are you sure you want to edit it?')) return;
+  const val = prompt('Monthly cleaning fee ($):', current);
+  if(val === null) return;
+  an.cleaningOverride = parseFloat(val) || 0;
+  saveData();
+  render();
+}
+
+function editAnalysisProfitReq(recId){
+  const r = records.find(x => x.id === recId);
+  if(!r) return;
+  const an = getAnalysis(r);
+  const current = parseFloat(an.profitRequirement) || 1000;
+  const val = prompt('Monthly profit requirement ($):', current);
+  if(val === null) return;
+  const num = parseFloat(val) || 0;
+  if(num < 1000){
+    if(!confirm('⚠️ A profit requirement under $1,000/mo can be risky — unexpected expenses (repairs, vacancies, seasonal dips) could put you in the red. Are you sure?')) return;
+  }
+  an.profitRequirement = num;
+  saveData();
+  render();
+}
+
+function updateProjection(recId, field, value, projected){
+  const r = records.find(x => x.id === recId);
+  if(!r) return;
+  const an = getAnalysis(r);
+  const num = parseFloat(value) || 0;
+  if(num === projected){
+    delete an[field]; // reset to projected
+  } else {
+    an[field] = num;
+  }
+  saveData();
+  const anEl = document.querySelector('.tab-content[data-tab="analysis"]');
+  if(anEl && anEl.classList.contains('active')){
+    const wasActive = document.activeElement?.id;
+    anEl.innerHTML = renderAnalysisTab(r);
+    if(wasActive){ const el = document.getElementById(wasActive); if(el){ el.focus(); el.select(); } }
+  }
 }
 
 /* ===== ADDRESS AUTOCOMPLETE (Google Places REST API) ===== */
