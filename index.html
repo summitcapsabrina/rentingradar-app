@@ -615,6 +615,10 @@ h1 .hero-edit-input{font-size:1.35rem}
   .kanban-col{min-width:250px}
 }
 </style>
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 </head>
 <body>
 <div class="app">
@@ -3055,29 +3059,66 @@ function renderOllamaSetup(){
 /* ===== GOOGLE LOGIN (Firebase Auth ready) ===== */
 // Firebase config — replace with your project credentials
 const FIREBASE_CONFIG = {
-  apiKey: '',           // Your Firebase API key
-  authDomain: '',       // your-project.firebaseapp.com
-  projectId: '',        // your-project-id
+  apiKey: 'AIzaSyAiWI-bB-HxFmvgiFSIuYLtFnv7BniFlQk',
+  authDomain: 'rentingradar.firebaseapp.com',
+  projectId: 'rentingradar',
+  storageBucket: 'rentingradar.firebasestorage.app',
+  messagingSenderId: '622768449810',
+  appId: '1:622768449810:web:fde8ec3ba25a70643d2bcb'
 };
+
+// Initialize Firebase
+const firebaseApp = firebase.initializeApp(FIREBASE_CONFIG);
+const db = firebase.firestore();
+
+// Listen for auth state changes
+firebase.auth().onAuthStateChanged(async (user) => {
+  if(user){
+    setUser(user);
+    // Check/create user doc in Firestore
+    const userRef = db.collection('users').doc(user.uid);
+    const userDoc = await userRef.get();
+    if(!userDoc.exists){
+      await userRef.set({
+        name: user.displayName || 'User',
+        email: user.email || '',
+        photo: user.photoURL || null,
+        tier: 'free',
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      setTier('free');
+    } else {
+      const data = userDoc.data();
+      if(data.tier) setTier(data.tier);
+    }
+  } else {
+    setUser(null);
+  }
+});
 let currentUser = null;
 
 function handleGoogleLogin(){
-  // If Firebase is configured, use it
-  if(FIREBASE_CONFIG.apiKey && typeof firebase !== 'undefined'){
-    const provider = new firebase.auth.GoogleAuthProvider();
-    firebase.auth().signInWithPopup(provider).then(result => {
-      setUser(result.user);
-    }).catch(err => {
-      console.error('Login error:', err);
+  const provider = new firebase.auth.GoogleAuthProvider();
+  firebase.auth().signInWithPopup(provider).then(result => {
+    setUser(result.user);
+  }).catch(err => {
+    console.error('Login error:', err);
+    if(err.code !== 'auth/popup-closed-by-user'){
       alert('Login failed: ' + err.message);
-    });
-  } else {
-    // Firebase not configured — show setup message
-    const name = prompt('Firebase Auth not configured yet.\n\nFor development, enter your name to simulate login:');
-    if(name){
-      setUser({ displayName:name, email:name.toLowerCase().replace(/\s/g,'.')+'@example.com', photoURL:null });
     }
-  }
+  });
+}
+
+function handleSignOut(){
+  firebase.auth().signOut().then(() => {
+    setUser(null);
+    try {
+      localStorage.removeItem('rr_user');
+      localStorage.removeItem('rr_tier');
+    } catch(e){}
+    renderUserSection();
+    render();
+  });
 }
 
 function setUser(user){
@@ -3091,11 +3132,6 @@ function loadUser(){
     const saved = localStorage.getItem('rr_user');
     if(saved) currentUser = JSON.parse(saved);
   } catch(e){}
-  // Default admin account
-  if(!currentUser){
-    currentUser = { name:'Sabrina', email:'info@summitcapllc.com', photo:null, role:'admin' };
-    try { localStorage.setItem('rr_user', JSON.stringify(currentUser)) } catch(e){}
-  }
   renderUserSection();
 }
 
@@ -3122,7 +3158,7 @@ function renderUserSection(){
         </div>
         <div class="user-menu-item" onclick="switchView('pricing');closeUserMenu()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg> Manage Plan</div>
         <div class="user-menu-item" onclick="switchView('settings');closeUserMenu()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg> Settings</div>
-        <div class="user-menu-item" onclick="setUser(null)" style="color:var(--danger)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg> Sign Out</div>
+        <div class="user-menu-item" onclick="handleSignOut()" style="color:var(--danger)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg> Sign Out</div>
       </div>`;
   } else {
     section.innerHTML = `<button class="login-btn" onclick="handleGoogleLogin()" style="width:100%;justify-content:center"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> Sign In</button>`;
