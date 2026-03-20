@@ -364,7 +364,18 @@ tr.clickable:hover{background:var(--primary-light)}
 .profile-hero{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:20px;flex-wrap:wrap}
 .profile-sticky-header{position:sticky;top:0;z-index:40;background:var(--bg);padding:20px 24px 12px;border-bottom:1px solid var(--border);margin:0 -24px 16px}
 .profile-hero-left{flex:1;min-width:0}
-.hero-contact-name{font-size:1.05rem;color:var(--text2);margin-top:2px}
+.hero-contact-name{font-size:1.05rem;color:var(--text2);margin-top:2px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.hero-contact-item{display:inline-flex;align-items:center;gap:4px}
+.hero-contact-item .hero-copy-btn{opacity:0;border:none;background:transparent;cursor:pointer;color:var(--text3);padding:2px;border-radius:4px;transition:opacity .15s,color .15s;display:inline-flex;align-items:center;flex-shrink:0}
+.hero-contact-item:hover .hero-copy-btn{opacity:1}
+.hero-contact-item .hero-copy-btn:hover{color:var(--primary)}
+.hero-contact-item .hero-copy-btn.copied{color:var(--success,#22c55e)!important;opacity:1}
+.hero-contact-sep{color:var(--text3);opacity:.4;font-size:.9rem}
+.hero-address-wrap{position:relative;display:inline-flex;align-items:flex-start;gap:6px}
+.hero-address-wrap .hero-copy-btn{opacity:0;border:none;background:transparent;cursor:pointer;color:var(--text3);padding:2px;border-radius:4px;transition:opacity .15s,color .15s;display:inline-flex;align-items:center;flex-shrink:0;align-self:center}
+.hero-address-wrap:hover .hero-copy-btn{opacity:1}
+.hero-address-wrap .hero-copy-btn:hover{color:var(--primary)}
+.hero-address-wrap .hero-copy-btn.copied{color:var(--success,#22c55e)!important;opacity:1}
 .btn-danger{background:var(--danger);color:#fff;border:none}
 .btn-danger:hover{background:#dc2626}
 .profile-hero h1{font-size:1.65rem;font-weight:700;line-height:1.3;margin-bottom:2px}
@@ -516,10 +527,10 @@ h1 .hero-edit-input{font-size:1.35rem}
 .hero-stat-divider{width:1px;height:16px;background:var(--border)}
 
 /* ===== PROFILE TABS ===== */
-.profile-tabs{display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:16px;margin-top:8px}
-.profile-tab{padding:10px 20px;font-size:.85rem;font-weight:500;color:var(--text3);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .15s;display:flex;align-items:center;gap:6px;white-space:nowrap}
-.profile-tab:hover{color:var(--text);background:var(--primary-light)}
-.profile-tab.active{color:var(--primary);border-bottom-color:var(--primary);font-weight:600}
+.profile-tabs{display:flex;gap:4px;align-items:center;margin-left:auto;flex-shrink:0}
+.profile-tab{padding:5px 12px;font-size:.78rem;font-weight:500;color:var(--text3);cursor:pointer;border-radius:var(--radius);border:1px solid var(--border);transition:all .15s;display:flex;align-items:center;gap:4px;white-space:nowrap;background:var(--surface)}
+.profile-tab:hover{color:var(--text);background:var(--primary-light);border-color:var(--primary)}
+.profile-tab.active{color:var(--primary);background:var(--primary-light);border-color:var(--primary);font-weight:600}
 .profile-tab .tab-lock{font-size:.6rem;padding:1px 6px;border-radius:8px;font-weight:700;text-transform:uppercase;letter-spacing:.3px}
 .profile-tab .tab-lock.locked{background:rgba(148,163,184,.15);color:#94a3b8}
 .profile-tab .tab-lock.basic{background:rgba(245,158,11,.15);color:#f59e0b}
@@ -1319,7 +1330,7 @@ function detectPlatform(url){
 
 /* ===== PROPERTY DETAILS SCHEMA ===== */
 const PROP_SECTIONS = [
-  { key:'basic', label:'Property Overview', icon:'🏠', fields:[
+  { key:'basic', label:'Property Overview', icon:'📋', fields:[
     { k:'propertyType', l:'Type', t:'select', o:['','House','Apartment','Condo','Townhouse','Duplex','Triplex','Fourplex','Studio','Loft','Mobile Home','Villa','Cottage','Other'] },
     { k:'bedrooms', l:'Beds', t:'select', o:['','Studio','1','2','3','4','5','6+'] },
     { k:'bathrooms', l:'Baths', t:'select', o:['','1','1.5','2','2.5','3','3.5','4','4.5','5+'] },
@@ -1412,15 +1423,25 @@ function renderProfile(){
   const plat = detectPlatform(r.link);
   const hasDetails = Object.keys(d).some(k => d[k] && (Array.isArray(d[k]) ? d[k].length > 0 : true));
   const showImport = r.link && !hasDetails;
+  const activeTab = profileActiveTab || 'details';
+  const proOk = requireTier('basic','Property Analysis');
+  const advOk = requireTier('pro','ROI Calculator');
 
   let html = `
   <div class="profile-hero profile-sticky-header">
     <div class="profile-hero-left">
-      <div class="hero-editable" id="heroAddress" onclick="startHeroEdit('${r.id}','property','heroAddress')">
-        <div id="heroAddressDisplay">${renderHeroAddress(r)}</div>
-        <svg class="hero-edit-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+      <div class="hero-address-wrap">
+        <div class="hero-editable" id="heroAddress" onclick="startHeroEdit('${r.id}','property','heroAddress')">
+          <div id="heroAddressDisplay">${renderHeroAddress(r)}</div>
+          <svg class="hero-edit-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        </div>
+        <button class="hero-copy-btn" onclick="event.stopPropagation();copyAddress(this,'${r.id}')" title="Copy address"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>
       </div>
-      <div class="hero-contact-name">${esc(r.name) || '<span style="opacity:.4">No contact name</span>'}</div>
+      <div class="hero-contact-name">
+        <span class="hero-contact-item">${esc(r.name) || '<span style="opacity:.4">No contact name</span>'}${r.name?`<button class="hero-copy-btn" onclick="copyRecordField(this,'${r.id}','name')" title="Copy name"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>`:''}</span>
+        ${r.phone?`<span class="hero-contact-sep">|</span><span class="hero-contact-item" style="font-size:.95rem">${fmtPhone(r.phone)}<button class="hero-copy-btn" onclick="copyRecordField(this,'${r.id}','phone')" title="Copy phone"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button></span>`:''}
+        ${r.email?`<span class="hero-contact-sep">|</span><span class="hero-contact-item" style="font-size:.95rem;color:var(--primary)">${esc(r.email)}<button class="hero-copy-btn" onclick="copyRecordField(this,'${r.id}','email')" title="Copy email"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button></span>`:''}
+      </div>
       <div style="display:flex;align-items:center;gap:16px;margin-top:4px;flex-wrap:wrap">
         <div class="hero-editable" id="heroRent" onclick="startHeroEdit('${r.id}','monthlyRent','heroRent')">
           <div class="hero-rent" id="heroRentDisplay">${d.monthlyRent ? '$'+Number(d.monthlyRent).toLocaleString()+'/mo' : '<span class=&quot;no-rent&quot;>No rent listed — click to add</span>'}</div>
@@ -1446,11 +1467,21 @@ function renderProfile(){
         ${statusPill(r.status)}
         ${r.link ? `<a class="profile-platform" href="${esc(r.link)}" target="_blank">${plat.icon} ${plat.name} <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"/></svg></a>` : '<span style="font-size:.8rem;color:var(--text3)">No listing link</span>'}
         ${r.followUpDate ? `<span class="kc-followup ${(getFollowUpStatus(r)||{}).type||''}" style="font-size:.75rem">Follow-up: ${fmtDate(r.followUpDate)}</span>` : ''}
+        <div class="profile-tabs">
+          <div class="profile-tab ${activeTab==='details'?'active':''}" data-tab="details" onclick="setProfileTab('details')">🏠 Property Details</div>
+          <div class="profile-tab ${activeTab==='analysis'?'active':''}" data-tab="analysis" onclick="setProfileTab('analysis')">📊 Analysis ${!proOk?'<span class=\\"tab-lock basic\\">BASIC</span>':''}</div>
+          <div class="profile-tab ${activeTab==='roi'?'active':''}" data-tab="roi" onclick="setProfileTab('roi')">💰 ROI ${!advOk?'<span class=\\"tab-lock pro\\">PRO</span>':''}</div>
+        </div>
       </div>
     </div>
   </div>`;
 
-  // Contact & Status Card (read-only with edit popup)
+  // ── TABBED SECTIONS ──
+
+  // ── TAB: Property Details ──
+  html += `<div class="tab-content ${activeTab==='details'?'active':''}" data-tab="details">`;
+
+  // Contact & Status Card + Activity Log (inside Property Details tab)
   html += `<div class="profile-grid">
     <div class="profile-card">
       <div class="profile-card-header clickable-edit" onclick="openCardEditor('${r.id}','contact')" title="Click to edit contact & status">
@@ -1517,20 +1548,6 @@ function renderProfile(){
       </div>
     </div>
   </div>`;
-
-  // ── TABBED SECTIONS ──
-  const activeTab = profileActiveTab || 'details';
-  const proOk = requireTier('basic','Property Analysis');
-  const advOk = requireTier('pro','ROI Calculator');
-
-  html += `<div class="profile-tabs">
-    <div class="profile-tab ${activeTab==='details'?'active':''}" data-tab="details" onclick="setProfileTab('details')">📋 Property Details</div>
-    <div class="profile-tab ${activeTab==='analysis'?'active':''}" data-tab="analysis" onclick="setProfileTab('analysis')">📊 Competitor Analysis ${!proOk?'<span class=\\"tab-lock basic\\">BASIC</span>':''}</div>
-    <div class="profile-tab ${activeTab==='roi'?'active':''}" data-tab="roi" onclick="setProfileTab('roi')">💰 ROI Calculator ${!advOk?'<span class=\\"tab-lock pro\\">PRO</span>':''}</div>
-  </div>`;
-
-  // ── TAB: Property Details ──
-  html += `<div class="tab-content ${activeTab==='details'?'active':''}" data-tab="details">`;
 
   // Import dialog
   if(showImport){
@@ -4323,6 +4340,31 @@ function copyRecordField(btn, recId, field){
   const value = r[field] || '';
   if(!value) return;
   navigator.clipboard.writeText(value).then(() => {
+    btn.classList.add('copied');
+    const origTitle = btn.title;
+    btn.title = 'Copied!';
+    btn.innerHTML = CHECK_ICON;
+    setTimeout(() => {
+      btn.classList.remove('copied');
+      btn.title = origTitle;
+      btn.innerHTML = COPY_ICON;
+    }, 1500);
+  });
+}
+
+function copyAddress(btn, recId){
+  const r = records.find(x => x.id === recId);
+  if(!r) return;
+  const addr = r.addressParts || parseAddressParts(r.property);
+  let text = addr.street || r.property || '';
+  if(addr.unit) text += ', ' + addr.unit;
+  let csz = '';
+  if(addr.city) csz += addr.city + ',';
+  if(addr.state) csz += ' ' + addr.state;
+  if(addr.zip) csz += ' ' + addr.zip;
+  if(csz.trim()) text += '\n' + csz.trim();
+  if(!text.trim()) return;
+  navigator.clipboard.writeText(text.trim()).then(() => {
     btn.classList.add('copied');
     const origTitle = btn.title;
     btn.title = 'Copied!';
