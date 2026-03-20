@@ -579,7 +579,7 @@ h1 .hero-edit-input{font-size:1.35rem}
 .card-edit-popup .cep-panel{background:var(--surface);border-radius:var(--radius);border:1px solid var(--border);box-shadow:0 12px 40px rgba(0,0,0,.3);width:500px;max-width:90vw;max-height:85vh;overflow-y:auto}
 .card-edit-popup .cep-header{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--border)}
 .card-edit-popup .cep-header h3{font-size:.95rem;font-weight:600}
-.card-edit-popup .cep-body{padding:16px 20px}
+.card-edit-popup .cep-body{padding:16px 20px;overflow:visible}
 .card-edit-popup .cep-actions{display:flex;gap:8px;justify-content:flex-end;padding:12px 20px;border-top:1px solid var(--border)}
 /* ===== TEXTAREA HINT ===== */
 .note-ta-wrap{position:relative;flex:1}
@@ -1438,16 +1438,11 @@ function renderProfile(){
           <div class="hero-rent" id="heroRentDisplay">${d.monthlyRent ? '$'+Number(d.monthlyRent).toLocaleString()+'/mo' : '<span class=&quot;no-rent&quot;>No rent listed — click to add</span>'}</div>
           <svg class="hero-edit-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
         </div>
-        <div class="hero-stats-wrap" onclick="openStatsEditor('${r.id}')" title="Click to edit property details">
-          <div class="hero-stats">
+        <div class="hero-stats">
             <div class="hero-stat"><strong>${d.bedrooms||'—'}</strong> Beds</div>
             <div class="hero-stat"><strong>${d.bathrooms||'—'}</strong> ${d.bathrooms==='1'?'Bath':'Baths'}</div>
             <div class="hero-stat"><strong>${d.sqft ? Number(d.sqft).toLocaleString() : '—'}</strong> Sq Ft</div>
-            <div class="hero-stat"><strong>${d.availableDate ? fmtDate(d.availableDate) : '—'}</strong> Available</div>
-          </div>
-          <div class="stats-edit-btn">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-          </div>
+            <div class="hero-stat"><strong>${d.availableDate==='now'?'Now': d.availableDate ? fmtDate(d.availableDate) : '—'}</strong> Available</div>
         </div>
       </div>
       <div class="hero-contact-name" style="margin-top:4px">
@@ -1458,7 +1453,7 @@ function renderProfile(){
       <div class="profile-hero-meta" style="margin-top:8px">
         ${statusPill(r.status)}
         ${r.link ? `<a class="profile-platform" href="${esc(r.link)}" target="_blank">${plat.icon} ${plat.name} <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"/></svg></a>` : '<span style="font-size:.8rem;color:var(--text3)">No listing link</span>'}
-        ${r.followUpDate ? `<span class="kc-followup ${(getFollowUpStatus(r)||{}).type||''}" style="font-size:.75rem">Follow-up: ${fmtDate(r.followUpDate)}</span>` : ''}
+        ${r.followUpDate ? `<span class="kc-followup ${(getFollowUpStatus(r)||{}).type||''}" style="font-size:.75rem">Follow-up: ${fmtDate(r.followUpDate)}${r.followUpTime?' at '+r.followUpTime:''}</span>` : ''}
         <div class="profile-tabs">
           <div class="profile-tab ${activeTab==='details'?'active':''}" data-tab="details" onclick="setProfileTab('details')">🏠 Property Details</div>
           <div class="profile-tab ${activeTab==='analysis'?'active':''}" data-tab="analysis" onclick="setProfileTab('analysis')">📊 Analysis ${!proOk?'<span class=\\"tab-lock basic\\">BASIC</span>':''}</div>
@@ -1485,21 +1480,31 @@ function renderProfile(){
           <div class="cr-field" style="flex:1 1 100%"><div class="cr-label">Address</div><div class="cr-value ${r.property?'':'empty'}">${r.property?esc(r.property):'Not set'}</div></div>
         </div>
         <div class="cr-row">
+          <div class="cr-field"><div class="cr-label">Beds</div><div class="cr-value ${d.bedrooms?'':'empty'}">${d.bedrooms||'Not set'}</div></div>
+          <div class="cr-field"><div class="cr-label">${d.bathrooms==='1'?'Bath':'Baths'}</div><div class="cr-value ${d.bathrooms?'':'empty'}">${d.bathrooms||'Not set'}</div></div>
+          <div class="cr-field"><div class="cr-label">Sq Ft</div><div class="cr-value ${d.sqft?'':'empty'}">${d.sqft ? Number(d.sqft).toLocaleString() : 'Not set'}</div></div>
+          <div class="cr-field"><div class="cr-label">Available</div><div class="cr-value ${d.availableDate?'':'empty'}">${d.availableDate==='now'?'Now':d.availableDate ? fmtDate(d.availableDate) : 'Not set'}</div></div>
+        </div>
+        <div class="cr-row">
           <div class="cr-field"><div class="cr-label">Contact Name</div><div class="cr-value-wrap"><div class="cr-value ${r.name?'':'empty'}" style="flex:1;min-width:0">${esc(r.name)||'Not set'}</div>${r.name?`<button class="cr-copy-btn" onclick="copyRecordField(this,'${r.id}','name')" title="Copy name"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>`:''}</div></div>
           <div class="cr-field"><div class="cr-label">Phone</div><div class="cr-value-wrap"><div class="cr-value ${r.phone?'':'empty'}" style="flex:1;min-width:0">${r.phone?fmtPhone(r.phone):'Not set'}</div>${r.phone?`<button class="cr-copy-btn" onclick="copyRecordField(this,'${r.id}','phone')" title="Copy phone"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>`:''}</div></div>
         </div>
         <div class="cr-row">
           <div class="cr-field"><div class="cr-label">Email</div><div class="cr-value-wrap"><div class="cr-value ${r.email?'':'empty'} ${r.email?'email-val':''}" style="flex:1;min-width:0">${r.email?esc(r.email):'Not set'}</div>${r.email?`<button class="cr-copy-btn" onclick="copyRecordField(this,'${r.id}','email')" title="Copy email"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>`:''}</div></div>
-          <div class="cr-field"><div class="cr-label">Status</div><div class="cr-value">${statusPill(r.status)}</div></div>
-        </div>
-        <div class="cr-row">
-          <div class="cr-field"><div class="cr-label">Follow-Up Date</div><div class="cr-value ${r.followUpDate?'':'empty'}">${r.followUpDate?fmtDate(r.followUpDate):'Not set'}</div></div>
           <div class="cr-field"><div class="cr-label">Meeting Date</div><div class="cr-value ${r.meetingDate?'':'empty'}">${r.meetingDate?fmtDate(r.meetingDate):'Not set'}</div></div>
         </div>
         <div class="cr-row">
-          <div class="cr-field" style="flex:1 1 100%"><div class="cr-label">Listing Link</div><div class="cr-value ${r.link?'':'empty'}">${r.link?esc(r.link.length>60?r.link.substring(0,60)+'...':r.link):'Not set'}</div></div>
+          <div class="cr-field"><div class="cr-label">Listing Link</div><div class="cr-value ${r.link?'':'empty'}" style="font-size:.85rem">${r.link?`<a href="${esc(r.link)}" target="_blank" style="color:var(--primary);text-decoration:none">${esc(r.link.length>45?r.link.substring(0,45)+'...':r.link)}</a>`:'Not set'}</div></div>
         </div>
-        ${r.date?`<div style="text-align:right;margin-top:6px"><span style="font-size:.7rem;color:var(--text3)">First Contacted: ${fmtDate(r.date)}</span></div>`:''}
+        <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:8px;padding-top:6px;border-top:1px solid var(--border)">
+          <div style="display:flex;flex-direction:column;gap:4px">
+            ${statusPill(r.status)}
+            ${r.followUpDate?`<span style="font-size:.7rem;color:var(--text3);display:inline-flex;align-items:center;gap:3px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg> Follow-Up: ${fmtDate(r.followUpDate)}${r.followUpTime?' at '+r.followUpTime:''}</span>`:''}
+          </div>
+          <div>
+            ${r.date?`<span style="font-size:.7rem;color:var(--text3)">First Contacted: ${fmtDate(r.date)}</span>`:''}
+          </div>
+        </div>
       </div>
       <div style="padding:10px 16px 14px;border-top:1px solid var(--border)">
         <div class="cr-label" style="margin-bottom:4px">Property Note</div>
@@ -3930,12 +3935,13 @@ async function selectAddress(el, recId){
   // Find whichever address input is active
   const addrEdStreet = document.getElementById('addrEdStreet');
   const addInput = document.getElementById('add_property');
-  const activeInput = addrEdStreet || addInput;
+  const ceAddrInput = document.getElementById('ce_address');
+  const activeInput = addrEdStreet || ceAddrInput || addInput;
 
   function applyParts(parts){
     window._selectedAddrParts = parts;
     const full = formatAddressOneLine(parts);
-    if(activeInput) activeInput.value = full || parts.street;
+    if(activeInput) activeInput.value = parts.street || full;
     // Auto-fill city/state/zip fields in the address editor popup if open
     if(addrEdStreet){
       addrEdStreet.value = parts.street || full;
@@ -3945,6 +3951,16 @@ async function selectAddress(el, recId){
       if(cityEl && parts.city) cityEl.value = parts.city;
       if(stateEl && parts.state) stateEl.value = parts.state;
       if(zipEl && parts.zip) zipEl.value = parts.zip;
+    }
+    // Auto-fill city/state/zip fields in the contact card editor popup if open
+    if(ceAddrInput){
+      ceAddrInput.value = parts.street || full;
+      const ceCityEl = document.getElementById('ce_city');
+      const ceStateEl = document.getElementById('ce_state');
+      const ceZipEl = document.getElementById('ce_zip');
+      if(ceCityEl && parts.city) ceCityEl.value = parts.city;
+      if(ceStateEl && parts.state) ceStateEl.value = parts.state;
+      if(ceZipEl && parts.zip) ceZipEl.value = parts.zip;
     }
   }
 
@@ -4207,19 +4223,51 @@ function saveStatsEditor(recId){
 function openCardEditor(recId, cardType){
   const r = records.find(x => x.id === recId);
   if(!r) return;
+  const d = r.propertyDetails || {};
 
   let title = '', fieldsHtml = '', saveHandler = '';
 
   if(cardType === 'contact'){
     title = 'Edit Contact & Status';
+    // Parse existing unit into type + number
+    const ceAddr = r.addressParts || parseAddressParts(r.property);
+    let ceUnitType = '', ceUnitNum = '';
+    if(ceAddr.unit){
+      const ceUm = ceAddr.unit.match(/^(#|Unit|Ste|Suite|Apt|Apartment|Bldg|Building)\s*\.?\s*(.+)$/i);
+      if(ceUm){ ceUnitType = ceUm[1].replace('.',''); ceUnitNum = ceUm[2]; }
+      else { ceUnitNum = ceAddr.unit; }
+    }
+    const isAvailNow = d.availableDate === 'now';
     fieldsHtml = `
-      <div class="prop-field" style="margin-bottom:10px"><label>Address</label><input type="text" id="ce_address" value="${esc(r.property)}"></div>
+      <div class="prop-field" style="margin-bottom:6px;position:relative"><label>Address</label><input type="text" id="ce_address" value="${esc(ceAddr.street || r.property)}" placeholder="Start typing an address..." autocomplete="off"></div>
+      <div class="prop-field-grid" style="margin-bottom:10px">
+        <div class="prop-field"><label>Unit Type</label><select id="ce_unit_type" style="font-size:.9rem;padding:7px 10px;width:100%">
+          <option value="">No unit</option>
+          <option value="#" ${ceUnitType==='#'?'selected':''}>&#35;</option>
+          <option value="Unit" ${ceUnitType==='Unit'?'selected':''}>Unit</option>
+          <option value="Apt" ${ceUnitType==='Apt'?'selected':''}>Apt</option>
+          <option value="Suite" ${ceUnitType==='Suite'?'selected':''}>Suite</option>
+          <option value="Ste" ${ceUnitType==='Ste'?'selected':''}>Ste</option>
+          <option value="Bldg" ${ceUnitType==='Bldg'?'selected':''}>Bldg</option>
+        </select></div>
+        <div class="prop-field"><label>Unit Number</label><input type="text" id="ce_unit_num" value="${esc(ceUnitNum)}" placeholder="${ceUnitType ? ceUnitType + ' number' : 'Unit number'}" style="${ceUnitType||ceUnitNum?'':'opacity:.5'}"></div>
+        <div class="prop-field"><label>City</label><input type="text" id="ce_city" value="${esc(ceAddr.city||'')}" placeholder="City"></div>
+        <div class="prop-field"><label>State</label><input type="text" id="ce_state" value="${esc(ceAddr.state||'')}" placeholder="AZ" maxlength="2" style="text-transform:uppercase"></div>
+        <div class="prop-field"><label>ZIP Code</label><input type="text" id="ce_zip" value="${esc(ceAddr.zip||'')}" placeholder="85001" maxlength="10"></div>
+      </div>
+      <div class="prop-field-grid" style="margin-bottom:10px">
+        <div class="prop-field"><label>Beds</label><input type="number" id="ce_beds" value="${esc(d.bedrooms||'')}" placeholder="e.g. 3" min="0" step="1"></div>
+        <div class="prop-field"><label>Baths</label><input type="number" id="ce_baths" value="${esc(d.bathrooms||'')}" placeholder="e.g. 2" min="0" step="0.5"></div>
+        <div class="prop-field"><label>Sq Ft</label><input type="number" id="ce_sqft" value="${esc(d.sqft||'')}" placeholder="e.g. 1200" min="0"></div>
+        <div class="prop-field"><label>Monthly Rent</label><input type="number" id="ce_rent" value="${esc(d.monthlyRent||'')}" placeholder="e.g. 2500" min="0"></div>
+        <div class="prop-field"><label>Available Date</label><div style="display:flex;align-items:center;gap:8px"><input type="date" id="ce_available" value="${isAvailNow?'':esc(d.availableDate||'')}" style="flex:1${isAvailNow?' ;opacity:.4':''}"></div><label style="display:flex;align-items:center;gap:4px;margin-top:4px;font-size:.78rem;font-weight:400;text-transform:none;letter-spacing:0;color:var(--text2);cursor:pointer"><input type="checkbox" id="ce_avail_now" ${isAvailNow?'checked':''} onchange="document.getElementById('ce_available').style.opacity=this.checked?'.4':'1';if(this.checked)document.getElementById('ce_available').value=''"> Available Now</label></div>
+      </div>
       <div class="prop-field-grid">
         <div class="prop-field"><label>Contact Name</label><input type="text" id="ce_name" value="${esc(r.name)}"></div>
         <div class="prop-field"><label>Phone</label><input type="text" id="ce_phone" value="${esc(r.phone)}"></div>
         <div class="prop-field"><label>Email</label><input type="email" id="ce_email" value="${esc(r.email)}" oninput="validateEmailField()"><div class="ce-email-error" id="ce_email_error">Please enter a valid email address</div></div>
         <div class="prop-field"><label>Status</label><select id="ce_status">${SELECTABLE_STATUSES.map(s=>`<option value="${s}" ${r.status===s?'selected':''}>${s}</option>`).join('')}</select></div>
-        <div class="prop-field"><label>Follow-Up Date</label><input type="date" id="ce_followup" value="${r.followUpDate||''}"></div>
+        <div class="prop-field"><label>Follow-Up Date</label><input type="date" id="ce_followup" value="${r.followUpDate||''}"><div style="margin-top:4px"><label style="font-size:.75rem;font-weight:400;text-transform:none;letter-spacing:0;color:var(--text3)">Time (optional)</label><input type="time" id="ce_followup_time" value="${r.followUpTime||''}" style="font-size:.85rem;padding:5px 8px;margin-top:2px"></div></div>
         <div class="prop-field"><label>Meeting Date</label><input type="date" id="ce_meeting" value="${r.meetingDate||''}"></div>
         <div class="prop-field"><label>First Contacted</label><input type="date" id="ce_date" value="${r.date?r.date.split('T')[0]:''}"></div>
       </div>
@@ -4247,7 +4295,26 @@ function openCardEditor(recId, cardType){
     if(e.key === 'Escape') overlay.remove();
   });
 
-  setTimeout(() => overlay.querySelector('input,select')?.focus(), 100);
+  setTimeout(() => {
+    // Setup address autocomplete + unit interaction for contact card
+    if(cardType === 'contact'){
+      const ceAddrEl = document.getElementById('ce_address');
+      if(ceAddrEl){
+        window._selectedAddrParts = null;
+        setupAddressAutocomplete(ceAddrEl, recId);
+      }
+      const ceUtSelect = document.getElementById('ce_unit_type');
+      const ceUnInput = document.getElementById('ce_unit_num');
+      if(ceUtSelect && ceUnInput){
+        ceUtSelect.addEventListener('change', () => {
+          ceUnInput.style.opacity = ceUtSelect.value ? '1' : '.5';
+          ceUnInput.placeholder = ceUtSelect.value ? ceUtSelect.value + ' number' : 'Unit number';
+          if(ceUtSelect.value) ceUnInput.focus();
+        });
+      }
+    }
+    overlay.querySelector('input,select')?.focus();
+  }, 100);
 }
 
 function isValidEmail(email){
@@ -4268,13 +4335,51 @@ function saveContactCard(recId){
   if(!r) return;
   if(!validateEmailField()) return;
   const oldStatus = r.status;
-  const newAddr = document.getElementById('ce_address')?.value?.trim() || '';
-  if(newAddr !== r.property){ r.property = newAddr; r.addressParts = parseAddressParts(newAddr); }
+
+  // Build address from parts
+  const streetInput = document.getElementById('ce_address')?.value?.trim() || '';
+  const utVal = document.getElementById('ce_unit_type')?.value || '';
+  const unVal = document.getElementById('ce_unit_num')?.value?.trim() || '';
+  const unit = (utVal && unVal) ? utVal + ' ' + unVal : '';
+  const cityVal = document.getElementById('ce_city')?.value?.trim() || '';
+  const stateVal = document.getElementById('ce_state')?.value?.trim().toUpperCase() || '';
+  const zipVal = document.getElementById('ce_zip')?.value?.trim() || '';
+
+  const selected = window._selectedAddrParts || {};
+  const addrParts = {
+    street: selected.street || streetInput,
+    unit: unit,
+    city: cityVal || selected.city || '',
+    state: stateVal || selected.state || '',
+    zip: zipVal || selected.zip || '',
+  };
+  const newAddr = formatAddressOneLine(addrParts);
+  if(newAddr !== r.property || JSON.stringify(addrParts) !== JSON.stringify(r.addressParts)){
+    r.property = newAddr;
+    r.addressParts = addrParts;
+  }
+  window._selectedAddrParts = null;
+
+  // Save property details (beds, baths, sqft, rent, available)
+  if(!r.propertyDetails) r.propertyDetails = {};
+  const ceBeds = document.getElementById('ce_beds')?.value?.trim();
+  const ceBaths = document.getElementById('ce_baths')?.value?.trim();
+  const ceSqft = document.getElementById('ce_sqft')?.value?.trim();
+  const ceRent = document.getElementById('ce_rent')?.value?.trim();
+  const ceAvailNow = document.getElementById('ce_avail_now')?.checked;
+  const ceAvailDate = document.getElementById('ce_available')?.value || '';
+  if(ceBeds !== undefined) r.propertyDetails.bedrooms = ceBeds;
+  if(ceBaths !== undefined) r.propertyDetails.bathrooms = ceBaths;
+  if(ceSqft !== undefined) r.propertyDetails.sqft = ceSqft;
+  if(ceRent !== undefined) r.propertyDetails.monthlyRent = ceRent;
+  r.propertyDetails.availableDate = ceAvailNow ? 'now' : ceAvailDate;
+
   r.name = document.getElementById('ce_name')?.value?.trim() || '';
   r.phone = document.getElementById('ce_phone')?.value?.trim() || '';
   r.email = document.getElementById('ce_email')?.value?.trim() || '';
   r.status = document.getElementById('ce_status')?.value || r.status;
   r.followUpDate = document.getElementById('ce_followup')?.value || null;
+  r.followUpTime = document.getElementById('ce_followup_time')?.value || null;
   r.meetingDate = document.getElementById('ce_meeting')?.value || null;
   r.date = document.getElementById('ce_date')?.value || r.date;
   const newLink = document.getElementById('ce_link')?.value?.trim() || '';
