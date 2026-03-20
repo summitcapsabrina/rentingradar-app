@@ -545,6 +545,34 @@ h1 .hero-edit-input{font-size:1.35rem}
 .tab-locked-overlay .tlo-desc{font-size:.85rem;color:var(--text2);max-width:400px;margin:0 auto 16px}
 
 
+/* ===== CALCULATOR TAB ===== */
+.calc-section{margin-bottom:20px}
+.calc-section-header{font-size:.82rem;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:.5px;padding-bottom:6px;border-bottom:1px solid var(--border);margin-bottom:10px;display:flex;align-items:center;gap:6px}
+.calc-row{display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(148,163,184,.08);gap:8px}
+.calc-row:last-child{border-bottom:none}
+.calc-row.total-row{border-top:2px solid var(--border);border-bottom:none;padding-top:8px;margin-top:4px}
+.calc-row.total-row .calc-label{font-weight:700;color:var(--text)}
+.calc-row.total-row .calc-val{font-weight:700;color:var(--primary);font-size:.88rem}
+.calc-label{font-size:.8rem;color:var(--text2);flex:1;min-width:0}
+.calc-label-hint{font-size:.68rem;color:var(--text3);font-style:italic}
+.calc-val{width:100px;flex-shrink:0;text-align:right}
+.calc-val input{width:100%;text-align:right;padding:3px 6px;border:1px solid var(--border);border-radius:4px;font-size:.82rem;background:var(--surface);color:var(--text);font-family:inherit;transition:border-color .15s}
+.calc-val input:focus{border-color:var(--primary);outline:none}
+.calc-val input:disabled{background:rgba(148,163,184,.06);color:var(--text2);cursor:default;border-color:transparent}
+.calc-val .calc-display{font-size:.82rem;color:var(--text);font-weight:500;padding:3px 6px}
+.calc-val .calc-display.computed{color:var(--primary);font-weight:600}
+.calc-pct input{width:60px}
+.calc-summary-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+.calc-summary-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px;text-align:center}
+.calc-summary-card .csc-label{font-size:.7rem;text-transform:uppercase;letter-spacing:.4px;color:var(--text3);font-weight:600;margin-bottom:4px}
+.calc-summary-card .csc-value{font-size:1.1rem;font-weight:700;color:var(--text)}
+.calc-summary-card .csc-sub{font-size:.72rem;color:var(--text3);margin-top:2px}
+.calc-summary-card.positive .csc-value{color:var(--success, #10b981)}
+.calc-summary-card.negative .csc-value{color:var(--danger, #ef4444)}
+.calc-ai-btn{display:inline-flex;align-items:center;gap:4px;font-size:.72rem;padding:3px 8px;border-radius:12px;border:1px solid rgba(16,185,129,.3);background:rgba(16,185,129,.08);color:#10b981;cursor:pointer;font-weight:600;transition:all .15s;margin-left:auto}
+.calc-ai-btn:hover{background:rgba(16,185,129,.15);border-color:#10b981}
+.calc-ai-btn.locked{opacity:.5;cursor:not-allowed;border-color:var(--border);background:rgba(148,163,184,.06);color:var(--text3)}
+
 /* ===== CARD EDIT HOVER ===== */
 .profile-card-header .card-edit-btn{opacity:0;transition:opacity .15s;width:30px;height:30px;display:flex;align-items:center;justify-content:center;border-radius:var(--radius);color:var(--text3);margin-left:auto;flex-shrink:0;cursor:pointer;z-index:2}
 .profile-card:hover .card-edit-btn{opacity:1}
@@ -1460,6 +1488,7 @@ function renderProfile(){
   const hasDetails = Object.keys(d).some(k => d[k] && (Array.isArray(d[k]) ? d[k].length > 0 : true));
   const showImport = r.link && !hasDetails;
   const activeTab = profileActiveTab || 'details';
+  const calcOk = requireTier('basic','Rental Calculator');
   const proOk = requireTier('basic','Property Analysis');
   const advOk = requireTier('pro','ROI Calculator');
 
@@ -1493,6 +1522,7 @@ function renderProfile(){
         ${r.followUpDate ? (()=>{ const fp = new Date(r.followUpDate+'T'+(r.followUpTime||'23:59')) < new Date(); return `<span style="font-size:.75rem;color:${fp?'var(--text3)':'var(--danger, #ef4444)'};display:inline-flex;align-items:center;gap:3px"><span style="font-size:.8rem">${fp?'\uD83D\uDD15':'\uD83D\uDD14'}</span> Follow-up: ${fmtDateTimeForCard(r.followUpDate, r.followUpTime)}</span>`; })() : ''}
         <div class="profile-tabs">
           <div class="profile-tab ${activeTab==='details'?'active':''}" data-tab="details" onclick="setProfileTab('details')">🏠 Property Details</div>
+          <div class="profile-tab ${activeTab==='calculator'?'active':''}" data-tab="calculator" onclick="setProfileTab('calculator')">🧮 Calculator ${!calcOk?'<span class=\\"tab-lock basic\\">BASIC</span>':''}</div>
           <div class="profile-tab ${activeTab==='analysis'?'active':''}" data-tab="analysis" onclick="setProfileTab('analysis')">📊 Analysis ${!proOk?'<span class=\\"tab-lock basic\\">BASIC</span>':''}</div>
           <div class="profile-tab ${activeTab==='roi'?'active':''}" data-tab="roi" onclick="setProfileTab('roi')">💰 ROI ${!advOk?'<span class=\\"tab-lock pro\\">PRO</span>':''}</div>
         </div>
@@ -1615,6 +1645,24 @@ function renderProfile(){
   });
 
   html += `</div>`; // end details tab
+
+  // ── TAB: Calculator ──
+  html += `<div class="tab-content ${activeTab==='calculator'?'active':''}" data-tab="calculator">`;
+  if(calcOk){
+    html += renderCalculatorTab(r);
+  } else {
+    html += `<div class="profile-card profile-full">
+      <div class="profile-card-body">
+        <div class="tab-locked-overlay">
+          <div class="tlo-icon">🔒</div>
+          <div class="tlo-title">Rental Calculator</div>
+          <div class="tlo-desc">Calculate investment costs, forecasted revenue, and monthly operating expenses for this property. Available on the Basic plan.</div>
+          <button class="btn btn-primary" onclick="switchView('pricing')">Upgrade to Basic — $10.99/mo</button>
+        </div>
+      </div>
+    </div>`;
+  }
+  html += `</div>`;
 
   // ── TAB: Competitor Analysis ──
   html += `<div class="tab-content ${activeTab==='analysis'?'active':''}" data-tab="analysis">`;
@@ -3798,6 +3846,189 @@ function setProfileTab(tab){
   try { sessionStorage.setItem('rr_profileTab', tab) } catch(e){}
   document.querySelectorAll('.profile-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
   document.querySelectorAll('.tab-content').forEach(el => el.classList.toggle('active', el.dataset.tab === tab));
+}
+
+/* ===== CALCULATOR TAB ===== */
+const CALC_DEFAULTS = {
+  applicationFees:50, securityDeposit:1000, firstLastRent:0,
+  additionalFee1:0, additionalFee2:0, costPerBR:5000,
+  extraCommonSpaces:0, costPerExtraSpace:0,
+  avgDailyRate:0, estOccupancyRate:85,
+  insurance:20, strFee:0, water:60, gas:50, electric:200,
+  wifiTv:75, futureRepairs:100, incidentals:30, parking:0,
+  garbageRecycling:20, channelManager:25, cityPermit:20.83,
+  coHostPct:0
+};
+
+const CLEANING_DEFAULTS = {1:500, 2:650, 3:900, 4:1200};
+
+function getCalc(r){
+  if(!r.details) r.details = {};
+  if(!r.details.calculator) r.details.calculator = {};
+  const c = r.details.calculator;
+  // Fill missing fields with defaults
+  for(const [k,v] of Object.entries(CALC_DEFAULTS)){
+    if(c[k] === undefined || c[k] === null) c[k] = v;
+  }
+  // Cleaning defaults from bedroom count
+  if(c.cleaning === undefined || c.cleaning === null){
+    const br = parseInt(r.details.bedrooms) || 2;
+    c.cleaning = CLEANING_DEFAULTS[Math.min(br,4)] || 650;
+  }
+  return c;
+}
+
+function calcInput(id, value, opts={}){
+  const prefix = opts.prefix || '';
+  const suffix = opts.suffix || '';
+  const disabled = opts.disabled || false;
+  const cls = opts.cls || '';
+  const step = opts.step || 'any';
+  const w = opts.width || '';
+  const wStyle = w ? `width:${w}` : '';
+  return `<div class="calc-val ${cls}" ${wStyle?'style="'+wStyle+'"':''}>
+    ${disabled
+      ? `<span class="calc-display computed">${prefix}${typeof value==='number'?fmtNum(value):value}${suffix}</span>`
+      : `<input type="number" id="calc_${id}" value="${value}" step="${step}" onchange="onCalcChange('${id}',this.value)" ${prefix?'data-prefix="'+prefix+'"':''} />`
+    }
+  </div>`;
+}
+
+function fmtNum(n){
+  if(n===undefined||n===null||isNaN(n)) return '—';
+  return Number(n).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:2});
+}
+
+function fmtMoney(n){
+  if(n===undefined||n===null||isNaN(n)) return '$—';
+  const neg = n < 0;
+  return (neg?'-':'')+'$'+Math.abs(n).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:2});
+}
+
+function renderCalculatorTab(r){
+  const d = r.details || {};
+  const c = getCalc(r);
+  const br = parseInt(d.bedrooms) || 0;
+  const monthlyRent = parseFloat(d.monthlyRent) || 0;
+  const isProUser = requireTier('pro','AI Estimates');
+
+  // Computed values
+  const furnishCost = (br * c.costPerBR) + (c.extraCommonSpaces * c.costPerExtraSpace);
+  const totalInvested = c.applicationFees + c.securityDeposit + c.firstLastRent + c.additionalFee1 + c.additionalFee2 + furnishCost;
+  const daysOccupied = Math.round(365 * (c.estOccupancyRate / 100) * 100) / 100;
+  const annualRevenue = Math.round(c.avgDailyRate * daysOccupied);
+  const monthlyRevenue = Math.round(annualRevenue / 12);
+  const coHostFee = Math.round(monthlyRevenue * (c.coHostPct / 100) * 100) / 100;
+  const airbnbFee = Math.round(monthlyRevenue * 0.03 * 100) / 100;
+  const cleaning = c.cleaning !== undefined ? c.cleaning : (CLEANING_DEFAULTS[Math.min(br||2,4)] || 650);
+  const totalMonthlyExpenses = c.insurance + c.strFee + c.water + c.gas + c.electric + c.wifiTv + c.futureRepairs + c.incidentals + c.parking + cleaning + c.garbageRecycling + c.channelManager + c.cityPermit + coHostFee + airbnbFee;
+  const annualExpenses = Math.round(totalMonthlyExpenses * 12);
+  const monthlyNOI = monthlyRevenue - totalMonthlyExpenses;
+  const annualNOI = Math.round(monthlyNOI * 12);
+  const monthlyCashFlow = monthlyNOI - monthlyRent;
+  const annualCashFlow = Math.round(monthlyCashFlow * 12);
+  const cocReturn = totalInvested > 0 ? ((annualCashFlow / totalInvested) * 100) : 0;
+
+  let h = `<div class="profile-card profile-full" style="margin-bottom:12px">
+    <div class="profile-card-body" style="padding:16px">`;
+
+  // ── Summary Cards at Top ──
+  h += `<div class="calc-summary-grid" style="margin-top:0;margin-bottom:16px;grid-template-columns:repeat(4,1fr)">
+    <div class="calc-summary-card"><div class="csc-label">Monthly Revenue</div><div class="csc-value">${fmtMoney(monthlyRevenue)}</div><div class="csc-sub">${fmtMoney(annualRevenue)}/yr</div></div>
+    <div class="calc-summary-card"><div class="csc-label">Net Operating Income</div><div class="csc-value">${fmtMoney(monthlyNOI)}</div><div class="csc-sub">${fmtMoney(annualNOI)}/yr</div></div>
+    <div class="calc-summary-card ${monthlyCashFlow>=0?'positive':'negative'}"><div class="csc-label">Cash Flow</div><div class="csc-value">${fmtMoney(monthlyCashFlow)}</div><div class="csc-sub">${fmtMoney(annualCashFlow)}/yr</div></div>
+    <div class="calc-summary-card ${cocReturn>=0?'positive':'negative'}"><div class="csc-label">Cash on Cash Return</div><div class="csc-value">${cocReturn.toFixed(1)}%</div><div class="csc-sub">${fmtMoney(totalInvested)} invested</div></div>
+  </div>`;
+
+  // ── Investment Details ──
+  h += `<div class="calc-section">
+    <div class="calc-section-header">💼 Investment Details</div>
+    <div class="calc-row"><div class="calc-label">Application Fees</div>${calcInput('applicationFees',c.applicationFees)}</div>
+    <div class="calc-row"><div class="calc-label">Security Deposit</div>${calcInput('securityDeposit',c.securityDeposit)}</div>
+    <div class="calc-row"><div class="calc-label">First & Last Month's Rent <span class="calc-label-hint">(if required up front)</span></div>${calcInput('firstLastRent',c.firstLastRent)}</div>
+    <div class="calc-row"><div class="calc-label">Additional Fee #1</div>${calcInput('additionalFee1',c.additionalFee1)}</div>
+    <div class="calc-row"><div class="calc-label">Additional Fee #2</div>${calcInput('additionalFee2',c.additionalFee2)}</div>
+    <div class="calc-row"><div class="calc-label"># of Bedrooms <span class="calc-label-hint">(from Property Details)</span></div><div class="calc-val"><span class="calc-display">${br||'—'}</span></div></div>
+    <div class="calc-row"><div class="calc-label">Est. Cost Per Bedroom <span class="calc-label-hint">(incl. common spaces)</span></div>${calcInput('costPerBR',c.costPerBR)}</div>
+    <div class="calc-row"><div class="calc-label"># of Extra Common Spaces <span class="calc-label-hint">(patios, bonus rooms)</span></div>${calcInput('extraCommonSpaces',c.extraCommonSpaces)}</div>
+    <div class="calc-row"><div class="calc-label">Est. Cost Per Additional Space</div>${calcInput('costPerExtraSpace',c.costPerExtraSpace)}</div>
+    <div class="calc-row"><div class="calc-label">Estimated Cost to Furnish</div><div class="calc-val"><span class="calc-display computed">${fmtMoney(furnishCost)}</span></div></div>
+    <div class="calc-row total-row"><div class="calc-label">Total Money Invested</div><div class="calc-val"><span class="calc-display computed">${fmtMoney(totalInvested)}</span></div></div>
+  </div>`;
+
+  // ── Forecasted Revenue ──
+  h += `<div class="calc-section">
+    <div class="calc-section-header">📈 Forecasted Revenue</div>
+    <div class="calc-row"><div class="calc-label">Average Daily Rate</div>${calcInput('avgDailyRate',c.avgDailyRate)}</div>
+    <div class="calc-row"><div class="calc-label">Estimated Occupancy Rate (%)</div><div class="calc-val calc-pct"><input type="number" id="calc_estOccupancyRate" value="${c.estOccupancyRate}" step="1" min="0" max="100" onchange="onCalcChange('estOccupancyRate',this.value)" /></div></div>
+    <div class="calc-row"><div class="calc-label">Estimated Days/Year Occupied</div><div class="calc-val"><span class="calc-display computed">${fmtNum(daysOccupied)}</span></div></div>
+    <div class="calc-row"><div class="calc-label">Annual Revenue</div><div class="calc-val"><span class="calc-display computed">${fmtMoney(annualRevenue)}</span></div></div>
+    <div class="calc-row total-row"><div class="calc-label">Monthly Revenue</div><div class="calc-val"><span class="calc-display computed">${fmtMoney(monthlyRevenue)}</span></div></div>
+  </div>`;
+
+  // ── Monthly Operating Expenses ──
+  h += `<div class="calc-section">
+    <div class="calc-section-header">🏗️ Monthly Operating Expenses
+      <button class="calc-ai-btn ${isProUser?'':'locked'}" onclick="${isProUser?`estimateExpensesAI('${r.id}')`:`alert('AI expense estimation requires Pro plan. Upgrade to unlock.')`}" title="${isProUser?'Estimate expenses using AI for this market':'Requires Pro plan'}">✨ Estimate with AI${!isProUser?' 🔒':''}</button>
+    </div>
+    <div class="calc-row"><div class="calc-label">Insurance</div>${calcInput('insurance',c.insurance)}</div>
+    <div class="calc-row"><div class="calc-label">STR Fee <span class="calc-label-hint">(to landlord, if any)</span></div>${calcInput('strFee',c.strFee)}</div>
+    <div class="calc-row"><div class="calc-label">Water</div>${calcInput('water',c.water)}</div>
+    <div class="calc-row"><div class="calc-label">Gas</div>${calcInput('gas',c.gas)}</div>
+    <div class="calc-row"><div class="calc-label">Electric</div>${calcInput('electric',c.electric)}</div>
+    <div class="calc-row"><div class="calc-label">Wifi + TV/Cable</div>${calcInput('wifiTv',c.wifiTv)}</div>
+    <div class="calc-row"><div class="calc-label">Future Repairs</div>${calcInput('futureRepairs',c.futureRepairs)}</div>
+    <div class="calc-row"><div class="calc-label">Incidentals <span class="calc-label-hint">(soap, coffee, toilet paper)</span></div>${calcInput('incidentals',c.incidentals)}</div>
+    <div class="calc-row"><div class="calc-label">Parking</div>${calcInput('parking',c.parking)}</div>
+    <div class="calc-row"><div class="calc-label">Cleaning (Monthly) <span class="calc-label-hint">(default by BR count)</span></div>${calcInput('cleaning',cleaning)}</div>
+    <div class="calc-row"><div class="calc-label">Garbage / Recycling</div>${calcInput('garbageRecycling',c.garbageRecycling)}</div>
+    <div class="calc-row"><div class="calc-label">Channel Manager <span class="calc-label-hint">(Hospitable, Guesty, etc.)</span></div>${calcInput('channelManager',c.channelManager)}</div>
+    <div class="calc-row"><div class="calc-label">City Permit <span class="calc-label-hint">(annual ÷ 12)</span></div>${calcInput('cityPermit',c.cityPermit,{step:'0.01'})}</div>
+    <div class="calc-row"><div class="calc-label">Co-Host / PM Fee (%)</div><div class="calc-val calc-pct"><input type="number" id="calc_coHostPct" value="${c.coHostPct}" step="1" min="0" max="100" onchange="onCalcChange('coHostPct',this.value)" /></div></div>
+    <div class="calc-row"><div class="calc-label">Co-Host / PM Fee Amount</div><div class="calc-val"><span class="calc-display computed">${fmtMoney(coHostFee)}</span></div></div>
+    <div class="calc-row"><div class="calc-label">Airbnb Service Fee <span class="calc-label-hint">(3% of revenue)</span></div><div class="calc-val"><span class="calc-display computed">${fmtMoney(airbnbFee)}</span></div></div>
+    <div class="calc-row total-row"><div class="calc-label">Total Monthly Expenses</div><div class="calc-val"><span class="calc-display computed">${fmtMoney(totalMonthlyExpenses)}</span></div></div>
+    <div class="calc-row"><div class="calc-label" style="color:var(--text3);font-size:.75rem">Annual Operating Expenses</div><div class="calc-val"><span class="calc-display" style="color:var(--text3);font-size:.78rem">${fmtMoney(annualExpenses)}</span></div></div>
+  </div>`;
+
+  // ── Monthly Rent (from Property Details) ──
+  h += `<div class="calc-section">
+    <div class="calc-section-header">🏠 Monthly Rent</div>
+    <div class="calc-row"><div class="calc-label">Monthly Rent <span class="calc-label-hint">(from Property Details)</span></div><div class="calc-val"><span class="calc-display">${monthlyRent ? fmtMoney(monthlyRent) : '<span style=\\"color:var(--text3);font-style:italic\\">Not set</span>'}</span></div></div>
+    <div class="calc-row"><div class="calc-label" style="color:var(--text3);font-size:.75rem">Annual Rent</div><div class="calc-val"><span class="calc-display" style="color:var(--text3);font-size:.78rem">${fmtMoney(monthlyRent*12)}</span></div></div>
+  </div>`;
+
+  h += `</div></div>`;
+  return h;
+}
+
+function onCalcChange(field, value){
+  const r = records.find(x => x.id === currentProfileId);
+  if(!r) return;
+  if(!r.details) r.details = {};
+  if(!r.details.calculator) r.details.calculator = {};
+  const numVal = parseFloat(value) || 0;
+  r.details.calculator[field] = numVal;
+  saveData();
+  // Re-render the calculator tab content without losing focus
+  const tabEl = document.querySelector('.tab-content[data-tab="calculator"]');
+  if(tabEl){
+    const wasActive = document.activeElement?.id;
+    tabEl.innerHTML = renderCalculatorTab(r);
+    tabEl.classList.add('active');
+    if(wasActive){
+      const el = document.getElementById(wasActive);
+      if(el){ el.focus(); el.select(); }
+    }
+  }
+}
+
+function estimateExpensesAI(recId){
+  // Placeholder for AI expense estimation (Pro feature)
+  const r = records.find(x => x.id === recId);
+  if(!r) return;
+  const addr = r.details?.address || r.details?.street || '';
+  alert('AI estimation coming soon! Will analyze market data for ' + (addr || 'this area') + '.');
 }
 
 /* ===== ADDRESS AUTOCOMPLETE (Google Places REST API) ===== */
