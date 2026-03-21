@@ -633,7 +633,7 @@ h1 .hero-edit-input{font-size:1.35rem}
 .comp-table-wrap{overflow-x:auto;margin-bottom:10px}
 .comp-table{width:100%;border-collapse:collapse;font-size:.82rem}
 .comp-table th{padding:6px 8px;text-align:center;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.3px;border-bottom:2px solid var(--border);font-size:.68rem;white-space:nowrap}
-.comp-table td{padding:5px 8px;border-bottom:1px solid rgba(148,163,184,.08);vertical-align:middle;text-align:center;font-variant-numeric:tabular-nums}
+.comp-table td{padding:4px 6px;border-bottom:1px solid rgba(148,163,184,.08);vertical-align:middle;text-align:center;font-variant-numeric:tabular-nums;height:36px;box-sizing:border-box}
 .comp-table tr:hover{background:rgba(99,129,250,.04)}
 .comp-link-cell{text-align:center !important;padding:0 !important}
 .comp-link-cell a{display:flex;align-items:center;justify-content:center;width:100%;height:100%;min-height:34px;padding:4px 8px;color:var(--primary);text-decoration:none;border-radius:4px;transition:background .15s}
@@ -645,7 +645,7 @@ h1 .hero-edit-input{font-size:1.35rem}
 .comp-notes-cell{min-width:100px;max-width:160px}
 .comp-notes-preview{padding:4px 6px;font-size:.8rem;color:var(--text2);cursor:pointer;border-radius:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:background .15s;line-height:1.4}
 .comp-notes-preview:hover{background:rgba(99,129,250,.08)}
-.comp-editable{padding:4px 6px;border-radius:4px;cursor:pointer;min-height:22px;font-size:.82rem;transition:background .15s;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.comp-editable{padding:0 6px;border-radius:4px;cursor:pointer;height:28px;line-height:28px;font-size:.82rem;transition:background .15s;display:flex;align-items:center;justify-content:center;overflow:hidden;box-sizing:border-box}
 .comp-editable:hover{background:rgba(99,129,250,.08)}
 .comp-placeholder{color:var(--text3)}
 .comp-occ-wrap{display:inline-flex;align-items:center;justify-content:center;gap:0}
@@ -672,12 +672,15 @@ h1 .hero-edit-input{font-size:1.35rem}
 .an-req-editable:hover{background:rgba(99,129,250,.06)}
 .req-edit-hint{font-size:.55rem;color:var(--text3);opacity:0;transition:opacity .15s}
 .an-req-editable:hover .req-edit-hint{opacity:1}
-.comp-inline-input{width:100%;padding:3px 5px;border:1px solid transparent;border-radius:3px;font-size:.82rem;background:transparent;color:var(--text);text-align:center;font-family:inherit;transition:border-color .15s;box-sizing:border-box;-moz-appearance:textfield}
+.comp-inline-input{width:100%;padding:0 4px;border:1px solid transparent;border-radius:3px;font-size:.82rem;background:transparent;color:var(--text);text-align:center;font-family:inherit;transition:border-color .15s;box-sizing:border-box;-moz-appearance:textfield;height:26px;line-height:26px}
 .comp-inline-input::-webkit-outer-spin-button,.comp-inline-input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 .comp-inline-input:hover{border-color:var(--border)}
 .comp-inline-input:focus{border-color:var(--primary);outline:none;background:var(--surface)}
 .comp-inline-input.sm{width:62px}
-.proj-input{width:100%;padding:4px 6px;border:1px solid transparent;border-radius:4px;font-size:1.1rem;font-weight:700;background:transparent;color:inherit;text-align:center;font-family:inherit;transition:border-color .15s}
+.proj-editable{cursor:pointer;border-radius:4px;padding:4px 6px;transition:background .15s}
+.proj-editable:hover{background:rgba(99,129,250,.08)}
+.proj-input{width:100%;padding:4px 6px;border:1px solid transparent;border-radius:4px;font-size:1.1rem;font-weight:700;background:transparent;color:inherit;text-align:center;font-family:inherit;transition:border-color .15s;-moz-appearance:textfield}
+.proj-input::-webkit-outer-spin-button,.proj-input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 .proj-input:hover{border-color:var(--border)}
 .proj-input:focus{border-color:var(--primary);outline:none;background:var(--surface)}
 .proj-original{font-size:.72rem;color:var(--text3);font-style:italic;margin-top:2px}
@@ -862,6 +865,15 @@ h1 .hero-edit-input{font-size:1.35rem}
 .rr-toast.warning{background:#f59e0b;color:#1a1d2e}
 .rr-toast.error{background:#ef4444}
 .rr-toast.info{background:#4f6ef7}
+/* Comp Note Popup (centered) */
+.comp-note-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:250;display:none;align-items:center;justify-content:center}
+.comp-note-overlay.open{display:flex}
+.comp-note-popup{background:var(--surface);border:1px solid var(--border);border-radius:12px;width:480px;max-width:92vw;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.35)}
+.comp-note-popup .popup-header{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border)}
+.comp-note-popup .popup-header h3{font-size:.95rem;font-weight:600;margin:0}
+.comp-note-popup .popup-body{padding:16px 18px;flex:1;overflow-y:auto}
+.comp-note-popup .popup-footer{padding:12px 18px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.comp-note-popup .popup-footer .hint{font-size:.7rem;color:var(--text3)}
 </style>
 <!-- Firebase SDK -->
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
@@ -969,6 +981,9 @@ h1 .hero-edit-input{font-size:1.35rem}
 <!-- DETAIL MODAL -->
 <div class="modal-overlay" id="detailModal">
   <div class="modal-panel" id="detailPanel"></div>
+</div>
+<div class="comp-note-overlay" id="compNoteOverlay" onclick="if(event.target===this)closeCompNotePopup()">
+  <div class="comp-note-popup" id="compNotePopup"></div>
 </div>
 
 <script>
@@ -4395,7 +4410,7 @@ function renderAnalysisTab(r){
   h += '<div class="an-req-bar" style="border:none;border-radius:0;margin:0">';
   h += '<div class="an-req-item"><div class="req-label">Rent</div><div class="req-val">'+fmtMoney(v.monthlyRent)+'<span class="req-period">/mo</span></div><div class="req-annual">'+fmtMoney(v.monthlyRent*12)+'/yr</div></div>';
   // Expenses — not editable, total from ROI Calculator (includes utilities + cleaning)
-  h += '<div class="an-req-item" onclick="alert(\'Expenses are calculated from your Monthly Operating Expenses in the ROI Calculator tab. Edit individual amounts there.\')" style="cursor:help" title="Edit in ROI Calculator → Monthly Operating Expenses"><div class="req-label">Expenses <span style="font-size:.65rem;color:var(--text3)">ℹ</span></div><div class="req-val">'+fmtMoney(Math.round(expenses))+'<span class="req-period">/mo</span></div><div class="req-annual">'+fmtMoney(Math.round(expenses*12))+'/yr</div></div>';
+  h += '<div class="an-req-item" onclick="alert(\'Expenses are calculated from your Monthly Operating Expenses in the ROI Calculator tab. Edit individual amounts there.\')" style="cursor:help" title="Edit in ROI Calculator → Monthly Operating Expenses"><div class="req-label">Expenses</div><div class="req-val">'+fmtMoney(Math.round(expenses))+'<span class="req-period">/mo</span></div><div class="req-annual">'+fmtMoney(Math.round(expenses*12))+'/yr</div></div>';
   // Profit Requirement — editable with warning under $1000
   h += '<div class="an-req-item an-req-editable" onclick="editAnalysisProfitReq(\''+r.id+'\')"><div class="req-label">Profit Req <span class="req-edit-hint">✎</span></div><div class="req-val">'+fmtMoney(profitReq)+'<span class="req-period">/mo</span></div><div class="req-annual">'+fmtMoney(profitReq*12)+'/yr</div></div>';
   const monthlyReqRev = v.monthlyRent + expenses + profitReq;
@@ -4404,6 +4419,65 @@ function renderAnalysisTab(r){
   h += '</div></div>';
 
   h += '</div>'; // end an-top-grid
+
+  // ── Revenue Projections (moved above comps) ──
+  h += '<div class="an-section"><div class="an-section-hdr">Revenue Projections</div><div class="an-section-body">';
+
+  // Calculate projections from comps
+  let projLikely = 0, projBest = 0, projWorst = 0;
+  if(comps.length > 0){
+    const _avgOcc = comps.reduce((s,x)=>s+(parseFloat(x.occupancy)||0),0)/comps.length;
+    const _avgRate = comps.reduce((s,x)=>s+(parseFloat(x.nightlyRate)||0),0)/comps.length;
+    const _beats = comps.filter(x=>x.rating==='beats').length;
+    const _loses = comps.filter(x=>x.rating==='loses').length;
+    const _total = comps.length;
+    const _ratio = _total > 0 ? (_beats - _loses) / _total : 0;
+    const _baseRev = _avgRate * 365 * (_avgOcc / 100);
+    projLikely = Math.round(_baseRev * (1 + _ratio * 0.05));
+    projBest = Math.round(_baseRev * 1.1);
+    projWorst = Math.round(_baseRev * 0.85);
+  }
+
+  if(isProUser){
+    const userLikely = an.userLikely !== undefined ? parseFloat(an.userLikely) : null;
+    const userBest = an.userBest !== undefined ? parseFloat(an.userBest) : null;
+    const userWorst = an.userWorst !== undefined ? parseFloat(an.userWorst) : null;
+    const showLikely = userLikely !== null ? userLikely : projLikely;
+    const showBest = userBest !== null ? userBest : projBest;
+    const showWorst = userWorst !== null ? userWorst : projWorst;
+
+    h += '<div class="an-proj-grid">';
+    h += '<div class="an-proj-card likely"><div class="proj-label">Likely Revenue</div>';
+    h += '<div class="proj-value proj-editable" onclick="projEditCell(this)" data-field="userLikely" data-rec="'+r.id+'" data-raw="'+(showLikely||0)+'" data-auto="'+projLikely+'">'+(showLikely ? fmtMoney(showLikely) : '$0')+'</div>';
+    if(userLikely !== null && userLikely !== projLikely && projLikely > 0) h += '<div class="proj-original"><s>'+fmtMoney(projLikely)+'</s> projected</div>';
+    h += '</div>';
+    h += '<div class="an-proj-card best"><div class="proj-label">Best Case</div>';
+    h += '<div class="proj-value proj-editable" onclick="projEditCell(this)" data-field="userBest" data-rec="'+r.id+'" data-raw="'+(showBest||0)+'" data-auto="'+projBest+'">'+(showBest ? fmtMoney(showBest) : '$0')+'</div>';
+    if(userBest !== null && userBest !== projBest && projBest > 0) h += '<div class="proj-original"><s>'+fmtMoney(projBest)+'</s> projected</div>';
+    h += '</div>';
+    h += '<div class="an-proj-card worst"><div class="proj-label">Worst Case</div>';
+    h += '<div class="proj-value proj-editable" onclick="projEditCell(this)" data-field="userWorst" data-rec="'+r.id+'" data-raw="'+(showWorst||0)+'" data-auto="'+projWorst+'">'+(showWorst ? fmtMoney(showWorst) : '$0')+'</div>';
+    if(userWorst !== null && userWorst !== projWorst && projWorst > 0) h += '<div class="proj-original"><s>'+fmtMoney(projWorst)+'</s> projected</div>';
+    h += '</div>';
+    h += '</div>';
+  } else {
+    const manLikely = an.userLikely !== undefined ? parseFloat(an.userLikely) : 0;
+    const manBest = an.userBest !== undefined ? parseFloat(an.userBest) : 0;
+    const manWorst = an.userWorst !== undefined ? parseFloat(an.userWorst) : 0;
+    h += '<div class="an-proj-grid">';
+    h += '<div class="an-proj-card likely"><div class="proj-label">Likely Revenue</div>';
+    h += '<div class="proj-value proj-editable" onclick="projEditCell(this)" data-field="userLikely" data-rec="'+r.id+'" data-raw="'+(manLikely||0)+'">'+(manLikely ? fmtMoney(manLikely) : '$0')+'</div></div>';
+    h += '<div class="an-proj-card best"><div class="proj-label">Best Case</div>';
+    h += '<div class="proj-value proj-editable" onclick="projEditCell(this)" data-field="userBest" data-rec="'+r.id+'" data-raw="'+(manBest||0)+'">'+(manBest ? fmtMoney(manBest) : '$0')+'</div></div>';
+    h += '<div class="an-proj-card worst"><div class="proj-label">Worst Case</div>';
+    h += '<div class="proj-value proj-editable" onclick="projEditCell(this)" data-field="userWorst" data-rec="'+r.id+'" data-raw="'+(manWorst||0)+'">'+(manWorst ? fmtMoney(manWorst) : '$0')+'</div></div>';
+    h += '</div>';
+  }
+
+  h += '<div style="margin-top:10px"><div style="font-size:.8rem;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.3px;margin-bottom:4px">Why? (Your reasoning)</div>';
+  h += '<textarea class="an-why" placeholder="Explain your revenue projection reasoning..." onchange="updateAnalysisField(\''+r.id+'\',\'projectionWhy\',this.value)">'+esc(an.projectionWhy||'')+'</textarea>';
+  h += '</div>';
+  h += '</div></div>';
 
   // ── Averages Bar (from comps) ──
   if(comps.length > 0){
@@ -4470,67 +4544,6 @@ function renderAnalysisTab(r){
 
   h += '</div></div>';
 
-  // ── Revenue Projections ──
-  h += '<div class="an-section"><div class="an-section-hdr">Revenue Projections</div><div class="an-section-body">';
-
-  // Calculate projections from comps (for Pro auto-fill)
-  let projLikely = 0, projBest = 0, projWorst = 0;
-  if(comps.length > 0){
-    const avgOcc = comps.reduce((s,x)=>s+(parseFloat(x.occupancy)||0),0)/comps.length;
-    const avgRate = comps.reduce((s,x)=>s+(parseFloat(x.nightlyRate)||0),0)/comps.length;
-    const beats = comps.filter(x=>x.rating==='beats').length;
-    const loses = comps.filter(x=>x.rating==='loses').length;
-    const total = comps.length;
-    const ratio = total > 0 ? (beats - loses) / total : 0;
-    const baseRev = avgRate * 365 * (avgOcc / 100);
-    projLikely = Math.round(baseRev * (1 + ratio * 0.05));
-    projBest = Math.round(baseRev * 1.1);
-    projWorst = Math.round(baseRev * 0.85);
-  }
-
-  if(isProUser){
-    // Pro: auto-projected, editable with strikethrough showing original
-    const userLikely = an.userLikely !== undefined ? parseFloat(an.userLikely) : null;
-    const userBest = an.userBest !== undefined ? parseFloat(an.userBest) : null;
-    const userWorst = an.userWorst !== undefined ? parseFloat(an.userWorst) : null;
-    const showLikely = userLikely !== null ? userLikely : projLikely;
-    const showBest = userBest !== null ? userBest : projBest;
-    const showWorst = userWorst !== null ? userWorst : projWorst;
-
-    h += '<div class="an-proj-grid">';
-    h += '<div class="an-proj-card likely"><div class="proj-label">Likely Revenue</div>';
-    h += '<div class="proj-value"><input type="number" class="proj-input" value="'+(showLikely||'')+'" onchange="updateProjection(\''+r.id+'\',\'userLikely\',this.value,'+projLikely+')" /></div>';
-    if(userLikely !== null && userLikely !== projLikely && projLikely > 0) h += '<div class="proj-original"><s>'+fmtMoney(projLikely)+'</s> projected</div>';
-    h += '</div>';
-    h += '<div class="an-proj-card best"><div class="proj-label">Best Case</div>';
-    h += '<div class="proj-value"><input type="number" class="proj-input" value="'+(showBest||'')+'" onchange="updateProjection(\''+r.id+'\',\'userBest\',this.value,'+projBest+')" /></div>';
-    if(userBest !== null && userBest !== projBest && projBest > 0) h += '<div class="proj-original"><s>'+fmtMoney(projBest)+'</s> projected</div>';
-    h += '</div>';
-    h += '<div class="an-proj-card worst"><div class="proj-label">Worst Case</div>';
-    h += '<div class="proj-value"><input type="number" class="proj-input" value="'+(showWorst||'')+'" onchange="updateProjection(\''+r.id+'\',\'userWorst\',this.value,'+projWorst+')" /></div>';
-    if(userWorst !== null && userWorst !== projWorst && projWorst > 0) h += '<div class="proj-original"><s>'+fmtMoney(projWorst)+'</s> projected</div>';
-    h += '</div>';
-    h += '</div>';
-  } else {
-    // Basic: manual input only
-    const manLikely = an.userLikely !== undefined ? an.userLikely : '';
-    const manBest = an.userBest !== undefined ? an.userBest : '';
-    const manWorst = an.userWorst !== undefined ? an.userWorst : '';
-    h += '<div class="an-proj-grid">';
-    h += '<div class="an-proj-card likely"><div class="proj-label">Likely Revenue</div>';
-    h += '<div class="proj-value"><input type="number" class="proj-input" value="'+manLikely+'" placeholder="$0" onchange="updateAnalysisField(\''+r.id+'\',\'userLikely\',this.value)" /></div></div>';
-    h += '<div class="an-proj-card best"><div class="proj-label">Best Case</div>';
-    h += '<div class="proj-value"><input type="number" class="proj-input" value="'+manBest+'" placeholder="$0" onchange="updateAnalysisField(\''+r.id+'\',\'userBest\',this.value)" /></div></div>';
-    h += '<div class="an-proj-card worst"><div class="proj-label">Worst Case</div>';
-    h += '<div class="proj-value"><input type="number" class="proj-input" value="'+manWorst+'" placeholder="$0" onchange="updateAnalysisField(\''+r.id+'\',\'userWorst\',this.value)" /></div></div>';
-    h += '</div>';
-  }
-
-  h += '<div style="margin-top:10px"><div style="font-size:.8rem;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.3px;margin-bottom:4px">Why? (Your reasoning)</div>';
-  h += '<textarea class="an-why" placeholder="Explain your revenue projection reasoning..." onchange="updateAnalysisField(\''+r.id+'\',\'projectionWhy\',this.value)">'+esc(an.projectionWhy||'')+'</textarea>';
-  h += '</div>';
-  h += '</div></div>';
-
   return h;
 }
 
@@ -4584,6 +4597,46 @@ function updateCompField(recId, idx, field, value){
  * Click-to-edit cell in the comp table.
  * Shows a number input inline, saves on blur/enter, re-renders with formatted display.
  */
+/**
+ * Click-to-edit for Revenue Projection cards.
+ * Shows formatted dollar display, click to type raw number, re-renders on save.
+ */
+function projEditCell(el){
+  if(el.querySelector('input')) return;
+  const field = el.dataset.field;
+  const recId = el.dataset.rec;
+  const raw = el.dataset.raw;
+
+  const input = document.createElement('input');
+  input.type = 'number';
+  input.className = 'proj-input';
+  input.value = raw && raw !== '0' ? raw : '';
+  input.placeholder = '$0';
+
+  el.textContent = '';
+  el.appendChild(input);
+  input.focus();
+  input.select();
+
+  const save = () => {
+    const val = input.value;
+    const r = records.find(x => x.id === recId);
+    if(r){
+      const an = getAnalysis(r);
+      an[field] = val;
+      saveData();
+      const tabEl = document.querySelector('.tab-content[data-tab="analysis"]');
+      if(tabEl){ tabEl.innerHTML = renderAnalysisTab(r); tabEl.classList.add('active'); }
+    }
+  };
+
+  input.addEventListener('blur', save);
+  input.addEventListener('keydown', (e) => {
+    if(e.key === 'Enter'){ e.preventDefault(); input.blur(); }
+    if(e.key === 'Escape'){ input.value = raw; input.blur(); }
+  });
+}
+
 function compEditCell(el){
   if(el.querySelector('input')) return; // already editing
   const field = el.dataset.field;
@@ -4629,6 +4682,7 @@ function compEditCell(el){
   });
 }
 
+let _compNoteCtx = null;
 function openCompNoteEditor(recId, idx){
   const r = records.find(x => x.id === recId);
   if(!r) return;
@@ -4636,29 +4690,43 @@ function openCompNoteEditor(recId, idx){
   if(!comps[idx]) return;
   const comp = comps[idx];
   const editorId = 'compNoteRte_' + recId + '_' + idx;
+  _compNoteCtx = { recId, idx, editorId };
 
-  const modal = document.getElementById('detailModal');
-  const panel = document.getElementById('detailPanel');
-  panel.innerHTML = `
-    <div class="modal-header">
-      <h2>Comp #${idx+1} Notes</h2>
-      <button class="modal-close" onclick="closeCompNoteEditor('${recId}',${idx},'${editorId}')">
+  const popup = document.getElementById('compNotePopup');
+  popup.innerHTML = `
+    <div class="popup-header">
+      <h3>Comp #${idx+1} Notes</h3>
+      <button class="modal-close" onclick="closeCompNotePopup()">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
       </button>
     </div>
-    <div class="modal-body" style="padding:16px 20px">
-      <div style="font-size:.78rem;color:var(--text3);margin-bottom:8px">${comp.link ? '<a href="'+esc(comp.link)+'" target="_blank" style="color:var(--primary)">View Listing</a>' : 'Comp #'+(idx+1)}</div>
+    <div class="popup-body">
+      ${comp.link ? '<div style="font-size:.78rem;color:var(--text3);margin-bottom:8px"><a href="'+esc(comp.link)+'" target="_blank" style="color:var(--primary)">View Listing</a></div>' : ''}
       ${buildRteToolbarHtml(editorId)}
-      <div class="rte-editor" contenteditable="true" id="${editorId}" data-placeholder="Add notes about this comparable..." style="min-height:200px;font-size:.9rem;padding:10px 12px">${comp.notes || ''}</div>
-      <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">
-        <button class="btn btn-secondary" onclick="closeCompNoteEditor('${recId}',${idx},'${editorId}')">Cancel</button>
-        <button class="btn btn-primary" onclick="saveCompNote('${recId}',${idx},'${editorId}')">Save Note</button>
+      <div class="rte-editor" contenteditable="true" id="${editorId}" data-placeholder="Add notes about this comparable..." style="min-height:180px;font-size:.9rem;padding:10px 12px">${comp.notes || ''}</div>
+    </div>
+    <div class="popup-footer">
+      <span class="hint">Shift+Enter to save</span>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-secondary" onclick="closeCompNotePopup()">Cancel</button>
+        <button class="btn btn-primary" onclick="saveCompNotePopup()">Save</button>
       </div>
     </div>`;
-  modal.classList.add('open');
+  document.getElementById('compNoteOverlay').classList.add('open');
+
+  // Shift+Enter to save
+  const ed = document.getElementById(editorId);
+  if(ed){
+    ed.focus();
+    ed.addEventListener('keydown', (e) => {
+      if(e.key === 'Enter' && e.shiftKey){ e.preventDefault(); saveCompNotePopup(); }
+    });
+  }
 }
 
-function saveCompNote(recId, idx, editorId){
+function saveCompNotePopup(){
+  if(!_compNoteCtx) return;
+  const { recId, idx, editorId } = _compNoteCtx;
   const r = records.find(x => x.id === recId);
   if(!r) return;
   const comps = getComps(r);
@@ -4668,13 +4736,14 @@ function saveCompNote(recId, idx, editorId){
   const html = ed.innerHTML.trim();
   comps[idx].notes = html === '<br>' || html === '<div><br></div>' ? '' : html;
   saveData();
-  document.getElementById('detailModal').classList.remove('open');
+  _compNoteCtx = null;
+  document.getElementById('compNoteOverlay').classList.remove('open');
   render();
 }
 
-function closeCompNoteEditor(recId, idx, editorId){
-  document.getElementById('detailModal').classList.remove('open');
-  render();
+function closeCompNotePopup(){
+  _compNoteCtx = null;
+  document.getElementById('compNoteOverlay').classList.remove('open');
 }
 
 function updateAnalysisField(recId, field, value){
