@@ -2011,9 +2011,7 @@ function renderSectionReadonly(d, section){
 }
 
 function openSectionEditor(recId, sectionKey){
-  // Remove any stale overlays first
-  document.getElementById('sectionEditOverlay')?.remove();
-  document.getElementById('cardEditOverlay')?.remove();
+  dismissAllOverlays();
   const r = records.find(x => x.id === recId);
   if(!r) return;
   const d = r.propertyDetails || {};
@@ -2150,6 +2148,7 @@ function togglePropCheck(label, recId, field, opt){
 }
 
 function openMultiEditor(recId, fieldKey){
+  dismissAllOverlays();
   const r = records.find(x => x.id === recId);
   if(!r) return;
   if(!r.propertyDetails) r.propertyDetails = {};
@@ -2229,6 +2228,7 @@ function addPropertyNote(recId){
   render();
 }
 function openPropertyNoteEditor(recId){
+  dismissAllOverlays();
   const r = records.find(x => x.id === recId);
   if(!r) return;
   const existing = r.propertyNote || null;
@@ -2717,6 +2717,7 @@ function addNote(id){
 }
 
 function editNote(recId, noteId){
+  dismissAllOverlays();
   const r = records.find(x => x.id===recId);
   if(!r) return;
   const note = r.notes.find(n => n.id === noteId);
@@ -2858,6 +2859,7 @@ function deleteRecord(id){
   else { document.getElementById('detailModal').classList.remove('open'); render(); }
 }
 function confirmDeleteProperty(id){
+  dismissAllOverlays();
   const r = records.find(x => x.id === id);
   if(!r) return;
   const name = r.property || r.name || 'this property';
@@ -6344,10 +6346,13 @@ function getDtValue(triggerId){
 }
 
 /* ===== CARD EDIT POPUPS ===== */
+function dismissAllOverlays(){
+  ['cardEditOverlay','sectionEditOverlay','editNoteOverlay','noteImgPopup','propNoteEditorOverlay','multiEditorOverlay','deleteConfirmOverlay'].forEach(id => document.getElementById(id)?.remove());
+  document.querySelectorAll('.stats-popup-overlay,.multi-editor-overlay,.card-edit-popup,.note-img-popup-overlay').forEach(el => el.remove());
+}
+
 function openCardEditor(recId, cardType){
-  // Remove any stale overlays first
-  document.getElementById('cardEditOverlay')?.remove();
-  document.getElementById('sectionEditOverlay')?.remove();
+  dismissAllOverlays();
   const r = records.find(x => x.id === recId);
   if(!r) return;
   const d = r.propertyDetails || {};
