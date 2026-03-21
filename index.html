@@ -265,7 +265,7 @@ tr.clickable:hover{background:var(--primary-light)}
 .note-text ul ul ul{list-style-type:square}
 .note-text ul ul ul ul{list-style-type:'▫ '}
 .note-images{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
-.note-img-thumb{width:100px;height:auto;border-radius:6px;border:1px solid var(--border);cursor:pointer;transition:all .15s;object-fit:cover}
+.note-img-thumb{max-width:80px;max-height:80px;width:auto;height:auto;border-radius:6px;border:1px solid var(--border);cursor:pointer;transition:all .15s;object-fit:cover}
 .note-img-thumb:hover{border-color:var(--primary);box-shadow:0 2px 8px rgba(0,0,0,.15)}
 .note-img-badge{display:inline-flex;align-items:center;gap:4px;font-size:.68rem;color:var(--text3);margin-top:4px}
 .rte-editor img{max-width:120px;max-height:80px;border-radius:4px;vertical-align:middle;margin:2px}
@@ -275,10 +275,10 @@ tr.clickable:hover{background:var(--primary-light)}
 .rte-img-preview-item .rte-img-remove{position:absolute;top:-4px;right:-4px;width:18px;height:18px;border-radius:50%;background:var(--danger);color:#fff;border:none;cursor:pointer;font-size:.65rem;display:flex;align-items:center;justify-content:center;line-height:1;opacity:0;transition:opacity .15s}
 .rte-img-preview-item:hover .rte-img-remove{opacity:1}
 .note-img-popup-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(2px)}
-.note-img-popup{background:var(--surface);border-radius:12px;padding:20px;max-width:90vw;max-height:90vh;overflow:auto;position:relative;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.note-img-popup{background:var(--surface);border-radius:12px;padding:48px 20px 20px;max-width:90vw;max-height:90vh;overflow:auto;position:relative;box-shadow:0 20px 60px rgba(0,0,0,.3)}
 .note-img-popup img{max-width:100%;max-height:70vh;border-radius:8px;display:block;margin:0 auto}
-.note-img-popup .nip-text{margin-top:14px;font-size:.9rem;line-height:1.5;color:var(--text)}
-.note-img-popup .nip-date{font-size:.75rem;color:var(--text3);margin-top:10px}
+.note-img-popup .nip-text{margin-bottom:14px;font-size:.9rem;line-height:1.5;color:var(--text);text-align:left}
+.note-img-popup .nip-date{position:absolute;top:16px;right:52px;font-size:.75rem;color:var(--text3);text-align:right}
 .note-img-popup .nip-actions{position:absolute;top:12px;right:12px;display:flex;gap:6px;opacity:0;transition:opacity .15s}
 .note-img-popup:hover .nip-actions{opacity:1}
 .nip-actions button{width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:6px;color:var(--text3);background:var(--bg);border:1px solid var(--border);cursor:pointer;transition:all .12s}
@@ -2845,10 +2845,10 @@ function openNoteImagePopup(recId, noteId, imgIdx){
       <button onclick="document.getElementById('noteImgPopup').remove();editNote('${recId}','${noteId}')" title="Edit"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
       <button class="del" onclick="document.getElementById('noteImgPopup').remove();deleteNote('${recId}','${noteId}')" title="Delete"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>
     </div>`:''}
+    <div class="nip-date">${fmtDateTime(note.date)} • ${emoji}${label}${note.editedAt?' <span style="font-style:italic">(edited '+fmtDateTime(note.editedAt)+')</span>':''}</div>
+    <div class="nip-text">${noteContent}</div>
     <img src="${note.images[imgIdx]}" alt="Attachment">
     ${navHtml}
-    <div class="nip-text">${noteContent}</div>
-    <div class="nip-date">${fmtDateTime(note.date)} • ${emoji}${label}${note.editedAt?' <span style="font-style:italic">(edited '+fmtDateTime(note.editedAt)+')</span>':''}</div>
   </div>`;
 
   // Close on backdrop click
