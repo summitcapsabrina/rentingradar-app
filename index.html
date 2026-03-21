@@ -633,20 +633,23 @@ h1 .hero-edit-input{font-size:1.35rem}
 .comp-table-wrap{overflow-x:auto;margin-bottom:10px}
 .comp-table{width:100%;border-collapse:collapse;font-size:.82rem}
 .comp-table th{padding:6px 8px;text-align:center;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.3px;border-bottom:2px solid var(--border);font-size:.68rem;white-space:nowrap}
-.comp-table td{padding:5px 8px;border-bottom:1px solid rgba(148,163,184,.08);vertical-align:middle;text-align:center}
-.comp-table td.r{font-variant-numeric:tabular-nums}
+.comp-table td{padding:5px 8px;border-bottom:1px solid rgba(148,163,184,.08);vertical-align:middle;text-align:center;font-variant-numeric:tabular-nums}
 .comp-table tr:hover{background:rgba(99,129,250,.04)}
-.comp-link-cell{text-align:right !important}
-.comp-link{color:var(--primary);text-decoration:none;font-size:.78rem;display:inline-flex;align-items:center;gap:4px;white-space:nowrap;vertical-align:middle}
-.comp-link:hover{text-decoration:underline}
-.comp-link svg{flex-shrink:0}
+.comp-link-cell{text-align:center !important;padding:0 !important}
+.comp-link-cell a{display:flex;align-items:center;justify-content:center;width:100%;height:100%;min-height:34px;padding:4px 8px;color:var(--primary);text-decoration:none;border-radius:4px;transition:background .15s}
+.comp-link-cell a:hover{background:rgba(99,129,250,.12)}
+.comp-link-cell a svg{flex-shrink:0}
 .comp-rating{font-size:.78rem;padding:3px 8px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);cursor:pointer}
 .comp-remove{background:none;border:none;color:var(--text3);cursor:pointer;font-size:.75rem;padding:2px;border-radius:4px;line-height:1}
 .comp-remove:hover{color:var(--danger,#ef4444);background:rgba(239,68,68,.08)}
-.comp-notes-cell{min-width:140px;max-width:220px}
-.comp-notes{width:100%;padding:3px 5px;border:1px solid transparent;border-radius:4px;font-size:.8rem;background:transparent;color:var(--text2);resize:none;font-family:inherit;min-height:18px;line-height:1.3}
-.comp-notes:hover{border-color:var(--border)}
-.comp-notes:focus{border-color:var(--primary);outline:none;background:var(--surface)}
+.comp-notes-cell{min-width:100px;max-width:160px}
+.comp-notes-preview{padding:4px 6px;font-size:.8rem;color:var(--text2);cursor:pointer;border-radius:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:background .15s;line-height:1.4}
+.comp-notes-preview:hover{background:rgba(99,129,250,.08)}
+.comp-editable{padding:4px 6px;border-radius:4px;cursor:pointer;min-height:22px;font-size:.82rem;transition:background .15s;display:flex;align-items:center;justify-content:center}
+.comp-editable:hover{background:rgba(99,129,250,.08)}
+.comp-placeholder{color:var(--text3)}
+.comp-occ-wrap{display:inline-flex;align-items:center;justify-content:center;gap:0}
+.comp-occ-pct{color:var(--text3);font-size:.82rem;flex-shrink:0;margin-left:1px}
 /* Averages */
 .comp-avg-bar{display:flex;gap:0;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:10px}
 .comp-avg-item{flex:1;text-align:center;padding:10px 8px;border-right:1px solid var(--border)}
@@ -4422,26 +4425,31 @@ function renderAnalysisTab(r){
   if(comps.length > 0){
     comps.forEach((comp, i) => {
       const rating = comp.rating || 'competes';
-      const linkIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>';
+      const linkIcon = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>';
       h += '<tr>';
       h += '<td style="color:var(--text3)">'+(i+1)+'</td>';
-      h += '<td class="r"><span style="color:var(--text3)">$</span><input type="number" class="comp-inline-input" value="'+(comp.annualRevenue||'')+'" placeholder="—" onchange="updateCompField(\''+r.id+'\','+i+',\'annualRevenue\',this.value)" /></td>';
-      h += '<td class="r"><input type="number" class="comp-inline-input sm" value="'+(comp.daysAvailable||'')+'" placeholder="—" onchange="updateCompField(\''+r.id+'\','+i+',\'daysAvailable\',this.value)" /></td>';
-      h += '<td class="r"><input type="number" class="comp-inline-input sm" value="'+(comp.occupancy||'')+'" placeholder="—" onchange="updateCompField(\''+r.id+'\','+i+',\'occupancy\',this.value)" style="width:48px" /><span style="color:var(--text3)">%</span></td>';
-      h += '<td class="r"><span style="color:var(--text3)">$</span><input type="number" class="comp-inline-input sm" value="'+(comp.nightlyRate||'')+'" placeholder="—" onchange="updateCompField(\''+r.id+'\','+i+',\'nightlyRate\',this.value)" /></td>';
-      h += '<td class="r"><input type="number" class="comp-inline-input sm" value="'+(comp.guests||'')+'" placeholder="—" onchange="updateCompField(\''+r.id+'\','+i+',\'guests\',this.value)" /></td>';
-      h += '<td class="r"><input type="number" class="comp-inline-input sm" value="'+(comp.bedrooms||'')+'" placeholder="—" onchange="updateCompField(\''+r.id+'\','+i+',\'bedrooms\',this.value)" /></td>';
-      h += '<td class="r"><input type="number" class="comp-inline-input sm" value="'+(comp.beds||'')+'" placeholder="—" onchange="updateCompField(\''+r.id+'\','+i+',\'beds\',this.value)" /></td>';
-      h += '<td class="r"><input type="number" class="comp-inline-input sm" value="'+(comp.bathrooms||'')+'" placeholder="—" onchange="updateCompField(\''+r.id+'\','+i+',\'bathrooms\',this.value)" /></td>';
-      h += '<td><input type="text" class="comp-inline-input" value="'+esc(comp.host||'')+'" placeholder="—" onchange="updateCompField(\''+r.id+'\','+i+',\'host\',this.value)" /></td>';
+      const revRaw = comp.annualRevenue || 0;
+      const rateRaw = comp.nightlyRate || 0;
+      const occRaw = comp.occupancy || 0;
+      const daysRaw = comp.daysAvailable || 0;
+      h += '<td><div class="comp-editable" onclick="compEditCell(this)" data-field="annualRevenue" data-rec="'+r.id+'" data-idx="'+i+'" data-raw="'+revRaw+'">'+(revRaw ? fmtMoney(Math.round(revRaw)) : '<span class="comp-placeholder">—</span>')+'</div></td>';
+      h += '<td><div class="comp-editable" onclick="compEditCell(this)" data-field="daysAvailable" data-rec="'+r.id+'" data-idx="'+i+'" data-raw="'+daysRaw+'">'+(daysRaw ? daysRaw : '<span class="comp-placeholder">—</span>')+'</div></td>';
+      h += '<td><div class="comp-editable" onclick="compEditCell(this)" data-field="occupancy" data-rec="'+r.id+'" data-idx="'+i+'" data-raw="'+occRaw+'">'+(occRaw ? '<span class="comp-occ-wrap">'+parseFloat(occRaw).toFixed(1)+'<span class="comp-occ-pct">%</span></span>' : '<span class="comp-placeholder">—</span>')+'</div></td>';
+      h += '<td><div class="comp-editable" onclick="compEditCell(this)" data-field="nightlyRate" data-rec="'+r.id+'" data-idx="'+i+'" data-raw="'+rateRaw+'">'+(rateRaw ? '$'+parseFloat(rateRaw).toFixed(2) : '<span class="comp-placeholder">—</span>')+'</div></td>';
+      h += '<td><div class="comp-editable" onclick="compEditCell(this)" data-field="guests" data-rec="'+r.id+'" data-idx="'+i+'" data-raw="'+(comp.guests||0)+'">'+(comp.guests ? comp.guests : '<span class="comp-placeholder">—</span>')+'</div></td>';
+      h += '<td><div class="comp-editable" onclick="compEditCell(this)" data-field="bedrooms" data-rec="'+r.id+'" data-idx="'+i+'" data-raw="'+(comp.bedrooms||0)+'">'+(comp.bedrooms ? comp.bedrooms : '<span class="comp-placeholder">—</span>')+'</div></td>';
+      h += '<td><div class="comp-editable" onclick="compEditCell(this)" data-field="beds" data-rec="'+r.id+'" data-idx="'+i+'" data-raw="'+(comp.beds||0)+'">'+(comp.beds ? comp.beds : '<span class="comp-placeholder">—</span>')+'</div></td>';
+      h += '<td><div class="comp-editable" onclick="compEditCell(this)" data-field="bathrooms" data-rec="'+r.id+'" data-idx="'+i+'" data-raw="'+(comp.bathrooms||0)+'">'+(comp.bathrooms ? comp.bathrooms : '<span class="comp-placeholder">—</span>')+'</div></td>';
+      h += '<td><input type="text" class="comp-inline-input" value="'+esc(comp.host||'')+'" placeholder="—" onchange="updateCompField(\''+r.id+'\','+i+',\'host\',this.value)" onkeydown="if(event.key===\'Enter\'){this.blur()}" /></td>';
       h += '<td><select class="comp-rating" onchange="updateCompField(\''+r.id+'\','+i+',\'rating\',this.value)">';
       h += '<option value="beats" '+(rating==='beats'?'selected':'')+'>Beats</option>';
       h += '<option value="competes" '+(rating==='competes'?'selected':'')+'>Competes</option>';
       h += '<option value="loses" '+(rating==='loses'?'selected':'')+'>Loses</option>';
       h += '</select></td>';
-      h += '<td class="comp-notes-cell"><textarea class="comp-notes" rows="1" placeholder="Notes..." onchange="updateCompField(\''+r.id+'\','+i+',\'notes\',this.value)">'+esc(comp.notes||'')+'</textarea></td>';
+      const notePreview = comp.notes ? (comp.notes.replace(/<[^>]+>/g,' ').substring(0,30) + (comp.notes.length > 30 ? '...' : '')) : '';
+      h += '<td class="comp-notes-cell"><div class="comp-notes-preview" onclick="openCompNoteEditor(\''+r.id+'\','+i+')" title="Click to edit notes">'+(notePreview || '<span style="color:var(--text3)">+ Note</span>')+'</div></td>';
       h += '<td><button class="comp-remove" onclick="removeComp(\''+r.id+'\','+i+')" title="Remove">✕</button></td>';
-      h += '<td class="comp-link-cell">'+(comp.link ? '<a class="comp-link" href="'+esc(comp.link)+'" target="_blank" title="'+esc(comp.link)+'">'+linkIcon+'</a>' : '')+'</td>';
+      h += '<td class="comp-link-cell">'+(comp.link ? '<a href="'+esc(comp.link)+'" target="_blank" title="'+esc(comp.link)+'">'+linkIcon+'</a>' : '')+'</td>';
       h += '</tr>';
     });
   } else {
@@ -4569,6 +4577,97 @@ function updateCompField(recId, idx, field, value){
     if(calcEl){ calcEl.innerHTML = renderCalculatorTab(r); }
   }
   if(field === 'rating') render();
+}
+
+/**
+ * Click-to-edit cell in the comp table.
+ * Shows a number input inline, saves on blur/enter, re-renders with formatted display.
+ */
+function compEditCell(el){
+  if(el.querySelector('input')) return; // already editing
+  const field = el.dataset.field;
+  const recId = el.dataset.rec;
+  const idx = parseInt(el.dataset.idx);
+  const raw = el.dataset.raw;
+
+  const step = field === 'nightlyRate' ? '0.01' : (field === 'occupancy' ? '0.1' : '1');
+  const input = document.createElement('input');
+  input.type = 'number';
+  input.step = step;
+  input.className = 'comp-inline-input';
+  input.style.width = '100%';
+  input.value = raw && raw !== '0' ? raw : '';
+  input.placeholder = '—';
+
+  el.textContent = '';
+  el.appendChild(input);
+  input.focus();
+  input.select();
+
+  const save = () => {
+    const val = input.value;
+    updateCompField(recId, idx, field, val);
+    // Re-render the analysis tab to get fresh formatted values
+    const r = records.find(x => x.id === recId);
+    if(r){
+      const tabEl = document.querySelector('.tab-content[data-tab="analysis"]');
+      if(tabEl){ tabEl.innerHTML = renderAnalysisTab(r); tabEl.classList.add('active'); }
+    }
+  };
+
+  input.addEventListener('blur', save);
+  input.addEventListener('keydown', (e) => {
+    if(e.key === 'Enter'){ e.preventDefault(); input.blur(); }
+    if(e.key === 'Escape'){ input.value = raw; input.blur(); }
+  });
+}
+
+function openCompNoteEditor(recId, idx){
+  const r = records.find(x => x.id === recId);
+  if(!r) return;
+  const comps = getComps(r);
+  if(!comps[idx]) return;
+  const comp = comps[idx];
+  const editorId = 'compNoteRte_' + recId + '_' + idx;
+
+  const modal = document.getElementById('detailModal');
+  const panel = document.getElementById('detailPanel');
+  panel.innerHTML = `
+    <div class="modal-header">
+      <h2>Comp #${idx+1} Notes</h2>
+      <button class="modal-close" onclick="closeCompNoteEditor('${recId}',${idx},'${editorId}')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="modal-body" style="padding:16px 20px">
+      <div style="font-size:.78rem;color:var(--text3);margin-bottom:8px">${comp.link ? '<a href="'+esc(comp.link)+'" target="_blank" style="color:var(--primary)">View Listing</a>' : 'Comp #'+(idx+1)}</div>
+      ${buildRteToolbarHtml(editorId)}
+      <div class="rte-editor" contenteditable="true" id="${editorId}" data-placeholder="Add notes about this comparable..." style="min-height:200px;font-size:.9rem;padding:10px 12px">${comp.notes || ''}</div>
+      <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-secondary" onclick="closeCompNoteEditor('${recId}',${idx},'${editorId}')">Cancel</button>
+        <button class="btn btn-primary" onclick="saveCompNote('${recId}',${idx},'${editorId}')">Save Note</button>
+      </div>
+    </div>`;
+  modal.classList.add('open');
+}
+
+function saveCompNote(recId, idx, editorId){
+  const r = records.find(x => x.id === recId);
+  if(!r) return;
+  const comps = getComps(r);
+  if(!comps[idx]) return;
+  const ed = document.getElementById(editorId);
+  if(!ed) return;
+  const html = ed.innerHTML.trim();
+  comps[idx].notes = html === '<br>' || html === '<div><br></div>' ? '' : html;
+  saveData();
+  document.getElementById('detailModal').classList.remove('open');
+  render();
+}
+
+function closeCompNoteEditor(recId, idx, editorId){
+  document.getElementById('detailModal').classList.remove('open');
+  render();
 }
 
 function updateAnalysisField(recId, field, value){
