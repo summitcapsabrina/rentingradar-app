@@ -435,7 +435,7 @@ tr.clickable:hover{background:var(--primary-light)}
 .prop-note-item:hover .note-actions{opacity:1}
 .prop-note-item .pn-date{font-size:.73rem;color:var(--text3);margin-bottom:3px}
 .prop-note-item .pn-text{font-size:.88rem;line-height:1.5}
-.prop-note-display{font-size:.85rem;line-height:1.5;max-height:4.5em;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;color:var(--text)}
+.prop-note-display{font-size:.85rem;line-height:1.5;max-height:3em;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;color:var(--text)}
 .prop-note-clickable{border-radius:var(--radius);padding:4px 6px;margin:-4px -6px;transition:background .15s}
 .prop-note-clickable:hover{background:var(--primary-light)}
 .profile-full{margin-bottom:16px}
@@ -701,7 +701,7 @@ h1 .hero-edit-input{font-size:1.35rem}
 .clickable-edit{cursor:pointer;transition:background .15s}
 .profile-card-header.clickable-edit:hover{background:var(--primary-light)}
 .card-readonly.clickable-edit:hover{background:rgba(99,129,250,.04)}
-.card-readonly .cr-row{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:6px}
+.card-readonly .cr-row{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px}
 .card-readonly .cr-field{flex:1;min-width:80px;position:relative}
 .card-readonly .cr-label{font-size:.68rem;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px}
 .card-readonly .cr-value{font-size:.85rem;font-weight:500;color:var(--text)}
@@ -1688,7 +1688,7 @@ function renderProfile(){
         <h3>👤 Contact & Status</h3>
         <button class="card-edit-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
       </div>
-      <div class="profile-card-body card-readonly" style="padding:10px 16px 8px">
+      <div class="profile-card-body card-readonly" style="padding:14px 16px 10px">
         <div class="cr-row">
           <div class="cr-field" style="flex:1 1 100%"><div class="cr-label">Address</div><div class="cr-value ${r.property?'':'empty'}">${r.property?esc(r.property):'Not set'}</div></div>
         </div>
@@ -1707,7 +1707,7 @@ function renderProfile(){
         <div class="cr-row">
           <div class="cr-field" style="flex:1;min-width:0"><div class="cr-label">Listing Link</div><div class="cr-value ${r.link?'':'empty'}" style="font-size:.75rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;position:relative">${r.link?`<a href="${esc(r.link)}" target="_blank" style="color:var(--primary);text-decoration:none;word-break:break-all">${esc(r.link)}</a>`:'Not set'}</div>${r.link?`<button class="cr-copy-btn" onclick="event.stopPropagation();navigator.clipboard.writeText('${esc(r.link).replace(/'/g,"\\'")}');this.title='Copied!';setTimeout(()=>this.title='Copy link',1500)" title="Copy link"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>`:''}</div>
         </div>
-        <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:6px;padding-top:5px;border-top:1px solid var(--border);flex-wrap:wrap;gap:4px 12px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:12px;padding-top:8px;border-top:1px solid var(--border);flex-wrap:wrap;gap:4px 12px">
           <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
             ${renderFollowUpSubtle(r)}
             ${renderMeetingSubtle(r)}
@@ -1717,8 +1717,8 @@ function renderProfile(){
           </div>
         </div>
       </div>
-      <div style="padding:10px 16px 14px;border-top:1px solid var(--border)">
-        <div class="cr-label" style="margin-bottom:4px">Property Note</div>
+      <div style="padding:8px 16px 10px;border-top:1px solid var(--border)">
+        <div class="cr-label" style="margin-bottom:3px">Property Note</div>
         <div class="hero-editable prop-note-clickable" onclick="openPropertyNoteEditor('${r.id}')" title="Click to ${r.propertyNote ? 'view/edit' : 'add'} property note" style="cursor:pointer">
           ${r.propertyNote ? `<div class="prop-note-display">${r.propertyNote.html || esc(r.propertyNote.text)}</div>` : '<div style="color:var(--text3);font-size:.82rem;font-style:italic">No property note yet</div>'}
           <svg class="hero-edit-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
