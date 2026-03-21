@@ -4360,7 +4360,46 @@ function calcComputeAll(r){
   const monthlyCF = monthlyNOI - monthlyRent;
   const annualCF = monthlyCF * 12;
   const cocReturn = totalInvested > 0 ? (annualCF / totalInvested * 100) : 0;
-  return { c, br, monthlyRent, furnishCost, totalInvested, avgDailyRate, estOccupancyRate, daysOccupied, annualRevenue, monthlyRevenue, cleaning, coHostFee, airbnbFee, totalMonthlyExp, annualExp, monthlyNOI, annualNOI, monthlyCF, annualCF, cocReturn, compsCount: comps.length };
+  // Compute Likely Revenue from rated comps (same logic as Analysis tab)
+  let likelyRevenue = 0;
+  let hasLikelyData = false;
+  const ratedCompsWithRev = comps.filter(cx => {
+    const rating = cx.rating || '';
+    if(!rating) return false;
+    const rev = parseFloat(cx.annualRevenue) || 0;
+    if(rev > 0) return true;
+    const rr = parseFloat(cx.nightlyRate) || 0;
+    const oo = parseFloat(cx.occupancy) || 0;
+    return rr > 0 && oo > 0;
+  });
+  if(ratedCompsWithRev.length > 0){
+    const LM = { beats: 1.15, competes: 1.00, loses: 0.85 };
+    let sumL = 0;
+    ratedCompsWithRev.forEach(cx => {
+      let rev = parseFloat(cx.annualRevenue) || 0;
+      if(rev === 0){
+        const rr = parseFloat(cx.nightlyRate) || 0;
+        const oo = parseFloat(cx.occupancy) || 0;
+        const dd = parseFloat(cx.daysAvailable) || 365;
+        rev = rr * dd * (oo / 100);
+      }
+      sumL += rev * (LM[cx.rating] || 1);
+    });
+    likelyRevenue = Math.round(sumL / ratedCompsWithRev.length);
+    hasLikelyData = true;
+  }
+  // Likely-based derived values (uses likely revenue with same expense structure)
+  const likelyMonthlyRev = hasLikelyData ? likelyRevenue / 12 : monthlyRevenue;
+  const likelyCoHostFee = likelyMonthlyRev * (c.coHostPct / 100);
+  const likelyAirbnbFee = likelyMonthlyRev * 0.03;
+  const likelyTotalMonthlyExp = c.insurance + c.strFee + c.water + c.gas + c.electric + c.wifiTv + c.futureRepairs + c.incidentals + c.parking + cleaning + c.garbageRecycling + c.channelManager + c.cityPermit + likelyCoHostFee + likelyAirbnbFee;
+  const likelyAnnualExp = likelyTotalMonthlyExp * 12;
+  const likelyMonthlyNOI = likelyMonthlyRev - likelyTotalMonthlyExp;
+  const likelyAnnualNOI = likelyMonthlyNOI * 12;
+  const likelyMonthlyCF = likelyMonthlyNOI - monthlyRent;
+  const likelyAnnualCF = likelyMonthlyCF * 12;
+  const likelyCocReturn = totalInvested > 0 ? (likelyAnnualCF / totalInvested * 100) : 0;
+  return { c, br, monthlyRent, furnishCost, totalInvested, avgDailyRate, estOccupancyRate, daysOccupied, annualRevenue, monthlyRevenue, cleaning, coHostFee, airbnbFee, totalMonthlyExp, annualExp, monthlyNOI, annualNOI, monthlyCF, annualCF, cocReturn, compsCount: comps.length, likelyRevenue, hasLikelyData, likelyMonthlyRev, likelyTotalMonthlyExp, likelyAnnualExp, likelyMonthlyNOI, likelyAnnualNOI, likelyMonthlyCF, likelyAnnualCF, likelyCocReturn };
 }
 
 function renderCalculatorTab(r){
@@ -4374,19 +4413,25 @@ function renderCalculatorTab(r){
   // ══════ LEFT PANEL: KPI + INPUTS ══════
   h += '<div class="calc-panel">';
 
-  // KPI Cards (top of left panel)
-  const cfClass = v.monthlyCF >= 0 ? 'positive' : 'negative';
-  const cocClass = v.cocReturn >= 0 ? 'positive' : 'negative';
+  // KPI Cards (top of left panel) — use Likely when available, else Average
+  const kpiNOI = v.hasLikelyData ? v.likelyMonthlyNOI : v.monthlyNOI;
+  const kpiAnnualNOI = v.hasLikelyData ? v.likelyAnnualNOI : v.annualNOI;
+  const kpiMonthlyCF = v.hasLikelyData ? v.likelyMonthlyCF : v.monthlyCF;
+  const kpiAnnualCF = v.hasLikelyData ? v.likelyAnnualCF : v.annualCF;
+  const kpiCoC = v.hasLikelyData ? v.likelyCocReturn : v.cocReturn;
+  const cfClass = kpiMonthlyCF >= 0 ? 'positive' : 'negative';
+  const cocClass = kpiCoC >= 0 ? 'positive' : 'negative';
+  const kpiTag = v.hasLikelyData ? '<span style="font-size:.55rem;color:var(--primary);font-weight:600;margin-left:4px;vertical-align:middle;opacity:.7">LIKELY</span>' : '';
   h += '<div class="calc-kpi-grid calc-kpi-grid-left">';
-  h += '<div class="calc-kpi"><div class="kpi-label">Net Operating Income</div><div class="kpi-monthly">'+fmtMoney(Math.round(v.monthlyNOI))+'<span class="kpi-per">/mo</span></div><div class="kpi-annual">'+fmtMoney(Math.round(v.annualNOI))+'/yr</div></div>';
+  h += '<div class="calc-kpi"><div class="kpi-label">Net Operating Income'+kpiTag+'</div><div class="kpi-monthly">'+fmtMoney(Math.round(kpiNOI))+'<span class="kpi-per">/mo</span></div><div class="kpi-annual">'+fmtMoney(Math.round(kpiAnnualNOI))+'/yr</div></div>';
   h += '<div class="calc-kpi"><div class="kpi-label">Monthly Rent</div><div class="kpi-monthly">'+(v.monthlyRent ? fmtMoney(v.monthlyRent) : '<span style="color:var(--text3);font-style:italic">Set in Property Details</span>')+'<span class="kpi-per">/mo</span></div><div class="kpi-annual">'+fmtMoney(v.monthlyRent*12)+'/yr</div></div>';
-  h += '<div class="calc-kpi '+cfClass+'"><div class="kpi-label">Cash Flow</div><div class="kpi-monthly">'+fmtMoney(Math.round(v.monthlyCF))+'<span class="kpi-per">/mo</span></div><div class="kpi-annual">'+fmtMoney(Math.round(v.annualCF))+'/yr</div></div>';
-  h += '<div class="calc-kpi '+cocClass+'"><div class="kpi-label">Cash on Cash Return</div><div class="kpi-monthly">'+v.cocReturn.toFixed(1)+'%</div><div class="kpi-annual">'+fmtMoney(Math.round(v.totalInvested))+' invested</div></div>';
+  h += '<div class="calc-kpi '+cfClass+'"><div class="kpi-label">Cash Flow'+kpiTag+'</div><div class="kpi-monthly">'+fmtMoney(Math.round(kpiMonthlyCF))+'<span class="kpi-per">/mo</span></div><div class="kpi-annual">'+fmtMoney(Math.round(kpiAnnualCF))+'/yr</div></div>';
+  h += '<div class="calc-kpi '+cocClass+'"><div class="kpi-label">Cash on Cash Return'+kpiTag+'</div><div class="kpi-monthly">'+kpiCoC.toFixed(1)+'%</div><div class="kpi-annual">'+fmtMoney(Math.round(v.totalInvested))+' invested</div></div>';
   h += '</div>';
 
-  // Payback Period Visual (compact for left panel)
+  // Payback Period Visual (compact for left panel) — use Likely when available
   const inv = v.totalInvested;
-  const acf = Math.round(v.annualCF);
+  const acf = Math.round(v.hasLikelyData ? v.likelyAnnualCF : v.annualCF);
   const cumVals = [];
   let cumRun = -inv;
   cumVals.push(cumRun);
@@ -4504,32 +4549,70 @@ function renderCalculatorTab(r){
   // ══════ RIGHT PANEL: NET INCOME + DEAL TEMP + REVENUE + PAYBACK ══════
   h += '<div class="calc-panel">';
 
-  // Projected Net Income (top of right panel)
+  // Projected Yearly Net (top of right panel) — Average + Likely columns
   const noComps = v.compsCount === 0;
-  const projAnnualRev = noComps ? 0 : Math.round(v.annualRevenue);
-  const projAnnualExp = Math.round(v.annualExp);
+  const avgAnnualExp = Math.round(v.annualExp);
   const projAnnualRent = Math.round(v.monthlyRent * 12);
-  const projNetIncome = projAnnualRev - projAnnualExp - projAnnualRent;
-  const projMonthlyNet = Math.round(projNetIncome / 12);
+  // Average column
+  const avgAnnualRev = noComps ? 0 : Math.round(v.annualRevenue);
+  const avgNetIncome = avgAnnualRev - avgAnnualExp - projAnnualRent;
+  const avgMonthlyNet = Math.round(avgNetIncome / 12);
+  // Likely column (uses its own expenses since co-host/Airbnb fees scale with revenue)
+  const hasLikely = v.hasLikelyData;
+  const likelyAnnualRev = hasLikely ? Math.round(v.likelyRevenue) : 0;
+  const likelyAnnualExpVal = hasLikely ? Math.round(v.likelyAnnualExp) : 0;
+  const likelyNetIncome = hasLikely ? (likelyAnnualRev - likelyAnnualExpVal - projAnnualRent) : 0;
+  const likelyMonthlyNet = hasLikely ? Math.round(likelyNetIncome / 12) : 0;
 
-  h += '<div class="calc-section"><div class="calc-section-header">Projected Net Income</div><div class="calc-section-body">';
-  h += cRow('Annual Revenue', cDisplay(fmtAcct(projAnnualRev), {computed: projAnnualRev > 0}));
-  h += cRow('Annual Operating Expenses', cDisplay('<span style="color:var(--danger)">(' + fmtMoney(projAnnualExp) + ')</span>', {}));
-  h += cRow('Annual Rent', cDisplay('<span style="color:var(--danger)">(' + fmtMoney(projAnnualRent) + ')</span>', {}));
-  const netCls = projNetIncome >= 0 ? 'color:var(--success)' : 'color:var(--danger)';
-  h += cRow('Projected Net Income', cDisplay('<span style="'+netCls+';font-weight:700">' + fmtMoney(projNetIncome) + '/yr</span>', {}), {total:true});
-  h += cRow('Monthly Net Income', cDisplay('<span style="'+netCls+'">' + fmtMoney(projMonthlyNet) + '/mo</span>', {}));
+  h += '<div class="calc-section"><div class="calc-section-header">Projected Yearly Net</div>';
+  // Column headers
+  h += '<div style="display:flex;align-items:center;padding:6px 12px 2px;gap:8px">';
+  h += '<div style="flex:1;min-width:0"></div>';
+  h += '<div style="width:110px;flex-shrink:0;text-align:right;font-size:.68rem;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.4px">Average</div>';
+  h += '<div style="width:110px;flex-shrink:0;text-align:right;font-size:.68rem;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:.4px">Likely</div>';
+  h += '</div>';
+  h += '<div class="calc-section-body">';
+  // Annual Revenue row
+  const noLikelyHtml = '<span style="color:var(--text3);font-size:.72rem;font-style:italic">No data</span>';
+  h += '<div class="calc-row"><div class="calc-label">Annual Revenue</div>';
+  h += '<div class="calc-val"><span class="calc-display'+(avgAnnualRev > 0 ?' computed':'')+'">'+fmtAcct(avgAnnualRev)+'</span></div>';
+  h += '<div class="calc-val"><span class="calc-display'+(hasLikely?' computed':'')+'">'+(hasLikely ? fmtAcct(likelyAnnualRev) : noLikelyHtml)+'</span></div>';
+  h += '</div>';
+  // Annual Operating Expenses row
+  h += '<div class="calc-row"><div class="calc-label">Annual Operating Expenses</div>';
+  h += '<div class="calc-val"><span class="calc-display"><span style="color:var(--danger)">('+fmtMoney(avgAnnualExp)+')</span></span></div>';
+  h += '<div class="calc-val"><span class="calc-display">'+(hasLikely ? '<span style="color:var(--danger)">('+fmtMoney(likelyAnnualExpVal)+')</span>' : noLikelyHtml)+'</span></div>';
+  h += '</div>';
+  // Annual Rent row (same value for both columns)
+  h += '<div class="calc-row"><div class="calc-label">Annual Rent</div>';
+  h += '<div class="calc-val"><span class="calc-display"><span style="color:var(--danger)">('+fmtMoney(projAnnualRent)+')</span></span></div>';
+  h += '<div class="calc-val"><span class="calc-display"><span style="color:var(--danger)">('+fmtMoney(projAnnualRent)+')</span></span></div>';
+  h += '</div>';
+  // Projected Yearly Net row
+  const avgNetCls = avgNetIncome >= 0 ? 'color:var(--success)' : 'color:var(--danger)';
+  const likelyNetCls = likelyNetIncome >= 0 ? 'color:var(--success)' : 'color:var(--danger)';
+  h += '<div class="calc-row total-row"><div class="calc-label">Projected Yearly Net</div>';
+  h += '<div class="calc-val"><span class="calc-display"><span style="'+avgNetCls+';font-weight:700">'+fmtMoney(avgNetIncome)+'/yr</span></span></div>';
+  h += '<div class="calc-val"><span class="calc-display">'+(hasLikely ? '<span style="'+likelyNetCls+';font-weight:700">'+fmtMoney(likelyNetIncome)+'/yr</span>' : noLikelyHtml)+'</span></div>';
+  h += '</div>';
+  // Monthly Net row
+  h += '<div class="calc-row"><div class="calc-label">Monthly Net</div>';
+  h += '<div class="calc-val"><span class="calc-display"><span style="'+avgNetCls+'">'+fmtMoney(avgMonthlyNet)+'/mo</span></span></div>';
+  h += '<div class="calc-val"><span class="calc-display">'+(hasLikely ? '<span style="'+likelyNetCls+'">'+fmtMoney(likelyMonthlyNet)+'/mo</span>' : noLikelyHtml)+'</span></div>';
+  h += '</div>';
   h += '</div></div>';
 
-  // Deal Temperature
-  const dealTemp = projMonthlyNet >= 1000 ? 'slam-dunk' : projMonthlyNet >= 500 ? 'potential' : projMonthlyNet > 0 ? 'risky' : 'no-go';
+  // Deal Temperature — use Likely projection when available, fall back to Average
+  const dealMonthlyNet = hasLikely ? likelyMonthlyNet : avgMonthlyNet;
+  const dealTemp = dealMonthlyNet >= 1000 ? 'slam-dunk' : dealMonthlyNet >= 500 ? 'potential' : dealMonthlyNet > 0 ? 'risky' : 'no-go';
+  const dealSource = hasLikely ? 'Based on Likely projection' : 'Based on Average (rate comps for Likely)';
   const temps = [
     { key:'no-go', label:'No-Go', icon:'🚫', color:'#ef4444', desc:'Negative or zero cash flow' },
     { key:'risky', label:'Risky', icon:'⚠️', color:'#f59e0b', desc:'Under $500/mo net' },
     { key:'potential', label:'Potential', icon:'🔥', color:'#3b82f6', desc:'$500–$999/mo net' },
     { key:'slam-dunk', label:'Slam-Dunk', icon:'🏆', color:'#10b981', desc:'$1,000+/mo net' }
   ];
-  h += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:16px">';
+  h += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:6px">';
   temps.forEach(t => {
     const active = dealTemp === t.key;
     const bg = active ? t.color : 'var(--surface)';
@@ -4543,6 +4626,7 @@ function renderCalculatorTab(r){
     h += '</div>';
   });
   h += '</div>';
+  h += '<div style="text-align:right;font-size:.62rem;color:var(--text3);font-style:italic;margin-bottom:16px">'+dealSource+'</div>';
 
   // Forecasted Revenue (driven by Analysis comps)
   h += '<div class="calc-section"><div class="calc-section-header">Forecasted Revenue</div><div class="calc-section-body">';
