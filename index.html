@@ -645,7 +645,7 @@ h1 .hero-edit-input{font-size:1.35rem}
 .comp-notes-cell{min-width:100px;max-width:160px}
 .comp-notes-preview{padding:4px 6px;font-size:.8rem;color:var(--text2);cursor:pointer;border-radius:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:background .15s;line-height:1.4}
 .comp-notes-preview:hover{background:rgba(99,129,250,.08)}
-.comp-editable{padding:4px 6px;border-radius:4px;cursor:pointer;min-height:22px;font-size:.82rem;transition:background .15s;display:flex;align-items:center;justify-content:center}
+.comp-editable{padding:4px 6px;border-radius:4px;cursor:pointer;min-height:22px;font-size:.82rem;transition:background .15s;display:flex;align-items:center;justify-content:center;overflow:hidden}
 .comp-editable:hover{background:rgba(99,129,250,.08)}
 .comp-placeholder{color:var(--text3)}
 .comp-occ-wrap{display:inline-flex;align-items:center;justify-content:center;gap:0}
@@ -672,7 +672,8 @@ h1 .hero-edit-input{font-size:1.35rem}
 .an-req-editable:hover{background:rgba(99,129,250,.06)}
 .req-edit-hint{font-size:.55rem;color:var(--text3);opacity:0;transition:opacity .15s}
 .an-req-editable:hover .req-edit-hint{opacity:1}
-.comp-inline-input{width:100%;padding:3px 5px;border:1px solid transparent;border-radius:3px;font-size:.82rem;background:transparent;color:var(--text);text-align:center;font-family:inherit;transition:border-color .15s}
+.comp-inline-input{width:100%;padding:3px 5px;border:1px solid transparent;border-radius:3px;font-size:.82rem;background:transparent;color:var(--text);text-align:center;font-family:inherit;transition:border-color .15s;box-sizing:border-box;-moz-appearance:textfield}
+.comp-inline-input::-webkit-outer-spin-button,.comp-inline-input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 .comp-inline-input:hover{border-color:var(--border)}
 .comp-inline-input:focus{border-color:var(--primary);outline:none;background:var(--surface)}
 .comp-inline-input.sm{width:62px}
@@ -4590,12 +4591,18 @@ function compEditCell(el){
   const idx = parseInt(el.dataset.idx);
   const raw = el.dataset.raw;
 
+  // Lock the parent td width so the input doesn't expand the column
+  const td = el.closest('td');
+  if(td){ td.style.width = td.offsetWidth + 'px'; }
+
   const step = field === 'nightlyRate' ? '0.01' : (field === 'occupancy' ? '0.1' : '1');
   const input = document.createElement('input');
   input.type = 'number';
   input.step = step;
   input.className = 'comp-inline-input';
   input.style.width = '100%';
+  input.style.maxWidth = '100%';
+  input.style.boxSizing = 'border-box';
   input.value = raw && raw !== '0' ? raw : '';
   input.placeholder = '—';
 
