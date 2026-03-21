@@ -1646,7 +1646,7 @@ function renderProfile(){
       </div>
       <div style="display:flex;align-items:center;gap:16px;margin-top:4px;flex-wrap:wrap">
         <div class="hero-stats">
-            <div class="hero-stat" style="font-size:.95rem"><strong style="color:var(--success);font-size:1.05rem">${d.monthlyRent ? '$'+Number(d.monthlyRent).toLocaleString()+'/mo' : '—'}</strong> Rent</div>
+            <div class="hero-stat" style="font-size:.95rem"><strong style="color:var(--success);font-size:1.05rem">${d.monthlyRent ? '$'+Number(d.monthlyRent).toLocaleString()+'/mo' : '—'}</strong></div>
             <div class="hero-stat"><strong>${d.bedrooms||'—'}</strong> Beds</div>
             <div class="hero-stat"><strong>${d.bathrooms||'—'}</strong> ${d.bathrooms==='1'?'Bath':'Baths'}</div>
             <div class="hero-stat"><strong>${d.sqft ? Number(d.sqft).toLocaleString() : '—'}</strong> Sq Ft</div>
