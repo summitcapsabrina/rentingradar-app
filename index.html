@@ -527,6 +527,8 @@ h1 .hero-edit-input{font-size:1.35rem}
 .hero-stats{display:flex;align-items:center;gap:16px;margin-top:6px;flex-wrap:wrap}
 .hero-stat{display:flex;align-items:center;gap:5px;font-size:.82rem;color:var(--text2)}
 .hero-stat strong{font-weight:700;color:var(--text);font-size:.9rem}
+.hero-rent-editable{border-radius:4px;padding:0 4px;margin:-0px -4px;transition:background .15s}
+.hero-rent-editable:hover{background:rgba(99,129,250,.08)}
 .hero-stat-divider{width:1px;height:16px;background:var(--border)}
 
 /* ===== PROFILE TABS ===== */
@@ -580,6 +582,7 @@ h1 .hero-edit-input{font-size:1.35rem}
 .calc-pct input{width:100%}
 /* Summary boxes on right panel */
 .calc-kpi-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px}
+.calc-kpi-grid-left .calc-kpi{padding:12px 10px}
 .calc-kpi{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 16px;text-align:center}
 .calc-kpi .kpi-label{font-size:.75rem;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);font-weight:600;margin-bottom:6px}
 .calc-kpi .kpi-monthly{font-size:1.25rem;font-weight:700;color:var(--text);line-height:1.4}
@@ -1651,7 +1654,7 @@ function renderProfile(){
       </div>
       <div style="display:flex;align-items:center;gap:16px;margin-top:4px;flex-wrap:wrap">
         <div class="hero-stats">
-            <div class="hero-stat" style="font-size:.95rem"><strong style="color:var(--success);font-size:1.05rem">${d.monthlyRent ? '$'+Number(d.monthlyRent).toLocaleString()+'/mo' : '—'}</strong></div>
+            <div class="hero-stat hero-rent-editable" style="font-size:.95rem;cursor:pointer" onclick="editHeroRent(this,'${r.id}')" title="Click to edit rent"><strong style="color:var(--success);font-size:1.05rem">${d.monthlyRent ? '$'+Number(d.monthlyRent).toLocaleString()+'/mo' : '<span style="color:var(--text3)">+ Rent</span>'}</strong></div>
             <div class="hero-stat"><strong>${d.bedrooms||'—'}</strong> Beds</div>
             <div class="hero-stat"><strong>${d.bathrooms||'—'}</strong> ${d.bathrooms==='1'?'Bath':'Baths'}</div>
             <div class="hero-stat"><strong>${d.sqft ? Number(d.sqft).toLocaleString() : '—'}</strong> Sq Ft</div>
@@ -4217,8 +4220,18 @@ function renderCalculatorTab(r){
 
   let h = '<div class="calc-layout">';
 
-  // ══════ LEFT PANEL: INPUTS ══════
+  // ══════ LEFT PANEL: KPI + INPUTS ══════
   h += '<div class="calc-panel">';
+
+  // KPI Cards (top of left panel)
+  const cfClass = v.monthlyCF >= 0 ? 'positive' : 'negative';
+  const cocClass = v.cocReturn >= 0 ? 'positive' : 'negative';
+  h += '<div class="calc-kpi-grid calc-kpi-grid-left">';
+  h += '<div class="calc-kpi"><div class="kpi-label">Net Operating Income</div><div class="kpi-monthly">'+fmtMoney(Math.round(v.monthlyNOI))+'<span class="kpi-per">/mo</span></div><div class="kpi-annual">'+fmtMoney(Math.round(v.annualNOI))+'/yr</div></div>';
+  h += '<div class="calc-kpi"><div class="kpi-label">Monthly Rent</div><div class="kpi-monthly">'+(v.monthlyRent ? fmtMoney(v.monthlyRent) : '<span style="color:var(--text3);font-style:italic">Set in Property Details</span>')+'<span class="kpi-per">/mo</span></div><div class="kpi-annual">'+fmtMoney(v.monthlyRent*12)+'/yr</div></div>';
+  h += '<div class="calc-kpi '+cfClass+'"><div class="kpi-label">Cash Flow</div><div class="kpi-monthly">'+fmtMoney(Math.round(v.monthlyCF))+'<span class="kpi-per">/mo</span></div><div class="kpi-annual">'+fmtMoney(Math.round(v.annualCF))+'/yr</div></div>';
+  h += '<div class="calc-kpi '+cocClass+'"><div class="kpi-label">Cash on Cash Return</div><div class="kpi-monthly">'+v.cocReturn.toFixed(1)+'%</div><div class="kpi-annual">'+fmtMoney(Math.round(v.totalInvested))+' invested</div></div>';
+  h += '</div>';
 
   // Investment Details
   h += '<div class="calc-section"><div class="calc-section-header">Investment Details</div><div class="calc-section-body">';
@@ -4260,31 +4273,11 @@ function renderCalculatorTab(r){
 
   h += '</div>'; // end left panel
 
-  // ══════ RIGHT PANEL: KPI + REVENUE + PAYBACK ══════
+  // ══════ RIGHT PANEL: NET INCOME + DEAL TEMP + REVENUE + PAYBACK ══════
   h += '<div class="calc-panel">';
 
-  // KPI Cards (top of right panel)
-  const cfClass = v.monthlyCF >= 0 ? 'positive' : 'negative';
-  const cocClass = v.cocReturn >= 0 ? 'positive' : 'negative';
-  h += '<div class="calc-kpi-grid">';
-  h += '<div class="calc-kpi"><div class="kpi-label">Net Operating Income</div><div class="kpi-monthly">'+fmtMoney(Math.round(v.monthlyNOI))+'<span class="kpi-per">/mo</span></div><div class="kpi-annual">'+fmtMoney(Math.round(v.annualNOI))+'/yr</div></div>';
-  h += '<div class="calc-kpi"><div class="kpi-label">Monthly Rent</div><div class="kpi-monthly">'+(v.monthlyRent ? fmtMoney(v.monthlyRent) : '<span style="color:var(--text3);font-style:italic">Set in Property Details</span>')+'<span class="kpi-per">/mo</span></div><div class="kpi-annual">'+fmtMoney(v.monthlyRent*12)+'/yr</div></div>';
-  h += '<div class="calc-kpi '+cfClass+'"><div class="kpi-label">Cash Flow</div><div class="kpi-monthly">'+fmtMoney(Math.round(v.monthlyCF))+'<span class="kpi-per">/mo</span></div><div class="kpi-annual">'+fmtMoney(Math.round(v.annualCF))+'/yr</div></div>';
-  h += '<div class="calc-kpi '+cocClass+'"><div class="kpi-label">Cash on Cash Return</div><div class="kpi-monthly">'+v.cocReturn.toFixed(1)+'%</div><div class="kpi-annual">'+fmtMoney(Math.round(v.totalInvested))+' invested</div></div>';
-  h += '</div>';
-
-  // Forecasted Revenue (driven by Analysis comps)
-  h += '<div class="calc-section"><div class="calc-section-header">Forecasted Revenue</div><div class="calc-section-body">';
+  // Projected Net Income (top of right panel)
   const noComps = v.compsCount === 0;
-  const compHint = noComps ? 'add comps in Competitor Analysis tab' : 'avg from Competitor Analysis comps';
-  h += cRow('Average Daily Rate', cDisplay(noComps ? '$0' : fmtAcct2(v.avgDailyRate), {computed:!noComps}), {hint:compHint});
-  h += cRow('Avg Occupancy Rate', cDisplay(noComps ? '0%' : Math.round(v.estOccupancyRate)+'%', {computed:!noComps}), {hint:compHint});
-  h += cRow('Avg Days/Year Occupied', cDisplay(noComps ? '0' : fmtNum(v.daysOccupied), {computed:!noComps}));
-  h += cRow('Annual Revenue', cDisplay(noComps ? '$0' : fmtAcct(Math.round(v.annualRevenue)), {computed:!noComps}));
-  h += cRow('Monthly Revenue', cDisplay(noComps ? '$0' : fmtAcct(Math.round(v.monthlyRevenue)), {computed:!noComps}), {total:true});
-  h += '</div></div>';
-
-  // Projected Net Income
   const projAnnualRev = noComps ? 0 : Math.round(v.annualRevenue);
   const projAnnualExp = Math.round(v.annualExp);
   const projAnnualRent = Math.round(v.monthlyRent * 12);
@@ -4301,11 +4294,6 @@ function renderCalculatorTab(r){
   h += '</div></div>';
 
   // Deal Temperature
-  // Formula: based on monthly net income relative to $1,000/mo target
-  // Slam-Dunk: >= $1,000/mo (meets or exceeds target)
-  // Potential:  $500 - $999/mo (could work with optimization)
-  // Risky:     $1 - $499/mo (thin margins, high risk)
-  // No-Go:     <= $0/mo (losing money)
   const dealTemp = projMonthlyNet >= 1000 ? 'slam-dunk' : projMonthlyNet >= 500 ? 'potential' : projMonthlyNet > 0 ? 'risky' : 'no-go';
   const temps = [
     { key:'no-go', label:'No-Go', icon:'🚫', color:'#ef4444', desc:'Negative or zero cash flow' },
@@ -4327,6 +4315,16 @@ function renderCalculatorTab(r){
     h += '</div>';
   });
   h += '</div>';
+
+  // Forecasted Revenue (driven by Analysis comps)
+  h += '<div class="calc-section"><div class="calc-section-header">Forecasted Revenue</div><div class="calc-section-body">';
+  const compHint = noComps ? 'add comps in Competitor Analysis tab' : 'avg from Competitor Analysis comps';
+  h += cRow('Average Daily Rate', cDisplay(noComps ? '$0' : fmtAcct2(v.avgDailyRate), {computed:!noComps}), {hint:compHint});
+  h += cRow('Avg Occupancy Rate', cDisplay(noComps ? '0%' : Math.round(v.estOccupancyRate)+'%', {computed:!noComps}), {hint:compHint});
+  h += cRow('Avg Days/Year Occupied', cDisplay(noComps ? '0' : fmtNum(v.daysOccupied), {computed:!noComps}));
+  h += cRow('Annual Revenue', cDisplay(noComps ? '$0' : fmtAcct(Math.round(v.annualRevenue)), {computed:!noComps}));
+  h += cRow('Monthly Revenue', cDisplay(noComps ? '$0' : fmtAcct(Math.round(v.monthlyRevenue)), {computed:!noComps}), {total:true});
+  h += '</div></div>';
 
   // Payback Period Table
   h += '<div class="calc-section"><div class="calc-section-header">Pay-Back Period (From Cash Flows)</div><div class="calc-section-body" style="padding:6px 4px;overflow-x:auto">';
@@ -6044,6 +6042,40 @@ function copyRecordField(btn, recId, field){
       btn.title = origTitle;
       btn.innerHTML = COPY_ICON;
     }, 1500);
+  });
+}
+
+function editHeroRent(el, recId){
+  if(el.querySelector('input')) return;
+  const r = records.find(x => x.id === recId);
+  if(!r) return;
+  if(!r.propertyDetails) r.propertyDetails = {};
+  const current = parseFloat(r.propertyDetails.monthlyRent) || 0;
+  const origW = el.offsetWidth;
+  el.style.minWidth = Math.max(origW, 90) + 'px';
+  el.innerHTML = '';
+  const input = document.createElement('input');
+  input.type = 'number';
+  input.value = current || '';
+  input.placeholder = 'Rent/mo';
+  input.step = 'any';
+  input.min = '0';
+  input.style.cssText = 'width:80px;padding:2px 6px;border:1px solid var(--primary);border-radius:4px;font-size:.95rem;font-weight:700;color:var(--success);background:var(--surface);text-align:right;outline:none;box-shadow:0 0 0 2px rgba(99,129,250,.15);-moz-appearance:textfield';
+  el.appendChild(input);
+  input.focus();
+  input.select();
+
+  function save(){
+    const val = parseFloat(input.value) || 0;
+    r.propertyDetails.monthlyRent = val;
+    r.monthlyRent = val;
+    saveData();
+    renderProfile(r.id);
+  }
+  input.addEventListener('blur', save);
+  input.addEventListener('keydown', (e) => {
+    if(e.key === 'Enter'){ e.preventDefault(); input.blur(); }
+    if(e.key === 'Escape'){ input.removeEventListener('blur', save); renderProfile(r.id); }
   });
 }
 
