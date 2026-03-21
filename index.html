@@ -677,8 +677,9 @@ h1 .hero-edit-input{font-size:1.35rem}
 .comp-inline-input:hover{border-color:var(--border)}
 .comp-inline-input:focus{border-color:var(--primary);outline:none;background:var(--surface)}
 .comp-inline-input.sm{width:62px}
-.proj-editable{cursor:pointer;border-radius:4px;padding:4px 6px;transition:background .15s}
+.proj-editable{cursor:pointer;border-radius:4px;padding:2px 6px;transition:background .15s}
 .proj-editable:hover{background:rgba(99,129,250,.08)}
+.comp-avg-item .proj-original{font-size:.68rem;color:var(--text3);font-style:italic;margin-top:1px}
 .proj-input{width:100%;padding:4px 6px;border:1px solid transparent;border-radius:4px;font-size:1.1rem;font-weight:700;background:transparent;color:inherit;text-align:center;font-family:inherit;transition:border-color .15s;-moz-appearance:textfield}
 .proj-input::-webkit-outer-spin-button,.proj-input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 .proj-input:hover{border-color:var(--border)}
@@ -4420,66 +4421,70 @@ function renderAnalysisTab(r){
 
   h += '</div>'; // end an-top-grid
 
-  // ── Revenue Projections (moved above comps) ──
-  h += '<div class="an-section"><div class="an-section-hdr">Revenue Projections</div><div class="an-section-body">';
-
-  // Calculate projections from comps
+  // ── Revenue Projections + Averages Bar (combined, no title) ──
+  // Rating-weighted projection logic:
+  //   Each comp's annual revenue is adjusted by how our property compares:
+  //   Beats  → we earn MORE   (Likely ×1.15, Best ×1.20, Worst ×1.05)
+  //   Competes → similar       (Likely ×1.00, Best ×1.05, Worst ×0.95)
+  //   Loses  → we earn LESS   (Likely ×0.85, Best ×0.95, Worst ×0.80)
   let projLikely = 0, projBest = 0, projWorst = 0;
-  if(comps.length > 0){
-    const _avgOcc = comps.reduce((s,x)=>s+(parseFloat(x.occupancy)||0),0)/comps.length;
-    const _avgRate = comps.reduce((s,x)=>s+(parseFloat(x.nightlyRate)||0),0)/comps.length;
-    const _beats = comps.filter(x=>x.rating==='beats').length;
-    const _loses = comps.filter(x=>x.rating==='loses').length;
-    const _total = comps.length;
-    const _ratio = _total > 0 ? (_beats - _loses) / _total : 0;
-    const _baseRev = _avgRate * 365 * (_avgOcc / 100);
-    projLikely = Math.round(_baseRev * (1 + _ratio * 0.05));
-    projBest = Math.round(_baseRev * 1.1);
-    projWorst = Math.round(_baseRev * 0.85);
+  const compsWithRev = comps.filter(c => {
+    const rev = parseFloat(c.annualRevenue) || 0;
+    // If no direct revenue, estimate from rate × occupancy × days
+    if(rev > 0) return true;
+    const rate = parseFloat(c.nightlyRate) || 0;
+    const occ = parseFloat(c.occupancy) || 0;
+    const days = parseFloat(c.daysAvailable) || 365;
+    return rate > 0 && occ > 0;
+  });
+
+  if(compsWithRev.length > 0){
+    const MULT = {
+      likely: { beats: 1.15, competes: 1.00, loses: 0.85 },
+      best:   { beats: 1.20, competes: 1.05, loses: 0.95 },
+      worst:  { beats: 1.05, competes: 0.95, loses: 0.80 }
+    };
+    let sumLikely = 0, sumBest = 0, sumWorst = 0;
+    compsWithRev.forEach(c => {
+      let rev = parseFloat(c.annualRevenue) || 0;
+      if(rev === 0){
+        const rate = parseFloat(c.nightlyRate) || 0;
+        const occ = parseFloat(c.occupancy) || 0;
+        const days = parseFloat(c.daysAvailable) || 365;
+        rev = rate * days * (occ / 100);
+      }
+      const rating = c.rating || 'competes';
+      sumLikely += rev * (MULT.likely[rating] || 1);
+      sumBest += rev * (MULT.best[rating] || 1);
+      sumWorst += rev * (MULT.worst[rating] || 1);
+    });
+    projLikely = Math.round(sumLikely / compsWithRev.length);
+    projBest = Math.round(sumBest / compsWithRev.length);
+    projWorst = Math.round(sumWorst / compsWithRev.length);
   }
 
-  if(isProUser){
-    const userLikely = an.userLikely !== undefined ? parseFloat(an.userLikely) : null;
-    const userBest = an.userBest !== undefined ? parseFloat(an.userBest) : null;
-    const userWorst = an.userWorst !== undefined ? parseFloat(an.userWorst) : null;
-    const showLikely = userLikely !== null ? userLikely : projLikely;
-    const showBest = userBest !== null ? userBest : projBest;
-    const showWorst = userWorst !== null ? userWorst : projWorst;
+  // Show user overrides if set, otherwise auto-projected values
+  const userLikely = an.userLikely !== undefined ? parseFloat(an.userLikely) : null;
+  const userBest = an.userBest !== undefined ? parseFloat(an.userBest) : null;
+  const userWorst = an.userWorst !== undefined ? parseFloat(an.userWorst) : null;
+  const showLikely = userLikely !== null ? userLikely : projLikely;
+  const showBest = userBest !== null ? userBest : projBest;
+  const showWorst = userWorst !== null ? userWorst : projWorst;
 
-    h += '<div class="an-proj-grid">';
-    h += '<div class="an-proj-card likely"><div class="proj-label">Likely Revenue</div>';
-    h += '<div class="proj-value proj-editable" onclick="projEditCell(this)" data-field="userLikely" data-rec="'+r.id+'" data-raw="'+(showLikely||0)+'" data-auto="'+projLikely+'">'+(showLikely ? fmtMoney(showLikely) : '$0')+'</div>';
-    if(userLikely !== null && userLikely !== projLikely && projLikely > 0) h += '<div class="proj-original"><s>'+fmtMoney(projLikely)+'</s> projected</div>';
-    h += '</div>';
-    h += '<div class="an-proj-card best"><div class="proj-label">Best Case</div>';
-    h += '<div class="proj-value proj-editable" onclick="projEditCell(this)" data-field="userBest" data-rec="'+r.id+'" data-raw="'+(showBest||0)+'" data-auto="'+projBest+'">'+(showBest ? fmtMoney(showBest) : '$0')+'</div>';
-    if(userBest !== null && userBest !== projBest && projBest > 0) h += '<div class="proj-original"><s>'+fmtMoney(projBest)+'</s> projected</div>';
-    h += '</div>';
-    h += '<div class="an-proj-card worst"><div class="proj-label">Worst Case</div>';
-    h += '<div class="proj-value proj-editable" onclick="projEditCell(this)" data-field="userWorst" data-rec="'+r.id+'" data-raw="'+(showWorst||0)+'" data-auto="'+projWorst+'">'+(showWorst ? fmtMoney(showWorst) : '$0')+'</div>';
-    if(userWorst !== null && userWorst !== projWorst && projWorst > 0) h += '<div class="proj-original"><s>'+fmtMoney(projWorst)+'</s> projected</div>';
-    h += '</div>';
-    h += '</div>';
-  } else {
-    const manLikely = an.userLikely !== undefined ? parseFloat(an.userLikely) : 0;
-    const manBest = an.userBest !== undefined ? parseFloat(an.userBest) : 0;
-    const manWorst = an.userWorst !== undefined ? parseFloat(an.userWorst) : 0;
-    h += '<div class="an-proj-grid">';
-    h += '<div class="an-proj-card likely"><div class="proj-label">Likely Revenue</div>';
-    h += '<div class="proj-value proj-editable" onclick="projEditCell(this)" data-field="userLikely" data-rec="'+r.id+'" data-raw="'+(manLikely||0)+'">'+(manLikely ? fmtMoney(manLikely) : '$0')+'</div></div>';
-    h += '<div class="an-proj-card best"><div class="proj-label">Best Case</div>';
-    h += '<div class="proj-value proj-editable" onclick="projEditCell(this)" data-field="userBest" data-rec="'+r.id+'" data-raw="'+(manBest||0)+'">'+(manBest ? fmtMoney(manBest) : '$0')+'</div></div>';
-    h += '<div class="an-proj-card worst"><div class="proj-label">Worst Case</div>';
-    h += '<div class="proj-value proj-editable" onclick="projEditCell(this)" data-field="userWorst" data-rec="'+r.id+'" data-raw="'+(manWorst||0)+'">'+(manWorst ? fmtMoney(manWorst) : '$0')+'</div></div>';
-    h += '</div>';
-  }
-
-  h += '<div style="margin-top:10px"><div style="font-size:.8rem;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.3px;margin-bottom:4px">Why? (Your reasoning)</div>';
-  h += '<textarea class="an-why" placeholder="Explain your revenue projection reasoning..." onchange="updateAnalysisField(\''+r.id+'\',\'projectionWhy\',this.value)">'+esc(an.projectionWhy||'')+'</textarea>';
+  // Revenue Projections bar (same style as averages bar)
+  h += '<div class="comp-avg-bar" style="margin-bottom:10px">';
+  h += '<div class="comp-avg-item"><div class="avg-label">Likely Revenue</div><div class="avg-value proj-editable" onclick="projEditCell(this)" data-field="userLikely" data-rec="'+r.id+'" data-raw="'+(showLikely||0)+'">'+(showLikely ? fmtMoney(showLikely) : '$0')+'</div>';
+  if(userLikely !== null && userLikely !== projLikely && projLikely > 0) h += '<div class="proj-original"><s>'+fmtMoney(projLikely)+'</s></div>';
   h += '</div>';
-  h += '</div></div>';
+  h += '<div class="comp-avg-item"><div class="avg-label">Best Case</div><div class="avg-value proj-editable" onclick="projEditCell(this)" data-field="userBest" data-rec="'+r.id+'" data-raw="'+(showBest||0)+'" style="color:var(--success,#10b981)">'+(showBest ? fmtMoney(showBest) : '$0')+'</div>';
+  if(userBest !== null && userBest !== projBest && projBest > 0) h += '<div class="proj-original"><s>'+fmtMoney(projBest)+'</s></div>';
+  h += '</div>';
+  h += '<div class="comp-avg-item"><div class="avg-label">Worst Case</div><div class="avg-value proj-editable" onclick="projEditCell(this)" data-field="userWorst" data-rec="'+r.id+'" data-raw="'+(showWorst||0)+'" style="color:var(--danger,#ef4444)">'+(showWorst ? fmtMoney(showWorst) : '$0')+'</div>';
+  if(userWorst !== null && userWorst !== projWorst && projWorst > 0) h += '<div class="proj-original"><s>'+fmtMoney(projWorst)+'</s></div>';
+  h += '</div>';
+  h += '</div>';
 
-  // ── Averages Bar (from comps) ──
+  // Averages bar (Occ + Nightly Rate)
   if(comps.length > 0){
     const avgOcc = comps.reduce((s,x)=>s+(parseFloat(x.occupancy)||0),0)/comps.length;
     const avgRate = comps.reduce((s,x)=>s+(parseFloat(x.nightlyRate)||0),0)/comps.length;
