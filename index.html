@@ -599,83 +599,84 @@ h1 .hero-edit-input{font-size:1.35rem}
 
 /* ===== ANALYSIS TAB ===== */
 .an-section{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:14px}
-.an-section-hdr{font-size:.78rem;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:.5px;padding:8px 12px;background:rgba(99,129,250,.06);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px}
-.an-section-body{padding:10px 12px}
+.an-section-hdr{font-size:.88rem;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:.5px;padding:10px 14px;background:rgba(99,129,250,.06);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px}
+.an-section-body{padding:12px 14px}
 .an-top-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;align-items:stretch}
 .an-top-grid .an-section{display:flex;flex-direction:column;margin-bottom:0}
 .an-top-grid .an-section-body{flex:1;display:flex;flex-direction:column;justify-content:stretch}
 .an-top-grid .an-req-bar{flex:1}
 @media(max-width:900px){.an-top-grid{grid-template-columns:1fr}}
-.an-field-row{display:flex;gap:8px;margin-bottom:6px;align-items:flex-start}
-.an-field-label{font-size:.68rem;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;min-width:70px;padding-top:4px;flex-shrink:0}
-.an-field-val{font-size:.82rem;color:var(--text);flex:1}
-.an-field-val textarea{width:100%;padding:4px 6px;border:1px solid transparent;border-radius:4px;font-size:.8rem;background:transparent;color:var(--text);resize:vertical;font-family:inherit;min-height:28px;transition:border-color .15s}
+.an-field-row{display:flex;gap:8px;margin-bottom:8px;align-items:flex-start}
+.an-field-label{font-size:.78rem;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;min-width:76px;padding-top:4px;flex-shrink:0}
+.an-field-val{font-size:.92rem;color:var(--text);flex:1}
+.an-field-val textarea{width:100%;padding:5px 8px;border:1px solid transparent;border-radius:4px;font-size:.9rem;background:transparent;color:var(--text);resize:vertical;font-family:inherit;min-height:30px;transition:border-color .15s}
 .an-field-val textarea:hover{border-color:var(--border)}
 .an-field-val textarea:focus{border-color:var(--primary);outline:none;background:var(--surface)}
 /* Required Revenue bar */
-.an-req-bar{display:flex;gap:0;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:14px;font-size:.75rem}
-.an-req-item{flex:1;text-align:center;padding:18px 8px;border-right:1px solid var(--border);display:flex;flex-direction:column;justify-content:center;gap:6px}
+.an-req-bar{display:flex;gap:0;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:14px;font-size:.85rem}
+.an-req-item{flex:1;text-align:center;padding:20px 10px;border-right:1px solid var(--border);display:flex;flex-direction:column;justify-content:center;gap:7px}
 .an-req-item:last-child{border-right:none}
 .an-req-item.total{background:rgba(99,129,250,.06)}
-.an-req-item .req-label{font-size:.7rem;text-transform:uppercase;letter-spacing:.4px;color:var(--text3);font-weight:600}
-.an-req-item .req-val{font-size:1rem;font-weight:700;color:var(--text)}
-.an-req-item .req-period{font-size:.7rem;font-weight:400;color:var(--text3);margin-left:2px}
-.an-req-item .req-annual{font-size:.72rem;color:var(--text3)}
-.an-req-item .req-yr{font-size:1rem;font-weight:700;color:var(--text)}
-.an-req-item .req-mo{font-size:.72rem;color:var(--text3)}
+.an-req-item .req-label{font-size:.8rem;text-transform:uppercase;letter-spacing:.4px;color:var(--text3);font-weight:600}
+.an-req-item .req-val{font-size:1.1rem;font-weight:700;color:var(--text)}
+.an-req-item .req-period{font-size:.8rem;font-weight:400;color:var(--text3);margin-left:2px}
+.an-req-item .req-annual{font-size:.82rem;color:var(--text3)}
+.an-req-item .req-yr{font-size:1.1rem;font-weight:700;color:var(--text)}
+.an-req-item .req-mo{font-size:.82rem;color:var(--text3)}
 /* Comp add */
-.comp-add-row{display:flex;gap:8px;margin-bottom:10px}
-.comp-add-row input{flex:1;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius);font-size:.82rem;background:var(--surface);color:var(--text)}
+.comp-add-row{display:flex;gap:8px;margin-top:10px}
+.comp-add-row input{flex:1;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius);font-size:.9rem;background:var(--surface);color:var(--text)}
 .comp-add-row input:focus{border-color:var(--primary);outline:none}
-.comp-add-row button{padding:7px 14px;border-radius:var(--radius);border:none;background:var(--primary);color:#fff;font-size:.78rem;font-weight:600;cursor:pointer;white-space:nowrap}
+.comp-add-row button{padding:8px 16px;border-radius:var(--radius);border:none;background:var(--primary);color:#fff;font-size:.85rem;font-weight:600;cursor:pointer;white-space:nowrap}
 .comp-add-row button:hover{opacity:.9}
 /* Comp table */
 .comp-table-wrap{overflow-x:auto;margin-bottom:10px}
-.comp-table{width:100%;border-collapse:collapse;font-size:.72rem}
-.comp-table th{padding:5px 6px;text-align:left;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.3px;border-bottom:2px solid var(--border);font-size:.6rem;white-space:nowrap}
-.comp-table th.r{text-align:right}
-.comp-table td{padding:4px 6px;border-bottom:1px solid rgba(148,163,184,.08);vertical-align:middle}
-.comp-table td.r{text-align:right;font-variant-numeric:tabular-nums}
+.comp-table{width:100%;border-collapse:collapse;font-size:.82rem}
+.comp-table th{padding:6px 8px;text-align:center;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.3px;border-bottom:2px solid var(--border);font-size:.68rem;white-space:nowrap}
+.comp-table td{padding:5px 8px;border-bottom:1px solid rgba(148,163,184,.08);vertical-align:middle;text-align:center}
+.comp-table td.r{font-variant-numeric:tabular-nums}
 .comp-table tr:hover{background:rgba(99,129,250,.04)}
-.comp-link{color:var(--primary);text-decoration:none;font-size:.68rem;max-width:120px;display:inline-block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle}
+.comp-link-cell{text-align:right !important}
+.comp-link{color:var(--primary);text-decoration:none;font-size:.78rem;display:inline-flex;align-items:center;gap:4px;white-space:nowrap;vertical-align:middle}
 .comp-link:hover{text-decoration:underline}
-.comp-rating{font-size:.68rem;padding:2px 6px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);cursor:pointer}
+.comp-link svg{flex-shrink:0}
+.comp-rating{font-size:.78rem;padding:3px 8px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);cursor:pointer}
 .comp-remove{background:none;border:none;color:var(--text3);cursor:pointer;font-size:.75rem;padding:2px;border-radius:4px;line-height:1}
 .comp-remove:hover{color:var(--danger,#ef4444);background:rgba(239,68,68,.08)}
 .comp-notes-cell{min-width:140px;max-width:220px}
-.comp-notes{width:100%;padding:3px 5px;border:1px solid transparent;border-radius:4px;font-size:.7rem;background:transparent;color:var(--text2);resize:none;font-family:inherit;min-height:18px;line-height:1.3}
+.comp-notes{width:100%;padding:3px 5px;border:1px solid transparent;border-radius:4px;font-size:.8rem;background:transparent;color:var(--text2);resize:none;font-family:inherit;min-height:18px;line-height:1.3}
 .comp-notes:hover{border-color:var(--border)}
 .comp-notes:focus{border-color:var(--primary);outline:none;background:var(--surface)}
 /* Averages */
 .comp-avg-bar{display:flex;gap:0;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:10px}
-.comp-avg-item{flex:1;text-align:center;padding:8px 6px;border-right:1px solid var(--border)}
+.comp-avg-item{flex:1;text-align:center;padding:10px 8px;border-right:1px solid var(--border)}
 .comp-avg-item:last-child{border-right:none}
-.comp-avg-item .avg-label{font-size:.6rem;text-transform:uppercase;letter-spacing:.3px;color:var(--text3);font-weight:600}
-.comp-avg-item .avg-value{font-size:.95rem;font-weight:700;color:var(--primary);margin-top:1px}
+.comp-avg-item .avg-label{font-size:.72rem;text-transform:uppercase;letter-spacing:.3px;color:var(--text3);font-weight:600}
+.comp-avg-item .avg-value{font-size:1.05rem;font-weight:700;color:var(--primary);margin-top:2px}
 /* Revenue projections */
 .an-proj-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:10px}
-.an-proj-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:10px;text-align:center}
-.an-proj-card .proj-label{font-size:.65rem;text-transform:uppercase;letter-spacing:.4px;color:var(--text3);font-weight:600;margin-bottom:3px}
-.an-proj-card .proj-value{font-size:1.05rem;font-weight:700}
+.an-proj-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px;text-align:center}
+.an-proj-card .proj-label{font-size:.76rem;text-transform:uppercase;letter-spacing:.4px;color:var(--text3);font-weight:600;margin-bottom:4px}
+.an-proj-card .proj-value{font-size:1.15rem;font-weight:700}
 .an-proj-card.likely .proj-value{color:var(--text)}
 .an-proj-card.best .proj-value{color:var(--success,#10b981)}
 .an-proj-card.worst .proj-value{color:var(--danger,#ef4444)}
-.an-why{width:100%;padding:6px 8px;border:1px solid transparent;border-radius:var(--radius);font-size:.82rem;background:transparent;color:var(--text);resize:vertical;font-family:inherit;min-height:36px;transition:border-color .15s}
+.an-why{width:100%;padding:6px 8px;border:1px solid transparent;border-radius:var(--radius);font-size:.9rem;background:transparent;color:var(--text);resize:vertical;font-family:inherit;min-height:36px;transition:border-color .15s}
 .an-why:hover{border-color:var(--border)}
 .an-why:focus{border-color:var(--primary);outline:none;background:var(--surface)}
-.an-readonly-summary{font-size:.78rem;color:var(--text2);line-height:1.5;padding:4px 0}
+.an-readonly-summary{font-size:.88rem;color:var(--text2);line-height:1.5;padding:4px 0}
 .an-req-editable{cursor:pointer;transition:background .15s}
 .an-req-editable:hover{background:rgba(99,129,250,.06)}
 .req-edit-hint{font-size:.55rem;color:var(--text3);opacity:0;transition:opacity .15s}
 .an-req-editable:hover .req-edit-hint{opacity:1}
-.comp-inline-input{width:100%;padding:2px 4px;border:1px solid transparent;border-radius:3px;font-size:.72rem;background:transparent;color:var(--text);text-align:right;font-family:inherit;transition:border-color .15s}
+.comp-inline-input{width:100%;padding:3px 5px;border:1px solid transparent;border-radius:3px;font-size:.82rem;background:transparent;color:var(--text);text-align:center;font-family:inherit;transition:border-color .15s}
 .comp-inline-input:hover{border-color:var(--border)}
 .comp-inline-input:focus{border-color:var(--primary);outline:none;background:var(--surface)}
-.comp-inline-input.sm{width:58px}
-.proj-input{width:100%;padding:4px 6px;border:1px solid transparent;border-radius:4px;font-size:1rem;font-weight:700;background:transparent;color:inherit;text-align:center;font-family:inherit;transition:border-color .15s}
+.comp-inline-input.sm{width:62px}
+.proj-input{width:100%;padding:4px 6px;border:1px solid transparent;border-radius:4px;font-size:1.1rem;font-weight:700;background:transparent;color:inherit;text-align:center;font-family:inherit;transition:border-color .15s}
 .proj-input:hover{border-color:var(--border)}
 .proj-input:focus{border-color:var(--primary);outline:none;background:var(--surface)}
-.proj-original{font-size:.62rem;color:var(--text3);font-style:italic;margin-top:2px}
+.proj-original{font-size:.72rem;color:var(--text3);font-style:italic;margin-top:2px}
 
 /* ===== CARD EDIT HOVER ===== */
 .profile-card-header .card-edit-btn{opacity:0;transition:opacity .15s;width:30px;height:30px;display:flex;align-items:center;justify-content:center;border-radius:var(--radius);color:var(--text3);margin-left:auto;flex-shrink:0;cursor:pointer;z-index:2}
@@ -850,6 +851,13 @@ h1 .hero-edit-input{font-size:1.35rem}
   .sidebar .login-btn{justify-content:center;padding:6px}
   .kanban-col{min-width:250px}
 }
+/* Toast notifications */
+.rr-toast{position:fixed;bottom:24px;right:24px;z-index:100000;padding:12px 20px;border-radius:10px;font-size:.85rem;font-weight:500;color:#fff;box-shadow:0 8px 30px rgba(0,0,0,0.3);transform:translateY(20px);opacity:0;transition:all .3s ease;pointer-events:none;max-width:360px}
+.rr-toast.visible{transform:translateY(0);opacity:1}
+.rr-toast.success{background:#10b981}
+.rr-toast.warning{background:#f59e0b;color:#1a1d2e}
+.rr-toast.error{background:#ef4444}
+.rr-toast.info{background:#4f6ef7}
 </style>
 <!-- Firebase SDK -->
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
@@ -1477,6 +1485,8 @@ function openDetail(id){
   saveViewState();
   render();
   window.scrollTo(0,0);
+  // Check for pending comps from extension
+  checkPendingExtensionComps();
 }
 
 function closeDetail(){
@@ -2529,6 +2539,11 @@ window.addEventListener('message', (event) => {
     if(pendingImport) pendingImport(event.data);
     pendingImport = null;
   }
+
+  // ─── Comp import from AirDNA extension (Pro feature) ───
+  if(event.data?.type === 'RR_COMP_FROM_EXTENSION'){
+    handleExtensionComp(event.data.compData);
+  }
 });
 
 function checkExtension(){
@@ -2558,6 +2573,98 @@ function sendImportRequest(url){
     };
     window.postMessage({ type:'ARBFLOW_IMPORT_REQUEST', url, requestId: reqId }, '*');
   });
+}
+
+/**
+ * Show a toast notification.
+ */
+function showToast(msg, type = 'info', duration = 4000) {
+  let toast = document.getElementById('rr-toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'rr-toast';
+    toast.className = 'rr-toast';
+    document.body.appendChild(toast);
+  }
+  toast.textContent = msg;
+  toast.className = 'rr-toast ' + type;
+  requestAnimationFrame(() => { toast.classList.add('visible'); });
+  clearTimeout(toast._timer);
+  toast._timer = setTimeout(() => { toast.classList.remove('visible'); }, duration);
+}
+
+/**
+ * Handle a comp imported via the RentingRadar Chrome Extension (AirDNA → Airbnb enrichment).
+ * Adds the comp to the currently open property's comps array, or queues it if no profile is open.
+ */
+function handleExtensionComp(compData) {
+  if (!compData) return;
+
+  // Find the target record — use the currently open profile, or the most recently opened one
+  let r = null;
+  if (currentProfileId) {
+    r = records.find(x => x.id === currentProfileId);
+  }
+
+  if (!r) {
+    // No property open — store in a pending queue and notify user
+    if (!window._pendingExtensionComps) window._pendingExtensionComps = [];
+    window._pendingExtensionComps.push(compData);
+    showToast('Comp received from extension! Open a property to add it.', 'info');
+    return;
+  }
+
+  const comps = getComps(r);
+  if (comps.length >= 20) {
+    showToast('Maximum 20 comps reached for this property.', 'warning');
+    return;
+  }
+
+  // Check for duplicate (by link or airdnaUrl)
+  const isDupe = comps.some(c =>
+    (compData.link && c.link === compData.link) ||
+    (compData.airdnaUrl && c.airdnaUrl === compData.airdnaUrl)
+  );
+  if (isDupe) {
+    showToast('This comp has already been imported.', 'warning');
+    return;
+  }
+
+  // Add the comp
+  comps.push({
+    link: compData.link || '',
+    linkShort: compData.linkShort || 'AirDNA Import',
+    annualRevenue: compData.annualRevenue || 0,
+    daysAvailable: compData.daysAvailable || 365,
+    occupancy: compData.occupancy || 0,
+    nightlyRate: compData.nightlyRate || 0,
+    guests: compData.guests || 0,
+    bedrooms: compData.bedrooms || 0,
+    beds: compData.beds || 0,
+    bathrooms: compData.bathrooms || 0,
+    host: compData.host || '',
+    rating: compData.rating || 'competes',
+    notes: compData.notes || '',
+    airdnaUrl: compData.airdnaUrl || '',
+    source: 'airdna-extension',
+    importedAt: compData.importedAt || new Date().toISOString()
+  });
+
+  saveData();
+  render();
+  showToast('Comp imported from AirDNA! (' + comps.length + '/20)', 'success');
+}
+
+/**
+ * When a property profile is opened, check for any pending extension comps and offer to add them.
+ */
+function checkPendingExtensionComps() {
+  if (!window._pendingExtensionComps || window._pendingExtensionComps.length === 0) return;
+  const pending = window._pendingExtensionComps;
+  window._pendingExtensionComps = [];
+  for (const comp of pending) {
+    handleExtensionComp(comp);
+  }
 }
 
 function openAddModal(){
@@ -4284,7 +4391,7 @@ function renderAnalysisTab(r){
   h += '<div class="an-req-bar" style="border:none;border-radius:0;margin:0">';
   h += '<div class="an-req-item"><div class="req-label">Rent</div><div class="req-val">'+fmtMoney(v.monthlyRent)+'<span class="req-period">/mo</span></div><div class="req-annual">'+fmtMoney(v.monthlyRent*12)+'/yr</div></div>';
   // Expenses — not editable, total from ROI Calculator (includes utilities + cleaning)
-  h += '<div class="an-req-item" onclick="alert(\'Expenses are calculated from your Monthly Operating Expenses in the ROI Calculator tab. Edit individual amounts there.\')" style="cursor:help" title="Edit in ROI Calculator → Monthly Operating Expenses"><div class="req-label">Expenses <span style="font-size:.6rem;color:var(--text3)">ℹ</span></div><div class="req-val">'+fmtMoney(Math.round(expenses))+'<span class="req-period">/mo</span></div><div class="req-annual">'+fmtMoney(Math.round(expenses*12))+'/yr</div></div>';
+  h += '<div class="an-req-item" onclick="alert(\'Expenses are calculated from your Monthly Operating Expenses in the ROI Calculator tab. Edit individual amounts there.\')" style="cursor:help" title="Edit in ROI Calculator → Monthly Operating Expenses"><div class="req-label">Expenses <span style="font-size:.65rem;color:var(--text3)">ℹ</span></div><div class="req-val">'+fmtMoney(Math.round(expenses))+'<span class="req-period">/mo</span></div><div class="req-annual">'+fmtMoney(Math.round(expenses*12))+'/yr</div></div>';
   // Profit Requirement — editable with warning under $1000
   h += '<div class="an-req-item an-req-editable" onclick="editAnalysisProfitReq(\''+r.id+'\')"><div class="req-label">Profit Req <span class="req-edit-hint">✎</span></div><div class="req-val">'+fmtMoney(profitReq)+'<span class="req-period">/mo</span></div><div class="req-annual">'+fmtMoney(profitReq*12)+'/yr</div></div>';
   const monthlyReqRev = v.monthlyRent + expenses + profitReq;
@@ -4305,38 +4412,26 @@ function renderAnalysisTab(r){
   }
 
   // ── Comparable Airbnb Analysis ──
-  h += '<div class="an-section"><div class="an-section-hdr">Comparable Airbnb Analysis <span style="font-size:.62rem;color:var(--text3);font-weight:400;text-transform:none;letter-spacing:0">('+comps.length+'/20)</span>';
-  if(isProUser){
-    h += ' <span style="font-size:.58rem;color:var(--success);font-weight:500;text-transform:none;letter-spacing:0">✨ Pro: Chrome Extension auto-fills data</span>';
-  } else {
-    h += ' <span style="font-size:.58rem;color:var(--text3);font-weight:400;text-transform:none;letter-spacing:0;font-style:italic">Manual entry · <a href="#" onclick="event.preventDefault();switchView(\'pricing\')" style="color:var(--primary)">Upgrade to Pro</a> for auto-fill</span>';
-  }
-  h += '</div>';
+  h += '<div class="an-section"><div class="an-section-hdr">Comparable Airbnb Analysis <span style="font-size:.68rem;color:var(--text3);font-weight:400;text-transform:none;letter-spacing:0">('+comps.length+'/20)</span></div>';
   h += '<div class="an-section-body">';
-
-  if(comps.length < 20){
-    h += '<div class="comp-add-row">';
-    h += '<input type="text" id="compLinkInput" placeholder="Paste Airbnb link here..." />';
-    h += '<button onclick="addComp(\''+r.id+'\')">+ Add Comp</button>';
-    h += '</div>';
-  }
 
   // Always show table with columns (even if empty, show headers so Basic users know what to fill)
   h += '<div class="comp-table-wrap"><table class="comp-table">';
-  h += '<thead><tr><th>#</th><th>Link</th><th class="r">Rev</th><th class="r">Days</th><th class="r">Occ</th><th class="r">Rate</th><th class="r">Gst</th><th class="r">BR</th><th class="r">Ba</th><th>Host</th><th>Rating</th><th class="comp-notes-cell">Notes</th><th></th></tr></thead>';
+  h += '<thead><tr><th>#</th><th>Revenue</th><th>Days</th><th>Occupancy</th><th>Rate</th><th>Guests</th><th>Bedrooms</th><th>Beds</th><th>Baths</th><th>Host</th><th>Rating</th><th class="comp-notes-cell">Notes</th><th></th><th>Link</th></tr></thead>';
   h += '<tbody>';
   if(comps.length > 0){
     comps.forEach((comp, i) => {
       const rating = comp.rating || 'competes';
+      const linkIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>';
       h += '<tr>';
       h += '<td style="color:var(--text3)">'+(i+1)+'</td>';
-      h += '<td><a class="comp-link" href="'+esc(comp.link||'')+'" target="_blank" title="'+esc(comp.link||'')+'">'+esc(comp.linkShort||'Link')+'</a></td>';
-      h += '<td class="r"><input type="number" class="comp-inline-input" value="'+(comp.annualRevenue||'')+'" placeholder="—" onchange="updateCompField(\''+r.id+'\','+i+',\'annualRevenue\',this.value)" /></td>';
+      h += '<td class="r"><span style="color:var(--text3)">$</span><input type="number" class="comp-inline-input" value="'+(comp.annualRevenue||'')+'" placeholder="—" onchange="updateCompField(\''+r.id+'\','+i+',\'annualRevenue\',this.value)" /></td>';
       h += '<td class="r"><input type="number" class="comp-inline-input sm" value="'+(comp.daysAvailable||'')+'" placeholder="—" onchange="updateCompField(\''+r.id+'\','+i+',\'daysAvailable\',this.value)" /></td>';
-      h += '<td class="r"><input type="number" class="comp-inline-input sm" value="'+(comp.occupancy||'')+'" placeholder="—" onchange="updateCompField(\''+r.id+'\','+i+',\'occupancy\',this.value)" />%</td>';
-      h += '<td class="r">$<input type="number" class="comp-inline-input sm" value="'+(comp.nightlyRate||'')+'" placeholder="—" onchange="updateCompField(\''+r.id+'\','+i+',\'nightlyRate\',this.value)" /></td>';
+      h += '<td class="r"><input type="number" class="comp-inline-input sm" value="'+(comp.occupancy||'')+'" placeholder="—" onchange="updateCompField(\''+r.id+'\','+i+',\'occupancy\',this.value)" style="width:48px" /><span style="color:var(--text3)">%</span></td>';
+      h += '<td class="r"><span style="color:var(--text3)">$</span><input type="number" class="comp-inline-input sm" value="'+(comp.nightlyRate||'')+'" placeholder="—" onchange="updateCompField(\''+r.id+'\','+i+',\'nightlyRate\',this.value)" /></td>';
       h += '<td class="r"><input type="number" class="comp-inline-input sm" value="'+(comp.guests||'')+'" placeholder="—" onchange="updateCompField(\''+r.id+'\','+i+',\'guests\',this.value)" /></td>';
       h += '<td class="r"><input type="number" class="comp-inline-input sm" value="'+(comp.bedrooms||'')+'" placeholder="—" onchange="updateCompField(\''+r.id+'\','+i+',\'bedrooms\',this.value)" /></td>';
+      h += '<td class="r"><input type="number" class="comp-inline-input sm" value="'+(comp.beds||'')+'" placeholder="—" onchange="updateCompField(\''+r.id+'\','+i+',\'beds\',this.value)" /></td>';
       h += '<td class="r"><input type="number" class="comp-inline-input sm" value="'+(comp.bathrooms||'')+'" placeholder="—" onchange="updateCompField(\''+r.id+'\','+i+',\'bathrooms\',this.value)" /></td>';
       h += '<td><input type="text" class="comp-inline-input" value="'+esc(comp.host||'')+'" placeholder="—" onchange="updateCompField(\''+r.id+'\','+i+',\'host\',this.value)" /></td>';
       h += '<td><select class="comp-rating" onchange="updateCompField(\''+r.id+'\','+i+',\'rating\',this.value)">';
@@ -4346,15 +4441,24 @@ function renderAnalysisTab(r){
       h += '</select></td>';
       h += '<td class="comp-notes-cell"><textarea class="comp-notes" rows="1" placeholder="Notes..." onchange="updateCompField(\''+r.id+'\','+i+',\'notes\',this.value)">'+esc(comp.notes||'')+'</textarea></td>';
       h += '<td><button class="comp-remove" onclick="removeComp(\''+r.id+'\','+i+')" title="Remove">✕</button></td>';
+      h += '<td class="comp-link-cell">'+(comp.link ? '<a class="comp-link" href="'+esc(comp.link)+'" target="_blank" title="'+esc(comp.link)+'">'+linkIcon+'</a>' : '')+'</td>';
       h += '</tr>';
     });
   } else {
-    h += '<tr><td colspan="13" style="text-align:center;padding:20px 16px;color:var(--text3);font-size:.82rem">';
-    h += '<div style="font-size:1.3rem;margin-bottom:4px">📊</div>';
-    h += 'No comparables added yet. Paste an Airbnb link above to start your analysis.';
+    h += '<tr><td colspan="14" style="text-align:center;padding:24px 16px;color:var(--text3);font-size:.88rem">';
+    h += 'No comparables added yet. Paste an Airbnb link below to start your analysis.';
     h += '</td></tr>';
   }
   h += '</tbody></table></div>';
+
+  // Add comp row — at the bottom
+  if(comps.length < 20){
+    h += '<div class="comp-add-row">';
+    h += '<input type="text" id="compLinkInput" placeholder="Paste Airbnb link here..." />';
+    h += '<button onclick="addComp(\''+r.id+'\')">+ Add Comp</button>';
+    h += '</div>';
+  }
+
   h += '</div></div>';
 
   // ── Revenue Projections ──
@@ -4413,7 +4517,7 @@ function renderAnalysisTab(r){
     h += '</div>';
   }
 
-  h += '<div style="margin-top:10px"><div style="font-size:.7rem;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.3px;margin-bottom:4px">Why? (Your reasoning)</div>';
+  h += '<div style="margin-top:10px"><div style="font-size:.8rem;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.3px;margin-bottom:4px">Why? (Your reasoning)</div>';
   h += '<textarea class="an-why" placeholder="Explain your revenue projection reasoning..." onchange="updateAnalysisField(\''+r.id+'\',\'projectionWhy\',this.value)">'+esc(an.projectionWhy||'')+'</textarea>';
   h += '</div>';
   h += '</div></div>';
