@@ -1645,11 +1645,8 @@ function renderProfile(){
         <button class="hero-copy-btn" onclick="event.stopPropagation();copyAddress(this,'${r.id}')" title="Copy address"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>
       </div>
       <div style="display:flex;align-items:center;gap:16px;margin-top:4px;flex-wrap:wrap">
-        <div class="hero-editable" id="heroRent" onclick="startHeroEdit('${r.id}','monthlyRent','heroRent')">
-          <div class="hero-rent" id="heroRentDisplay">${d.monthlyRent ? '$'+Number(d.monthlyRent).toLocaleString()+'/mo' : '<span class=&quot;no-rent&quot;>No rent listed — click to add</span>'}</div>
-          <svg class="hero-edit-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-        </div>
         <div class="hero-stats">
+            <div class="hero-stat"><strong>${d.monthlyRent ? '$'+Number(d.monthlyRent).toLocaleString()+'/mo' : '—'}</strong> Rent</div>
             <div class="hero-stat"><strong>${d.bedrooms||'—'}</strong> Beds</div>
             <div class="hero-stat"><strong>${d.bathrooms||'—'}</strong> ${d.bathrooms==='1'?'Bath':'Baths'}</div>
             <div class="hero-stat"><strong>${d.sqft ? Number(d.sqft).toLocaleString() : '—'}</strong> Sq Ft</div>
@@ -1665,6 +1662,7 @@ function renderProfile(){
         ${statusPill(r.status)}
         ${r.link ? `<a class="profile-platform" href="${esc(r.link)}" target="_blank">${plat.icon} ${plat.name} <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"/></svg></a>` : '<span style="font-size:.8rem;color:var(--text3)">No listing link</span>'}
         ${r.followUpDate ? (()=>{ const fp = new Date(r.followUpDate+'T'+(r.followUpTime||'23:59')) < new Date(); return `<span style="font-size:.75rem;color:${fp?'var(--text3)':'var(--danger, #ef4444)'};display:inline-flex;align-items:center;gap:3px"><span style="font-size:.8rem">${fp?'\uD83D\uDD15':'\uD83D\uDD14'}</span> Follow-up: ${fmtDateTimeForCard(r.followUpDate, r.followUpTime)}</span>`; })() : ''}
+        ${r.meetingDate ? (()=>{ const mp = new Date(r.meetingDate+'T'+(r.meetingTime||'23:59')) < new Date(); return `<span style="font-size:.75rem;color:${mp?'var(--text3)':'var(--primary)'};display:inline-flex;align-items:center;gap:3px"><span style="font-size:.8rem">📅</span> Meeting: ${fmtDateTimeForCard(r.meetingDate, r.meetingTime)}</span>`; })() : ''}
         <div class="profile-tabs">
           <div class="profile-tab ${activeTab==='details'?'active':''}" data-tab="details" onclick="setProfileTab('details')">🏠 Property Details</div>
           <div class="profile-tab ${activeTab==='calculator'?'active':''}" data-tab="calculator" onclick="setProfileTab('calculator')">💸 Pro Forma ${!calcOk?'<span class=\\"tab-lock basic\\">BASIC</span>':''}</div>
@@ -1703,11 +1701,13 @@ function renderProfile(){
           <div class="cr-field"><div class="cr-label">Email</div><div class="cr-value ${r.email?'':'empty'} ${r.email?'email-val':''}">${r.email?esc(r.email):'Not set'}</div>${r.email?`<button class="cr-copy-btn" onclick="event.stopPropagation();copyRecordField(this,'${r.id}','email')" title="Copy email"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>`:''}</div>
         </div>
         <div class="cr-row">
-          <div class="cr-field"><div class="cr-label">Meeting Date</div><div class="cr-value ${r.meetingDate?'':'empty'}">${r.meetingDate?fmtDateTimeForCard(r.meetingDate, r.meetingTime):'Not set'}</div></div>
-          <div class="cr-field"><div class="cr-label">Listing Link</div><div class="cr-value ${r.link?'':'empty'}" style="font-size:.78rem">${r.link?`<a href="${esc(r.link)}" target="_blank" style="color:var(--primary);text-decoration:none">${esc(r.link.length>40?r.link.substring(0,40)+'...':r.link)}</a>`:'Not set'}</div></div>
+          <div class="cr-field" style="flex:1;min-width:0"><div class="cr-label">Listing Link</div><div class="cr-value ${r.link?'':'empty'}" style="font-size:.75rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;position:relative">${r.link?`<a href="${esc(r.link)}" target="_blank" style="color:var(--primary);text-decoration:none;word-break:break-all">${esc(r.link)}</a>`:'Not set'}</div>${r.link?`<button class="cr-copy-btn" onclick="event.stopPropagation();navigator.clipboard.writeText('${esc(r.link).replace(/'/g,"\\'")}');this.title='Copied!';setTimeout(()=>this.title='Copy link',1500)" title="Copy link"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>`:''}</div>
         </div>
-        <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:6px;padding-top:5px;border-top:1px solid var(--border)">
-          <div>${renderFollowUpSubtle(r)}</div>
+        <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:6px;padding-top:5px;border-top:1px solid var(--border);flex-wrap:wrap;gap:4px 12px">
+          <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+            ${renderFollowUpSubtle(r)}
+            ${renderMeetingSubtle(r)}
+          </div>
           <div>
             ${r.date?`<span style="font-size:.65rem;color:var(--text3)">First Contacted: ${fmtDate(r.date)}</span>`:''}
           </div>
@@ -4408,13 +4408,13 @@ function renderAnalysisTab(r){
   // Right: Required Revenue
   h += '<div class="an-section"><div class="an-section-hdr">Required Revenue</div><div class="an-section-body" style="padding:0">';
   h += '<div class="an-req-bar" style="border:none;border-radius:0;margin:0">';
-  h += '<div class="an-req-item"><div class="req-label">Rent</div><div class="req-val">'+fmtMoney(v.monthlyRent)+'<span class="req-period">/mo</span></div><div class="req-annual">'+fmtMoney(v.monthlyRent*12)+'/yr</div></div>';
+  h += '<div class="an-req-item"><div class="req-label">Rent</div><div class="req-val">'+fmtMoney(v.monthlyRent*12)+'<span class="req-period">/yr</span></div><div class="req-annual">'+fmtMoney(v.monthlyRent)+'/mo</div></div>';
   // Expenses — not editable, total from Pro Forma (includes utilities + cleaning)
-  h += '<div class="an-req-item" onclick="alert(\'Expenses are calculated from your Monthly Operating Expenses in the Pro Forma tab. Edit individual amounts there.\')" style="cursor:help" title="Edit in Pro Forma → Monthly Operating Expenses"><div class="req-label">Expenses</div><div class="req-val">'+fmtMoney(Math.round(expenses))+'<span class="req-period">/mo</span></div><div class="req-annual">'+fmtMoney(Math.round(expenses*12))+'/yr</div></div>';
+  h += '<div class="an-req-item" onclick="alert(\'Expenses are calculated from your Monthly Operating Expenses in the Pro Forma tab. Edit individual amounts there.\')" style="cursor:help" title="Edit in Pro Forma → Monthly Operating Expenses"><div class="req-label">Expenses</div><div class="req-val">'+fmtMoney(Math.round(expenses*12))+'<span class="req-period">/yr</span></div><div class="req-annual">'+fmtMoney(Math.round(expenses))+'/mo</div></div>';
   // Profit Requirement — editable with warning under $1000
-  h += '<div class="an-req-item an-req-editable" onclick="editAnalysisProfitReq(\''+r.id+'\')"><div class="req-label">Profit Req <span class="req-edit-hint">✎</span></div><div class="req-val">'+fmtMoney(profitReq)+'<span class="req-period">/mo</span></div><div class="req-annual">'+fmtMoney(profitReq*12)+'/yr</div></div>';
+  h += '<div class="an-req-item an-req-editable" onclick="editAnalysisProfitReq(\''+r.id+'\')"><div class="req-label">Profit Req <span class="req-edit-hint">✎</span></div><div class="req-val">'+fmtMoney(profitReq*12)+'<span class="req-period">/yr</span></div><div class="req-annual">'+fmtMoney(profitReq)+'/mo</div></div>';
   const monthlyReqRev = v.monthlyRent + expenses + profitReq;
-  h += '<div class="an-req-item total"><div class="req-label">Required Rev</div><div class="req-val" style="color:var(--primary)">'+fmtMoney(Math.round(monthlyReqRev))+'<span class="req-period">/mo</span></div><div class="req-annual">'+fmtMoney(Math.round(monthlyReqRev*12))+'/yr</div></div>';
+  h += '<div class="an-req-item total"><div class="req-label">Required Rev</div><div class="req-val" style="color:var(--primary)">'+fmtMoney(Math.round(monthlyReqRev*12))+'<span class="req-period">/yr</span></div><div class="req-annual">'+fmtMoney(Math.round(monthlyReqRev))+'/mo</div></div>';
   h += '</div>';
   h += '</div></div>';
 
@@ -5360,9 +5360,23 @@ function renderFollowUpSubtle(r){
   const bell = isPast ? '\uD83D\uDD15' : '\uD83D\uDD14';
   const color = isPast ? 'var(--text3)' : 'var(--danger, #ef4444)';
   const dateText = hasDate ? fmtDateTimeForCard(r.followUpDate, r.followUpTime) : '<span style="font-style:italic">Not set</span>';
-  return '<span style="font-size:.65rem;color:' + color + ';display:inline-flex;align-items:center;gap:3px">'
+  const needsAlert = !hasDate && r.status === 'Follow Up';
+  const borderStyle = needsAlert ? 'border:1px solid var(--danger, #ef4444);border-radius:4px;padding:2px 6px' : 'padding:2px 6px';
+  return '<span style="font-size:.65rem;color:' + color + ';display:inline-flex;align-items:center;gap:3px;' + borderStyle + '">'
     + '<span style="font-size:.7rem">' + bell + '</span>'
     + ' Follow-Up: ' + dateText + '</span>';
+}
+
+function renderMeetingSubtle(r){
+  const hasDate = !!r.meetingDate;
+  const isPast = hasDate ? new Date(r.meetingDate + 'T' + (r.meetingTime || '23:59')) < new Date() : true;
+  const color = hasDate ? (isPast ? 'var(--text3)' : 'var(--primary)') : 'var(--text3)';
+  const dateText = hasDate ? fmtDateTimeForCard(r.meetingDate, r.meetingTime) : '<span style="font-style:italic">Not set</span>';
+  const needsAlert = !hasDate && r.status === 'Meeting';
+  const borderStyle = needsAlert ? 'border:1px solid var(--danger, #ef4444);border-radius:4px;padding:2px 6px' : 'padding:2px 6px';
+  return '<span style="font-size:.65rem;color:' + color + ';display:inline-flex;align-items:center;gap:3px;' + borderStyle + '">'
+    + '<span style="font-size:.7rem">📅</span>'
+    + ' Meeting: ' + dateText + '</span>';
 }
 
 function setupDateTimePicker(triggerId, opts){
@@ -5782,6 +5796,8 @@ function saveContactCard(recId){
   r.followUpDate = fuVal.date || null;
   r.followUpTime = fuVal.time || null;
   const mtVal = getDtValue('dt_meeting');
+  const oldMeetingDate = r.meetingDate;
+  const oldMeetingTime = r.meetingTime;
   r.meetingDate = mtVal.date || null;
   r.meetingTime = mtVal.time || null;
   const fcVal = getDtValue('dt_firstcontact');
@@ -5792,6 +5808,16 @@ function saveContactCard(recId){
     r.notes.push({ id:uid(), text:`Status changed: ${oldStatus} → ${r.status}`, date:new Date().toISOString(), type:'status' });
   }
   saveData();
+  // Schedule meeting notifications if meeting date was set or changed
+  if(r.meetingDate && (r.meetingDate !== oldMeetingDate || r.meetingTime !== oldMeetingTime)){
+    requestNotificationPermission(function(granted){
+      if(granted){
+        scheduleMeetingNotifications(r);
+        startNotificationLoop();
+        showToast('Meeting reminders scheduled!', 'success');
+      }
+    });
+  }
   document.getElementById('cardEditOverlay')?.remove();
   render();
 }
@@ -5915,6 +5941,151 @@ function copyAddress(btn, recId){
 }
 
 
+/* ===== MEETING NOTIFICATION SYSTEM ===== */
+const DEFAULT_MEETING_REMINDERS = [
+  { label:'1 day before', minutes: 1440 },
+  { label:'3 hours before', minutes: 180 },
+  { label:'1 hour before', minutes: 60 }
+];
+
+function getMeetingReminderSettings(){
+  loadSettingsPrefs();
+  if(Array.isArray(settingsPrefs.meetingReminders) && settingsPrefs.meetingReminders.length > 0){
+    return settingsPrefs.meetingReminders;
+  }
+  return DEFAULT_MEETING_REMINDERS.map(r => ({ ...r }));
+}
+
+function _notifKey(recId, minutesBefore){
+  return 'rr_notif_' + recId + '_' + minutesBefore;
+}
+
+function scheduleMeetingNotifications(r){
+  if(!r || !r.meetingDate) return;
+  const meetingISO = r.meetingDate + 'T' + (r.meetingTime || '12:00');
+  const meetingMs = new Date(meetingISO).getTime();
+  if(isNaN(meetingMs)) return;
+  const reminders = getMeetingReminderSettings();
+  // Clear any previously fired flags for this record so rescheduled meetings re-fire
+  reminders.forEach(rem => {
+    localStorage.removeItem(_notifKey(r.id, rem.minutes));
+  });
+}
+
+function checkMeetingNotifications(){
+  if(!('Notification' in window)) return;
+  if(Notification.permission !== 'granted') return;
+  const now = Date.now();
+  const reminders = getMeetingReminderSettings();
+  records.forEach(r => {
+    if(!r.meetingDate) return;
+    const meetingISO = r.meetingDate + 'T' + (r.meetingTime || '12:00');
+    const meetingMs = new Date(meetingISO).getTime();
+    if(isNaN(meetingMs)) return;
+    reminders.forEach(rem => {
+      const fireAt = meetingMs - (rem.minutes * 60000);
+      const key = _notifKey(r.id, rem.minutes);
+      if(now >= fireAt && now < meetingMs && !localStorage.getItem(key)){
+        localStorage.setItem(key, '1');
+        const addr = r.property || 'Unknown property';
+        const timeStr = r.meetingTime ? fmtDateTimeForCard(r.meetingDate, r.meetingTime) : fmtDate(r.meetingDate);
+        try {
+          new Notification('Meeting Reminder — ' + rem.label, {
+            body: addr + '\n' + timeStr,
+            icon: 'https://app.rentingradar.com/favicon.ico',
+            tag: key
+          });
+        } catch(e){}
+        showToast('📅 Meeting ' + rem.label + ': ' + addr, 'info', 6000);
+      }
+    });
+  });
+}
+
+function requestNotificationPermission(callback){
+  if(!('Notification' in window)){
+    showToast('Browser notifications are not supported.', 'warning');
+    if(callback) callback(false);
+    return;
+  }
+  if(Notification.permission === 'granted'){
+    if(callback) callback(true);
+    return;
+  }
+  if(Notification.permission === 'denied'){
+    showToast('Notifications are blocked. Please enable them in your browser settings.', 'warning', 6000);
+    if(callback) callback(false);
+    return;
+  }
+  Notification.requestPermission().then(perm => {
+    if(perm === 'granted'){
+      showToast('Notifications enabled!', 'success');
+      if(callback) callback(true);
+    } else {
+      showToast('Notification permission was not granted.', 'warning');
+      if(callback) callback(false);
+    }
+  });
+}
+
+// Start the notification check loop (every 30 seconds)
+let _notifInterval = null;
+function startNotificationLoop(){
+  if(_notifInterval) return;
+  checkMeetingNotifications();
+  _notifInterval = setInterval(checkMeetingNotifications, 30000);
+}
+
+// Auto-start when app loads if permission already granted
+function initNotifications(){
+  loadSettingsPrefs();
+  if(settingsPrefs.meetingNotifications === false) return;
+  if('Notification' in window && Notification.permission === 'granted'){
+    startNotificationLoop();
+  }
+}
+
+function updateMeetingReminder(index, newMinutes){
+  loadSettingsPrefs();
+  const rems = getMeetingReminderSettings();
+  const presetLabels = {15:'15 min before',30:'30 min before',60:'1 hour before',120:'2 hours before',180:'3 hours before',360:'6 hours before',720:'12 hours before',1440:'1 day before',2880:'2 days before',4320:'3 days before',10080:'1 week before'};
+  rems[index].minutes = parseInt(newMinutes);
+  rems[index].label = presetLabels[newMinutes] || newMinutes + ' min before';
+  settingsPrefs.meetingReminders = rems;
+  saveSettingsPrefs();
+}
+
+function removeMeetingReminder(index){
+  loadSettingsPrefs();
+  const rems = getMeetingReminderSettings();
+  if(rems.length <= 1){ showToast('You need at least one reminder.', 'warning'); return; }
+  rems.splice(index, 1);
+  settingsPrefs.meetingReminders = rems;
+  saveSettingsPrefs();
+  // Re-render settings
+  const area = document.getElementById('contentArea');
+  if(area && currentView === 'settings') area.innerHTML = renderSettings();
+}
+
+function addMeetingReminder(){
+  loadSettingsPrefs();
+  const rems = getMeetingReminderSettings();
+  if(rems.length >= 6){ showToast('Maximum 6 reminders allowed.', 'warning'); return; }
+  rems.push({ label:'30 min before', minutes: 30 });
+  settingsPrefs.meetingReminders = rems;
+  saveSettingsPrefs();
+  const area = document.getElementById('contentArea');
+  if(area && currentView === 'settings') area.innerHTML = renderSettings();
+}
+
+function resetMeetingReminders(){
+  settingsPrefs.meetingReminders = DEFAULT_MEETING_REMINDERS.map(r => ({ ...r }));
+  saveSettingsPrefs();
+  const area = document.getElementById('contentArea');
+  if(area && currentView === 'settings') area.innerHTML = renderSettings();
+  showToast('Reminder intervals reset to defaults.', 'success');
+}
+
 /* ===== SETTINGS PAGE ===== */
 let settingsPrefs = {};
 function loadSettingsPrefs(){
@@ -5987,6 +6158,37 @@ function renderSettings(){
     <div class="settings-section">
       <div class="settings-section-header"><h3>🔔 Notification Preferences</h3></div>
       <div class="settings-section-body">
+        <div class="settings-row">
+          <div class="settings-row-left"><div class="sr-label">Browser Notifications</div><div class="sr-desc">Permission status: <strong style="color:${'Notification' in window ? (Notification.permission==='granted'?'var(--success)':Notification.permission==='denied'?'var(--danger)':'var(--warning)') : 'var(--text3)'}">${'Notification' in window ? Notification.permission : 'Not supported'}</strong></div></div>
+          <div class="settings-row-right">${'Notification' in window && Notification.permission !== 'granted' ? '<button class="btn btn-primary btn-sm" onclick="requestNotificationPermission(function(ok){if(ok){startNotificationLoop();switchView(\'settings\')}else{switchView(\'settings\')}})">Enable</button>' : Notification.permission === 'granted' ? '<span style="color:var(--success);font-size:.82rem;font-weight:500">✓ Enabled</span>' : ''}</div>
+        </div>
+        <div class="settings-row">
+          <div class="settings-row-left"><div class="sr-label">Meeting Notifications</div><div class="sr-desc">Send browser push reminders before scheduled meetings</div></div>
+          <div class="settings-row-right"><div class="settings-toggle ${settingsPrefs.meetingNotifications!==false?'on':''}" onclick="toggleSettingsPref('meetingNotifications',this);if(settingsPrefs.meetingNotifications){startNotificationLoop()}"></div></div>
+        </div>
+        <div class="settings-row" style="flex-wrap:wrap">
+          <div class="settings-row-left"><div class="sr-label">Meeting Reminder Intervals</div><div class="sr-desc">When to send reminders before a meeting. Click to edit or add new intervals.</div></div>
+          <div style="width:100%;margin-top:8px" id="meetingRemindersList">
+            ${(function(){
+              const rems = getMeetingReminderSettings();
+              let html = '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">';
+              rems.forEach((rem, i) => {
+                html += '<div style="display:inline-flex;align-items:center;gap:4px;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:4px 8px 4px 10px;font-size:.82rem">';
+                html += '<select onchange="updateMeetingReminder('+i+',this.value)" style="background:transparent;border:none;color:var(--text);font-size:.82rem;cursor:pointer;padding:0">';
+                const presets = [{l:'15 min',v:15},{l:'30 min',v:30},{l:'1 hour',v:60},{l:'2 hours',v:120},{l:'3 hours',v:180},{l:'6 hours',v:360},{l:'12 hours',v:720},{l:'1 day',v:1440},{l:'2 days',v:2880},{l:'3 days',v:4320},{l:'1 week',v:10080}];
+                presets.forEach(p => { html += '<option value="'+p.v+'" '+(rem.minutes===p.v?'selected':'')+'>'+p.l+'</option>'; });
+                if(!presets.some(p=>p.v===rem.minutes)) html += '<option value="'+rem.minutes+'" selected>'+rem.minutes+' min</option>';
+                html += '</select>';
+                html += '<span style="color:var(--text3);font-size:.72rem">before</span>';
+                html += '<button onclick="removeMeetingReminder('+i+')" style="background:none;border:none;color:var(--text3);cursor:pointer;padding:0 2px;font-size:.9rem;line-height:1" title="Remove">&times;</button>';
+                html += '</div>';
+              });
+              html += '<button onclick="addMeetingReminder()" class="btn btn-secondary" style="font-size:.75rem;padding:4px 10px;border-radius:8px">+ Add</button>';
+              html += '</div>';
+              return html;
+            })()}
+          </div>
+        </div>
         <div class="settings-row">
           <div class="settings-row-left"><div class="sr-label">Follow-Up Reminders</div><div class="sr-desc">Show badge and notifications for overdue and upcoming follow-ups</div></div>
           <div class="settings-row-right"><div class="settings-toggle ${settingsPrefs.followUpReminders!==false?'on':''}" onclick="toggleSettingsPref('followUpReminders',this)"></div></div>
@@ -6158,6 +6360,7 @@ initSidebar();
 loadUser();
 loadSettingsPrefs();
 loadData();
+initNotifications();
 restoreViewState();
 // Apply the restored view's UI state
 if(currentView === 'profile' && currentProfileId){
