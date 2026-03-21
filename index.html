@@ -4640,8 +4640,35 @@ function projEditCell(el){
   });
 }
 
-function compEditCell(el){
-  if(el.querySelector('input')) return; // already editing
+// Track the currently active comp edit so we can close it when another opens
+let _activeCompEdit = null;
+
+function _saveActiveCompEdit(){
+  if(!_activeCompEdit) return;
+  const { input, recId, idx, field } = _activeCompEdit;
+  const val = input.value;
+  _activeCompEdit = null;
+  updateCompField(recId, idx, field, val);
+}
+
+function _rerenderAnalysisTab(){
+  const r = records.find(x => x.id === currentProfileId);
+  if(r){
+    const tabEl = document.querySelector('.tab-content[data-tab="analysis"]');
+    if(tabEl){ tabEl.innerHTML = renderAnalysisTab(r); tabEl.classList.add('active'); }
+  }
+}
+
+function compEditCell(el, skipBlurSave){
+  // If clicking the same cell that's already editing, do nothing
+  if(el.querySelector('input')) return;
+
+  // Close any existing edit first (save its value without re-rendering yet)
+  if(_activeCompEdit){
+    _activeCompEdit._skipRerender = true;
+    _saveActiveCompEdit();
+  }
+
   const field = el.dataset.field;
   const recId = el.dataset.rec;
   const idx = parseInt(el.dataset.idx);
@@ -4667,21 +4694,61 @@ function compEditCell(el){
   input.focus();
   input.select();
 
-  const save = () => {
-    const val = input.value;
-    updateCompField(recId, idx, field, val);
-    // Re-render the analysis tab to get fresh formatted values
-    const r = records.find(x => x.id === recId);
-    if(r){
-      const tabEl = document.querySelector('.tab-content[data-tab="analysis"]');
-      if(tabEl){ tabEl.innerHTML = renderAnalysisTab(r); tabEl.classList.add('active'); }
-    }
-  };
+  const editCtx = { input, recId, idx, field, _skipRerender: false };
+  _activeCompEdit = editCtx;
 
-  input.addEventListener('blur', save);
+  input.addEventListener('blur', () => {
+    // Only save+rerender if this edit wasn't already closed by Tab/click on another cell
+    if(_activeCompEdit === editCtx){
+      _saveActiveCompEdit();
+      _rerenderAnalysisTab();
+    } else if(!editCtx._skipRerender){
+      // Was closed by navigating to another cell — rerender handled elsewhere
+    }
+  });
+
   input.addEventListener('keydown', (e) => {
-    if(e.key === 'Enter'){ e.preventDefault(); input.blur(); }
-    if(e.key === 'Escape'){ input.value = raw; input.blur(); }
+    if(e.key === 'Enter'){
+      e.preventDefault();
+      _saveActiveCompEdit();
+      _rerenderAnalysisTab();
+      return;
+    }
+    if(e.key === 'Escape'){
+      input.value = raw;
+      _activeCompEdit = null;
+      _rerenderAnalysisTab();
+      return;
+    }
+    if(e.key === 'Tab'){
+      e.preventDefault();
+      // Save current value
+      _saveActiveCompEdit();
+
+      // Find all editable cells in the table
+      const table = el.closest('table');
+      if(!table) { _rerenderAnalysisTab(); return; }
+      const allEditables = Array.from(table.querySelectorAll('.comp-editable'));
+      const currentIdx = allEditables.indexOf(el);
+      if(currentIdx === -1) { _rerenderAnalysisTab(); return; }
+
+      const nextIdx = e.shiftKey ? currentIdx - 1 : currentIdx + 1;
+      if(nextIdx >= 0 && nextIdx < allEditables.length){
+        // Re-render first so cells get fresh values, then open the next cell
+        _rerenderAnalysisTab();
+        // After re-render, find the same cell by position and open it
+        requestAnimationFrame(() => {
+          const newTable = document.querySelector('.comp-table');
+          if(!newTable) return;
+          const newEditables = Array.from(newTable.querySelectorAll('.comp-editable'));
+          if(newEditables[nextIdx]){
+            compEditCell(newEditables[nextIdx]);
+          }
+        });
+      } else {
+        _rerenderAnalysisTab();
+      }
+    }
   });
 }
 
