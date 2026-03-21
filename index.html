@@ -421,8 +421,8 @@ tr.clickable:hover{background:var(--primary-light)}
 .section-ro-chips .ro-chip{font-size:.72rem;padding:2px 8px;background:var(--primary-light);color:var(--primary);border-radius:10px;font-weight:500}
 .section-ro-multi{margin-top:8px}
 .section-ro-multi .ro-label{font-size:.68rem;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px}
-.se-multi-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:6px 10px}
-.se-multi-opt{display:flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius);font-size:.8rem;color:var(--text2);cursor:pointer;transition:all .15s;user-select:none}
+.se-multi-grid{display:flex;flex-wrap:wrap;gap:6px 8px}
+.se-multi-opt{display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border:1px solid var(--border);border-radius:var(--radius);font-size:.8rem;color:var(--text2);cursor:pointer;transition:all .15s;user-select:none;white-space:nowrap}
 .se-multi-opt:hover{border-color:var(--primary);background:rgba(99,129,250,.04)}
 .se-multi-opt.checked{border-color:var(--primary);background:var(--primary-light);color:var(--primary);font-weight:500}
 .se-multi-opt input[type="checkbox"]{accent-color:var(--primary);margin:0}
