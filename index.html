@@ -704,14 +704,14 @@ h1 .hero-edit-input{font-size:1.35rem}
 .card-readonly .cr-row{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px}
 .card-readonly .cr-field{flex:1;min-width:80px;position:relative}
 .card-readonly .cr-label{font-size:.68rem;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px}
-.card-readonly .cr-value{font-size:.85rem;font-weight:500;color:var(--text)}
+.card-readonly .cr-value{font-size:.85rem;font-weight:500;color:var(--text);display:inline}
 .card-readonly .cr-value.empty{color:var(--text3);font-style:italic;font-weight:400;font-size:.78rem}
 .card-readonly .cr-value a{color:var(--primary);font-weight:500}
 .card-readonly .cr-value.email-val{color:var(--primary);font-weight:500}
 .card-readonly .clickable-edit{cursor:pointer;border-radius:var(--radius);padding:4px 6px;margin:-4px -6px;transition:background .15s}
 .card-readonly .clickable-edit:hover{background:var(--primary-light)}
 .cr-value-wrap{display:flex;align-items:center;gap:4px}
-.cr-copy-btn{opacity:0;border:none;background:transparent;cursor:pointer;color:var(--text3);padding:1px;border-radius:3px;transition:opacity .15s,color .15s,background .15s;flex-shrink:0;display:inline-flex;align-items:center;position:relative;top:-5px;margin-left:5px;vertical-align:middle}
+.cr-copy-btn{opacity:0;border:none;background:transparent;cursor:pointer;color:var(--text3);padding:1px;border-radius:3px;transition:opacity .15s,color .15s,background .15s;flex-shrink:0;display:inline-flex;align-items:center;position:relative;top:-3px;margin-left:3px;vertical-align:top}
 .cr-field:hover .cr-copy-btn{opacity:1}
 .cr-copy-btn:hover{color:var(--primary);background:var(--primary-light)}
 .cr-copy-btn.copied{color:var(--success,#22c55e)!important;opacity:1}
@@ -1690,7 +1690,7 @@ function renderProfile(){
       </div>
       <div class="profile-card-body card-readonly" style="padding:14px 16px 10px">
         <div class="cr-row">
-          <div class="cr-field" style="flex:1 1 100%"><div class="cr-label">Address</div><div class="cr-value ${r.property?'':'empty'}">${r.property?esc(r.property):'Not set'}</div></div>
+          <div class="cr-field" style="flex:1 1 100%"><div class="cr-label">Address</div><div class="cr-value ${r.property?'':'empty'}">${r.property?esc(r.property):'Not set'}</div>${r.property?`<button class="cr-copy-btn" onclick="event.stopPropagation();copyAddress(this,'${r.id}')" title="Copy address"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>`:''}</div>
         </div>
         <div class="cr-row" style="gap:16px;align-items:flex-end">
           <div class="cr-field" style="min-width:50px;flex:0 1 auto"><div class="cr-label">Beds</div><div class="cr-value ${d.bedrooms?'':'empty'}">${d.bedrooms||'—'}</div></div>
