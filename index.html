@@ -550,7 +550,7 @@ h1 .hero-edit-input{font-size:1.35rem}
 
 
 /* ===== CALCULATOR TAB ===== */
-.calc-layout{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.calc-layout{display:grid;grid-template-columns:2fr 3fr;gap:16px}
 @media(max-width:900px){.calc-layout{grid-template-columns:1fr}}
 .calc-panel{min-width:0}
 .calc-section{margin-bottom:16px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
@@ -561,9 +561,9 @@ h1 .hero-edit-input{font-size:1.35rem}
 .calc-row.total-row{border-top:2px solid var(--border);padding-top:6px;margin-top:2px}
 .calc-row.total-row .calc-label{font-weight:700;color:var(--text)}
 .calc-row.total-row .calc-val{font-weight:700;font-size:.85rem}
-.calc-label{font-size:.78rem;color:var(--text2);flex:1;min-width:0;line-height:1.3}
+.calc-label{font-size:.85rem;color:var(--text2);flex:1;min-width:0;line-height:1.3}
 .calc-label-hint{font-size:.65rem;color:var(--text3);font-style:italic;display:block}
-.calc-val{width:130px;flex-shrink:0;text-align:right;display:flex;align-items:center;justify-content:flex-end;gap:0}
+.calc-val{width:100px;flex-shrink:0;text-align:right;display:flex;align-items:center;justify-content:flex-end;gap:0}
 .calc-dollar-sign{font-size:.78rem;color:var(--text3);font-weight:500;margin-right:1px;flex-shrink:0}
 .calc-pct-sign{font-size:.78rem;color:var(--text3);font-weight:500;margin-left:1px;flex-shrink:0}
 .calc-val input{width:100%;text-align:right;padding:4px 6px;border:1px solid transparent;border-radius:4px;font-size:.82rem;background:transparent;color:var(--text);font-family:inherit;transition:all .15s;cursor:pointer}
@@ -575,12 +575,12 @@ h1 .hero-edit-input{font-size:1.35rem}
 .calc-pct{width:70px}
 .calc-pct input{width:100%}
 /* Summary boxes on right panel */
-.calc-kpi-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px}
-.calc-kpi{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;text-align:center}
-.calc-kpi .kpi-label{font-size:.68rem;text-transform:uppercase;letter-spacing:.4px;color:var(--text3);font-weight:600;margin-bottom:2px}
-.calc-kpi .kpi-monthly{font-size:1rem;font-weight:700;color:var(--text)}
-.calc-kpi .kpi-per{font-size:.7rem;font-weight:400;color:var(--text3);margin-left:2px}
-.calc-kpi .kpi-annual{font-size:.7rem;color:var(--text3);margin-top:1px}
+.calc-kpi-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px}
+.calc-kpi{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 16px;text-align:center}
+.calc-kpi .kpi-label{font-size:.75rem;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);font-weight:600;margin-bottom:6px}
+.calc-kpi .kpi-monthly{font-size:1.25rem;font-weight:700;color:var(--text);line-height:1.4}
+.calc-kpi .kpi-per{font-size:.78rem;font-weight:400;color:var(--text3);margin-left:2px}
+.calc-kpi .kpi-annual{font-size:.78rem;color:var(--text3);margin-top:6px}
 .calc-kpi.positive .kpi-monthly{color:var(--success, #10b981)}
 .calc-kpi.negative .kpi-monthly{color:var(--danger, #ef4444)}
 /* Payback table */
@@ -1867,6 +1867,10 @@ function savePropDetail(recId, field, value){
   if(!r) return;
   if(!r.propertyDetails) r.propertyDetails = {};
   r.propertyDetails[field] = value;
+  // Reset cleaning manual override when bedrooms change so default re-syncs
+  if(field === 'bedrooms' && r.details && r.details.calculator){
+    delete r.details.calculator._cleaningManual;
+  }
   saveData();
   // Re-render Calculator/Analysis tabs when relevant fields change
   const crossTabFields = ['monthlyRent','bedrooms','bathrooms','sqft','deposit','applicationFee'];
@@ -3965,7 +3969,7 @@ const CALC_DEFAULTS = {
   garbageRecycling:20, channelManager:25, cityPermit:20.83,
   coHostPct:0
 };
-const CLEANING_DEFAULTS = {1:500, 2:650, 3:900, 4:1200};
+const CLEANING_DEFAULTS = {0:0, 1:500, 2:650, 3:900, 4:1200, 5:2000, 6:3000};
 
 function getCalc(r){
   if(!r.details) r.details = {};
@@ -3974,9 +3978,11 @@ function getCalc(r){
   for(const [k,v] of Object.entries(CALC_DEFAULTS)){
     if(c[k] === undefined || c[k] === null) c[k] = v;
   }
-  if(c.cleaning === undefined || c.cleaning === null){
-    const br = parseInt((r.propertyDetails||{}).bedrooms) || 2;
-    c.cleaning = CLEANING_DEFAULTS[Math.min(br,4)] || 650;
+  // Always sync cleaning default with bedroom count unless user manually edited it
+  const br = parseInt((r.propertyDetails||{}).bedrooms) || 0;
+  const defaultCleaning = CLEANING_DEFAULTS[Math.min(br,6)] !== undefined ? CLEANING_DEFAULTS[Math.min(br,6)] : 650;
+  if(!c._cleaningManual){
+    c.cleaning = defaultCleaning;
   }
   return c;
 }
@@ -4069,23 +4075,11 @@ function renderCalculatorTab(r){
   h += cRow('First & Last Month Rent', cInput('firstLastRent', c.firstLastRent), {hint:'if required up front'});
   h += cRow('Additional Fee #1', cInput('additionalFee1', c.additionalFee1));
   h += cRow('Additional Fee #2', cInput('additionalFee2', c.additionalFee2));
-  h += cRow('# of Bedrooms', cDisplay(v.br || '—'), {hint:'from Property Details'});
   h += cRow('Est. Cost Per Bedroom', cInput('costPerBR', c.costPerBR), {hint:'incl. common spaces'});
   h += cRow('# Extra Common Spaces', cInput('extraCommonSpaces', c.extraCommonSpaces, {noDollar:true}), {hint:'patios, bonus rooms'});
   h += cRow('Cost Per Extra Space', cInput('costPerExtraSpace', c.costPerExtraSpace));
   h += cRow('Est. Cost to Furnish', cDisplay(fmtAcct(v.furnishCost), {computed:true}));
   h += cRow('Total Money Invested', cDisplay(fmtAcct(v.totalInvested), {computed:true}), {total:true});
-  h += '</div></div>';
-
-  // Forecasted Revenue (driven by Analysis comps)
-  h += '<div class="calc-section"><div class="calc-section-header">Forecasted Revenue</div><div class="calc-section-body">';
-  const noComps = v.compsCount === 0;
-  const compHint = noComps ? 'add comps in Analysis tab' : 'avg from Analysis comps';
-  h += cRow('Average Daily Rate', cDisplay(noComps ? '$0' : fmtAcct2(v.avgDailyRate), {computed:!noComps}), {hint:compHint});
-  h += cRow('Est. Occupancy Rate', cDisplay(noComps ? '0%' : v.estOccupancyRate.toFixed(1)+'%', {computed:!noComps}), {hint:compHint});
-  h += cRow('Est. Days/Year Occupied', cDisplay(noComps ? '0' : fmtNum(v.daysOccupied), {computed:!noComps}));
-  h += cRow('Annual Revenue', cDisplay(noComps ? '$0' : fmtAcct(Math.round(v.annualRevenue)), {computed:!noComps}));
-  h += cRow('Monthly Revenue', cDisplay(noComps ? '$0' : fmtAcct(Math.round(v.monthlyRevenue)), {computed:!noComps}), {total:true});
   h += '</div></div>';
 
   // Monthly Operating Expenses
@@ -4114,8 +4108,19 @@ function renderCalculatorTab(r){
 
   h += '</div>'; // end left panel
 
-  // ══════ RIGHT PANEL: SUMMARY + PAYBACK ══════
+  // ══════ RIGHT PANEL: REVENUE + SUMMARY + PAYBACK ══════
   h += '<div class="calc-panel">';
+
+  // Forecasted Revenue (driven by Analysis comps)
+  h += '<div class="calc-section"><div class="calc-section-header">Forecasted Revenue</div><div class="calc-section-body">';
+  const noComps = v.compsCount === 0;
+  const compHint = noComps ? 'add comps in Analysis tab' : 'avg from Analysis comps';
+  h += cRow('Average Daily Rate', cDisplay(noComps ? '$0' : fmtAcct2(v.avgDailyRate), {computed:!noComps}), {hint:compHint});
+  h += cRow('Est. Occupancy Rate', cDisplay(noComps ? '0%' : v.estOccupancyRate.toFixed(1)+'%', {computed:!noComps}), {hint:compHint});
+  h += cRow('Est. Days/Year Occupied', cDisplay(noComps ? '0' : fmtNum(v.daysOccupied), {computed:!noComps}));
+  h += cRow('Annual Revenue', cDisplay(noComps ? '$0' : fmtAcct(Math.round(v.annualRevenue)), {computed:!noComps}));
+  h += cRow('Monthly Revenue', cDisplay(noComps ? '$0' : fmtAcct(Math.round(v.monthlyRevenue)), {computed:!noComps}), {total:true});
+  h += '</div></div>';
 
   // KPI Cards
   const cfClass = v.monthlyCF >= 0 ? 'positive' : 'negative';
@@ -4174,6 +4179,7 @@ function onCalcChange(field, value){
   if(!r.details) r.details = {};
   if(!r.details.calculator) r.details.calculator = {};
   r.details.calculator[field] = parseFloat(value) || 0;
+  if(field === 'cleaning') r.details.calculator._cleaningManual = true;
   saveData();
   const tabEl = document.querySelector('.tab-content[data-tab="calculator"]');
   if(tabEl){
