@@ -1693,6 +1693,21 @@ const PROP_SECTIONS = [
 
 /* ===== RENDER PROFILE ===== */
 function renderProfile(){
+  try { return _renderProfileInner(); } catch(e) {
+    console.error('[RR] renderProfile crashed for', currentProfileId, e);
+    const r = records.find(x => x.id === currentProfileId);
+    if(r) { console.error('[RR] Record data:', JSON.stringify({
+      id:r.id, property:r.property, name:r.name, notesCount:r.notes?.length,
+      noteTypes: r.notes?.map(n=>n.type), noteHasImages: r.notes?.map(n=>!!(n.images&&n.images.length)),
+      noteTexts: r.notes?.map(n=>(n.text||'').substring(0,80)),
+      noteHtmlSnippets: r.notes?.map(n=>(n.html||'').substring(0,80)),
+      hasPropertyNote: !!r.propertyNote,
+      propertyNoteSnippet: r.propertyNote ? (r.propertyNote.html||r.propertyNote.text||'').substring(0,80) : null
+    })); }
+    return '<div style="padding:20px;color:var(--danger)">Error rendering profile. Check browser console (F12) for details.<br><pre style="font-size:.75rem;margin-top:8px;white-space:pre-wrap">'+e.message+'</pre></div>';
+  }
+}
+function _renderProfileInner(){
   const r = records.find(x => x.id === currentProfileId);
   if(!r) return '<div>Record not found</div>';
   const d = r.propertyDetails || {};
@@ -3334,7 +3349,7 @@ function downloadFile(content, filename, type){
 
 /* ===== UTILS ===== */
 function truncate(s, n){ return s && s.length > n ? s.substring(0,n)+'…' : (s||'') }
-function esc(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') }
+function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') }
 function fmtPhone(s){
   if(!s) return '';
   const digits = s.replace(/\D/g,'');
