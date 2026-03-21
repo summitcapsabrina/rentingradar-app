@@ -5124,6 +5124,128 @@ function renderHeroAddress(r){
   return html;
 }
 
+// Metro market lookup: maps city (lowercase) → market name
+// Covers top US rental arbitrage markets; falls back to "City, ST" for unknowns
+const METRO_MARKETS = {
+  // Arizona
+  'phoenix':['Phoenix/Scottsdale','Phoenix'],'scottsdale':['Phoenix/Scottsdale','Scottsdale'],'tempe':['Phoenix/Scottsdale','Tempe'],'mesa':['Phoenix/Scottsdale','Mesa'],'chandler':['Phoenix/Scottsdale','Chandler'],'gilbert':['Phoenix/Scottsdale','Gilbert'],'glendale':['Phoenix/Scottsdale','Glendale'],'peoria':['Phoenix/Scottsdale','Peoria'],'surprise':['Phoenix/Scottsdale','Surprise'],'goodyear':['Phoenix/Scottsdale','Goodyear'],'buckeye':['Phoenix/Scottsdale','Buckeye'],'avondale':['Phoenix/Scottsdale','Avondale'],'queen creek':['Phoenix/Scottsdale','Queen Creek'],'cave creek':['Phoenix/Scottsdale','Cave Creek'],'fountain hills':['Phoenix/Scottsdale','Fountain Hills'],'paradise valley':['Phoenix/Scottsdale','Paradise Valley'],
+  'tucson':['Tucson','Tucson'],'oro valley':['Tucson','Oro Valley'],'marana':['Tucson','Marana'],'sahuarita':['Tucson','Sahuarita'],
+  'sedona':['Sedona/Flagstaff','Sedona'],'flagstaff':['Sedona/Flagstaff','Flagstaff'],'prescott':['Prescott','Prescott'],'payson':['Payson','Payson'],'pinetop-lakeside':['White Mountains','Pinetop-Lakeside'],'show low':['White Mountains','Show Low'],
+  // Florida
+  'miami':['Miami/Fort Lauderdale','Miami'],'miami beach':['Miami/Fort Lauderdale','Miami Beach'],'fort lauderdale':['Miami/Fort Lauderdale','Fort Lauderdale'],'hollywood':['Miami/Fort Lauderdale','Hollywood'],'pompano beach':['Miami/Fort Lauderdale','Pompano Beach'],'deerfield beach':['Miami/Fort Lauderdale','Deerfield Beach'],'boca raton':['Miami/Fort Lauderdale','Boca Raton'],'coral gables':['Miami/Fort Lauderdale','Coral Gables'],'hialeah':['Miami/Fort Lauderdale','Hialeah'],'doral':['Miami/Fort Lauderdale','Doral'],'aventura':['Miami/Fort Lauderdale','Aventura'],'sunny isles beach':['Miami/Fort Lauderdale','Sunny Isles Beach'],'hallandale beach':['Miami/Fort Lauderdale','Hallandale Beach'],
+  'orlando':['Orlando','Orlando'],'kissimmee':['Orlando','Kissimmee'],'davenport':['Orlando','Davenport'],'clermont':['Orlando','Clermont'],'winter park':['Orlando','Winter Park'],'lake buena vista':['Orlando','Lake Buena Vista'],'celebration':['Orlando','Celebration'],
+  'tampa':['Tampa/St. Pete','Tampa'],'st. petersburg':['Tampa/St. Pete','St. Petersburg'],'st petersburg':['Tampa/St. Pete','St. Petersburg'],'clearwater':['Tampa/St. Pete','Clearwater'],'brandon':['Tampa/St. Pete','Brandon'],'wesley chapel':['Tampa/St. Pete','Wesley Chapel'],
+  'jacksonville':['Jacksonville','Jacksonville'],'jacksonville beach':['Jacksonville','Jacksonville Beach'],
+  'destin':['Destin/Panama City','Destin'],'panama city beach':['Destin/Panama City','Panama City Beach'],'panama city':['Destin/Panama City','Panama City'],'fort walton beach':['Destin/Panama City','Fort Walton Beach'],'santa rosa beach':['Destin/Panama City','Santa Rosa Beach'],'miramar beach':['Destin/Panama City','Miramar Beach'],
+  'naples':['Naples/Fort Myers','Naples'],'fort myers':['Naples/Fort Myers','Fort Myers'],'cape coral':['Naples/Fort Myers','Cape Coral'],'bonita springs':['Naples/Fort Myers','Bonita Springs'],'marco island':['Naples/Fort Myers','Marco Island'],
+  'sarasota':['Sarasota/Bradenton','Sarasota'],'bradenton':['Sarasota/Bradenton','Bradenton'],'siesta key':['Sarasota/Bradenton','Siesta Key'],'anna maria':['Sarasota/Bradenton','Anna Maria'],
+  'key west':['Florida Keys','Key West'],'marathon':['Florida Keys','Marathon'],'islamorada':['Florida Keys','Islamorada'],'key largo':['Florida Keys','Key Largo'],
+  // Texas
+  'dallas':['Dallas/Fort Worth','Dallas'],'fort worth':['Dallas/Fort Worth','Fort Worth'],'arlington':['Dallas/Fort Worth','Arlington'],'plano':['Dallas/Fort Worth','Plano'],'irving':['Dallas/Fort Worth','Irving'],'frisco':['Dallas/Fort Worth','Frisco'],'mckinney':['Dallas/Fort Worth','McKinney'],'denton':['Dallas/Fort Worth','Denton'],'richardson':['Dallas/Fort Worth','Richardson'],
+  'houston':['Houston','Houston'],'the woodlands':['Houston','The Woodlands'],'sugar land':['Houston','Sugar Land'],'katy':['Houston','Katy'],'pearland':['Houston','Pearland'],'galveston':['Houston/Galveston','Galveston'],
+  'austin':['Austin','Austin'],'round rock':['Austin','Round Rock'],'cedar park':['Austin','Cedar Park'],'pflugerville':['Austin','Pflugerville'],'georgetown':['Austin','Georgetown'],'dripping springs':['Austin','Dripping Springs'],
+  'san antonio':['San Antonio','San Antonio'],'new braunfels':['San Antonio','New Braunfels'],
+  // Tennessee
+  'nashville':['Nashville','Nashville'],'franklin':['Nashville','Franklin'],'murfreesboro':['Nashville','Murfreesboro'],'brentwood':['Nashville','Brentwood'],
+  'memphis':['Memphis','Memphis'],'gatlinburg':['Smoky Mountains','Gatlinburg'],'pigeon forge':['Smoky Mountains','Pigeon Forge'],'sevierville':['Smoky Mountains','Sevierville'],
+  // Georgia
+  'atlanta':['Atlanta','Atlanta'],'decatur':['Atlanta','Decatur'],'marietta':['Atlanta','Marietta'],'roswell':['Atlanta','Roswell'],'alpharetta':['Atlanta','Alpharetta'],'sandy springs':['Atlanta','Sandy Springs'],'kennesaw':['Atlanta','Kennesaw'],'savannah':['Savannah','Savannah'],'tybee island':['Savannah','Tybee Island'],
+  // North Carolina
+  'charlotte':['Charlotte','Charlotte'],'concord':['Charlotte','Concord'],'huntersville':['Charlotte','Huntersville'],
+  'raleigh':['Raleigh/Durham','Raleigh'],'durham':['Raleigh/Durham','Durham'],'chapel hill':['Raleigh/Durham','Chapel Hill'],'cary':['Raleigh/Durham','Cary'],
+  'asheville':['Asheville','Asheville'],'black mountain':['Asheville','Black Mountain'],
+  'wilmington':['Wilmington','Wilmington'],'carolina beach':['Wilmington','Carolina Beach'],
+  // South Carolina
+  'charleston':['Charleston','Charleston'],'mount pleasant':['Charleston','Mount Pleasant'],'north charleston':['Charleston','North Charleston'],
+  'myrtle beach':['Myrtle Beach','Myrtle Beach'],'north myrtle beach':['Myrtle Beach','North Myrtle Beach'],
+  'hilton head island':['Hilton Head','Hilton Head Island'],'hilton head':['Hilton Head','Hilton Head'],
+  // California
+  'los angeles':['Los Angeles','Los Angeles'],'west hollywood':['Los Angeles','West Hollywood'],'santa monica':['Los Angeles','Santa Monica'],'beverly hills':['Los Angeles','Beverly Hills'],'pasadena':['Los Angeles','Pasadena'],'long beach':['Los Angeles','Long Beach'],'burbank':['Los Angeles','Burbank'],'glendale':['Los Angeles','Glendale'],'manhattan beach':['Los Angeles','Manhattan Beach'],'venice':['Los Angeles','Venice'],
+  'san diego':['San Diego','San Diego'],'la jolla':['San Diego','La Jolla'],'pacific beach':['San Diego','Pacific Beach'],'coronado':['San Diego','Coronado'],'oceanside':['San Diego','Oceanside'],'carlsbad':['San Diego','Carlsbad'],'encinitas':['San Diego','Encinitas'],
+  'san francisco':['San Francisco Bay Area','San Francisco'],'oakland':['San Francisco Bay Area','Oakland'],'berkeley':['San Francisco Bay Area','Berkeley'],'san jose':['San Francisco Bay Area','San Jose'],'palo alto':['San Francisco Bay Area','Palo Alto'],'mountain view':['San Francisco Bay Area','Mountain View'],
+  'palm springs':['Palm Springs/Coachella','Palm Springs'],'palm desert':['Palm Springs/Coachella','Palm Desert'],'la quinta':['Palm Springs/Coachella','La Quinta'],'indio':['Palm Springs/Coachella','Indio'],'joshua tree':['Palm Springs/Coachella','Joshua Tree'],'twentynine palms':['Palm Springs/Coachella','Twentynine Palms'],
+  'big bear lake':['Big Bear','Big Bear Lake'],'big bear city':['Big Bear','Big Bear City'],
+  'lake tahoe':['Lake Tahoe','Lake Tahoe'],'south lake tahoe':['Lake Tahoe','South Lake Tahoe'],'tahoe city':['Lake Tahoe','Tahoe City'],'truckee':['Lake Tahoe','Truckee'],
+  'anaheim':['Orange County','Anaheim'],'irvine':['Orange County','Irvine'],'newport beach':['Orange County','Newport Beach'],'huntington beach':['Orange County','Huntington Beach'],'laguna beach':['Orange County','Laguna Beach'],'dana point':['Orange County','Dana Point'],
+  'sacramento':['Sacramento','Sacramento'],'elk grove':['Sacramento','Elk Grove'],'roseville':['Sacramento','Roseville'],
+  // Nevada
+  'las vegas':['Las Vegas','Las Vegas'],'henderson':['Las Vegas','Henderson'],'north las vegas':['Las Vegas','North Las Vegas'],'summerlin':['Las Vegas','Summerlin'],
+  'reno':['Reno/Tahoe','Reno'],'sparks':['Reno/Tahoe','Sparks'],
+  // Colorado
+  'denver':['Denver','Denver'],'aurora':['Denver','Aurora'],'lakewood':['Denver','Lakewood'],'littleton':['Denver','Littleton'],'arvada':['Denver','Arvada'],'thornton':['Denver','Thornton'],'westminster':['Denver','Westminster'],
+  'colorado springs':['Colorado Springs','Colorado Springs'],
+  'breckenridge':['Colorado Mountains','Breckenridge'],'vail':['Colorado Mountains','Vail'],'aspen':['Colorado Mountains','Aspen'],'steamboat springs':['Colorado Mountains','Steamboat Springs'],'telluride':['Colorado Mountains','Telluride'],'estes park':['Colorado Mountains','Estes Park'],
+  // New York
+  'new york':['New York City','New York'],'brooklyn':['New York City','Brooklyn'],'queens':['New York City','Queens'],'bronx':['New York City','Bronx'],'manhattan':['New York City','Manhattan'],'staten island':['New York City','Staten Island'],
+  // Hawaii
+  'honolulu':['Honolulu/Oahu','Honolulu'],'kailua':['Honolulu/Oahu','Kailua'],'waikiki':['Honolulu/Oahu','Waikiki'],
+  'lahaina':['Maui','Lahaina'],'kihei':['Maui','Kihei'],'wailea':['Maui','Wailea'],'paia':['Maui','Paia'],
+  'kailua-kona':['Big Island','Kailua-Kona'],'hilo':['Big Island','Hilo'],
+  'poipu':['Kauai','Poipu'],'princeville':['Kauai','Princeville'],'kapaa':['Kauai','Kapaa'],
+  // Other popular markets
+  'seattle':['Seattle','Seattle'],'bellevue':['Seattle','Bellevue'],'tacoma':['Seattle','Tacoma'],'redmond':['Seattle','Redmond'],
+  'portland':['Portland','Portland'],'beaverton':['Portland','Beaverton'],'lake oswego':['Portland','Lake Oswego'],
+  'chicago':['Chicago','Chicago'],'evanston':['Chicago','Evanston'],'naperville':['Chicago','Naperville'],'schaumburg':['Chicago','Schaumburg'],
+  'detroit':['Detroit','Detroit'],'ann arbor':['Detroit/Ann Arbor','Ann Arbor'],'dearborn':['Detroit','Dearborn'],
+  'boston':['Boston','Boston'],'cambridge':['Boston','Cambridge'],'somerville':['Boston','Somerville'],'brookline':['Boston','Brookline'],
+  'washington':['Washington D.C.','Washington'],'arlington':['Washington D.C.','Arlington'],'alexandria':['Washington D.C.','Alexandria'],'bethesda':['Washington D.C.','Bethesda'],
+  'philadelphia':['Philadelphia','Philadelphia'],'king of prussia':['Philadelphia','King of Prussia'],
+  'baltimore':['Baltimore','Baltimore'],'towson':['Baltimore','Towson'],
+  'minneapolis':['Minneapolis/St. Paul','Minneapolis'],'saint paul':['Minneapolis/St. Paul','Saint Paul'],'st. paul':['Minneapolis/St. Paul','St. Paul'],
+  'new orleans':['New Orleans','New Orleans'],'metairie':['New Orleans','Metairie'],
+  'salt lake city':['Salt Lake City','Salt Lake City'],'park city':['Park City','Park City'],
+  'scottsdale':['Phoenix/Scottsdale','Scottsdale'],
+  'indianapolis':['Indianapolis','Indianapolis'],
+  'columbus':['Columbus','Columbus'],
+  'kansas city':['Kansas City','Kansas City'],
+  'louisville':['Louisville','Louisville'],
+  'st. louis':['St. Louis','St. Louis'],'saint louis':['St. Louis','Saint Louis'],
+  'pittsburgh':['Pittsburgh','Pittsburgh'],
+  'cincinnati':['Cincinnati','Cincinnati'],
+  'milwaukee':['Milwaukee','Milwaukee'],
+  'virginia beach':['Virginia Beach/Norfolk','Virginia Beach'],'norfolk':['Virginia Beach/Norfolk','Norfolk'],
+  'ocean city':['Ocean City','Ocean City'],
+  'gulf shores':['Gulf Shores/Orange Beach','Gulf Shores'],'orange beach':['Gulf Shores/Orange Beach','Orange Beach'],
+  'branson':['Branson','Branson'],
+  'lake of the ozarks':['Lake of the Ozarks','Lake of the Ozarks'],
+  'broken bow':['Broken Bow','Broken Bow'],
+  'blue ridge':['Blue Ridge','Blue Ridge'],'ellijay':['Blue Ridge','Ellijay'],
+  'poconos':['Poconos','Poconos'],'mount pocono':['Poconos','Mount Pocono'],'east stroudsburg':['Poconos','East Stroudsburg'],
+  'cape cod':['Cape Cod','Cape Cod'],'provincetown':['Cape Cod','Provincetown'],'hyannis':['Cape Cod','Hyannis'],
+  'bar harbor':['Acadia/Bar Harbor','Bar Harbor'],
+  'san juan':['San Juan','San Juan'],'condado':['San Juan','Condado'],
+};
+
+function getMarketFromCity(city, state, county, neighborhood){
+  if(!city) return { market:'', submarket:'' };
+  const key = city.toLowerCase().trim();
+
+  // 1. Check curated metro market lookup first (best names)
+  if(METRO_MARKETS[key]){
+    return { market: METRO_MARKETS[key][0], submarket: METRO_MARKETS[key][1] };
+  }
+
+  // 2. Use county as the market area (every US address has one)
+  //    Strip " County" suffix for cleaner display
+  let marketName = '';
+  if(county){
+    marketName = county.replace(/\s+County$/i, '').replace(/\s+Parish$/i, '').trim();
+    // If county name equals city name, add state for clarity
+    if(marketName.toLowerCase() === city.toLowerCase() && state){
+      marketName = marketName + ', ' + state.toUpperCase();
+    }
+  } else if(state){
+    marketName = city + ', ' + state.toUpperCase();
+  }
+
+  // 3. Submarket = neighborhood if available, otherwise city
+  const submarket = (neighborhood && neighborhood.toLowerCase() !== city.toLowerCase())
+    ? neighborhood
+    : city;
+
+  return { market: marketName || city, submarket: submarket };
+}
+
 function parseAddressParts(property){
   if(!property) return { street:'', unit:'', city:'', state:'', zip:'' };
   // Try to parse "Street, City State Zip" or "Street Unit X, City State Zip"
@@ -5257,6 +5379,14 @@ async function selectAddress(el, recId){
       if(ceCityEl && parts.city) ceCityEl.value = parts.city;
       if(ceStateEl && parts.state) ceStateEl.value = parts.state;
       if(ceZipEl && parts.zip) ceZipEl.value = parts.zip;
+      // Auto-fill market/submarket from city + county
+      if(parts.city){
+        const mkt = getMarketFromCity(parts.city, parts.state, parts.county, parts.neighborhood);
+        const ceMarketEl = document.getElementById('ce_market');
+        const ceSubmarketEl = document.getElementById('ce_submarket');
+        if(ceMarketEl) ceMarketEl.value = mkt.market;
+        if(ceSubmarketEl) ceSubmarketEl.value = mkt.submarket;
+      }
     }
   }
 
@@ -5282,6 +5412,8 @@ async function selectAddress(el, recId){
       parts.city = get('locality') || get('sublocality_level_1') || get('administrative_area_level_2');
       parts.state = getShort('administrative_area_level_1');
       parts.zip = get('postal_code');
+      parts.county = get('administrative_area_level_2');
+      parts.neighborhood = get('neighborhood') || get('sublocality_level_1') || '';
     } else {
       parts.street = description;
     }
@@ -5399,6 +5531,8 @@ function saveAddressEditor(recId){
     city: selected.city || cityVal,
     state: selected.state || stateVal,
     zip: selected.zip || zipVal,
+    county: selected.county || r.addressParts?.county || '',
+    neighborhood: selected.neighborhood || r.addressParts?.neighborhood || '',
   };
   // If autocomplete was used, also fill in city/state/zip fields that were left empty
   if(selected.street){
@@ -5409,6 +5543,13 @@ function saveAddressEditor(recId){
 
   r.addressParts = addrParts;
   r.property = formatAddressOneLine(addrParts);
+  // Auto-update market/submarket if not manually set
+  if(!r.propertyDetails) r.propertyDetails = {};
+  if(!r.propertyDetails.market && !r.propertyDetails.submarket && addrParts.city){
+    const mkt = getMarketFromCity(addrParts.city, addrParts.state, addrParts.county, addrParts.neighborhood);
+    r.propertyDetails.market = mkt.market;
+    r.propertyDetails.submarket = mkt.submarket;
+  }
   window._selectedAddrParts = null;
   saveData();
   document.getElementById('addressEditorOverlay')?.remove();
@@ -5965,6 +6106,8 @@ function saveContactCard(recId){
     city: cityVal || selected.city || '',
     state: stateVal || selected.state || '',
     zip: zipVal || selected.zip || '',
+    county: selected.county || r.addressParts?.county || '',
+    neighborhood: selected.neighborhood || r.addressParts?.neighborhood || '',
   };
   const newAddr = formatAddressOneLine(addrParts);
   if(newAddr !== r.property || JSON.stringify(addrParts) !== JSON.stringify(r.addressParts)){
@@ -5986,8 +6129,19 @@ function saveContactCard(recId){
   if(ceBaths !== undefined) r.propertyDetails.bathrooms = ceBaths;
   if(ceSqft !== undefined) r.propertyDetails.sqft = ceSqft;
   if(ceRent !== undefined) r.propertyDetails.monthlyRent = ceRent;
-  r.propertyDetails.market = document.getElementById('ce_market')?.value?.trim() || '';
-  r.propertyDetails.submarket = document.getElementById('ce_submarket')?.value?.trim() || '';
+  const ceMarketVal = document.getElementById('ce_market')?.value?.trim() || '';
+  const ceSubmarketVal = document.getElementById('ce_submarket')?.value?.trim() || '';
+  // Auto-derive market/submarket from city if empty
+  if(!ceMarketVal && !ceSubmarketVal && cityVal){
+    const county = r.addressParts?.county || '';
+    const neighborhood = r.addressParts?.neighborhood || '';
+    const mkt = getMarketFromCity(cityVal, stateVal, county, neighborhood);
+    r.propertyDetails.market = mkt.market;
+    r.propertyDetails.submarket = mkt.submarket;
+  } else {
+    r.propertyDetails.market = ceMarketVal;
+    r.propertyDetails.submarket = ceSubmarketVal;
+  }
   r.propertyDetails.availableDate = ceAvailNow ? 'now' : ceAvailDate;
 
   r.name = document.getElementById('ce_name')?.value?.trim() || '';
