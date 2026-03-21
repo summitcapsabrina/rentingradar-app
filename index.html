@@ -4491,11 +4491,11 @@ function renderAnalysisTab(r){
 
   // Always show table with columns (even if empty, show headers so Basic users know what to fill)
   h += '<div class="comp-table-wrap"><table class="comp-table">';
-  h += '<thead><tr><th>#</th><th>Revenue</th><th>Days</th><th>Occupancy</th><th>Rate</th><th>Guests</th><th>Bedrooms</th><th>Beds</th><th>Baths</th><th>Host</th><th>Rating</th><th class="comp-notes-cell">Notes</th><th></th><th>Link</th></tr></thead>';
+  h += '<thead><tr><th>#</th><th>Revenue</th><th>Days</th><th>Occupancy</th><th>Rate</th><th>Guests</th><th>Bedrooms</th><th>Beds</th><th>Baths</th><th>Host</th><th>Rating</th><th class="comp-notes-cell">Notes</th><th>Link</th><th></th></tr></thead>';
   h += '<tbody>';
   if(comps.length > 0){
     comps.forEach((comp, i) => {
-      const rating = comp.rating || 'competes';
+      const rating = comp.rating !== undefined ? comp.rating : '';
       const linkIcon = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>';
       h += '<tr>';
       h += '<td style="color:var(--text3)">'+(i+1)+'</td>';
@@ -4520,8 +4520,8 @@ function renderAnalysisTab(r){
       h += '</select></td>';
       const notePreview = comp.notes ? (comp.notes.replace(/<[^>]+>/g,' ').substring(0,30) + (comp.notes.length > 30 ? '...' : '')) : '';
       h += '<td class="comp-notes-cell"><div class="comp-notes-preview" onclick="openCompNoteEditor(\''+r.id+'\','+i+')" title="Click to edit notes">'+(notePreview || '<span style="color:var(--text3)">+ Note</span>')+'</div></td>';
-      h += '<td><button class="comp-remove" onclick="removeComp(\''+r.id+'\','+i+')" title="Remove">✕</button></td>';
       h += '<td class="comp-link-cell">'+(comp.link ? '<a href="'+esc(comp.link)+'" target="_blank" title="'+esc(comp.link)+'">'+linkIcon+'</a>' : '')+'</td>';
+      h += '<td><button class="comp-remove" onclick="confirmRemoveComp(\''+r.id+'\','+i+')" title="Remove">✕</button></td>';
       h += '</tr>';
     });
   } else {
@@ -4537,6 +4537,7 @@ function renderAnalysisTab(r){
     h += '<input type="text" id="compLinkInput" placeholder="Paste Airbnb link here..." onkeydown="if(event.key===\'Enter\'&&event.shiftKey){event.preventDefault();addComp(\''+r.id+'\')}" />';
     h += '<button onclick="addComp(\''+r.id+'\')">+ Add Comp</button>';
     h += '</div>';
+    h += '<div style="text-align:right;font-size:.68rem;color:var(--text3);margin-top:4px">Shift+Enter to add</div>';
   }
 
   h += '</div></div>';
@@ -4561,6 +4562,11 @@ function addComp(recId){
   });
   saveData();
   render();
+}
+
+function confirmRemoveComp(recId, idx){
+  if(!confirm('Are you sure you want to remove this comparable?')) return;
+  removeComp(recId, idx);
 }
 
 function removeComp(recId, idx){
