@@ -654,8 +654,12 @@ h1 .hero-edit-input{font-size:1.35rem}
 .comp-avg-bar{display:flex;gap:0;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:10px}
 .comp-avg-item{flex:1;text-align:center;padding:10px 8px;border-right:1px solid var(--border)}
 .comp-avg-item:last-child{border-right:none}
-.comp-avg-item .avg-label{font-size:.72rem;text-transform:uppercase;letter-spacing:.3px;color:var(--text3);font-weight:600}
-.comp-avg-item .avg-value{font-size:1.05rem;font-weight:700;color:var(--primary);margin-top:2px}
+.comp-avg-item .avg-label{font-size:.9rem;text-transform:uppercase;letter-spacing:.3px;color:var(--text3);font-weight:600}
+.comp-avg-item .avg-value{font-size:1.22rem;font-weight:700;color:var(--primary);margin-top:2px}
+/* Projections bar — larger than averages */
+.comp-proj-bar .avg-label{font-size:1.0rem}
+.comp-proj-bar .avg-value{font-size:1.4rem}
+.comp-proj-bar .comp-avg-item{padding:14px 8px}
 /* Revenue projections */
 .an-proj-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:10px}
 .an-proj-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px;text-align:center}
@@ -4427,14 +4431,15 @@ function renderAnalysisTab(r){
   //   Beats  → we earn MORE   (Likely ×1.15, Best ×1.20, Worst ×1.05)
   //   Competes → similar       (Likely ×1.00, Best ×1.05, Worst ×0.95)
   //   Loses  → we earn LESS   (Likely ×0.85, Best ×0.95, Worst ×0.80)
+  // Only comps with revenue data AND a rating set (not blank) contribute to projections
   let projLikely = 0, projBest = 0, projWorst = 0;
   const compsWithRev = comps.filter(c => {
+    const rating = c.rating || '';
+    if(!rating) return false; // skip unrated comps
     const rev = parseFloat(c.annualRevenue) || 0;
-    // If no direct revenue, estimate from rate × occupancy × days
     if(rev > 0) return true;
     const rate = parseFloat(c.nightlyRate) || 0;
     const occ = parseFloat(c.occupancy) || 0;
-    const days = parseFloat(c.daysAvailable) || 365;
     return rate > 0 && occ > 0;
   });
 
@@ -4453,7 +4458,7 @@ function renderAnalysisTab(r){
         const days = parseFloat(c.daysAvailable) || 365;
         rev = rate * days * (occ / 100);
       }
-      const rating = c.rating || 'competes';
+      const rating = c.rating;
       sumLikely += rev * (MULT.likely[rating] || 1);
       sumBest += rev * (MULT.best[rating] || 1);
       sumWorst += rev * (MULT.worst[rating] || 1);
@@ -4463,25 +4468,11 @@ function renderAnalysisTab(r){
     projWorst = Math.round(sumWorst / compsWithRev.length);
   }
 
-  // Show user overrides if set, otherwise auto-projected values
-  const userLikely = an.userLikely !== undefined ? parseFloat(an.userLikely) : null;
-  const userBest = an.userBest !== undefined ? parseFloat(an.userBest) : null;
-  const userWorst = an.userWorst !== undefined ? parseFloat(an.userWorst) : null;
-  const showLikely = userLikely !== null ? userLikely : projLikely;
-  const showBest = userBest !== null ? userBest : projBest;
-  const showWorst = userWorst !== null ? userWorst : projWorst;
-
-  // Revenue Projections bar (same style as averages bar)
-  h += '<div class="comp-avg-bar" style="margin-bottom:10px">';
-  h += '<div class="comp-avg-item"><div class="avg-label">Likely Revenue</div><div class="avg-value proj-editable" onclick="projEditCell(this)" data-field="userLikely" data-rec="'+r.id+'" data-raw="'+(showLikely||0)+'">'+(showLikely ? fmtMoney(showLikely) : '$0')+'</div>';
-  if(userLikely !== null && userLikely !== projLikely && projLikely > 0) h += '<div class="proj-original"><s>'+fmtMoney(projLikely)+'</s></div>';
-  h += '</div>';
-  h += '<div class="comp-avg-item"><div class="avg-label">Best Case</div><div class="avg-value proj-editable" onclick="projEditCell(this)" data-field="userBest" data-rec="'+r.id+'" data-raw="'+(showBest||0)+'" style="color:var(--success,#10b981)">'+(showBest ? fmtMoney(showBest) : '$0')+'</div>';
-  if(userBest !== null && userBest !== projBest && projBest > 0) h += '<div class="proj-original"><s>'+fmtMoney(projBest)+'</s></div>';
-  h += '</div>';
-  h += '<div class="comp-avg-item"><div class="avg-label">Worst Case</div><div class="avg-value proj-editable" onclick="projEditCell(this)" data-field="userWorst" data-rec="'+r.id+'" data-raw="'+(showWorst||0)+'" style="color:var(--danger,#ef4444)">'+(showWorst ? fmtMoney(showWorst) : '$0')+'</div>';
-  if(userWorst !== null && userWorst !== projWorst && projWorst > 0) h += '<div class="proj-original"><s>'+fmtMoney(projWorst)+'</s></div>';
-  h += '</div>';
+  // Revenue Projections bar (read-only, driven by comp ratings)
+  h += '<div class="comp-avg-bar comp-proj-bar" style="margin-bottom:10px">';
+  h += '<div class="comp-avg-item"><div class="avg-label">Likely Revenue</div><div class="avg-value">'+(projLikely ? fmtMoney(projLikely) : '$0')+'</div></div>';
+  h += '<div class="comp-avg-item"><div class="avg-label">Best Case</div><div class="avg-value" style="color:var(--success,#10b981)">'+(projBest ? fmtMoney(projBest) : '$0')+'</div></div>';
+  h += '<div class="comp-avg-item"><div class="avg-label">Worst Case</div><div class="avg-value" style="color:var(--danger,#ef4444)">'+(projWorst ? fmtMoney(projWorst) : '$0')+'</div></div>';
   h += '</div>';
 
   // Averages bar (Occ + Nightly Rate)
@@ -4522,6 +4513,7 @@ function renderAnalysisTab(r){
       h += '<td><div class="comp-editable" onclick="compEditCell(this)" data-field="bathrooms" data-rec="'+r.id+'" data-idx="'+i+'" data-raw="'+(comp.bathrooms||0)+'">'+(comp.bathrooms ? comp.bathrooms : '<span class="comp-placeholder">—</span>')+'</div></td>';
       h += '<td><input type="text" class="comp-inline-input" value="'+esc(comp.host||'')+'" placeholder="—" onchange="updateCompField(\''+r.id+'\','+i+',\'host\',this.value)" onkeydown="if(event.key===\'Enter\'){this.blur()}" /></td>';
       h += '<td><select class="comp-rating" onchange="updateCompField(\''+r.id+'\','+i+',\'rating\',this.value)">';
+      h += '<option value="" '+(rating===''?'selected':'')+'>—</option>';
       h += '<option value="beats" '+(rating==='beats'?'selected':'')+'>Beats</option>';
       h += '<option value="competes" '+(rating==='competes'?'selected':'')+'>Competes</option>';
       h += '<option value="loses" '+(rating==='loses'?'selected':'')+'>Loses</option>';
@@ -4542,7 +4534,7 @@ function renderAnalysisTab(r){
   // Add comp row — at the bottom
   if(comps.length < 20){
     h += '<div class="comp-add-row">';
-    h += '<input type="text" id="compLinkInput" placeholder="Paste Airbnb link here..." />';
+    h += '<input type="text" id="compLinkInput" placeholder="Paste Airbnb link here..." onkeydown="if(event.key===\'Enter\'&&event.shiftKey){event.preventDefault();addComp(\''+r.id+'\')}" />';
     h += '<button onclick="addComp(\''+r.id+'\')">+ Add Comp</button>';
     h += '</div>';
   }
@@ -4563,9 +4555,9 @@ function addComp(recId){
   const shortLink = link.replace(/\?.*$/,'').replace(/https?:\/\/(www\.)?airbnb\.com\/rooms\//,'').substring(0,18)+'...';
   comps.push({
     link: link, linkShort: shortLink,
-    annualRevenue:0, daysAvailable:365, occupancy:0, nightlyRate:0,
+    annualRevenue:0, daysAvailable:0, occupancy:0, nightlyRate:0,
     guests:0, bedrooms:0, beds:0, bathrooms:0, host:'',
-    rating:'competes', notes:''
+    rating:'', notes:''
   });
   saveData();
   render();
