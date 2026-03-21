@@ -587,9 +587,19 @@ h1 .hero-edit-input{font-size:1.35rem}
 .calc-label{font-size:.85rem;color:var(--text2);flex:1;min-width:0;line-height:1.3}
 .calc-label-hint{font-size:.65rem;color:var(--text3);font-style:italic;display:block}
 .calc-val{width:110px;flex-shrink:0;text-align:right;display:flex;align-items:center;justify-content:flex-end;gap:0}
+.pyn-col-headers{display:flex;align-items:flex-end;padding:8px 12px 0;gap:4px}
+.pyn-label-spacer{flex:1;min-width:0}
+.pyn-col-header{width:88px;flex-shrink:0;text-align:center;padding:6px 4px 4px;cursor:pointer;border-radius:6px 6px 0 0;transition:all .15s;position:relative;user-select:none}
+.pyn-col-header:hover:not(.pyn-col-disabled){background:rgba(148,163,184,.08)}
+.pyn-col-header.pyn-col-active{background:rgba(99,129,250,.06)}
+.pyn-col-header.pyn-col-disabled{opacity:.4;cursor:default}
+.pyn-col-label{font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.3px;color:var(--col-color)}
+.pyn-col-active .pyn-col-label{font-size:.68rem}
+.pyn-col-indicator{height:3px;background:var(--col-color);border-radius:3px 3px 0 0;margin:-1px -4px 0;position:absolute;bottom:0;left:4px;right:4px}
 .pyn-body .calc-row{gap:4px}
-.pyn-val{width:95px;text-align:center;justify-content:center;font-size:.78rem}
-.pyn-val .calc-display{font-size:.78rem}
+.pyn-val{width:88px;text-align:center;justify-content:center;font-size:.76rem;transition:opacity .15s}
+.pyn-val .calc-display{font-size:.76rem}
+.pyn-val-active{background:rgba(99,129,250,.04);border-radius:4px}
 .calc-dollar-sign{font-size:.78rem;color:var(--text3);font-weight:500;margin-right:1px;flex-shrink:0}
 .calc-pct-sign{font-size:.78rem;color:var(--text3);font-weight:500;margin-left:1px;flex-shrink:0}
 .calc-editable{padding:0 6px;border-radius:4px;cursor:pointer;height:28px;line-height:28px;font-size:.82rem;transition:background .15s;display:flex;align-items:center;justify-content:flex-end;overflow:hidden;box-sizing:border-box;width:100%;font-variant-numeric:tabular-nums}
@@ -4235,6 +4245,7 @@ function activateHeroInput(recId, field, containerId, currentVal){
 
 /* ===== PROFILE TABS ===== */
 let profileActiveTab = 'details';
+let calcProjMode = 'likely'; // 'avg','best','likely','worst'
 const tabScrollPositions = {};
 
 function setProfileTab(tab){
@@ -4253,6 +4264,11 @@ function setProfileTab(tab){
   } else if(scrollContainer){
     requestAnimationFrame(() => { scrollContainer.scrollTop = 0; });
   }
+}
+
+function setCalcProjMode(mode){
+  calcProjMode = mode;
+  render();
 }
 
 /* ===== CALCULATOR TAB ===== */
@@ -4429,15 +4445,31 @@ function renderCalculatorTab(r){
   // ══════ LEFT PANEL: KPI + INPUTS ══════
   h += '<div class="calc-panel">';
 
-  // KPI Cards (top of left panel) — use Likely when available, else Average
-  const kpiNOI = v.hasRatedData ? v.likelyD.monthlyNOI : v.monthlyNOI;
-  const kpiAnnualNOI = v.hasRatedData ? v.likelyD.annualNOI : v.annualNOI;
-  const kpiMonthlyCF = v.hasRatedData ? v.likelyD.monthlyCF : v.monthlyCF;
-  const kpiAnnualCF = v.hasRatedData ? v.likelyD.annualCF : v.annualCF;
-  const kpiCoC = v.hasRatedData ? v.likelyD.cocReturn : v.cocReturn;
+  // Resolve active projection data based on selected mode
+  const pm = calcProjMode; // 'avg','likely','best','worst'
+  const projLabels = { avg:'Comp Avg', likely:'Likely', best:'Best Case', worst:'Worst Case' };
+  const projColors = { avg:'var(--text3)', likely:'var(--primary)', best:'var(--success,#10b981)', worst:'var(--danger,#ef4444)' };
+  let activeD; // derived data for selected projection
+  if(pm === 'avg' || !v.hasRatedData){
+    activeD = { monthlyNOI: v.monthlyNOI, annualNOI: v.annualNOI, monthlyCF: v.monthlyCF, annualCF: v.annualCF, cocReturn: v.cocReturn };
+  } else if(pm === 'best' && v.bestD){
+    activeD = v.bestD;
+  } else if(pm === 'worst' && v.worstD){
+    activeD = v.worstD;
+  } else {
+    activeD = v.likelyD;
+  }
+  const activeProjLabel = v.hasRatedData ? projLabels[pm] : 'Comp Avg';
+
+  // KPI Cards (top of left panel) — driven by selected projection
+  const kpiNOI = activeD.monthlyNOI;
+  const kpiAnnualNOI = activeD.annualNOI;
+  const kpiMonthlyCF = activeD.monthlyCF;
+  const kpiAnnualCF = activeD.annualCF;
+  const kpiCoC = activeD.cocReturn;
   const cfClass = kpiMonthlyCF >= 0 ? 'positive' : 'negative';
   const cocClass = kpiCoC >= 0 ? 'positive' : 'negative';
-  const kpiTag = v.hasRatedData ? '<span style="font-size:.55rem;color:var(--primary);font-weight:600;margin-left:4px;vertical-align:middle;opacity:.7">LIKELY</span>' : '';
+  const kpiTag = '<span style="font-size:.55rem;color:'+projColors[v.hasRatedData?pm:'avg']+';font-weight:600;margin-left:4px;vertical-align:middle;opacity:.85">'+activeProjLabel.toUpperCase()+'</span>';
   h += '<div class="calc-kpi-grid calc-kpi-grid-left">';
   h += '<div class="calc-kpi"><div class="kpi-label">Net Operating Income'+kpiTag+'</div><div class="kpi-monthly">'+fmtMoney(Math.round(kpiNOI))+'<span class="kpi-per">/mo</span></div><div class="kpi-annual">'+fmtMoney(Math.round(kpiAnnualNOI))+'/yr</div></div>';
   h += '<div class="calc-kpi"><div class="kpi-label">Monthly Rent</div><div class="kpi-monthly">'+(v.monthlyRent ? fmtMoney(v.monthlyRent) : '<span style="color:var(--text3);font-style:italic">Set in Property Details</span>')+'<span class="kpi-per">/mo</span></div><div class="kpi-annual">'+fmtMoney(v.monthlyRent*12)+'/yr</div></div>';
@@ -4445,9 +4477,9 @@ function renderCalculatorTab(r){
   h += '<div class="calc-kpi '+cocClass+'"><div class="kpi-label">Cash on Cash Return'+kpiTag+'</div><div class="kpi-monthly">'+kpiCoC.toFixed(1)+'%</div><div class="kpi-annual">'+fmtMoney(Math.round(v.totalInvested))+' invested</div></div>';
   h += '</div>';
 
-  // Payback Period Visual (compact for left panel) — use Likely when available
+  // Payback Period Visual (compact for left panel) — driven by selected projection
   const inv = v.totalInvested;
-  const acf = Math.round(v.hasRatedData ? v.likelyD.annualCF : v.annualCF);
+  const acf = Math.round(activeD.annualCF);
   const cumVals = [];
   let cumRun = -inv;
   cumVals.push(cumRun);
@@ -4565,12 +4597,12 @@ function renderCalculatorTab(r){
   // ══════ RIGHT PANEL: NET INCOME + DEAL TEMP + REVENUE + PAYBACK ══════
   h += '<div class="calc-panel">';
 
-  // Projected Yearly Net (top of right panel) — Average + Likely columns
+  // Projected Yearly Net (top of right panel) — selectable columns
   const noComps = v.compsCount === 0;
-  const projAnnualRent = Math.round(v.monthlyRent * 12);
   const hasRated = v.hasRatedData;
+  const projAnnualRent = Math.round(v.monthlyRent * 12);
   const noDataHtml = '<span style="color:var(--text3);font-size:.7rem;font-style:italic">No data</span>';
-  // Helper: format net value — negative shows red with -($X), positive shows green
+  // Helper: format net value — negative shows red with -($X)/yr, positive shows green
   function fmtNet(val, suffix){
     if(val >= 0) return '<span style="color:var(--success);font-weight:700">'+fmtMoney(val)+suffix+'</span>';
     return '<span style="color:var(--danger);font-weight:700">-($'+Math.abs(val).toLocaleString()+')'+suffix+'</span>';
@@ -4579,86 +4611,96 @@ function renderCalculatorTab(r){
     if(val >= 0) return '<span style="color:var(--success)">'+fmtMoney(val)+suffix+'</span>';
     return '<span style="color:var(--danger)">-($'+Math.abs(val).toLocaleString()+')'+suffix+'</span>';
   }
-  // Column data: Average, Likely, Best, Worst
-  const avgAnnualRev = noComps ? 0 : Math.round(v.annualRevenue);
-  const avgAnnualExp = Math.round(v.annualExp);
-  const avgNet = avgAnnualRev - avgAnnualExp - projAnnualRent;
-  const avgMonthlyNet = Math.round(avgNet / 12);
 
-  const likelyAnnualRev = hasRated ? Math.round(v.likelyRevenue) : 0;
-  const likelyAnnualExp = hasRated ? Math.round(v.likelyD.annualExp) : 0;
-  const likelyNet = hasRated ? (likelyAnnualRev - likelyAnnualExp - projAnnualRent) : 0;
-  const likelyMonthlyNet = hasRated ? Math.round(likelyNet / 12) : 0;
+  // Column definitions: order is Comp Avg, Best, Likely, Worst
+  const cols = [
+    { key:'avg', label:'Comp Avg', color:'var(--text2)', tooltip:'Average from Competitor Analysis comps',
+      rev: noComps ? 0 : Math.round(v.annualRevenue), exp: Math.round(v.annualExp), hasData: true },
+    { key:'best', label:'Best', color:'var(--success,#10b981)', tooltip:'Best case scenario',
+      rev: hasRated ? Math.round(v.bestRevenue) : 0, exp: hasRated ? Math.round(v.bestD.annualExp) : 0, hasData: hasRated },
+    { key:'likely', label:'Likely', color:'var(--primary)', tooltip:'Likely projection based on comp ratings',
+      rev: hasRated ? Math.round(v.likelyRevenue) : 0, exp: hasRated ? Math.round(v.likelyD.annualExp) : 0, hasData: hasRated },
+    { key:'worst', label:'Worst', color:'var(--danger,#ef4444)', tooltip:'Worst case scenario',
+      rev: hasRated ? Math.round(v.worstRevenue) : 0, exp: hasRated ? Math.round(v.worstD.annualExp) : 0, hasData: hasRated }
+  ];
+  cols.forEach(col => {
+    col.net = col.hasData ? (col.rev - col.exp - projAnnualRent) : 0;
+    col.monthlyNet = col.hasData ? Math.round(col.net / 12) : 0;
+  });
 
-  const bestAnnualRev = hasRated ? Math.round(v.bestRevenue) : 0;
-  const bestAnnualExp = hasRated ? Math.round(v.bestD.annualExp) : 0;
-  const bestNet = hasRated ? (bestAnnualRev - bestAnnualExp - projAnnualRent) : 0;
-  const bestMonthlyNet = hasRated ? Math.round(bestNet / 12) : 0;
-
-  const worstAnnualRev = hasRated ? Math.round(v.worstRevenue) : 0;
-  const worstAnnualExp = hasRated ? Math.round(v.worstD.annualExp) : 0;
-  const worstNet = hasRated ? (worstAnnualRev - worstAnnualExp - projAnnualRent) : 0;
-  const worstMonthlyNet = hasRated ? Math.round(worstNet / 12) : 0;
-
-  // Column header style
-  const colW = 'width:95px;flex-shrink:0;text-align:center;font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.3px';
+  // Determine effective active mode (fall back to avg if rated data not available)
+  const effMode = (hasRated || pm === 'avg') ? pm : 'avg';
 
   h += '<div class="calc-section"><div class="calc-section-header">Projected Yearly Net</div>';
-  // Column headers
-  h += '<div style="display:flex;align-items:center;padding:6px 12px 2px;gap:4px">';
-  h += '<div style="flex:1;min-width:0"></div>';
-  h += '<div style="'+colW+';color:var(--text3)">Average</div>';
-  h += '<div style="'+colW+';color:var(--primary)">Likely</div>';
-  h += '<div style="'+colW+';color:var(--success,#10b981)">Best</div>';
-  h += '<div style="'+colW+';color:var(--danger,#ef4444)">Worst</div>';
+
+  // Clickable column headers
+  h += '<div class="pyn-col-headers">';
+  h += '<div class="pyn-label-spacer"></div>';
+  cols.forEach(col => {
+    const isActive = col.key === effMode;
+    const canClick = col.hasData;
+    h += '<div class="pyn-col-header'+(isActive?' pyn-col-active':'')+(!canClick?' pyn-col-disabled':'')+'" ';
+    h += 'style="--col-color:'+col.color+'" ';
+    if(canClick) h += 'onclick="setCalcProjMode(\''+col.key+'\')" ';
+    h += 'title="'+(canClick ? col.tooltip + (isActive ? ' (active)' : ' — click to select') : 'Rate comps in Competitor Analysis to enable')+'">';
+    h += '<span class="pyn-col-label">'+col.label+'</span>';
+    if(isActive) h += '<div class="pyn-col-indicator"></div>';
+    h += '</div>';
+  });
   h += '</div>';
+
   h += '<div class="calc-section-body pyn-body">';
 
-  // Annual Revenue row
-  h += '<div class="calc-row"><div class="calc-label">Annual Revenue</div>';
-  h += '<div class="calc-val pyn-val"><span class="calc-display'+(avgAnnualRev>0?' computed':'')+'">'+fmtAcct(avgAnnualRev)+'</span></div>';
-  h += '<div class="calc-val pyn-val"><span class="calc-display'+(hasRated?' computed':'')+'">'+(hasRated ? fmtAcct(likelyAnnualRev) : noDataHtml)+'</span></div>';
-  h += '<div class="calc-val pyn-val"><span class="calc-display'+(hasRated?' computed':'')+'">'+(hasRated ? fmtAcct(bestAnnualRev) : noDataHtml)+'</span></div>';
-  h += '<div class="calc-val pyn-val"><span class="calc-display'+(hasRated?' computed':'')+'">'+(hasRated ? fmtAcct(worstAnnualRev) : noDataHtml)+'</span></div>';
-  h += '</div>';
+  // Data rows — helper to build a row
+  function pynRow(label, getVal, opts){
+    const isTotal = opts && opts.total;
+    h += '<div class="calc-row'+(isTotal?' total-row':'')+'">';
+    h += '<div class="calc-label">'+label+'</div>';
+    cols.forEach(col => {
+      const isActive = col.key === effMode;
+      h += '<div class="calc-val pyn-val'+(isActive?' pyn-val-active':'')+'">';
+      h += getVal(col);
+      h += '</div>';
+    });
+    h += '</div>';
+  }
 
-  // Annual Operating Expenses row — subtraction sign, same style as revenue
-  h += '<div class="calc-row"><div class="calc-label">Annual Operating Expenses</div>';
-  h += '<div class="calc-val pyn-val"><span class="calc-display computed">-'+fmtMoney(avgAnnualExp)+'</span></div>';
-  h += '<div class="calc-val pyn-val"><span class="calc-display'+(hasRated?' computed':'')+'">'+(hasRated ? '-'+fmtMoney(likelyAnnualExp) : noDataHtml)+'</span></div>';
-  h += '<div class="calc-val pyn-val"><span class="calc-display'+(hasRated?' computed':'')+'">'+(hasRated ? '-'+fmtMoney(bestAnnualExp) : noDataHtml)+'</span></div>';
-  h += '<div class="calc-val pyn-val"><span class="calc-display'+(hasRated?' computed':'')+'">'+(hasRated ? '-'+fmtMoney(worstAnnualExp) : noDataHtml)+'</span></div>';
-  h += '</div>';
+  // Annual Revenue
+  pynRow('Annual Revenue', col => {
+    if(!col.hasData) return noDataHtml;
+    return '<span class="calc-display computed">'+fmtAcct(col.rev)+'</span>';
+  });
 
-  // Annual Rent row — subtraction sign, same style
-  h += '<div class="calc-row"><div class="calc-label">Annual Rent</div>';
-  h += '<div class="calc-val pyn-val"><span class="calc-display computed">-'+fmtMoney(projAnnualRent)+'</span></div>';
-  h += '<div class="calc-val pyn-val"><span class="calc-display computed">-'+fmtMoney(projAnnualRent)+'</span></div>';
-  h += '<div class="calc-val pyn-val"><span class="calc-display computed">-'+fmtMoney(projAnnualRent)+'</span></div>';
-  h += '<div class="calc-val pyn-val"><span class="calc-display computed">-'+fmtMoney(projAnnualRent)+'</span></div>';
-  h += '</div>';
+  // Annual Operating Expenses — subtraction sign, same style
+  pynRow('Annual Operating Expenses', col => {
+    if(!col.hasData) return noDataHtml;
+    return '<span class="calc-display computed">-'+fmtMoney(col.exp)+'</span>';
+  });
 
-  // Projected Yearly Net row
-  h += '<div class="calc-row total-row"><div class="calc-label">Projected Yearly Net</div>';
-  h += '<div class="calc-val pyn-val">'+fmtNet(avgNet,'/yr')+'</div>';
-  h += '<div class="calc-val pyn-val">'+(hasRated ? fmtNet(likelyNet,'/yr') : noDataHtml)+'</div>';
-  h += '<div class="calc-val pyn-val">'+(hasRated ? fmtNet(bestNet,'/yr') : noDataHtml)+'</div>';
-  h += '<div class="calc-val pyn-val">'+(hasRated ? fmtNet(worstNet,'/yr') : noDataHtml)+'</div>';
-  h += '</div>';
+  // Annual Rent — same across all
+  pynRow('Annual Rent', col => {
+    return '<span class="calc-display computed">-'+fmtMoney(projAnnualRent)+'</span>';
+  });
 
-  // Monthly Net row
-  h += '<div class="calc-row"><div class="calc-label">Monthly Net</div>';
-  h += '<div class="calc-val pyn-val">'+fmtNetLight(avgMonthlyNet,'/mo')+'</div>';
-  h += '<div class="calc-val pyn-val">'+(hasRated ? fmtNetLight(likelyMonthlyNet,'/mo') : noDataHtml)+'</div>';
-  h += '<div class="calc-val pyn-val">'+(hasRated ? fmtNetLight(bestMonthlyNet,'/mo') : noDataHtml)+'</div>';
-  h += '<div class="calc-val pyn-val">'+(hasRated ? fmtNetLight(worstMonthlyNet,'/mo') : noDataHtml)+'</div>';
-  h += '</div>';
+  // Projected Yearly Net
+  pynRow('Projected Yearly Net', col => {
+    if(!col.hasData) return noDataHtml;
+    return fmtNet(col.net, '/yr');
+  }, {total:true});
+
+  // Monthly Net
+  pynRow('Monthly Net', col => {
+    if(!col.hasData) return noDataHtml;
+    return fmtNetLight(col.monthlyNet, '/mo');
+  });
+
   h += '</div></div>';
 
-  // Deal Temperature — use Likely projection when available, fall back to Average
-  const dealMonthlyNet = hasRated ? likelyMonthlyNet : avgMonthlyNet;
+  // Deal Temperature — driven by selected projection
+  const dealCol = cols.find(c2 => c2.key === effMode) || cols[0];
+  const dealMonthlyNet = dealCol.monthlyNet;
   const dealTemp = dealMonthlyNet >= 1000 ? 'slam-dunk' : dealMonthlyNet >= 500 ? 'potential' : dealMonthlyNet > 0 ? 'risky' : 'no-go';
-  const dealSource = hasRated ? 'Based on Likely projection' : 'Based on Average (rate comps for Likely)';
+  const dealSource = 'Based on ' + (dealCol.label) + ' projection';
   const temps = [
     { key:'no-go', label:'No-Go', icon:'🚫', color:'#ef4444', desc:'Negative or zero cash flow' },
     { key:'risky', label:'Risky', icon:'⚠️', color:'#f59e0b', desc:'Under $500/mo net' },
