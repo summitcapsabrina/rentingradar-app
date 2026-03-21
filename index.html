@@ -4278,11 +4278,55 @@ function renderCalculatorTab(r){
   const noComps = v.compsCount === 0;
   const compHint = noComps ? 'add comps in Competitor Analysis tab' : 'avg from Competitor Analysis comps';
   h += cRow('Average Daily Rate', cDisplay(noComps ? '$0' : fmtAcct2(v.avgDailyRate), {computed:!noComps}), {hint:compHint});
-  h += cRow('Est. Occupancy Rate', cDisplay(noComps ? '0%' : v.estOccupancyRate.toFixed(1)+'%', {computed:!noComps}), {hint:compHint});
-  h += cRow('Est. Days/Year Occupied', cDisplay(noComps ? '0' : fmtNum(v.daysOccupied), {computed:!noComps}));
+  h += cRow('Avg Occupancy Rate', cDisplay(noComps ? '0%' : Math.round(v.estOccupancyRate)+'%', {computed:!noComps}), {hint:compHint});
+  h += cRow('Avg Days/Year Occupied', cDisplay(noComps ? '0' : fmtNum(v.daysOccupied), {computed:!noComps}));
   h += cRow('Annual Revenue', cDisplay(noComps ? '$0' : fmtAcct(Math.round(v.annualRevenue)), {computed:!noComps}));
   h += cRow('Monthly Revenue', cDisplay(noComps ? '$0' : fmtAcct(Math.round(v.monthlyRevenue)), {computed:!noComps}), {total:true});
   h += '</div></div>';
+
+  // Projected Net Income
+  const projAnnualRev = noComps ? 0 : Math.round(v.annualRevenue);
+  const projAnnualExp = Math.round(v.annualExp);
+  const projAnnualRent = Math.round(v.monthlyRent * 12);
+  const projNetIncome = projAnnualRev - projAnnualExp - projAnnualRent;
+  const projMonthlyNet = Math.round(projNetIncome / 12);
+
+  h += '<div class="calc-section"><div class="calc-section-header">Projected Net Income</div><div class="calc-section-body">';
+  h += cRow('Annual Revenue', cDisplay(fmtAcct(projAnnualRev), {computed: projAnnualRev > 0}));
+  h += cRow('Annual Operating Expenses', cDisplay('<span style="color:var(--danger)">(' + fmtMoney(projAnnualExp) + ')</span>', {}));
+  h += cRow('Annual Rent', cDisplay('<span style="color:var(--danger)">(' + fmtMoney(projAnnualRent) + ')</span>', {}));
+  const netCls = projNetIncome >= 0 ? 'color:var(--success)' : 'color:var(--danger)';
+  h += cRow('Projected Net Income', cDisplay('<span style="'+netCls+';font-weight:700">' + fmtMoney(projNetIncome) + '/yr</span>', {}), {total:true});
+  h += cRow('Monthly Net Income', cDisplay('<span style="'+netCls+'">' + fmtMoney(projMonthlyNet) + '/mo</span>', {}));
+  h += '</div></div>';
+
+  // Deal Temperature
+  // Formula: based on monthly net income relative to $1,000/mo target
+  // Slam-Dunk: >= $1,000/mo (meets or exceeds target)
+  // Potential:  $500 - $999/mo (could work with optimization)
+  // Risky:     $1 - $499/mo (thin margins, high risk)
+  // No-Go:     <= $0/mo (losing money)
+  const dealTemp = projMonthlyNet >= 1000 ? 'slam-dunk' : projMonthlyNet >= 500 ? 'potential' : projMonthlyNet > 0 ? 'risky' : 'no-go';
+  const temps = [
+    { key:'no-go', label:'No-Go', icon:'🚫', color:'#ef4444', desc:'Negative or zero cash flow' },
+    { key:'risky', label:'Risky', icon:'⚠️', color:'#f59e0b', desc:'Under $500/mo net' },
+    { key:'potential', label:'Potential', icon:'🔥', color:'#3b82f6', desc:'$500–$999/mo net' },
+    { key:'slam-dunk', label:'Slam-Dunk', icon:'🏆', color:'#10b981', desc:'$1,000+/mo net' }
+  ];
+  h += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:16px">';
+  temps.forEach(t => {
+    const active = dealTemp === t.key;
+    const bg = active ? t.color : 'var(--surface)';
+    const border = active ? t.color : 'var(--border)';
+    const textColor = active ? '#fff' : 'var(--text3)';
+    const opacity = active ? '1' : '0.5';
+    h += '<div style="background:'+bg+';border:2px solid '+border+';border-radius:var(--radius);padding:12px 8px;text-align:center;opacity:'+opacity+';transition:all .2s">';
+    h += '<div style="font-size:1.3rem;margin-bottom:4px">'+t.icon+'</div>';
+    h += '<div style="font-size:.82rem;font-weight:700;color:'+textColor+'">'+t.label+'</div>';
+    h += '<div style="font-size:.65rem;color:'+textColor+';opacity:.8;margin-top:2px">'+t.desc+'</div>';
+    h += '</div>';
+  });
+  h += '</div>';
 
   // Payback Period Table
   h += '<div class="calc-section"><div class="calc-section-header">Pay-Back Period (From Cash Flows)</div><div class="calc-section-body" style="padding:6px 4px;overflow-x:auto">';
