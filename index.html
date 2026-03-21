@@ -529,6 +529,10 @@ h1 .hero-edit-input{font-size:1.35rem}
 .hero-stat strong{font-weight:700;color:var(--text);font-size:.9rem}
 .hero-rent-editable{border-radius:4px;padding:0 4px;margin:-0px -4px;transition:background .15s}
 .hero-rent-editable:hover{background:rgba(99,129,250,.08)}
+.hero-market-badge{position:absolute;top:12px;right:16px;display:flex;align-items:center;gap:5px;font-size:.78rem;color:var(--text2);background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:4px 12px;cursor:pointer;transition:all .15s;z-index:2;white-space:nowrap}
+.hero-market-badge:hover{border-color:var(--primary);background:rgba(99,129,250,.04);color:var(--text)}
+.hero-market-empty{border-style:dashed}
+.hero-market-edit-wrap{position:absolute;top:12px;right:16px;display:flex;align-items:center;gap:6px;z-index:3;background:var(--surface);border:1px solid var(--primary);border-radius:20px;padding:4px 10px;box-shadow:0 0 0 2px rgba(99,129,250,.15)}
 .hero-stat-divider{width:1px;height:16px;background:var(--border)}
 
 /* ===== PROFILE TABS ===== */
@@ -1652,8 +1656,21 @@ function renderProfile(){
   const calcOk = requireTier('basic','Pro Forma');
   const proOk = requireTier('basic','Property Analysis');
 
+  const heroMarket = d.market || '';
+  const heroSubmarket = d.submarket || '';
+  const heroMarketHtml = (heroMarket || heroSubmarket) ? `
+    <div class="hero-market-badge" onclick="editHeroMarket(this,'${r.id}')" title="Click to edit market">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:.5;flex-shrink:0"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+      <span>${heroMarket ? esc(heroMarket) : ''}${heroMarket && heroSubmarket ? ' <span style="opacity:.4;margin:0 3px">›</span> ' : ''}${heroSubmarket ? esc(heroSubmarket) : ''}</span>
+    </div>` : `
+    <div class="hero-market-badge hero-market-empty" onclick="editHeroMarket(this,'${r.id}')" title="Click to add market">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:.4;flex-shrink:0"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+      <span style="opacity:.4">+ Market</span>
+    </div>`;
+
   let html = `
   <div class="profile-hero profile-sticky-header">
+    ${heroMarketHtml}
     <div class="profile-hero-left">
       <div class="hero-address-wrap">
         <div id="heroAddressDisplay">${renderHeroAddress(r)}</div>
@@ -4197,10 +4214,13 @@ function calcComputeAll(r){
   const monthlyRent = parseFloat(pd.monthlyRent) || 0;
   const furnishCost = (br * c.costPerBR) + (c.extraCommonSpaces * c.costPerExtraSpace);
   const totalInvested = c.applicationFees + c.securityDeposit + c.firstLastRent + c.additionalFee1 + c.additionalFee2 + furnishCost;
-  // Pull ADR and occupancy from Analysis comps
+  // Pull ADR and occupancy from Analysis comps (only comps with actual values)
   const comps = (r.details && r.details.comps) ? r.details.comps : [];
-  const compAvgRate = comps.length > 0 ? comps.reduce((s,x)=>s+(parseFloat(x.nightlyRate)||0),0)/comps.length : 0;
-  const compAvgOcc = comps.length > 0 ? comps.reduce((s,x)=>s+(parseFloat(x.occupancy)||0),0)/comps.length : 0;
+  const compsWithRate = comps.filter(x => parseFloat(x.nightlyRate) > 0);
+  const compsWithOcc = comps.filter(x => parseFloat(x.occupancy) > 0);
+  const compsWithDays = comps.filter(x => parseFloat(x.daysAvailable) > 0);
+  const compAvgRate = compsWithRate.length > 0 ? compsWithRate.reduce((s,x)=>s+parseFloat(x.nightlyRate),0)/compsWithRate.length : 0;
+  const compAvgOcc = compsWithOcc.length > 0 ? compsWithOcc.reduce((s,x)=>s+parseFloat(x.occupancy),0)/compsWithOcc.length : 0;
   const avgDailyRate = compAvgRate;
   const estOccupancyRate = compAvgOcc;
   const daysOccupied = 365 * (estOccupancyRate / 100);
@@ -4638,17 +4658,20 @@ function renderAnalysisTab(r){
   h += '<div class="comp-avg-item"><div class="avg-label">Worst Case</div><div class="avg-value" style="color:var(--danger,#ef4444)">'+(projWorst ? fmtMoney(projWorst) : '$0')+'</div></div>';
   h += '</div>';
 
-  // Averages bar (Daily Rate + Occ + Days Occupied)
+  // Averages bar (only count comps that have actual values for each metric)
   if(comps.length > 0){
-    const avgOcc = comps.reduce((s,x)=>s+(parseFloat(x.occupancy)||0),0)/comps.length;
-    const avgRate = comps.reduce((s,x)=>s+(parseFloat(x.nightlyRate)||0),0)/comps.length;
-    const avgDays = Math.round(comps.reduce((s,x)=>s+(parseFloat(x.daysAvailable)||0),0)/comps.length);
+    const rateComps = comps.filter(x => parseFloat(x.nightlyRate) > 0);
+    const occComps = comps.filter(x => parseFloat(x.occupancy) > 0);
+    const daysComps = comps.filter(x => parseFloat(x.daysAvailable) > 0);
+    const avgRate = rateComps.length > 0 ? rateComps.reduce((s,x)=>s+parseFloat(x.nightlyRate),0)/rateComps.length : 0;
+    const avgOcc = occComps.length > 0 ? occComps.reduce((s,x)=>s+parseFloat(x.occupancy),0)/occComps.length : 0;
+    const avgDays = daysComps.length > 0 ? Math.round(daysComps.reduce((s,x)=>s+parseFloat(x.daysAvailable),0)/daysComps.length) : 0;
     h += '<div class="comp-avg-bar" style="margin-bottom:14px">';
-    h += '<div class="comp-avg-item"><div class="avg-label">Average Daily Rate</div><div class="avg-value">$'+avgRate.toFixed(2)+'</div></div>';
-    h += '<div class="comp-avg-item"><div class="avg-label">Avg Occupancy Rate</div><div class="avg-value">'+Math.round(avgOcc)+'%</div></div>';
-    h += '<div class="comp-avg-item"><div class="avg-label">Avg Days/Year Occupied</div><div class="avg-value">'+avgDays+'</div></div>';
-    const estRevenue = Math.round(avgRate * avgDays);
-    h += '<div class="comp-avg-item"><div class="avg-label">Average Revenue</div><div class="avg-value">'+fmtMoney(estRevenue)+'</div></div>';
+    h += '<div class="comp-avg-item"><div class="avg-label">Average Daily Rate</div><div class="avg-value">'+(rateComps.length > 0 ? '$'+avgRate.toFixed(2) : '—')+'</div></div>';
+    h += '<div class="comp-avg-item"><div class="avg-label">Avg Occupancy Rate</div><div class="avg-value">'+(occComps.length > 0 ? Math.round(avgOcc)+'%' : '—')+'</div></div>';
+    h += '<div class="comp-avg-item"><div class="avg-label">Avg Days/Year Occupied</div><div class="avg-value">'+(daysComps.length > 0 ? avgDays : '—')+'</div></div>';
+    const estRevenue = (rateComps.length > 0 && daysComps.length > 0) ? Math.round(avgRate * avgDays) : 0;
+    h += '<div class="comp-avg-item"><div class="avg-label">Average Revenue</div><div class="avg-value">'+(estRevenue > 0 ? fmtMoney(estRevenue) : '—')+'</div></div>';
     h += '</div>';
   }
 
@@ -5833,6 +5856,10 @@ function openCardEditor(recId, cardType){
         <div class="prop-field"><label>ZIP Code</label><input type="text" id="ce_zip" value="${esc(ceAddr.zip||'')}" placeholder="85001" maxlength="10"></div>
       </div>
       <div style="display:flex;gap:8px;margin-bottom:8px">
+        <div class="prop-field" style="flex:1;min-width:0"><label>Market</label><input type="text" id="ce_market" value="${esc(d.market||'')}" placeholder="Phoenix/Scottsdale" style="font-size:.82rem;padding:5px 6px"></div>
+        <div class="prop-field" style="flex:1;min-width:0"><label>Submarket</label><input type="text" id="ce_submarket" value="${esc(d.submarket||'')}" placeholder="Tempe" style="font-size:.82rem;padding:5px 6px"></div>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:8px">
         <div class="prop-field" style="flex:1;min-width:0"><label>Beds</label><input type="number" id="ce_beds" value="${esc(d.bedrooms||'')}" placeholder="3" min="0" step="1" style="font-size:.82rem;padding:5px 6px"></div>
         <div class="prop-field" style="flex:1;min-width:0"><label>Baths</label><input type="number" id="ce_baths" value="${esc(d.bathrooms||'')}" placeholder="2" min="0" step="0.5" style="font-size:.82rem;padding:5px 6px"></div>
         <div class="prop-field" style="flex:1;min-width:0"><label>Sq Ft</label><input type="number" id="ce_sqft" value="${esc(d.sqft||'')}" placeholder="1200" min="0" style="font-size:.82rem;padding:5px 6px"></div>
@@ -5959,6 +5986,8 @@ function saveContactCard(recId){
   if(ceBaths !== undefined) r.propertyDetails.bathrooms = ceBaths;
   if(ceSqft !== undefined) r.propertyDetails.sqft = ceSqft;
   if(ceRent !== undefined) r.propertyDetails.monthlyRent = ceRent;
+  r.propertyDetails.market = document.getElementById('ce_market')?.value?.trim() || '';
+  r.propertyDetails.submarket = document.getElementById('ce_submarket')?.value?.trim() || '';
   r.propertyDetails.availableDate = ceAvailNow ? 'now' : ceAvailDate;
 
   r.name = document.getElementById('ce_name')?.value?.trim() || '';
@@ -6090,6 +6119,66 @@ function copyRecordField(btn, recId, field){
       btn.title = origTitle;
       btn.innerHTML = COPY_ICON;
     }, 1500);
+  });
+}
+
+function editHeroMarket(el, recId){
+  const r = records.find(x => x.id === recId);
+  if(!r) return;
+  if(!r.propertyDetails) r.propertyDetails = {};
+  const parent = el.parentElement;
+  const wrap = document.createElement('div');
+  wrap.className = 'hero-market-edit-wrap';
+  const svg = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:.5;flex-shrink:0"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>';
+  wrap.innerHTML = svg;
+  const mInput = document.createElement('input');
+  mInput.type = 'text';
+  mInput.value = r.propertyDetails.market || '';
+  mInput.placeholder = 'Market';
+  mInput.style.cssText = 'width:110px;padding:2px 6px;border:1px solid var(--border);border-radius:4px;font-size:.78rem;background:var(--bg);color:var(--text);outline:none';
+  const arrow = document.createElement('span');
+  arrow.style.cssText = 'opacity:.4;font-size:.8rem';
+  arrow.textContent = '›';
+  const sInput = document.createElement('input');
+  sInput.type = 'text';
+  sInput.value = r.propertyDetails.submarket || '';
+  sInput.placeholder = 'Submarket';
+  sInput.style.cssText = 'width:100px;padding:2px 6px;border:1px solid var(--border);border-radius:4px;font-size:.78rem;background:var(--bg);color:var(--text);outline:none';
+  wrap.appendChild(mInput);
+  wrap.appendChild(arrow);
+  wrap.appendChild(sInput);
+  el.style.display = 'none';
+  parent.appendChild(wrap);
+  mInput.focus();
+  mInput.select();
+
+  let saved = false;
+  function save(){
+    if(saved) return;
+    saved = true;
+    r.propertyDetails.market = mInput.value.trim();
+    r.propertyDetails.submarket = sInput.value.trim();
+    saveData();
+    render();
+  }
+  function onBlur(e){
+    setTimeout(() => {
+      if(!wrap.contains(document.activeElement)){
+        save();
+      }
+    }, 100);
+  }
+  mInput.addEventListener('blur', onBlur);
+  sInput.addEventListener('blur', onBlur);
+  mInput.addEventListener('keydown', (e) => {
+    if(e.key === 'Enter'){ e.preventDefault(); sInput.focus(); sInput.select(); }
+    if(e.key === 'Escape'){ saved = true; render(); }
+    if(e.key === 'Tab' && !e.shiftKey){ e.preventDefault(); sInput.focus(); sInput.select(); }
+  });
+  sInput.addEventListener('keydown', (e) => {
+    if(e.key === 'Enter'){ e.preventDefault(); save(); }
+    if(e.key === 'Escape'){ saved = true; render(); }
+    if(e.key === 'Tab' && e.shiftKey){ e.preventDefault(); mInput.focus(); mInput.select(); }
   });
 }
 
