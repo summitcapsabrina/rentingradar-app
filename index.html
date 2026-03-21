@@ -264,6 +264,28 @@ tr.clickable:hover{background:var(--primary-light)}
 .note-text ul ul{list-style-type:circle}
 .note-text ul ul ul{list-style-type:square}
 .note-text ul ul ul ul{list-style-type:'▫ '}
+.note-images{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.note-img-thumb{width:100px;height:auto;border-radius:6px;border:1px solid var(--border);cursor:pointer;transition:all .15s;object-fit:cover}
+.note-img-thumb:hover{border-color:var(--primary);box-shadow:0 2px 8px rgba(0,0,0,.15)}
+.note-img-badge{display:inline-flex;align-items:center;gap:4px;font-size:.68rem;color:var(--text3);margin-top:4px}
+.rte-editor img{max-width:120px;max-height:80px;border-radius:4px;vertical-align:middle;margin:2px}
+.rte-img-preview{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;padding:0 2px}
+.rte-img-preview-item{position:relative;display:inline-block}
+.rte-img-preview-item img{width:60px;height:60px;object-fit:cover;border-radius:6px;border:1px solid var(--border)}
+.rte-img-preview-item .rte-img-remove{position:absolute;top:-4px;right:-4px;width:18px;height:18px;border-radius:50%;background:var(--danger);color:#fff;border:none;cursor:pointer;font-size:.65rem;display:flex;align-items:center;justify-content:center;line-height:1;opacity:0;transition:opacity .15s}
+.rte-img-preview-item:hover .rte-img-remove{opacity:1}
+.note-img-popup-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(2px)}
+.note-img-popup{background:var(--surface);border-radius:12px;padding:20px;max-width:90vw;max-height:90vh;overflow:auto;position:relative;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.note-img-popup img{max-width:100%;max-height:70vh;border-radius:8px;display:block;margin:0 auto}
+.note-img-popup .nip-text{margin-top:14px;font-size:.9rem;line-height:1.5;color:var(--text)}
+.note-img-popup .nip-date{font-size:.75rem;color:var(--text3);margin-top:10px}
+.note-img-popup .nip-actions{position:absolute;top:12px;right:12px;display:flex;gap:6px;opacity:0;transition:opacity .15s}
+.note-img-popup:hover .nip-actions{opacity:1}
+.nip-actions button{width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:6px;color:var(--text3);background:var(--bg);border:1px solid var(--border);cursor:pointer;transition:all .12s}
+.nip-actions button:hover{color:var(--primary);border-color:var(--primary)}
+.nip-actions button.del:hover{color:var(--danger);border-color:var(--danger)}
+.note-img-popup .nip-close{position:absolute;top:12px;left:12px;width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:6px;color:var(--text3);background:var(--bg);border:1px solid var(--border);cursor:pointer;font-size:1rem}
+.note-img-popup .nip-close:hover{color:var(--text);border-color:var(--text2)}
 
 /* ===== NOTIFICATIONS PANEL ===== */
 .notif-panel{display:none;flex-direction:column}
@@ -1167,6 +1189,12 @@ function render(){
     case 'settings': area.innerHTML = renderSettings(); break;
   }
   updateNotifBadges();
+  // Set up paste handlers for Activity Log editors
+  if(currentView === 'profile' && currentProfileId){
+    requestAnimationFrame(() => {
+      setupNotePasteHandler('newNoteRte_'+currentProfileId, currentProfileId);
+    });
+  }
 }
 
 /* ===== DASHBOARD ===== */
@@ -1717,7 +1745,7 @@ function renderProfile(){
         <div class="profile-tabs">
           <div class="profile-tab ${activeTab==='details'?'active':''}" data-tab="details" onclick="setProfileTab('details')">🏠 Property Details</div>
           <div class="profile-tab ${activeTab==='expenses'?'active':''}" data-tab="expenses" onclick="setProfileTab('expenses')">💸 Expenses ${!calcOk?'<span class=\\"tab-lock basic\\">BASIC</span>':''}</div>
-          <div class="profile-tab ${activeTab==='analysis'?'active':''}" data-tab="analysis" onclick="setProfileTab('analysis')">🏆 Competitor Analysis ${!proOk?'<span class=\\"tab-lock basic\\">BASIC</span>':''}</div>
+          <div class="profile-tab ${activeTab==='analysis'?'active':''}" data-tab="analysis" onclick="setProfileTab('analysis')">📊 Competitor Analysis ${!proOk?'<span class=\\"tab-lock basic\\">BASIC</span>':''}</div>
           <div class="profile-tab ${activeTab==='calculator'?'active':''}" data-tab="calculator" onclick="setProfileTab('calculator')">💰 Projected Returns ${!calcOk?'<span class=\\"tab-lock basic\\">BASIC</span>':''}</div>
         </div>
       </div>
@@ -1783,10 +1811,11 @@ function renderProfile(){
           <div style="flex:1">
             ${buildRteToolbarHtml('newNoteRte_'+r.id)}
             <div class="rte-editor" contenteditable="true" id="newNoteRte_${r.id}" data-placeholder="Add a note...  (Ctrl+N)" onkeydown="handleRteKeydown(event,'${r.id}')"></div>
+            <div class="rte-img-preview" id="imgPreview_${r.id}"></div>
           </div>
           <button class="btn btn-primary btn-sm" onclick="addNote('${r.id}')" style="align-self:flex-end;white-space:nowrap">Add</button>
         </div>
-        <div style="font-size:.6rem;color:var(--text3);opacity:.6;margin-top:3px;text-align:right">Shift + Enter to save</div>
+        <div style="font-size:.6rem;color:var(--text3);opacity:.6;margin-top:3px;text-align:right">Paste screenshots to attach · Shift + Enter to save</div>
       </div>
       <div style="flex:1;overflow-y:auto;max-height:240px;padding:10px 16px 14px">
         <div class="note-list">
@@ -1795,10 +1824,13 @@ function renderProfile(){
             const emoji = n.type==='call'?'📞 ':n.type==='text'?'💬 ':n.type==='email'?'📧 ':n.type==='note'?'📝 ':'';
             const label = n.type==='import'?'Imported':n.type==='followup'?'Follow-up':n.type==='status'?'Status change':n.type==='call'?'Call':n.type==='text'?'Text':n.type==='email'?'Email':'Note';
             const noteContent = n.html ? n.html : esc(n.text);
+            const noteImages = n.images || [];
+            const imgHtml = noteImages.length > 0 ? '<div class="note-images">' + noteImages.map((src, imgIdx) => '<img class="note-img-thumb" src="'+src+'" alt="Attachment" onclick="openNoteImagePopup(\''+r.id+'\',\''+n.id+'\','+imgIdx+')">').join('') + '</div>' + '<div class="note-img-badge">📎 ' + noteImages.length + ' image' + (noteImages.length > 1 ? 's' : '') + ' attached</div>' : '';
             return `<div class="note-item">
             ${isUserNote?`<div class="note-actions"><button onclick="editNote('${r.id}','${n.id}')" title="Edit"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="del" onclick="deleteNote('${r.id}','${n.id}')" title="Delete"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button></div>`:''}
             <div class="note-date">${fmtDateTime(n.date)} • ${emoji}${label}${n.editedAt?' <span class="note-edited">(edited '+fmtDateTime(n.editedAt)+')</span>':''}</div>
             <div class="note-text">${noteContent}</div>
+            ${imgHtml}
           </div>`}).join('') + (r.date ? `<div class="note-item" style="opacity:.7"><div class="note-date">${fmtDateTime(r.date)} • 🏁 Account Created</div><div class="note-text">Property added to RentingRadar</div></div>` : '') : '<div style="color:var(--text3);font-size:.82rem">No activity yet</div>'}
         </div>
       </div>
@@ -2603,17 +2635,83 @@ function setNoteType(recId, type){
   }
 }
 
+// Pending images for new notes (keyed by recId)
+const pendingNoteImages = {};
+// Pending images for edit note popup
+let pendingEditImages = [];
+
+function setupNotePasteHandler(editorId, recId){
+  const ed = document.getElementById(editorId);
+  if(!ed || ed._pasteSetup) return;
+  ed._pasteSetup = true;
+  ed.addEventListener('paste', function(e){
+    const items = (e.clipboardData || e.originalEvent.clipboardData)?.items;
+    if(!items) return;
+    for(let i = 0; i < items.length; i++){
+      if(items[i].type.indexOf('image') !== -1){
+        e.preventDefault();
+        const blob = items[i].getAsFile();
+        if(!blob) return;
+        const reader = new FileReader();
+        reader.onload = function(ev){
+          const dataUrl = ev.target.result;
+          // Determine if this is a new-note editor or edit-note editor
+          const isEdit = editorId.startsWith('editNoteRte_');
+          if(isEdit){
+            pendingEditImages.push(dataUrl);
+            renderImgPreview('_editPreview', pendingEditImages);
+          } else {
+            if(!pendingNoteImages[recId]) pendingNoteImages[recId] = [];
+            pendingNoteImages[recId].push(dataUrl);
+            renderImgPreview('imgPreview_'+recId, pendingNoteImages[recId]);
+          }
+        };
+        reader.readAsDataURL(blob);
+        return;
+      }
+    }
+  });
+}
+
+function renderImgPreview(containerId, images){
+  let container = document.getElementById(containerId);
+  if(!container) return;
+  if(!images || images.length === 0){ container.innerHTML = ''; return; }
+  let h = '';
+  images.forEach((src, idx) => {
+    h += '<div class="rte-img-preview-item"><img src="'+src+'" alt="Attachment '+(idx+1)+'"><button class="rte-img-remove" onclick="removePreviewImg(\''+containerId+'\','+idx+')" title="Remove">×</button></div>';
+  });
+  container.innerHTML = h;
+}
+
+function removePreviewImg(containerId, idx){
+  if(containerId === '_editPreview'){
+    pendingEditImages.splice(idx, 1);
+    renderImgPreview(containerId, pendingEditImages);
+  } else {
+    const recId = containerId.replace('imgPreview_','');
+    if(pendingNoteImages[recId]){
+      pendingNoteImages[recId].splice(idx, 1);
+      renderImgPreview(containerId, pendingNoteImages[recId]);
+    }
+  }
+}
+
 function addNote(id){
   const ed = document.getElementById('newNoteRte_'+id);
   if(!ed) return;
   const html = ed.innerHTML.trim();
   const text = ed.innerText.trim();
-  if(!text) return;
+  const images = pendingNoteImages[id] || [];
+  if(!text && images.length === 0) return;
   const r = records.find(x => x.id===id);
   if(!r) return;
   const type = selectedNoteType[id] || 'note';
-  r.notes.push({ id:uid(), text:text, html:html, date:new Date().toISOString(), type:type });
+  const noteObj = { id:uid(), text:text, html:html, date:new Date().toISOString(), type:type };
+  if(images.length > 0) noteObj.images = images;
+  r.notes.push(noteObj);
   selectedNoteType[id] = 'note';
+  delete pendingNoteImages[id];
   saveData();
   render();
 }
@@ -2623,6 +2721,9 @@ function editNote(recId, noteId){
   if(!r) return;
   const note = r.notes.find(n => n.id === noteId);
   if(!note) return;
+
+  // Initialize pending edit images with existing note images
+  pendingEditImages = (note.images || []).slice();
 
   const overlay = document.createElement('div');
   overlay.className = 'stats-popup-overlay';
@@ -2639,6 +2740,8 @@ function editNote(recId, noteId){
     </div>
     ${buildRteToolbarHtml(editEditorId)}
     <div class="rte-editor" contenteditable="true" id="${editEditorId}" data-placeholder="Edit note..." onkeydown="handleRteKeydown(event,'${recId}')">${note.html || esc(note.text)}</div>
+    <div class="rte-img-preview" id="_editPreview"></div>
+    <div style="font-size:.6rem;color:var(--text3);opacity:.6;margin-top:3px">Paste screenshots to attach</div>
     <div class="sp-actions">
       <div style="font-size:.65rem;color:var(--text3);margin-right:auto;align-self:center">Shift + Enter to save</div>
       <button class="btn btn-secondary btn-sm" onclick="document.getElementById('editNoteOverlay').remove()">Cancel</button>
@@ -2654,6 +2757,9 @@ function editNote(recId, noteId){
   setTimeout(() => {
     const edEl = document.getElementById(editEditorId);
     if(edEl){ edEl.focus(); }
+    setupNotePasteHandler(editEditorId, recId);
+    // Render existing image previews
+    renderImgPreview('_editPreview', pendingEditImages);
   }, 100);
 }
 
@@ -2667,13 +2773,19 @@ function saveEditNote(recId, noteId){
   if(!ed) return;
   const newHtml = ed.innerHTML.trim();
   const newText = ed.innerText.trim();
-  if(!newText) return;
+  if(!newText && pendingEditImages.length === 0) return;
   const activeBtn = document.querySelector('#editNoteTypeBar .note-type-btn.active');
   const newType = activeBtn?.dataset?.type || note.type;
   note.text = newText;
   note.html = newHtml;
   note.type = newType;
   note.editedAt = new Date().toISOString();
+  if(pendingEditImages.length > 0){
+    note.images = pendingEditImages.slice();
+  } else {
+    delete note.images;
+  }
+  pendingEditImages = [];
   saveData();
   document.getElementById('editNoteOverlay')?.remove();
   render();
@@ -2686,6 +2798,57 @@ function deleteNote(recId, noteId){
   r.notes = r.notes.filter(n => n.id !== noteId);
   saveData();
   render();
+}
+
+function openNoteImagePopup(recId, noteId, imgIdx){
+  const r = records.find(x => x.id === recId);
+  if(!r) return;
+  const note = r.notes.find(n => n.id === noteId);
+  if(!note || !note.images || !note.images[imgIdx]) return;
+
+  const isUserNote = note.type==='note'||note.type==='call'||note.type==='text'||note.type==='email';
+  const emoji = note.type==='call'?'📞 ':note.type==='text'?'💬 ':note.type==='email'?'📧 ':note.type==='note'?'📝 ':'';
+  const label = note.type==='call'?'Call':note.type==='text'?'Text':note.type==='email'?'Email':'Note';
+  const noteContent = note.html ? note.html : esc(note.text);
+  const totalImages = note.images.length;
+
+  // Build image navigation if multiple images
+  let navHtml = '';
+  if(totalImages > 1){
+    navHtml = '<div style="display:flex;justify-content:center;gap:8px;margin-top:10px">';
+    if(imgIdx > 0) navHtml += '<button class="btn btn-secondary btn-sm" onclick="document.getElementById(\'noteImgPopup\').remove();openNoteImagePopup(\''+recId+'\',\''+noteId+'\','+(imgIdx-1)+')">← Prev</button>';
+    navHtml += '<span style="font-size:.75rem;color:var(--text3);align-self:center">'+(imgIdx+1)+' of '+totalImages+'</span>';
+    if(imgIdx < totalImages-1) navHtml += '<button class="btn btn-secondary btn-sm" onclick="document.getElementById(\'noteImgPopup\').remove();openNoteImagePopup(\''+recId+'\',\''+noteId+'\','+(imgIdx+1)+')">Next →</button>';
+    navHtml += '</div>';
+  }
+
+  const overlay = document.createElement('div');
+  overlay.className = 'note-img-popup-overlay';
+  overlay.id = 'noteImgPopup';
+  overlay.innerHTML = `<div class="note-img-popup" style="max-width:700px">
+    <button class="nip-close" onclick="document.getElementById('noteImgPopup').remove()" title="Close">×</button>
+    ${isUserNote?`<div class="nip-actions">
+      <button onclick="document.getElementById('noteImgPopup').remove();editNote('${recId}','${noteId}')" title="Edit"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+      <button class="del" onclick="document.getElementById('noteImgPopup').remove();deleteNote('${recId}','${noteId}')" title="Delete"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>
+    </div>`:''}
+    <img src="${note.images[imgIdx]}" alt="Attachment">
+    ${navHtml}
+    <div class="nip-text">${noteContent}</div>
+    <div class="nip-date">${fmtDateTime(note.date)} • ${emoji}${label}${note.editedAt?' <span style="font-style:italic">(edited '+fmtDateTime(note.editedAt)+')</span>':''}</div>
+  </div>`;
+
+  // Close on backdrop click
+  overlay.addEventListener('click', function(e){
+    if(e.target === overlay) overlay.remove();
+  });
+  // Close on Escape
+  overlay.addEventListener('keydown', function(e){
+    if(e.key === 'Escape') overlay.remove();
+  });
+  document.body.appendChild(overlay);
+  overlay.focus();
+  overlay.setAttribute('tabindex', '-1');
+  overlay.focus();
 }
 
 function deleteRecord(id){
@@ -4464,9 +4627,10 @@ function renderExpensesTab(r){
   const c = v.c;
   const isProUser = requireTier('pro','AI Estimates');
 
-  let h = '<div class="calc-layout"><div class="calc-panel" style="max-width:640px;margin:0 auto">';
+  let h = '<div class="calc-layout">';
 
-  // Investment Details
+  // Left panel: Investment Details
+  h += '<div class="calc-panel">';
   h += '<div class="calc-section"><div class="calc-section-header">Investment Details</div><div class="calc-section-body">';
   h += cRow('Application Fees', cInput('applicationFees', c.applicationFees));
   h += cRow('Security Deposit', cInput('securityDeposit', c.securityDeposit));
@@ -4479,8 +4643,10 @@ function renderExpensesTab(r){
   h += cRow('Est. Cost to Furnish', cDisplay(fmtAcct(v.furnishCost), {computed:true}));
   h += cRow('Total Money Invested', cDisplay(fmtAcct(v.totalInvested), {computed:true}), {total:true});
   h += '</div></div>';
+  h += '</div>';
 
-  // Monthly Operating Expenses
+  // Right panel: Monthly Operating Expenses
+  h += '<div class="calc-panel">';
   h += '<div class="calc-section"><div class="calc-section-header">Monthly Operating Expenses';
   h += '<button class="calc-ai-btn '+(isProUser?'':'locked')+'" onclick="'+(isProUser?'estimateExpensesAI(\''+r.id+'\')':'alert(\'AI expense estimation requires Pro plan.\')')+'" title="'+(isProUser?'Estimate for this market':'Pro plan required')+'">✨ AI Estimate'+(isProUser?'':' 🔒')+'</button>';
   h += '</div><div class="calc-section-body">';
@@ -4503,8 +4669,9 @@ function renderExpensesTab(r){
   h += cRow('Total Monthly Expenses', cDisplay(fmtAcct2(v.totalMonthlyExp), {computed:true}), {total:true});
   h += cRow('Annual Operating Expenses', cDisplay(fmtAcct(Math.round(v.annualExp)), {muted:true}));
   h += '</div></div>';
+  h += '</div>';
 
-  h += '</div></div>';
+  h += '</div>';
   return h;
 }
 
