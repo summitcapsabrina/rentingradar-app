@@ -367,7 +367,7 @@ tr.clickable:hover{background:var(--primary-light)}
 /* ===== PROFILE PAGE ===== */
 .profile-hero{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:20px;flex-wrap:wrap}
 .profile-sticky-header{position:sticky;top:0;z-index:40;background:var(--bg);padding:20px 24px 12px;border-bottom:1px solid var(--border);margin:0 -24px 16px}
-.profile-hero-left{flex:1;min-width:0}
+.profile-hero-left{flex:1;min-width:0;position:relative}
 .hero-contact-name{font-size:1.05rem;color:var(--text2);margin-top:2px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
 .hero-contact-item{display:inline-flex;align-items:center;gap:4px}
 .hero-contact-item .hero-copy-btn{opacity:0;border:none;background:transparent;cursor:pointer;color:var(--text3);padding:2px;border-radius:4px;transition:opacity .15s,color .15s;display:inline-flex;align-items:center;flex-shrink:0}
@@ -1670,8 +1670,8 @@ function renderProfile(){
 
   let html = `
   <div class="profile-hero profile-sticky-header">
-    ${heroMarketHtml}
     <div class="profile-hero-left">
+      ${heroMarketHtml}
       <div class="hero-address-wrap">
         <div id="heroAddressDisplay">${renderHeroAddress(r)}</div>
         <button class="hero-copy-btn" onclick="event.stopPropagation();copyAddress(this,'${r.id}')" title="Copy address"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>
