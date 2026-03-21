@@ -4570,7 +4570,7 @@ function renderAnalysisTab(r){
 
   // Always show table with columns (even if empty, show headers so Basic users know what to fill)
   h += '<div class="comp-table-wrap"><table class="comp-table">';
-  h += '<thead><tr><th>#</th><th>Revenue</th><th>Days</th><th>Occupancy</th><th>Rate</th><th>Guests</th><th>Bedrooms</th><th>Beds</th><th>Baths</th><th>Host</th><th>Rating</th><th class="comp-notes-cell">Notes</th><th>Link</th><th></th></tr></thead>';
+  h += '<thead><tr><th>#</th><th>Revenue</th><th>Days</th><th>Occupancy</th><th>Rate</th><th style="min-width:52px">Guests</th><th style="min-width:68px">Bedrooms</th><th style="min-width:46px">Beds</th><th style="min-width:50px">Baths</th><th>Host</th><th>Rating</th><th class="comp-notes-cell">Notes</th><th>Link</th><th></th></tr></thead>';
   h += '<tbody>';
   if(comps.length > 0){
     comps.forEach((comp, i) => {
@@ -4590,7 +4590,7 @@ function renderAnalysisTab(r){
       h += '<td><div class="comp-editable" onclick="compEditCell(this)" data-field="bedrooms" data-rec="'+r.id+'" data-idx="'+i+'" data-raw="'+(comp.bedrooms||0)+'">'+(comp.bedrooms ? comp.bedrooms : '<span class="comp-placeholder">—</span>')+'</div></td>';
       h += '<td><div class="comp-editable" onclick="compEditCell(this)" data-field="beds" data-rec="'+r.id+'" data-idx="'+i+'" data-raw="'+(comp.beds||0)+'">'+(comp.beds ? comp.beds : '<span class="comp-placeholder">—</span>')+'</div></td>';
       h += '<td><div class="comp-editable" onclick="compEditCell(this)" data-field="bathrooms" data-rec="'+r.id+'" data-idx="'+i+'" data-raw="'+(comp.bathrooms||0)+'">'+(comp.bathrooms ? comp.bathrooms : '<span class="comp-placeholder">—</span>')+'</div></td>';
-      h += '<td><input type="text" class="comp-inline-input" value="'+esc(comp.host||'')+'" placeholder="—" onchange="updateCompField(\''+r.id+'\','+i+',\'host\',this.value)" onkeydown="if(event.key===\'Enter\'){this.blur()}" /></td>';
+      h += '<td><div class="comp-editable" onclick="compEditCell(this)" data-field="host" data-rec="'+r.id+'" data-idx="'+i+'" data-raw="'+esc(comp.host||'')+'" data-type="text">'+(comp.host ? esc(comp.host) : '<span class="comp-placeholder">—</span>')+'</div></td>';
       h += '<td><select class="comp-rating" onchange="updateCompField(\''+r.id+'\','+i+',\'rating\',this.value)">';
       h += '<option value="" '+(rating===''?'selected':'')+'>—</option>';
       h += '<option value="beats" '+(rating==='beats'?'selected':'')+'>Beats</option>';
@@ -4757,15 +4757,16 @@ function compEditCell(el, skipBlurSave){
   const td = el.closest('td');
   if(td){ td.style.width = td.offsetWidth + 'px'; }
 
+  const isText = el.dataset.type === 'text';
   const step = field === 'nightlyRate' ? '0.01' : (field === 'occupancy' ? '0.1' : '1');
   const input = document.createElement('input');
-  input.type = 'number';
-  input.step = step;
+  input.type = isText ? 'text' : 'number';
+  if(!isText) input.step = step;
   input.className = 'comp-inline-input';
   input.style.width = '100%';
   input.style.maxWidth = '100%';
   input.style.boxSizing = 'border-box';
-  input.value = raw && raw !== '0' ? raw : '';
+  input.value = isText ? (raw || '') : (raw && raw !== '0' ? raw : '');
   input.placeholder = '—';
 
   el.textContent = '';
