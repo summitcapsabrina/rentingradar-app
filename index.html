@@ -4346,7 +4346,9 @@ function renderCalculatorTab(r){
       breakEvenYear = y - 1 + (Math.abs(prev) / (Math.abs(prev) + cumRun));
     }
   }
-  const maxAbs = Math.max(...cumVals.map(v => Math.abs(v)), 1);
+  // Find max negative and max positive separately for proportional scaling
+  const maxNeg = Math.max(...cumVals.filter(v => v < 0).map(v => Math.abs(v)), 1);
+  const maxPos = Math.max(...cumVals.filter(v => v >= 0).map(v => v), 1);
 
   // Headline
   let paybackHeadline, paybackSub, paybackColor;
@@ -4385,25 +4387,26 @@ function renderCalculatorTab(r){
   h += '<div style="text-align:center"><div style="font-size:.65rem;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">Year 10 Balance</div><div style="font-size:.9rem;font-weight:700;color:'+(cumVals[10]>=0?'var(--success, #10b981)':'var(--danger, #ef4444)')+'">'+fmtMoney(Math.round(cumVals[10]))+'</div></div>';
   h += '</div>';
 
-  // Visual bar chart
+  // Visual bar chart — bars scale to 48% of track width (each side of center)
   h += '<div class="payback-chart">';
   for(let y=0; y<=10; y++){
     const val = cumVals[y];
-    const pct = Math.min(Math.abs(val) / maxAbs * 100, 100);
     const isNeg = val < 0;
+    // Scale each bar relative to its side's max, capped at 48% of total track
+    const pct = isNeg
+      ? (Math.abs(val) / maxNeg) * 48
+      : (val / maxPos) * 48;
     const barColor = isNeg ? 'var(--danger, #ef4444)' : 'var(--success, #10b981)';
     const isBreakEven = breakEvenYear !== null && y === Math.ceil(breakEvenYear);
 
     h += '<div class="payback-row">';
     h += '<div class="payback-yr-label">Yr '+y+'</div>';
     h += '<div class="payback-bar-track">';
-    // Center line (zero point)
     h += '<div class="payback-zero-line"></div>';
-    // Bar — left side for negative, right side for positive
     if(isNeg){
-      h += '<div class="payback-bar payback-bar-neg" style="width:'+pct+'%;background:'+barColor+';opacity:'+(y===0?'1':'.75')+'"></div>';
+      h += '<div class="payback-bar payback-bar-neg" style="width:'+pct.toFixed(1)+'%;background:'+barColor+';opacity:'+(y===0?'1':'.75')+'"></div>';
     } else {
-      h += '<div class="payback-bar payback-bar-pos" style="width:'+pct+'%;background:'+barColor+';opacity:.85"></div>';
+      h += '<div class="payback-bar payback-bar-pos" style="width:'+(val===0?'0':pct.toFixed(1))+'%;background:'+barColor+';opacity:.85"></div>';
     }
     if(isBreakEven){
       h += '<div class="payback-break-marker" title="Break-even point">&#9733;</div>';
