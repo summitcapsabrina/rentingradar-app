@@ -601,6 +601,11 @@ h1 .hero-edit-input{font-size:1.35rem}
 .payback-bar-pos{left:50%;border-radius:0 3px 3px 0}
 .payback-val{width:70px;font-size:.72rem;font-weight:700;text-align:right;flex-shrink:0;font-variant-numeric:tabular-nums}
 .payback-break-marker{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:.7rem;color:#f59e0b;z-index:2;filter:drop-shadow(0 0 2px rgba(0,0,0,.3))}
+.payback-chart-compact .payback-row{height:18px;gap:4px}
+.payback-chart-compact .payback-bar-track{height:12px}
+.payback-chart-compact .payback-yr-label{white-space:nowrap;width:26px;font-size:.62rem}
+.payback-chart-compact .payback-val{width:auto;min-width:0;font-size:.65rem;white-space:nowrap}
+.payback-chart-compact{gap:2px}
 /* AI button */
 .calc-ai-btn{display:inline-flex;align-items:center;gap:4px;font-size:.68rem;padding:2px 8px;border-radius:12px;border:1px solid rgba(16,185,129,.3);background:rgba(16,185,129,.08);color:#10b981;cursor:pointer;font-weight:600;transition:all .15s;margin-left:auto}
 .calc-ai-btn:hover{background:rgba(16,185,129,.15);border-color:#10b981}
@@ -4235,6 +4240,83 @@ function renderCalculatorTab(r){
   h += '<div class="calc-kpi '+cocClass+'"><div class="kpi-label">Cash on Cash Return</div><div class="kpi-monthly">'+v.cocReturn.toFixed(1)+'%</div><div class="kpi-annual">'+fmtMoney(Math.round(v.totalInvested))+' invested</div></div>';
   h += '</div>';
 
+  // Payback Period Visual (compact for left panel)
+  const inv = v.totalInvested;
+  const acf = Math.round(v.annualCF);
+  const cumVals = [];
+  let cumRun = -inv;
+  cumVals.push(cumRun);
+  let breakEvenYear = null;
+  for(let y=1; y<=10; y++){
+    const prev = cumRun;
+    cumRun += acf;
+    cumVals.push(cumRun);
+    if(breakEvenYear === null && prev < 0 && cumRun >= 0){
+      breakEvenYear = y - 1 + (Math.abs(prev) / (Math.abs(prev) + cumRun));
+    }
+  }
+  const maxNeg = Math.max(...cumVals.filter(v => v < 0).map(v => Math.abs(v)), 1);
+  const maxPos = Math.max(...cumVals.filter(v => v >= 0).map(v => v), 1);
+
+  let paybackHeadline, paybackSub, paybackColor;
+  if(inv === 0){
+    paybackHeadline = 'No Investment';
+    paybackSub = 'Enter your costs in Investment Details';
+    paybackColor = 'var(--text3)';
+  } else if(acf <= 0){
+    paybackHeadline = 'Not Recoverable';
+    paybackSub = 'Cash flow is negative — investment won\'t pay back';
+    paybackColor = 'var(--danger, #ef4444)';
+  } else if(breakEvenYear !== null){
+    const yrs = Math.floor(breakEvenYear);
+    const mos = Math.round((breakEvenYear - yrs) * 12);
+    paybackHeadline = yrs + (yrs===1?' year':' years') + (mos > 0 ? ', ' + mos + (mos===1?' month':' months') : '');
+    paybackSub = 'to recover your ' + fmtMoney(inv) + ' investment';
+    paybackColor = breakEvenYear <= 3 ? 'var(--success, #10b981)' : breakEvenYear <= 6 ? '#f59e0b' : 'var(--danger, #ef4444)';
+  } else {
+    paybackHeadline = '10+ years';
+    paybackSub = 'Investment not recovered within 10 years';
+    paybackColor = 'var(--danger, #ef4444)';
+  }
+
+  h += '<div class="calc-section"><div class="calc-section-header">Payback Period</div><div class="calc-section-body" style="padding:8px 10px">';
+  h += '<div style="text-align:center;margin-bottom:10px">';
+  h += '<div style="font-size:1.1rem;font-weight:800;color:'+paybackColor+'">'+paybackHeadline+'</div>';
+  h += '<div style="font-size:.7rem;color:var(--text3);margin-top:1px">'+paybackSub+'</div>';
+  h += '</div>';
+
+  h += '<div style="display:flex;justify-content:space-around;margin-bottom:10px;gap:4px">';
+  h += '<div style="text-align:center"><div style="font-size:.6rem;color:var(--text3);text-transform:uppercase;letter-spacing:.4px">Investment</div><div style="font-size:.78rem;font-weight:700;color:var(--danger, #ef4444)">'+fmtMoney(inv)+'</div></div>';
+  h += '<div style="text-align:center"><div style="font-size:.6rem;color:var(--text3);text-transform:uppercase;letter-spacing:.4px">Annual Cash Flow</div><div style="font-size:.78rem;font-weight:700;color:'+(acf>=0?'var(--success, #10b981)':'var(--danger, #ef4444)')+'">'+fmtMoney(acf)+'/yr</div></div>';
+  h += '<div style="text-align:center"><div style="font-size:.6rem;color:var(--text3);text-transform:uppercase;letter-spacing:.4px">Yr 10 Balance</div><div style="font-size:.78rem;font-weight:700;color:'+(cumVals[10]>=0?'var(--success, #10b981)':'var(--danger, #ef4444)')+'">'+fmtMoney(Math.round(cumVals[10]))+'</div></div>';
+  h += '</div>';
+
+  h += '<div class="payback-chart payback-chart-compact">';
+  for(let y=0; y<=10; y++){
+    const val = cumVals[y];
+    const isNeg = val < 0;
+    const pct = isNeg ? (Math.abs(val)/maxNeg)*48 : (val/maxPos)*48;
+    const barColor = isNeg ? 'var(--danger, #ef4444)' : 'var(--success, #10b981)';
+    const isBreakEven = breakEvenYear !== null && y === Math.ceil(breakEvenYear);
+    h += '<div class="payback-row">';
+    h += '<div class="payback-yr-label">Yr '+y+'</div>';
+    h += '<div class="payback-bar-track">';
+    h += '<div class="payback-zero-line"></div>';
+    if(isNeg){
+      h += '<div class="payback-bar payback-bar-neg" style="width:'+pct.toFixed(1)+'%;background:'+barColor+';opacity:'+(y===0?'1':'.75')+'"></div>';
+    } else {
+      h += '<div class="payback-bar payback-bar-pos" style="width:'+(val===0?'0':pct.toFixed(1))+'%;background:'+barColor+';opacity:.85"></div>';
+    }
+    if(isBreakEven){
+      h += '<div class="payback-break-marker" title="Break-even point">&#9733;</div>';
+    }
+    h += '</div>';
+    h += '<div class="payback-val" style="color:'+(isNeg?'var(--danger, #ef4444)':'var(--success, #10b981)')+'">'+fmtMoney(Math.round(val))+'</div>';
+    h += '</div>';
+  }
+  h += '</div>';
+  h += '</div></div>';
+
   // Investment Details
   h += '<div class="calc-section"><div class="calc-section-header">Investment Details</div><div class="calc-section-body">';
   h += cRow('Application Fees', cInput('applicationFees', c.applicationFees));
@@ -4326,97 +4408,6 @@ function renderCalculatorTab(r){
   h += cRow('Avg Days/Year Occupied', cDisplay(noComps ? '0' : fmtNum(v.daysOccupied), {computed:!noComps}));
   h += cRow('Annual Revenue', cDisplay(noComps ? '$0' : fmtAcct(Math.round(v.annualRevenue)), {computed:!noComps}));
   h += cRow('Monthly Revenue', cDisplay(noComps ? '$0' : fmtAcct(Math.round(v.monthlyRevenue)), {computed:!noComps}), {total:true});
-  h += '</div></div>';
-
-  // Payback Period Visual
-  const inv = v.totalInvested;
-  const acf = Math.round(v.annualCF);
-
-  // Calculate cumulative values and break-even year
-  const cumVals = [];
-  let cumRun = -inv;
-  cumVals.push(cumRun);
-  let breakEvenYear = null;
-  for(let y=1; y<=10; y++){
-    const prev = cumRun;
-    cumRun += acf;
-    cumVals.push(cumRun);
-    if(breakEvenYear === null && prev < 0 && cumRun >= 0){
-      // Interpolate fractional year for break-even
-      breakEvenYear = y - 1 + (Math.abs(prev) / (Math.abs(prev) + cumRun));
-    }
-  }
-  // Find max negative and max positive separately for proportional scaling
-  const maxNeg = Math.max(...cumVals.filter(v => v < 0).map(v => Math.abs(v)), 1);
-  const maxPos = Math.max(...cumVals.filter(v => v >= 0).map(v => v), 1);
-
-  // Headline
-  let paybackHeadline, paybackSub, paybackColor;
-  if(inv === 0){
-    paybackHeadline = 'No Investment';
-    paybackSub = 'Enter your costs in Investment Details';
-    paybackColor = 'var(--text3)';
-  } else if(acf <= 0){
-    paybackHeadline = 'Not Recoverable';
-    paybackSub = 'Cash flow is negative — investment won\'t pay back';
-    paybackColor = 'var(--danger, #ef4444)';
-  } else if(breakEvenYear !== null){
-    const yrs = Math.floor(breakEvenYear);
-    const mos = Math.round((breakEvenYear - yrs) * 12);
-    paybackHeadline = yrs + (yrs===1?' year':' years') + (mos > 0 ? ', ' + mos + (mos===1?' month':' months') : '');
-    paybackSub = 'to recover your ' + fmtMoney(inv) + ' investment';
-    paybackColor = breakEvenYear <= 3 ? 'var(--success, #10b981)' : breakEvenYear <= 6 ? '#f59e0b' : 'var(--danger, #ef4444)';
-  } else {
-    paybackHeadline = '10+ years';
-    paybackSub = 'Investment not recovered within 10 years';
-    paybackColor = 'var(--danger, #ef4444)';
-  }
-
-  h += '<div class="calc-section"><div class="calc-section-header">Payback Period</div><div class="calc-section-body" style="padding:12px 14px">';
-
-  // Big headline number
-  h += '<div style="text-align:center;margin-bottom:16px">';
-  h += '<div style="font-size:1.4rem;font-weight:800;color:'+paybackColor+'">'+paybackHeadline+'</div>';
-  h += '<div style="font-size:.75rem;color:var(--text3);margin-top:2px">'+paybackSub+'</div>';
-  h += '</div>';
-
-  // Key figures row
-  h += '<div style="display:flex;justify-content:space-around;margin-bottom:16px;gap:8px;flex-wrap:wrap">';
-  h += '<div style="text-align:center"><div style="font-size:.65rem;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">Investment</div><div style="font-size:.9rem;font-weight:700;color:var(--danger, #ef4444)">'+fmtMoney(inv)+'</div></div>';
-  h += '<div style="text-align:center"><div style="font-size:.65rem;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">Annual Cash Flow</div><div style="font-size:.9rem;font-weight:700;color:'+(acf>=0?'var(--success, #10b981)':'var(--danger, #ef4444)')+'">'+fmtMoney(acf)+'/yr</div></div>';
-  h += '<div style="text-align:center"><div style="font-size:.65rem;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">Year 10 Balance</div><div style="font-size:.9rem;font-weight:700;color:'+(cumVals[10]>=0?'var(--success, #10b981)':'var(--danger, #ef4444)')+'">'+fmtMoney(Math.round(cumVals[10]))+'</div></div>';
-  h += '</div>';
-
-  // Visual bar chart — bars scale to 48% of track width (each side of center)
-  h += '<div class="payback-chart">';
-  for(let y=0; y<=10; y++){
-    const val = cumVals[y];
-    const isNeg = val < 0;
-    // Scale each bar relative to its side's max, capped at 48% of total track
-    const pct = isNeg
-      ? (Math.abs(val) / maxNeg) * 48
-      : (val / maxPos) * 48;
-    const barColor = isNeg ? 'var(--danger, #ef4444)' : 'var(--success, #10b981)';
-    const isBreakEven = breakEvenYear !== null && y === Math.ceil(breakEvenYear);
-
-    h += '<div class="payback-row">';
-    h += '<div class="payback-yr-label">Yr '+y+'</div>';
-    h += '<div class="payback-bar-track">';
-    h += '<div class="payback-zero-line"></div>';
-    if(isNeg){
-      h += '<div class="payback-bar payback-bar-neg" style="width:'+pct.toFixed(1)+'%;background:'+barColor+';opacity:'+(y===0?'1':'.75')+'"></div>';
-    } else {
-      h += '<div class="payback-bar payback-bar-pos" style="width:'+(val===0?'0':pct.toFixed(1))+'%;background:'+barColor+';opacity:.85"></div>';
-    }
-    if(isBreakEven){
-      h += '<div class="payback-break-marker" title="Break-even point">&#9733;</div>';
-    }
-    h += '</div>';
-    h += '<div class="payback-val" style="color:'+(isNeg?'var(--danger, #ef4444)':'var(--success, #10b981)')+'">'+fmtMoney(Math.round(val))+'</div>';
-    h += '</div>';
-  }
-  h += '</div>';
-
   h += '</div></div>';
 
   h += '</div>'; // end right panel
