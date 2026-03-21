@@ -1793,7 +1793,7 @@ function renderProfile(){
       <div style="padding:10px 16px 14px;border-top:1px solid var(--border)">
         <div class="cr-label" style="margin-bottom:5px">Property Note</div>
         <div class="hero-editable prop-note-clickable" onclick="openPropertyNoteEditor('${r.id}')" title="Click to ${r.propertyNote ? 'view/edit' : 'add'} property note" style="cursor:pointer">
-          ${r.propertyNote ? `<div class="prop-note-display">${r.propertyNote.html || esc(r.propertyNote.text)}</div>` : '<div style="color:var(--text3);font-size:.82rem;font-style:italic">No property note yet</div>'}
+          ${r.propertyNote ? '<div class="prop-note-display">' + (r.propertyNote.html || esc(r.propertyNote.text)) + '</div>' : '<div style="color:var(--text3);font-size:.82rem;font-style:italic">No property note yet</div>'}
           <svg class="hero-edit-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
         </div>
       </div>
@@ -1826,12 +1826,10 @@ function renderProfile(){
             const noteContent = n.html ? n.html : esc(n.text);
             const noteImages = n.images || [];
             const imgHtml = noteImages.length > 0 ? '<div class="note-images">' + noteImages.map((src, imgIdx) => '<img class="note-img-thumb" src="'+src+'" alt="Attachment" onclick="openNoteImagePopup(\''+r.id+'\',\''+n.id+'\','+imgIdx+')">').join('') + '</div>' + '<div class="note-img-badge">📎 ' + noteImages.length + ' image' + (noteImages.length > 1 ? 's' : '') + ' attached</div>' : '';
-            return `<div class="note-item">
-            ${isUserNote?`<div class="note-actions"><button onclick="editNote('${r.id}','${n.id}')" title="Edit"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="del" onclick="deleteNote('${r.id}','${n.id}')" title="Delete"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button></div>`:''}
-            <div class="note-date">${fmtDateTime(n.date)} • ${emoji}${label}${n.editedAt?' <span class="note-edited">(edited '+fmtDateTime(n.editedAt)+')</span>':''}</div>
-            <div class="note-text">${noteContent}</div>
-            ${imgHtml}
-          </div>`}).join('') + (r.date ? `<div class="note-item" style="opacity:.7"><div class="note-date">${fmtDateTime(r.date)} • 🏁 Account Created</div><div class="note-text">Property added to RentingRadar</div></div>` : '') : '<div style="color:var(--text3);font-size:.82rem">No activity yet</div>'}
+            const actionsHtml = isUserNote ? '<div class="note-actions"><button onclick="editNote(\''+r.id+'\',\''+n.id+'\')" title="Edit"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="del" onclick="deleteNote(\''+r.id+'\',\''+n.id+'\')" title="Delete"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button></div>' : '';
+            const dateHtml = '<div class="note-date">' + fmtDateTime(n.date) + ' • ' + emoji + label + (n.editedAt ? ' <span class="note-edited">(edited '+fmtDateTime(n.editedAt)+')</span>' : '') + '</div>';
+            return '<div class="note-item">' + actionsHtml + dateHtml + '<div class="note-text">' + noteContent + '</div>' + imgHtml + '</div>';
+          }).join('') + (r.date ? '<div class="note-item" style="opacity:.7"><div class="note-date">'+fmtDateTime(r.date)+' • 🏁 Account Created</div><div class="note-text">Property added to RentingRadar</div></div>' : '') : '<div style="color:var(--text3);font-size:.82rem">No activity yet</div>'}
         </div>
       </div>
     </div>
