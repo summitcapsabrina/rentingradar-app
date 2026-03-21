@@ -4110,7 +4110,7 @@ function renderCalculatorTab(r){
   h += cRow('Future Repairs', cInput('futureRepairs', c.futureRepairs));
   h += cRow('Incidentals', cInput('incidentals', c.incidentals), {hint:'soap, coffee, etc.'});
   h += cRow('Parking', cInput('parking', c.parking));
-  h += cRow('Cleaning (Monthly)', cInput('cleaning', v.cleaning), {hint:'default by BR count'});
+  h += cRow('Cleaning (Monthly)', '<div class="calc-val"><span class="calc-dollar-sign">$</span><input type="number" id="calc_cleaning" value="'+v.cleaning+'" step="any" onfocus="onCleaningFocus(this)" onchange="onCleaningChange(this.value)" /></div>', {hint:'auto-set by BR count'});
   h += cRow('Garbage / Recycling', cInput('garbageRecycling', c.garbageRecycling));
   h += cRow('Channel Manager', cInput('channelManager', c.channelManager), {hint:'Hospitable, Guesty'});
   h += cRow('City Permit', cInput('cityPermit', c.cityPermit, {step:'0.01'}), {hint:'annual ÷ 12'});
@@ -4206,6 +4206,23 @@ function onCalcChange(field, value){
       if(el){ el.focus(); el.select(); }
     }
   }
+}
+
+let _cleaningWarningShown = false;
+function onCleaningFocus(input){
+  if(!_cleaningWarningShown){
+    _cleaningWarningShown = true;
+    const ok = confirm('The cleaning fee is auto-set based on bedroom count. Are you sure you want to override it?\n\nIf you change bedrooms in Property Details, this will reset to the default.');
+    if(!ok){
+      input.blur();
+      _cleaningWarningShown = false;
+      return;
+    }
+  }
+}
+function onCleaningChange(value){
+  _cleaningWarningShown = false;
+  onCalcChange('cleaning', value);
 }
 
 function estimateExpensesAI(recId){
