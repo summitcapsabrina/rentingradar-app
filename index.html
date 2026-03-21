@@ -17,6 +17,7 @@
   --primary:#6381fa;--primary-hover:#7b94ff;--primary-light:rgba(79,110,247,.15);
   --danger:#ef4444;--danger-light:rgba(239,68,68,.12);--success:#10b981;--success-light:rgba(16,185,129,.12);
   --warning:#f59e0b;--warning-light:rgba(245,158,11,.12);--info:#3b82f6;
+  --num-computed:#6381fa;--num-success:#10b981;--num-danger:#ef4444;--num-warning:#f59e0b;
   --sidebar-bg:#0b0d14;--sidebar-border:rgba(255,255,255,.06);
   --sidebar-w:200px;--sidebar-collapsed-w:64px;--header-h:56px;--radius:8px;--shadow:0 1px 3px rgba(0,0,0,.3);
   --font:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',sans-serif;
@@ -30,6 +31,7 @@
   --primary:#4f6ef7;--primary-hover:#3d5be0;--primary-light:#eef1ff;
   --danger:#ef4444;--danger-light:#fef2f2;--success:#10b981;--success-light:#ecfdf5;
   --warning:#f59e0b;--warning-light:#fffbeb;--info:#3b82f6;
+  --num-computed:#4f6ef7;--num-success:#10b981;--num-danger:#ef4444;--num-warning:#f59e0b;
   --sidebar-bg:#1a1d2e;--sidebar-border:rgba(255,255,255,.08);
   --shadow:0 1px 3px rgba(0,0,0,.08);
   --card-hover-shadow:0 4px 12px rgba(0,0,0,.1);
@@ -610,7 +612,7 @@ h1 .hero-edit-input{font-size:1.35rem}
 .calc-val input:hover{border-color:var(--border);background:rgba(148,163,184,.06)}
 .calc-val input:focus{border-color:var(--primary);outline:none;background:var(--surface);box-shadow:0 0 0 2px rgba(99,129,250,.15)}
 .calc-val .calc-display{font-size:.82rem;color:var(--text);font-weight:500;padding:4px 6px;display:block}
-.calc-val .calc-display.computed{color:var(--primary);font-weight:600}
+.calc-val .calc-display.computed{color:var(--num-computed);font-weight:600}
 .calc-val .calc-display.muted{color:var(--text3);font-size:.78rem}
 .calc-pct{width:80px}
 .calc-pct input{width:100%}
@@ -623,8 +625,8 @@ h1 .hero-edit-input{font-size:1.35rem}
 .calc-kpi .kpi-monthly{font-size:1.25rem;font-weight:700;color:var(--text);line-height:1.4}
 .calc-kpi .kpi-per{font-size:.78rem;font-weight:400;color:var(--text3);margin-left:2px}
 .calc-kpi .kpi-annual{font-size:.78rem;color:var(--text3);margin-top:6px}
-.calc-kpi.positive .kpi-monthly{color:var(--success, #10b981)}
-.calc-kpi.negative .kpi-monthly{color:var(--danger, #ef4444)}
+.calc-kpi.positive .kpi-monthly{color:var(--num-success)}
+.calc-kpi.negative .kpi-monthly{color:var(--num-danger)}
 /* Payback table */
 .payback-chart{display:flex;flex-direction:column;gap:4px}
 .payback-row{display:flex;align-items:center;gap:6px;height:22px}
@@ -715,8 +717,8 @@ h1 .hero-edit-input{font-size:1.35rem}
 .an-proj-card .proj-label{font-size:.76rem;text-transform:uppercase;letter-spacing:.4px;color:var(--text3);font-weight:600;margin-bottom:4px}
 .an-proj-card .proj-value{font-size:1.15rem;font-weight:700}
 .an-proj-card.likely .proj-value{color:var(--text)}
-.an-proj-card.best .proj-value{color:var(--success,#10b981)}
-.an-proj-card.worst .proj-value{color:var(--danger,#ef4444)}
+.an-proj-card.best .proj-value{color:var(--num-success)}
+.an-proj-card.worst .proj-value{color:var(--num-danger)}
 .an-why{width:100%;padding:6px 8px;border:1px solid transparent;border-radius:var(--radius);font-size:.9rem;background:transparent;color:var(--text);resize:vertical;font-family:inherit;min-height:36px;transition:border-color .15s}
 .an-why:hover{border-color:var(--border)}
 .an-why:focus{border-color:var(--primary);outline:none;background:var(--surface)}
@@ -4449,7 +4451,7 @@ function renderCalculatorTab(r){
   // Resolve active projection data based on selected mode
   const pm = calcProjMode; // 'avg','likely','best','worst'
   const projLabels = { avg:'Comp Avg', likely:'Likely', best:'Best Case', worst:'Worst Case' };
-  const projColors = { avg:'var(--text3)', likely:'var(--primary)', best:'var(--success,#10b981)', worst:'var(--danger,#ef4444)' };
+  const projColors = { avg:'var(--text3)', likely:'var(--num-computed)', best:'var(--num-success)', worst:'var(--num-danger)' };
   let activeD; // derived data for selected projection
   if(pm === 'avg' || !v.hasRatedData){
     activeD = { monthlyNOI: v.monthlyNOI, annualNOI: v.annualNOI, monthlyCF: v.monthlyCF, annualCF: v.annualCF, cocReturn: v.cocReturn };
@@ -4474,7 +4476,7 @@ function renderCalculatorTab(r){
   const kpiTagHtml = '<div class="kpi-proj-tag" style="color:'+kpiTagColor+';border-color:'+kpiTagColor+'">'+activeProjLabel+'</div>';
   h += '<div class="calc-kpi-grid calc-kpi-grid-left">';
   h += '<div class="calc-kpi"><div class="kpi-label">Net Operating Income'+kpiTagHtml+'</div><div class="kpi-monthly">'+fmtMoney(Math.round(kpiNOI))+'<span class="kpi-per">/mo</span></div><div class="kpi-annual">'+fmtMoney(Math.round(kpiAnnualNOI))+'/yr</div></div>';
-  h += '<div class="calc-kpi"><div class="kpi-label">Monthly Rent</div><div class="kpi-monthly">'+(v.monthlyRent ? fmtMoney(v.monthlyRent) : '<span style="color:var(--text3);font-style:italic">Set in Property Details</span>')+'<span class="kpi-per">/mo</span></div><div class="kpi-annual">'+fmtMoney(v.monthlyRent*12)+'/yr</div></div>';
+  h += '<div class="calc-kpi"><div class="kpi-label">Monthly Rent<div class="kpi-proj-tag" style="color:#d97706;border-color:#d97706">Fixed</div></div><div class="kpi-monthly">'+(v.monthlyRent ? fmtMoney(v.monthlyRent) : '<span style="color:var(--text3);font-style:italic">Set in Property Details</span>')+'<span class="kpi-per">/mo</span></div><div class="kpi-annual">'+fmtMoney(v.monthlyRent*12)+'/yr</div></div>';
   h += '<div class="calc-kpi '+cfClass+'"><div class="kpi-label">Cash Flow'+kpiTagHtml+'</div><div class="kpi-monthly">'+fmtMoney(Math.round(kpiMonthlyCF))+'<span class="kpi-per">/mo</span></div><div class="kpi-annual">'+fmtMoney(Math.round(kpiAnnualCF))+'/yr</div></div>';
   h += '<div class="calc-kpi '+cocClass+'"><div class="kpi-label">Cash on Cash Return'+kpiTagHtml+'</div><div class="kpi-monthly">'+kpiCoC.toFixed(1)+'%</div><div class="kpi-annual">'+fmtMoney(Math.round(v.totalInvested))+' invested</div></div>';
   h += '</div>';
@@ -4505,17 +4507,17 @@ function renderCalculatorTab(r){
   } else if(acf <= 0){
     paybackHeadline = 'Not Recoverable';
     paybackSub = 'Cash flow is negative — investment won\'t pay back';
-    paybackColor = 'var(--danger, #ef4444)';
+    paybackColor = 'var(--num-danger)';
   } else if(breakEvenYear !== null){
     const yrs = Math.floor(breakEvenYear);
     const mos = Math.round((breakEvenYear - yrs) * 12);
     paybackHeadline = yrs + (yrs===1?' year':' years') + (mos > 0 ? ', ' + mos + (mos===1?' month':' months') : '');
     paybackSub = 'to recover your ' + fmtMoney(inv) + ' investment';
-    paybackColor = breakEvenYear <= 3 ? 'var(--success, #10b981)' : breakEvenYear <= 6 ? '#f59e0b' : 'var(--danger, #ef4444)';
+    paybackColor = breakEvenYear <= 3 ? 'var(--num-success)' : breakEvenYear <= 6 ? 'var(--num-warning)' : 'var(--num-danger)';
   } else {
     paybackHeadline = '10+ years';
     paybackSub = 'Investment not recovered within 10 years';
-    paybackColor = 'var(--danger, #ef4444)';
+    paybackColor = 'var(--num-danger)';
   }
 
   h += '<div class="calc-section"><div class="calc-section-header">Payback Period</div><div class="calc-section-body" style="padding:8px 10px">';
@@ -4525,9 +4527,9 @@ function renderCalculatorTab(r){
   h += '</div>';
 
   h += '<div style="display:flex;justify-content:space-around;margin-bottom:10px;gap:4px">';
-  h += '<div style="text-align:center"><div style="font-size:.6rem;color:var(--text3);text-transform:uppercase;letter-spacing:.4px">Investment</div><div style="font-size:.78rem;font-weight:700;color:var(--danger, #ef4444)">'+fmtMoney(inv)+'</div></div>';
-  h += '<div style="text-align:center"><div style="font-size:.6rem;color:var(--text3);text-transform:uppercase;letter-spacing:.4px">Annual Cash Flow</div><div style="font-size:.78rem;font-weight:700;color:'+(acf>=0?'var(--success, #10b981)':'var(--danger, #ef4444)')+'">'+fmtMoney(acf)+'/yr</div></div>';
-  h += '<div style="text-align:center"><div style="font-size:.6rem;color:var(--text3);text-transform:uppercase;letter-spacing:.4px">Yr 10 Balance</div><div style="font-size:.78rem;font-weight:700;color:'+(cumVals[10]>=0?'var(--success, #10b981)':'var(--danger, #ef4444)')+'">'+fmtMoney(Math.round(cumVals[10]))+'</div></div>';
+  h += '<div style="text-align:center"><div style="font-size:.6rem;color:var(--text3);text-transform:uppercase;letter-spacing:.4px">Investment</div><div style="font-size:.78rem;font-weight:700;color:var(--num-danger)">'+fmtMoney(inv)+'</div></div>';
+  h += '<div style="text-align:center"><div style="font-size:.6rem;color:var(--text3);text-transform:uppercase;letter-spacing:.4px">Annual Cash Flow</div><div style="font-size:.78rem;font-weight:700;color:'+(acf>=0?'var(--num-success)':'var(--num-danger)')+'">'+fmtMoney(acf)+'/yr</div></div>';
+  h += '<div style="text-align:center"><div style="font-size:.6rem;color:var(--text3);text-transform:uppercase;letter-spacing:.4px">Yr 10 Balance</div><div style="font-size:.78rem;font-weight:700;color:'+(cumVals[10]>=0?'var(--num-success)':'var(--num-danger)')+'">'+fmtMoney(Math.round(cumVals[10]))+'</div></div>';
   h += '</div>';
 
   h += '<div class="payback-chart payback-chart-compact">';
@@ -4535,7 +4537,7 @@ function renderCalculatorTab(r){
     const val = cumVals[y];
     const isNeg = val < 0;
     const pct = isNeg ? (Math.abs(val)/maxNeg)*48 : (val/maxPos)*48;
-    const barColor = isNeg ? 'var(--danger, #ef4444)' : 'var(--success, #10b981)';
+    const barColor = isNeg ? 'var(--num-danger)' : 'var(--num-success)';
     const isBreakEven = breakEvenYear !== null && y === Math.ceil(breakEvenYear);
     h += '<div class="payback-row">';
     h += '<div class="payback-yr-label">Yr '+y+'</div>';
@@ -4550,7 +4552,7 @@ function renderCalculatorTab(r){
       h += '<div class="payback-break-marker" title="Break-even point">&#9733;</div>';
     }
     h += '</div>';
-    h += '<div class="payback-val" style="color:'+(isNeg?'var(--danger, #ef4444)':'var(--success, #10b981)')+'">'+fmtMoney(Math.round(val))+'</div>';
+    h += '<div class="payback-val" style="color:'+(isNeg?'var(--num-danger)':'var(--num-success)')+'">'+fmtMoney(Math.round(val))+'</div>';
     h += '</div>';
   }
   h += '</div>';
@@ -4606,23 +4608,23 @@ function renderCalculatorTab(r){
   const noDataHtml = '<span style="color:var(--text3);font-size:.7rem;font-style:italic">No data</span>';
   // Helper: format net value — negative shows red with -($X)/yr, positive shows green
   function fmtNet(val, suffix){
-    if(val >= 0) return '<span style="color:var(--success);font-weight:700">'+fmtMoney(val)+suffix+'</span>';
-    return '<span style="color:var(--danger);font-weight:700">-$'+Math.abs(val).toLocaleString()+suffix+'</span>';
+    if(val >= 0) return '<span style="color:var(--num-success);font-weight:700">'+fmtMoney(val)+suffix+'</span>';
+    return '<span style="color:var(--num-danger);font-weight:700">-$'+Math.abs(val).toLocaleString()+suffix+'</span>';
   }
   function fmtNetLight(val, suffix){
-    if(val >= 0) return '<span style="color:var(--success)">'+fmtMoney(val)+suffix+'</span>';
-    return '<span style="color:var(--danger)">-$'+Math.abs(val).toLocaleString()+suffix+'</span>';
+    if(val >= 0) return '<span style="color:var(--num-success)">'+fmtMoney(val)+suffix+'</span>';
+    return '<span style="color:var(--num-danger)">-$'+Math.abs(val).toLocaleString()+suffix+'</span>';
   }
 
   // Column definitions: order is Comp Avg, Best, Likely, Worst
   const cols = [
     { key:'avg', label:'Comp Avg', color:'var(--text2)', tooltip:'Average from Competitor Analysis comps',
       rev: noComps ? 0 : Math.round(v.annualRevenue), exp: Math.round(v.annualExp), hasData: true },
-    { key:'best', label:'Best', color:'var(--success,#10b981)', tooltip:'Best case scenario',
+    { key:'best', label:'Best', color:'var(--num-success)', tooltip:'Best case scenario',
       rev: hasRated ? Math.round(v.bestRevenue) : 0, exp: hasRated ? Math.round(v.bestD.annualExp) : 0, hasData: hasRated },
-    { key:'likely', label:'Likely', color:'var(--primary)', tooltip:'Likely projection based on comp ratings',
+    { key:'likely', label:'Likely', color:'var(--num-computed)', tooltip:'Likely projection based on comp ratings',
       rev: hasRated ? Math.round(v.likelyRevenue) : 0, exp: hasRated ? Math.round(v.likelyD.annualExp) : 0, hasData: hasRated },
-    { key:'worst', label:'Worst', color:'var(--danger,#ef4444)', tooltip:'Worst case scenario',
+    { key:'worst', label:'Worst', color:'var(--num-danger)', tooltip:'Worst case scenario',
       rev: hasRated ? Math.round(v.worstRevenue) : 0, exp: hasRated ? Math.round(v.worstD.annualExp) : 0, hasData: hasRated }
   ];
   cols.forEach(col => {
@@ -4959,8 +4961,8 @@ function renderAnalysisTab(r){
   // Revenue Projections bar (read-only, driven by comp ratings)
   h += '<div class="comp-avg-bar comp-proj-bar" style="margin-bottom:10px">';
   h += '<div class="comp-avg-item"><div class="avg-label">Likely Revenue</div><div class="avg-value">'+(projLikely ? fmtMoney(projLikely) : '$0')+'</div></div>';
-  h += '<div class="comp-avg-item"><div class="avg-label">Best Case</div><div class="avg-value" style="color:var(--success,#10b981)">'+(projBest ? fmtMoney(projBest) : '$0')+'</div></div>';
-  h += '<div class="comp-avg-item"><div class="avg-label">Worst Case</div><div class="avg-value" style="color:var(--danger,#ef4444)">'+(projWorst ? fmtMoney(projWorst) : '$0')+'</div></div>';
+  h += '<div class="comp-avg-item"><div class="avg-label">Best Case</div><div class="avg-value" style="color:var(--num-success)">'+(projBest ? fmtMoney(projBest) : '$0')+'</div></div>';
+  h += '<div class="comp-avg-item"><div class="avg-label">Worst Case</div><div class="avg-value" style="color:var(--num-danger)">'+(projWorst ? fmtMoney(projWorst) : '$0')+'</div></div>';
   h += '</div>';
 
   // Averages bar (only count comps that have actual values for each metric)
