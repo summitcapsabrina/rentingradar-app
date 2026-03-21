@@ -618,7 +618,8 @@ h1 .hero-edit-input{font-size:1.35rem}
 .calc-kpi-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px}
 .calc-kpi-grid-left .calc-kpi{padding:12px 10px}
 .calc-kpi{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 16px;text-align:center}
-.calc-kpi .kpi-label{font-size:.75rem;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);font-weight:600;margin-bottom:6px}
+.calc-kpi .kpi-label{font-size:.75rem;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);font-weight:600;margin-bottom:6px;display:flex;flex-direction:column;align-items:center;gap:3px}
+.kpi-proj-tag{font-size:.58rem;font-weight:700;letter-spacing:.5px;text-transform:uppercase;padding:1px 8px;border:1px solid;border-radius:10px;line-height:1.5;opacity:.85}
 .calc-kpi .kpi-monthly{font-size:1.25rem;font-weight:700;color:var(--text);line-height:1.4}
 .calc-kpi .kpi-per{font-size:.78rem;font-weight:400;color:var(--text3);margin-left:2px}
 .calc-kpi .kpi-annual{font-size:.78rem;color:var(--text3);margin-top:6px}
@@ -4469,12 +4470,13 @@ function renderCalculatorTab(r){
   const kpiCoC = activeD.cocReturn;
   const cfClass = kpiMonthlyCF >= 0 ? 'positive' : 'negative';
   const cocClass = kpiCoC >= 0 ? 'positive' : 'negative';
-  const kpiTag = '<span style="font-size:.55rem;color:'+projColors[v.hasRatedData?pm:'avg']+';font-weight:600;margin-left:4px;vertical-align:middle;opacity:.85">'+activeProjLabel.toUpperCase()+'</span>';
+  const kpiTagColor = projColors[v.hasRatedData?pm:'avg'];
+  const kpiTagHtml = '<div class="kpi-proj-tag" style="color:'+kpiTagColor+';border-color:'+kpiTagColor+'">'+activeProjLabel+'</div>';
   h += '<div class="calc-kpi-grid calc-kpi-grid-left">';
-  h += '<div class="calc-kpi"><div class="kpi-label">Net Operating Income'+kpiTag+'</div><div class="kpi-monthly">'+fmtMoney(Math.round(kpiNOI))+'<span class="kpi-per">/mo</span></div><div class="kpi-annual">'+fmtMoney(Math.round(kpiAnnualNOI))+'/yr</div></div>';
+  h += '<div class="calc-kpi"><div class="kpi-label">Net Operating Income'+kpiTagHtml+'</div><div class="kpi-monthly">'+fmtMoney(Math.round(kpiNOI))+'<span class="kpi-per">/mo</span></div><div class="kpi-annual">'+fmtMoney(Math.round(kpiAnnualNOI))+'/yr</div></div>';
   h += '<div class="calc-kpi"><div class="kpi-label">Monthly Rent</div><div class="kpi-monthly">'+(v.monthlyRent ? fmtMoney(v.monthlyRent) : '<span style="color:var(--text3);font-style:italic">Set in Property Details</span>')+'<span class="kpi-per">/mo</span></div><div class="kpi-annual">'+fmtMoney(v.monthlyRent*12)+'/yr</div></div>';
-  h += '<div class="calc-kpi '+cfClass+'"><div class="kpi-label">Cash Flow'+kpiTag+'</div><div class="kpi-monthly">'+fmtMoney(Math.round(kpiMonthlyCF))+'<span class="kpi-per">/mo</span></div><div class="kpi-annual">'+fmtMoney(Math.round(kpiAnnualCF))+'/yr</div></div>';
-  h += '<div class="calc-kpi '+cocClass+'"><div class="kpi-label">Cash on Cash Return'+kpiTag+'</div><div class="kpi-monthly">'+kpiCoC.toFixed(1)+'%</div><div class="kpi-annual">'+fmtMoney(Math.round(v.totalInvested))+' invested</div></div>';
+  h += '<div class="calc-kpi '+cfClass+'"><div class="kpi-label">Cash Flow'+kpiTagHtml+'</div><div class="kpi-monthly">'+fmtMoney(Math.round(kpiMonthlyCF))+'<span class="kpi-per">/mo</span></div><div class="kpi-annual">'+fmtMoney(Math.round(kpiAnnualCF))+'/yr</div></div>';
+  h += '<div class="calc-kpi '+cocClass+'"><div class="kpi-label">Cash on Cash Return'+kpiTagHtml+'</div><div class="kpi-monthly">'+kpiCoC.toFixed(1)+'%</div><div class="kpi-annual">'+fmtMoney(Math.round(v.totalInvested))+' invested</div></div>';
   h += '</div>';
 
   // Payback Period Visual (compact for left panel) — driven by selected projection
@@ -4605,11 +4607,11 @@ function renderCalculatorTab(r){
   // Helper: format net value — negative shows red with -($X)/yr, positive shows green
   function fmtNet(val, suffix){
     if(val >= 0) return '<span style="color:var(--success);font-weight:700">'+fmtMoney(val)+suffix+'</span>';
-    return '<span style="color:var(--danger);font-weight:700">-($'+Math.abs(val).toLocaleString()+')'+suffix+'</span>';
+    return '<span style="color:var(--danger);font-weight:700">-$'+Math.abs(val).toLocaleString()+suffix+'</span>';
   }
   function fmtNetLight(val, suffix){
     if(val >= 0) return '<span style="color:var(--success)">'+fmtMoney(val)+suffix+'</span>';
-    return '<span style="color:var(--danger)">-($'+Math.abs(val).toLocaleString()+')'+suffix+'</span>';
+    return '<span style="color:var(--danger)">-$'+Math.abs(val).toLocaleString()+suffix+'</span>';
   }
 
   // Column definitions: order is Comp Avg, Best, Likely, Worst
