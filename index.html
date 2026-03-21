@@ -1701,20 +1701,17 @@ function renderProfile(){
           <div class="cr-field" style="min-width:auto;flex:0 1 auto"><div class="cr-label">Status</div><div class="cr-value ${r.status?'':'empty'}">${r.status||'—'}</div></div>
         </div>
         <div class="cr-row">
-          <div class="cr-field" style="min-width:0"><div class="cr-label">Contact Name</div><div class="cr-val-row"><div class="cr-value ${r.name?'':'empty'}">${esc(r.name)||'Not set'}</div>${r.name?`<button class="cr-copy-btn" onclick="event.stopPropagation();copyRecordField(this,'${r.id}','name')" title="Copy name"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>`:''}</div></div>
-          <div class="cr-field" style="min-width:0"><div class="cr-label">Phone</div><div class="cr-val-row"><div class="cr-value ${r.phone?'':'empty'}">${r.phone?fmtPhone(r.phone):'Not set'}</div>${r.phone?`<button class="cr-copy-btn" onclick="event.stopPropagation();copyRecordField(this,'${r.id}','phone')" title="Copy phone"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>`:''}</div></div>
-          <div class="cr-field" style="min-width:0"><div class="cr-label">Email</div><div class="cr-val-row"><div class="cr-value ${r.email?'':'empty'} ${r.email?'email-val':''}" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.email?esc(r.email):'Not set'}</div>${r.email?`<button class="cr-copy-btn" onclick="event.stopPropagation();copyRecordField(this,'${r.id}','email')" title="Copy email"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>`:''}</div></div>
+          <div class="cr-field" style="flex:0 1 auto;min-width:0"><div class="cr-label">Contact Name</div><div class="cr-val-row"><div class="cr-value ${r.name?'':'empty'}" style="white-space:nowrap">${esc(r.name)||'Not set'}</div>${r.name?`<button class="cr-copy-btn" onclick="event.stopPropagation();copyRecordField(this,'${r.id}','name')" title="Copy name"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>`:''}</div></div>
+          <div class="cr-field" style="flex:0 1 auto;min-width:0"><div class="cr-label">Phone</div><div class="cr-val-row"><div class="cr-value ${r.phone?'':'empty'}" style="white-space:nowrap">${r.phone?fmtPhone(r.phone):'Not set'}</div>${r.phone?`<button class="cr-copy-btn" onclick="event.stopPropagation();copyRecordField(this,'${r.id}','phone')" title="Copy phone"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>`:''}</div></div>
+          <div class="cr-field" style="flex:1 1 auto;min-width:0"><div class="cr-label">Email</div><div class="cr-val-row"><div class="cr-value ${r.email?'':'empty'} ${r.email?'email-val':''}" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.email?esc(r.email):'Not set'}</div>${r.email?`<button class="cr-copy-btn" onclick="event.stopPropagation();copyRecordField(this,'${r.id}','email')" title="Copy email"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>`:''}</div></div>
         </div>
         <div class="cr-row">
           <div class="cr-field" style="flex:1;min-width:0"><div class="cr-label">Listing Link</div><div class="cr-val-row"><div class="cr-value ${r.link?'':'empty'}" style="font-size:.75rem;word-break:break-all;overflow-wrap:break-word">${r.link?`<a href="${esc(r.link)}" target="_blank" style="color:var(--primary);text-decoration:none">${esc(r.link)}</a>`:'Not set'}</div>${r.link?`<button class="cr-copy-btn" onclick="event.stopPropagation();navigator.clipboard.writeText('${esc(r.link).replace(/'/g,"\\'")}');this.title='Copied!';setTimeout(()=>this.title='Copy link',1500)" title="Copy link"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>`:''}</div></div>
         </div>
-        <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:12px;padding-top:8px;border-top:1px solid var(--border);flex-wrap:wrap;gap:4px 12px">
+        <div style="display:flex;align-items:flex-end;margin-top:12px;padding-top:8px;border-top:1px solid var(--border);flex-wrap:wrap;gap:4px 12px">
           <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
             ${renderFollowUpSubtle(r)}
             ${renderMeetingSubtle(r)}
-          </div>
-          <div>
-            ${r.date?`<span style="font-size:.65rem;color:var(--text3)">First Contacted: ${fmtDate(r.date)}</span>`:''}
           </div>
         </div>
       </div>
@@ -1746,7 +1743,7 @@ function renderProfile(){
       </div>
       <div style="flex:1;overflow-y:auto;max-height:240px;padding:10px 16px 14px">
         <div class="note-list">
-          ${r.notes.length ? r.notes.slice().reverse().map(n => {
+          ${(r.notes.length || r.date) ? r.notes.slice().reverse().map(n => {
             const isUserNote = n.type==='note'||n.type==='call'||n.type==='text'||n.type==='email';
             const emoji = n.type==='call'?'📞 ':n.type==='text'?'💬 ':n.type==='email'?'📧 ':n.type==='note'?'📝 ':'';
             const label = n.type==='import'?'Imported':n.type==='followup'?'Follow-up':n.type==='status'?'Status change':n.type==='call'?'Call':n.type==='text'?'Text':n.type==='email'?'Email':'Note';
@@ -1755,7 +1752,7 @@ function renderProfile(){
             ${isUserNote?`<div class="note-actions"><button onclick="editNote('${r.id}','${n.id}')" title="Edit"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="del" onclick="deleteNote('${r.id}','${n.id}')" title="Delete"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button></div>`:''}
             <div class="note-date">${fmtDateTime(n.date)} • ${emoji}${label}${n.editedAt?' <span class="note-edited">(edited '+fmtDateTime(n.editedAt)+')</span>':''}</div>
             <div class="note-text">${noteContent}</div>
-          </div>`}).join('') : '<div style="color:var(--text3);font-size:.82rem">No activity yet</div>'}
+          </div>`}).join('') + (r.date ? `<div class="note-item" style="opacity:.7"><div class="note-date">${fmtDateTime(r.date)} • 🏁 Account Created</div><div class="note-text">Property added to RentingRadar</div></div>` : '') : '<div style="color:var(--text3);font-size:.82rem">No activity yet</div>'}
         </div>
       </div>
     </div>
