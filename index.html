@@ -1634,7 +1634,7 @@ function renderProfile(){
   const hasDetails = Object.keys(d).some(k => d[k] && (Array.isArray(d[k]) ? d[k].length > 0 : true));
   const showImport = r.link && !hasDetails;
   const activeTab = profileActiveTab || 'details';
-  const calcOk = requireTier('basic','ROI Calculator');
+  const calcOk = requireTier('basic','Expense Calculator');
   const proOk = requireTier('basic','Property Analysis');
 
   let html = `
@@ -1667,8 +1667,8 @@ function renderProfile(){
         ${r.followUpDate ? (()=>{ const fp = new Date(r.followUpDate+'T'+(r.followUpTime||'23:59')) < new Date(); return `<span style="font-size:.75rem;color:${fp?'var(--text3)':'var(--danger, #ef4444)'};display:inline-flex;align-items:center;gap:3px"><span style="font-size:.8rem">${fp?'\uD83D\uDD15':'\uD83D\uDD14'}</span> Follow-up: ${fmtDateTimeForCard(r.followUpDate, r.followUpTime)}</span>`; })() : ''}
         <div class="profile-tabs">
           <div class="profile-tab ${activeTab==='details'?'active':''}" data-tab="details" onclick="setProfileTab('details')">🏠 Property Details</div>
+          <div class="profile-tab ${activeTab==='calculator'?'active':''}" data-tab="calculator" onclick="setProfileTab('calculator')">💸 Expense Calculator ${!calcOk?'<span class=\\"tab-lock basic\\">BASIC</span>':''}</div>
           <div class="profile-tab ${activeTab==='analysis'?'active':''}" data-tab="analysis" onclick="setProfileTab('analysis')">📊 Analysis ${!proOk?'<span class=\\"tab-lock basic\\">BASIC</span>':''}</div>
-          <div class="profile-tab ${activeTab==='calculator'?'active':''}" data-tab="calculator" onclick="setProfileTab('calculator')">💰 ROI Calculator ${!calcOk?'<span class=\\"tab-lock basic\\">BASIC</span>':''}</div>
         </div>
       </div>
     </div>
@@ -1808,7 +1808,7 @@ function renderProfile(){
   }
   html += `</div>`;
 
-  // ── TAB: ROI Calculator ──
+  // ── TAB: Expense Calculator ──
   html += `<div class="tab-content ${activeTab==='calculator'?'active':''}" data-tab="calculator">`;
   if(calcOk){
     html += renderCalculatorTab(r);
@@ -1817,7 +1817,7 @@ function renderProfile(){
       <div class="profile-card-body">
         <div class="tab-locked-overlay">
           <div class="tlo-icon">🔒</div>
-          <div class="tlo-title">ROI Calculator</div>
+          <div class="tlo-title">Expense Calculator</div>
           <div class="tlo-desc">Calculate investment costs, forecasted revenue, operating expenses, cash flow, and return on investment for this property. Available on the Basic plan.</div>
           <button class="btn btn-primary" onclick="switchView('pricing')">Upgrade to Basic — $10.99/mo</button>
         </div>
@@ -1826,11 +1826,6 @@ function renderProfile(){
   }
   html += `</div>`;
 
-
-  // Delete button at bottom
-  html += `<div style="margin-top:32px;text-align:right">
-    <button class="btn btn-danger btn-sm" onclick="confirmDeleteProperty('${r.id}')">Delete Property</button>
-  </div>`;
 
   return html;
 }
@@ -4384,7 +4379,7 @@ function renderAnalysisTab(r){
   const isProUser = requireTier('pro','Pro Analysis Features');
   const br = parseInt(pd.bedrooms) || 0;
   const profitReq = parseFloat(an.profitRequirement) || 1000;
-  // Expenses = total Monthly Operating Expenses from ROI Calculator (includes all utilities + cleaning)
+  // Expenses = total Monthly Operating Expenses from Expense Calculator (includes all utilities + cleaning)
   const expenses = v.totalMonthlyExp;
 
   // Build Design & Amenities summary from Property Details key highlights
@@ -4414,8 +4409,8 @@ function renderAnalysisTab(r){
   h += '<div class="an-section"><div class="an-section-hdr">Required Revenue</div><div class="an-section-body" style="padding:0">';
   h += '<div class="an-req-bar" style="border:none;border-radius:0;margin:0">';
   h += '<div class="an-req-item"><div class="req-label">Rent</div><div class="req-val">'+fmtMoney(v.monthlyRent)+'<span class="req-period">/mo</span></div><div class="req-annual">'+fmtMoney(v.monthlyRent*12)+'/yr</div></div>';
-  // Expenses — not editable, total from ROI Calculator (includes utilities + cleaning)
-  h += '<div class="an-req-item" onclick="alert(\'Expenses are calculated from your Monthly Operating Expenses in the ROI Calculator tab. Edit individual amounts there.\')" style="cursor:help" title="Edit in ROI Calculator → Monthly Operating Expenses"><div class="req-label">Expenses</div><div class="req-val">'+fmtMoney(Math.round(expenses))+'<span class="req-period">/mo</span></div><div class="req-annual">'+fmtMoney(Math.round(expenses*12))+'/yr</div></div>';
+  // Expenses — not editable, total from Expense Calculator (includes utilities + cleaning)
+  h += '<div class="an-req-item" onclick="alert(\'Expenses are calculated from your Monthly Operating Expenses in the Expense Calculator tab. Edit individual amounts there.\')" style="cursor:help" title="Edit in Expense Calculator → Monthly Operating Expenses"><div class="req-label">Expenses</div><div class="req-val">'+fmtMoney(Math.round(expenses))+'<span class="req-period">/mo</span></div><div class="req-annual">'+fmtMoney(Math.round(expenses*12))+'/yr</div></div>';
   // Profit Requirement — editable with warning under $1000
   h += '<div class="an-req-item an-req-editable" onclick="editAnalysisProfitReq(\''+r.id+'\')"><div class="req-label">Profit Req <span class="req-edit-hint">✎</span></div><div class="req-val">'+fmtMoney(profitReq)+'<span class="req-period">/mo</span></div><div class="req-annual">'+fmtMoney(profitReq*12)+'/yr</div></div>';
   const monthlyReqRev = v.monthlyRent + expenses + profitReq;
@@ -4588,7 +4583,7 @@ function updateCompField(recId, idx, field, value){
     comps[idx][field] = value;
   }
   saveData();
-  // Re-render ROI Calculator if revenue-related fields change (they drive Forecasted Revenue)
+  // Re-render Expense Calculator if revenue-related fields change (they drive Forecasted Revenue)
   if(['annualRevenue','occupancy','nightlyRate','daysAvailable','rating'].includes(field)){
     const calcEl = document.querySelector('.tab-content[data-tab="calculator"]');
     if(calcEl){ calcEl.innerHTML = renderCalculatorTab(r); }
