@@ -563,16 +563,20 @@ h1 .hero-edit-input{font-size:1.35rem}
 .calc-row.total-row .calc-val{font-weight:700;font-size:.85rem}
 .calc-label{font-size:.85rem;color:var(--text2);flex:1;min-width:0;line-height:1.3}
 .calc-label-hint{font-size:.65rem;color:var(--text3);font-style:italic;display:block}
-.calc-val{width:100px;flex-shrink:0;text-align:right;display:flex;align-items:center;justify-content:flex-end;gap:0}
+.calc-val{width:110px;flex-shrink:0;text-align:right;display:flex;align-items:center;justify-content:flex-end;gap:0}
 .calc-dollar-sign{font-size:.78rem;color:var(--text3);font-weight:500;margin-right:1px;flex-shrink:0}
 .calc-pct-sign{font-size:.78rem;color:var(--text3);font-weight:500;margin-left:1px;flex-shrink:0}
+.calc-editable{padding:0 6px;border-radius:4px;cursor:pointer;height:28px;line-height:28px;font-size:.82rem;transition:background .15s;display:flex;align-items:center;justify-content:flex-end;overflow:hidden;box-sizing:border-box;width:100%;font-variant-numeric:tabular-nums}
+.calc-editable:hover{background:rgba(99,129,250,.08)}
+.calc-inline-input{width:100%;padding:0 4px;border:1px solid var(--primary);border-radius:3px;font-size:.82rem;background:var(--surface);color:var(--text);text-align:right;font-family:inherit;box-sizing:border-box;-moz-appearance:textfield;height:26px;line-height:26px;outline:none;box-shadow:0 0 0 2px rgba(99,129,250,.15)}
+.calc-inline-input::-webkit-outer-spin-button,.calc-inline-input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 .calc-val input{width:100%;text-align:right;padding:4px 6px;border:1px solid transparent;border-radius:4px;font-size:.82rem;background:transparent;color:var(--text);font-family:inherit;transition:all .15s;cursor:pointer}
 .calc-val input:hover{border-color:var(--border);background:rgba(148,163,184,.06)}
 .calc-val input:focus{border-color:var(--primary);outline:none;background:var(--surface);box-shadow:0 0 0 2px rgba(99,129,250,.15)}
 .calc-val .calc-display{font-size:.82rem;color:var(--text);font-weight:500;padding:4px 6px;display:block}
 .calc-val .calc-display.computed{color:var(--primary);font-weight:600}
 .calc-val .calc-display.muted{color:var(--text3);font-size:.78rem}
-.calc-pct{width:70px}
+.calc-pct{width:80px}
 .calc-pct input{width:100%}
 /* Summary boxes on right panel */
 .calc-kpi-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px}
@@ -4156,13 +4160,22 @@ function cRow(label, valHtml, opts={}){
   return '<div class="calc-row'+cls+'"><div class="calc-label">'+label+hint+'</div>'+valHtml+'</div>';
 }
 function cInput(id, value, opts={}){
-  const step = opts.step || 'any';
   const cls = opts.pct ? ' calc-pct' : '';
-  const min = opts.min !== undefined ? ' min="'+opts.min+'"' : '';
-  const max = opts.max !== undefined ? ' max="'+opts.max+'"' : '';
-  const prefix = opts.pct || opts.noDollar ? '' : '<span class="calc-dollar-sign">$</span>';
-  const suffix = opts.pct ? '<span class="calc-pct-sign">%</span>' : '';
-  return '<div class="calc-val'+cls+'">'+prefix+'<input type="number" id="calc_'+id+'" value="'+value+'" step="'+step+'"'+min+max+' onchange="onCalcChange(\''+id+'\',this.value)" />'+suffix+'</div>';
+  const raw = value !== undefined && value !== null ? value : 0;
+  let display;
+  if(opts.pct){
+    display = raw + '%';
+  } else if(opts.noDollar){
+    display = raw.toString();
+  } else {
+    const num = parseFloat(raw) || 0;
+    display = '$' + num.toLocaleString('en-US', {minimumFractionDigits: num % 1 !== 0 ? 2 : 0, maximumFractionDigits: 2});
+  }
+  if(parseFloat(raw) === 0 && !opts.pct) display = '<span style="color:var(--text3)">$0</span>';
+  if(parseFloat(raw) === 0 && opts.pct) display = '<span style="color:var(--text3)">0%</span>';
+  if(parseFloat(raw) === 0 && opts.noDollar) display = '<span style="color:var(--text3)">0</span>';
+  const dataAttrs = ' data-calc-field="'+id+'" data-calc-raw="'+raw+'"'+(opts.pct?' data-calc-pct="1"':'')+(opts.noDollar?' data-calc-nodollar="1"':'');
+  return '<div class="calc-val'+cls+'"><div class="calc-editable" onclick="calcEditCell(this)"'+dataAttrs+'>'+display+'</div></div>';
 }
 function cDisplay(value, opts={}){
   const cls = opts.computed ? ' computed' : (opts.muted ? ' muted' : '');
@@ -4236,7 +4249,7 @@ function renderCalculatorTab(r){
   h += cRow('Future Repairs', cInput('futureRepairs', c.futureRepairs));
   h += cRow('Incidentals', cInput('incidentals', c.incidentals), {hint:'soap, coffee, etc.'});
   h += cRow('Parking', cInput('parking', c.parking));
-  h += cRow('Cleaning (Monthly)', '<div class="calc-val"><span class="calc-dollar-sign">$</span><input type="number" id="calc_cleaning" value="'+v.cleaning+'" step="any" onfocus="onCleaningFocus(this)" onchange="onCleaningChange(this.value)" /></div>', {hint:'auto-set by BR count'});
+  h += cRow('Cleaning (Monthly)', '<div class="calc-val"><div class="calc-editable" onclick="calcEditCell(this)" data-calc-field="cleaning" data-calc-raw="'+v.cleaning+'" data-calc-cleaning="1">'+(v.cleaning ? '$'+v.cleaning.toLocaleString('en-US',{minimumFractionDigits:v.cleaning%1!==0?2:0,maximumFractionDigits:2}) : '<span style="color:var(--text3)">$0</span>')+'</div></div>', {hint:'auto-set by BR count'});
   h += cRow('Garbage / Recycling', cInput('garbageRecycling', c.garbageRecycling));
   h += cRow('Channel Manager', cInput('channelManager', c.channelManager), {hint:'Hospitable, Guesty'});
   h += cRow('City Permit', cInput('cityPermit', c.cityPermit, {step:'0.01'}), {hint:'annual ÷ 12'});
@@ -4322,33 +4335,100 @@ function onCalcChange(field, value){
   r.details.calculator[field] = parseFloat(value) || 0;
   if(field === 'cleaning') r.details.calculator._cleaningManual = true;
   saveData();
+}
+
+function _rerenderCalcTab(){
+  const r = records.find(x => x.id === currentProfileId);
+  if(!r) return;
   const tabEl = document.querySelector('.tab-content[data-tab="calculator"]');
   if(tabEl){
-    const wasActive = document.activeElement?.id;
     tabEl.innerHTML = renderCalculatorTab(r);
     tabEl.classList.add('active');
-    if(wasActive){
-      const el = document.getElementById(wasActive);
-      if(el){ el.focus(); el.select(); }
-    }
   }
 }
 
-let _cleaningWarningShown = false;
-function onCleaningFocus(input){
-  if(!_cleaningWarningShown){
-    _cleaningWarningShown = true;
+let _activeCalcEdit = null;
+
+function _saveActiveCalcEdit(){
+  if(!_activeCalcEdit) return;
+  const { input, field } = _activeCalcEdit;
+  const val = input.value;
+  _activeCalcEdit = null;
+  onCalcChange(field, val);
+}
+
+function calcEditCell(el, skipBlurSave){
+  if(el.querySelector('input')) return;
+  // Save any active edit first
+  if(_activeCalcEdit){
+    _activeCalcEdit._skipRerender = true;
+    _saveActiveCalcEdit();
+  }
+  const field = el.dataset.calcField;
+  const raw = el.dataset.calcRaw || '0';
+  const isCleaning = el.dataset.calcCleaning === '1';
+  const isPct = el.dataset.calcPct === '1';
+
+  // Cleaning confirmation
+  if(isCleaning){
     const ok = confirm('The cleaning fee is auto-set based on bedroom count. Are you sure you want to override it?\n\nIf you change bedrooms in Property Details, this will reset to the default.');
-    if(!ok){
-      input.blur();
-      _cleaningWarningShown = false;
+    if(!ok) return;
+  }
+
+  // Lock width to prevent layout shift
+  const parentVal = el.closest('.calc-val');
+  if(parentVal) parentVal.style.width = parentVal.offsetWidth + 'px';
+
+  el.innerHTML = '';
+  const input = document.createElement('input');
+  input.type = 'number';
+  input.className = 'calc-inline-input';
+  input.value = raw;
+  input.step = isPct ? '1' : 'any';
+  if(isPct){ input.min = '0'; input.max = '100'; }
+  el.appendChild(input);
+  input.focus();
+  input.select();
+
+  const editCtx = { input, field, _skipRerender: false };
+  _activeCalcEdit = editCtx;
+
+  input.addEventListener('blur', () => {
+    if(_activeCalcEdit === editCtx){
+      _saveActiveCalcEdit();
+      _rerenderCalcTab();
+    }
+  });
+
+  input.addEventListener('keydown', (e) => {
+    if(e.key === 'Enter'){
+      e.preventDefault();
+      _saveActiveCalcEdit();
+      _rerenderCalcTab();
       return;
     }
-  }
-}
-function onCleaningChange(value){
-  _cleaningWarningShown = false;
-  onCalcChange('cleaning', value);
+    if(e.key === 'Escape'){
+      _activeCalcEdit = null;
+      _rerenderCalcTab();
+      return;
+    }
+    if(e.key === 'Tab'){
+      e.preventDefault();
+      _saveActiveCalcEdit();
+      const allEditables = Array.from(document.querySelectorAll('.calc-editable'));
+      const currentIdx = allEditables.indexOf(el);
+      const nextIdx = e.shiftKey ? currentIdx - 1 : currentIdx + 1;
+      if(nextIdx >= 0 && nextIdx < allEditables.length){
+        _rerenderCalcTab();
+        requestAnimationFrame(() => {
+          const newEditables = Array.from(document.querySelectorAll('.calc-editable'));
+          if(newEditables[nextIdx]) calcEditCell(newEditables[nextIdx]);
+        });
+      } else {
+        _rerenderCalcTab();
+      }
+    }
+  });
 }
 
 function estimateExpensesAI(recId){
@@ -4470,13 +4550,15 @@ function renderAnalysisTab(r){
   h += '<div class="comp-avg-item"><div class="avg-label">Worst Case</div><div class="avg-value" style="color:var(--danger,#ef4444)">'+(projWorst ? fmtMoney(projWorst) : '$0')+'</div></div>';
   h += '</div>';
 
-  // Averages bar (Occ + Nightly Rate)
+  // Averages bar (Daily Rate + Occ + Days Occupied)
   if(comps.length > 0){
     const avgOcc = comps.reduce((s,x)=>s+(parseFloat(x.occupancy)||0),0)/comps.length;
     const avgRate = comps.reduce((s,x)=>s+(parseFloat(x.nightlyRate)||0),0)/comps.length;
+    const avgDays = Math.round(comps.reduce((s,x)=>s+(parseFloat(x.daysAvailable)||0),0)/comps.length);
     h += '<div class="comp-avg-bar" style="margin-bottom:14px">';
-    h += '<div class="comp-avg-item"><div class="avg-label">Avg Occ Rate</div><div class="avg-value">'+avgOcc.toFixed(1)+'%</div></div>';
-    h += '<div class="comp-avg-item"><div class="avg-label">Avg Nightly Rate</div><div class="avg-value">$'+avgRate.toFixed(2)+'</div></div>';
+    h += '<div class="comp-avg-item"><div class="avg-label">Average Daily Rate</div><div class="avg-value">$'+avgRate.toFixed(2)+'</div></div>';
+    h += '<div class="comp-avg-item"><div class="avg-label">Estimated Occupancy Rate</div><div class="avg-value">'+Math.round(avgOcc)+'%</div></div>';
+    h += '<div class="comp-avg-item"><div class="avg-label">Est. Days/Year Occupied</div><div class="avg-value">'+avgDays+'</div></div>';
     h += '</div>';
   }
 
