@@ -614,12 +614,15 @@ h1 .hero-edit-input{font-size:1.35rem}
 .an-field-val textarea:focus{border-color:var(--primary);outline:none;background:var(--surface)}
 /* Required Revenue bar */
 .an-req-bar{display:flex;gap:0;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:14px;font-size:.75rem}
-.an-req-item{flex:1;text-align:center;padding:14px 6px;border-right:1px solid var(--border);display:flex;flex-direction:column;justify-content:center}
+.an-req-item{flex:1;text-align:center;padding:18px 8px;border-right:1px solid var(--border);display:flex;flex-direction:column;justify-content:center;gap:6px}
 .an-req-item:last-child{border-right:none}
 .an-req-item.total{background:rgba(99,129,250,.06)}
-.an-req-item .req-label{font-size:.6rem;text-transform:uppercase;letter-spacing:.3px;color:var(--text3);font-weight:600}
-.an-req-item .req-yr{font-size:.85rem;font-weight:700;color:var(--text);margin-top:1px}
-.an-req-item .req-mo{font-size:.68rem;color:var(--text3)}
+.an-req-item .req-label{font-size:.7rem;text-transform:uppercase;letter-spacing:.4px;color:var(--text3);font-weight:600}
+.an-req-item .req-val{font-size:1rem;font-weight:700;color:var(--text)}
+.an-req-item .req-period{font-size:.7rem;font-weight:400;color:var(--text3);margin-left:2px}
+.an-req-item .req-annual{font-size:.72rem;color:var(--text3)}
+.an-req-item .req-yr{font-size:1rem;font-weight:700;color:var(--text)}
+.an-req-item .req-mo{font-size:.72rem;color:var(--text3)}
 /* Comp add */
 .comp-add-row{display:flex;gap:8px;margin-bottom:10px}
 .comp-add-row input{flex:1;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius);font-size:.82rem;background:var(--surface);color:var(--text)}
@@ -3950,12 +3953,24 @@ function activateHeroInput(recId, field, containerId, currentVal){
 
 /* ===== PROFILE TABS ===== */
 let profileActiveTab = 'details';
+const tabScrollPositions = {};
 
 function setProfileTab(tab){
+  // Save current scroll position before switching
+  const scrollContainer = document.querySelector('.content');
+  if(scrollContainer && profileActiveTab){
+    tabScrollPositions[profileActiveTab] = scrollContainer.scrollTop;
+  }
   profileActiveTab = tab;
   try { sessionStorage.setItem('rr_profileTab', tab) } catch(e){}
   document.querySelectorAll('.profile-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
   document.querySelectorAll('.tab-content').forEach(el => el.classList.toggle('active', el.dataset.tab === tab));
+  // Restore scroll position for the tab we're switching to
+  if(scrollContainer && tabScrollPositions[tab] !== undefined){
+    requestAnimationFrame(() => { scrollContainer.scrollTop = tabScrollPositions[tab]; });
+  } else if(scrollContainer){
+    requestAnimationFrame(() => { scrollContainer.scrollTop = 0; });
+  }
 }
 
 /* ===== CALCULATOR TAB ===== */
@@ -4108,8 +4123,18 @@ function renderCalculatorTab(r){
 
   h += '</div>'; // end left panel
 
-  // ══════ RIGHT PANEL: REVENUE + SUMMARY + PAYBACK ══════
+  // ══════ RIGHT PANEL: KPI + REVENUE + PAYBACK ══════
   h += '<div class="calc-panel">';
+
+  // KPI Cards (top of right panel)
+  const cfClass = v.monthlyCF >= 0 ? 'positive' : 'negative';
+  const cocClass = v.cocReturn >= 0 ? 'positive' : 'negative';
+  h += '<div class="calc-kpi-grid">';
+  h += '<div class="calc-kpi"><div class="kpi-label">Net Operating Income</div><div class="kpi-monthly">'+fmtMoney(Math.round(v.monthlyNOI))+'<span class="kpi-per">/mo</span></div><div class="kpi-annual">'+fmtMoney(Math.round(v.annualNOI))+'/yr</div></div>';
+  h += '<div class="calc-kpi"><div class="kpi-label">Monthly Rent</div><div class="kpi-monthly">'+(v.monthlyRent ? fmtMoney(v.monthlyRent) : '<span style="color:var(--text3);font-style:italic">Set in Property Details</span>')+'<span class="kpi-per">/mo</span></div><div class="kpi-annual">'+fmtMoney(v.monthlyRent*12)+'/yr</div></div>';
+  h += '<div class="calc-kpi '+cfClass+'"><div class="kpi-label">Cash Flow</div><div class="kpi-monthly">'+fmtMoney(Math.round(v.monthlyCF))+'<span class="kpi-per">/mo</span></div><div class="kpi-annual">'+fmtMoney(Math.round(v.annualCF))+'/yr</div></div>';
+  h += '<div class="calc-kpi '+cocClass+'"><div class="kpi-label">Cash on Cash Return</div><div class="kpi-monthly">'+v.cocReturn.toFixed(1)+'%</div><div class="kpi-annual">'+fmtMoney(Math.round(v.totalInvested))+' invested</div></div>';
+  h += '</div>';
 
   // Forecasted Revenue (driven by Analysis comps)
   h += '<div class="calc-section"><div class="calc-section-header">Forecasted Revenue</div><div class="calc-section-body">';
@@ -4121,16 +4146,6 @@ function renderCalculatorTab(r){
   h += cRow('Annual Revenue', cDisplay(noComps ? '$0' : fmtAcct(Math.round(v.annualRevenue)), {computed:!noComps}));
   h += cRow('Monthly Revenue', cDisplay(noComps ? '$0' : fmtAcct(Math.round(v.monthlyRevenue)), {computed:!noComps}), {total:true});
   h += '</div></div>';
-
-  // KPI Cards
-  const cfClass = v.monthlyCF >= 0 ? 'positive' : 'negative';
-  const cocClass = v.cocReturn >= 0 ? 'positive' : 'negative';
-  h += '<div class="calc-kpi-grid">';
-  h += '<div class="calc-kpi"><div class="kpi-label">Net Operating Income</div><div class="kpi-monthly">'+fmtMoney(Math.round(v.monthlyNOI))+'<span class="kpi-per">/mo</span></div><div class="kpi-annual">'+fmtMoney(Math.round(v.annualNOI))+'/yr</div></div>';
-  h += '<div class="calc-kpi"><div class="kpi-label">Monthly Rent</div><div class="kpi-monthly">'+(v.monthlyRent ? fmtMoney(v.monthlyRent) : '<span style="color:var(--text3);font-style:italic">Set in Property Details</span>')+'<span class="kpi-per">/mo</span></div><div class="kpi-annual">'+fmtMoney(v.monthlyRent*12)+'/yr</div></div>';
-  h += '<div class="calc-kpi '+cfClass+'"><div class="kpi-label">Cash Flow</div><div class="kpi-monthly">'+fmtMoney(Math.round(v.monthlyCF))+'<span class="kpi-per">/mo</span></div><div class="kpi-annual">'+fmtMoney(Math.round(v.annualCF))+'/yr</div></div>';
-  h += '<div class="calc-kpi '+cocClass+'"><div class="kpi-label">Cash on Cash Return</div><div class="kpi-monthly">'+v.cocReturn.toFixed(1)+'%</div><div class="kpi-annual">'+fmtMoney(Math.round(v.totalInvested))+' invested</div></div>';
-  h += '</div>';
 
   // Payback Period Table
   h += '<div class="calc-section"><div class="calc-section-header">Pay-Back Period (From Cash Flows)</div><div class="calc-section-body" style="padding:6px 4px;overflow-x:auto">';
@@ -4220,12 +4235,9 @@ function renderAnalysisTab(r){
   const c = v.c;
   const isProUser = requireTier('pro','Pro Analysis Features');
   const br = parseInt(pd.bedrooms) || 0;
-  const CLEANING_BY_BR = {0:0,1:500,2:650,3:900,4:1200,5:2000,6:3000};
-  const defaultCleaning = CLEANING_BY_BR[Math.min(br,6)] || 0;
-  const cleaningFee = (an.cleaningOverride !== undefined && an.cleaningOverride !== null) ? parseFloat(an.cleaningOverride) : defaultCleaning;
   const profitReq = parseFloat(an.profitRequirement) || 1000;
-  // Utilities = total of Monthly Operating Expenses from ROI Calculator (excluding cleaning to avoid double count, but per user spec it's the total)
-  const utilities = v.totalMonthlyExp;
+  // Expenses = total Monthly Operating Expenses from ROI Calculator (includes all utilities + cleaning)
+  const expenses = v.totalMonthlyExp;
 
   // Build Design & Amenities summary from Property Details key highlights
   const highlights = [];
@@ -4253,15 +4265,13 @@ function renderAnalysisTab(r){
   // Right: Required Revenue
   h += '<div class="an-section"><div class="an-section-hdr">Required Revenue</div><div class="an-section-body" style="padding:0">';
   h += '<div class="an-req-bar" style="border:none;border-radius:0;margin:0">';
-  h += '<div class="an-req-item"><div class="req-label">Rent</div><div class="req-yr">'+fmtMoney(v.monthlyRent*12)+'</div><div class="req-mo">'+fmtMoney(v.monthlyRent)+'/mo</div></div>';
-  // Cleaning — editable with warning
-  h += '<div class="an-req-item an-req-editable" onclick="editAnalysisCleaning(\''+r.id+'\','+defaultCleaning+')"><div class="req-label">Cleaning <span class="req-edit-hint">✎</span></div><div class="req-yr">'+fmtMoney(Math.round(cleaningFee*12))+'</div><div class="req-mo">'+fmtMoney(Math.round(cleaningFee))+'/mo</div></div>';
-  // Utilities — not editable, from ROI Calculator
-  h += '<div class="an-req-item" onclick="alert(\'Utilities are calculated from your Monthly Operating Expenses in the ROI Calculator tab. Edit individual utility amounts there.\')" style="cursor:help" title="Edit in ROI Calculator → Monthly Operating Expenses"><div class="req-label">Utilities <span style="font-size:.55rem;color:var(--text3)">ℹ</span></div><div class="req-yr">'+fmtMoney(Math.round(utilities*12))+'</div><div class="req-mo">'+fmtMoney(Math.round(utilities))+'/mo</div></div>';
+  h += '<div class="an-req-item"><div class="req-label">Rent</div><div class="req-val">'+fmtMoney(v.monthlyRent)+'<span class="req-period">/mo</span></div><div class="req-annual">'+fmtMoney(v.monthlyRent*12)+'/yr</div></div>';
+  // Expenses — not editable, total from ROI Calculator (includes utilities + cleaning)
+  h += '<div class="an-req-item" onclick="alert(\'Expenses are calculated from your Monthly Operating Expenses in the ROI Calculator tab. Edit individual amounts there.\')" style="cursor:help" title="Edit in ROI Calculator → Monthly Operating Expenses"><div class="req-label">Expenses <span style="font-size:.6rem;color:var(--text3)">ℹ</span></div><div class="req-val">'+fmtMoney(Math.round(expenses))+'<span class="req-period">/mo</span></div><div class="req-annual">'+fmtMoney(Math.round(expenses*12))+'/yr</div></div>';
   // Profit Requirement — editable with warning under $1000
-  h += '<div class="an-req-item an-req-editable" onclick="editAnalysisProfitReq(\''+r.id+'\')"><div class="req-label">Profit Req <span class="req-edit-hint">✎</span></div><div class="req-yr">'+fmtMoney(profitReq*12)+'</div><div class="req-mo">'+fmtMoney(profitReq)+'/mo</div></div>';
-  const monthlyReqRev = v.monthlyRent + cleaningFee + utilities + profitReq;
-  h += '<div class="an-req-item total"><div class="req-label">Required Rev</div><div class="req-yr" style="color:var(--primary)">'+fmtMoney(Math.round(monthlyReqRev*12))+'</div><div class="req-mo">'+fmtMoney(Math.round(monthlyReqRev))+'/mo</div></div>';
+  h += '<div class="an-req-item an-req-editable" onclick="editAnalysisProfitReq(\''+r.id+'\')"><div class="req-label">Profit Req <span class="req-edit-hint">✎</span></div><div class="req-val">'+fmtMoney(profitReq)+'<span class="req-period">/mo</span></div><div class="req-annual">'+fmtMoney(profitReq*12)+'/yr</div></div>';
+  const monthlyReqRev = v.monthlyRent + expenses + profitReq;
+  h += '<div class="an-req-item total"><div class="req-label">Required Rev</div><div class="req-val" style="color:var(--primary)">'+fmtMoney(Math.round(monthlyReqRev))+'<span class="req-period">/mo</span></div><div class="req-annual">'+fmtMoney(Math.round(monthlyReqRev*12))+'/yr</div></div>';
   h += '</div>';
   h += '</div></div>';
 
