@@ -4701,10 +4701,10 @@ function renderAnalysisTab(r){
   // Add comp row — at the bottom
   if(comps.length < 20){
     h += '<div class="comp-add-row">';
-    h += '<input type="text" id="compLinkInput" placeholder="Paste Airbnb link here..." onkeydown="if(event.key===\'Enter\'&&event.shiftKey){event.preventDefault();addComp(\''+r.id+'\')}" />';
+    h += '<input type="text" id="compLinkInput" placeholder="Paste Airbnb link here..." onkeydown="if(event.key===\'Enter\'){event.preventDefault();addComp(\''+r.id+'\')}" />';
     h += '<button onclick="addComp(\''+r.id+'\')">+ Add Comp</button>';
     h += '</div>';
-    h += '<div style="text-align:right;font-size:.68rem;color:var(--text3);margin-top:4px">Shift+Enter to add</div>';
+    h += '<div style="text-align:right;font-size:.68rem;color:var(--text3);margin-top:4px">Enter to add</div>';
   }
 
   h += '</div></div>';
