@@ -4559,6 +4559,8 @@ function renderAnalysisTab(r){
     h += '<div class="comp-avg-item"><div class="avg-label">Average Daily Rate</div><div class="avg-value">$'+avgRate.toFixed(2)+'</div></div>';
     h += '<div class="comp-avg-item"><div class="avg-label">Estimated Occupancy Rate</div><div class="avg-value">'+Math.round(avgOcc)+'%</div></div>';
     h += '<div class="comp-avg-item"><div class="avg-label">Est. Days/Year Occupied</div><div class="avg-value">'+avgDays+'</div></div>';
+    const estRevenue = Math.round(avgRate * avgDays);
+    h += '<div class="comp-avg-item"><div class="avg-label">Estimated Revenue</div><div class="avg-value">'+fmtMoney(estRevenue)+'</div></div>';
     h += '</div>';
   }
 
