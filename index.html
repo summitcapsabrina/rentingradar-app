@@ -1670,7 +1670,7 @@ function renderProfile(){
         <div class="profile-tabs">
           <div class="profile-tab ${activeTab==='details'?'active':''}" data-tab="details" onclick="setProfileTab('details')">🏠 Property Details</div>
           <div class="profile-tab ${activeTab==='calculator'?'active':''}" data-tab="calculator" onclick="setProfileTab('calculator')">💸 Pro Forma ${!calcOk?'<span class=\\"tab-lock basic\\">BASIC</span>':''}</div>
-          <div class="profile-tab ${activeTab==='analysis'?'active':''}" data-tab="analysis" onclick="setProfileTab('analysis')">📊 Analysis ${!proOk?'<span class=\\"tab-lock basic\\">BASIC</span>':''}</div>
+          <div class="profile-tab ${activeTab==='analysis'?'active':''}" data-tab="analysis" onclick="setProfileTab('analysis')">🏆 Competitor Analysis ${!proOk?'<span class=\\"tab-lock basic\\">BASIC</span>':''}</div>
         </div>
       </div>
     </div>
@@ -4278,7 +4278,7 @@ function renderCalculatorTab(r){
   // Forecasted Revenue (driven by Analysis comps)
   h += '<div class="calc-section"><div class="calc-section-header">Forecasted Revenue</div><div class="calc-section-body">';
   const noComps = v.compsCount === 0;
-  const compHint = noComps ? 'add comps in Analysis tab' : 'avg from Analysis comps';
+  const compHint = noComps ? 'add comps in Competitor Analysis tab' : 'avg from Competitor Analysis comps';
   h += cRow('Average Daily Rate', cDisplay(noComps ? '$0' : fmtAcct2(v.avgDailyRate), {computed:!noComps}), {hint:compHint});
   h += cRow('Est. Occupancy Rate', cDisplay(noComps ? '0%' : v.estOccupancyRate.toFixed(1)+'%', {computed:!noComps}), {hint:compHint});
   h += cRow('Est. Days/Year Occupied', cDisplay(noComps ? '0' : fmtNum(v.daysOccupied), {computed:!noComps}));
