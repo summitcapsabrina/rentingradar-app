@@ -202,6 +202,10 @@ tr.clickable:hover{background:var(--primary-light)}
 :root.light .kc-followup.upcoming{background:#eff6ff;color:#1d4ed8}
 
 /* ===== MODAL / DETAIL PANEL ===== */
+.app-footer{text-align:center;padding:12px 16px;font-size:.7rem;color:var(--text3);border-top:1px solid var(--border);background:var(--bg)}
+.app-footer a{color:var(--text3);text-decoration:none}
+.app-footer a:hover{color:var(--primary);text-decoration:underline}
+.app-footer span{margin:0 4px}
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:200;display:none;justify-content:flex-end}
 .modal-overlay.open{display:flex}
 .modal-panel{width:560px;max-width:90vw;background:var(--surface);height:100vh;overflow-y:auto;box-shadow:-4px 0 24px rgba(0,0,0,.12);animation:slideIn .2s ease}
@@ -939,6 +943,14 @@ h1 .hero-edit-input{font-size:1.35rem}
   </main>
 </div>
 
+<footer class="app-footer">
+  <a href="/privacy.html">Privacy Policy</a>
+  <span>·</span>
+  <a href="/terms.html">Terms of Service</a>
+  <span>·</span>
+  <span>© 2026 Summit Capital LLC</span>
+</footer>
+
 <!-- DETAIL MODAL -->
 <div class="modal-overlay" id="detailModal">
   <div class="modal-panel" id="detailPanel"></div>
@@ -1646,7 +1658,7 @@ function renderProfile(){
           <div class="cr-field" style="min-width:50px;flex:0 1 auto"><div class="cr-label">${d.bathrooms==='1'?'Bath':'Baths'}</div><div class="cr-value ${d.bathrooms?'':'empty'}">${d.bathrooms||'—'}</div></div>
           <div class="cr-field" style="min-width:55px;flex:0 1 auto"><div class="cr-label">Sq Ft</div><div class="cr-value ${d.sqft?'':'empty'}">${d.sqft ? Number(d.sqft).toLocaleString() : '—'}</div></div>
           <div class="cr-field" style="min-width:70px;flex:0 1 auto"><div class="cr-label">Available</div><div class="cr-value ${d.availableDate?'':'empty'}">${d.availableDate==='now'?'Now':d.availableDate ? fmtDate(d.availableDate) : '—'}</div></div>
-          <div class="cr-field" style="min-width:auto;flex:0 1 auto"><div class="cr-label">Status</div><div class="inline-status" onclick="toggleInlineStatus(event,'${r.id}')">${statusPill(r.status)}</div></div>
+          <div class="cr-field" style="min-width:auto;flex:0 1 auto"><div class="cr-label">Status</div><div class="cr-value ${r.status?'':'empty'}">${r.status||'—'}</div></div>
         </div>
         <div class="cr-row">
           <div class="cr-field"><div class="cr-label">Contact Name</div><div class="cr-value ${r.name?'':'empty'}">${esc(r.name)||'Not set'}</div>${r.name?`<button class="cr-copy-btn" onclick="event.stopPropagation();copyRecordField(this,'${r.id}','name')" title="Copy name"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>`:''}</div>
