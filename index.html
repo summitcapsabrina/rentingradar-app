@@ -591,14 +591,16 @@ h1 .hero-edit-input{font-size:1.35rem}
 .calc-kpi.positive .kpi-monthly{color:var(--success, #10b981)}
 .calc-kpi.negative .kpi-monthly{color:var(--danger, #ef4444)}
 /* Payback table */
-.calc-payback{width:100%;font-size:.72rem;border-collapse:collapse}
-.calc-payback th{padding:4px 6px;text-align:right;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.3px;border-bottom:1px solid var(--border);font-size:.65rem}
-.calc-payback th:first-child{text-align:left}
-.calc-payback td{padding:3px 6px;text-align:right;color:var(--text);border-bottom:1px solid rgba(148,163,184,.06)}
-.calc-payback td:first-child{text-align:left;font-weight:600;color:var(--text2)}
-.calc-payback td.neg{color:var(--danger, #ef4444)}
-.calc-payback td.pos{color:var(--success, #10b981)}
-.calc-payback tr.cumulative td{font-weight:700}
+.payback-chart{display:flex;flex-direction:column;gap:4px}
+.payback-row{display:flex;align-items:center;gap:6px;height:22px}
+.payback-yr-label{width:28px;font-size:.68rem;font-weight:600;color:var(--text3);text-align:right;flex-shrink:0}
+.payback-bar-track{flex:1;height:16px;position:relative;border-radius:3px;background:rgba(148,163,184,.06)}
+.payback-zero-line{position:absolute;left:50%;top:0;bottom:0;width:1px;background:var(--border);z-index:1}
+.payback-bar{height:100%;border-radius:3px;transition:width .4s ease;position:absolute;top:0;min-width:2px}
+.payback-bar-neg{right:50%;border-radius:3px 0 0 3px}
+.payback-bar-pos{left:50%;border-radius:0 3px 3px 0}
+.payback-val{width:70px;font-size:.72rem;font-weight:700;text-align:right;flex-shrink:0;font-variant-numeric:tabular-nums}
+.payback-break-marker{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:.7rem;color:#f59e0b;z-index:2;filter:drop-shadow(0 0 2px rgba(0,0,0,.3))}
 /* AI button */
 .calc-ai-btn{display:inline-flex;align-items:center;gap:4px;font-size:.68rem;padding:2px 8px;border-radius:12px;border:1px solid rgba(16,185,129,.3);background:rgba(16,185,129,.08);color:#10b981;cursor:pointer;font-weight:600;transition:all .15s;margin-left:auto}
 .calc-ai-btn:hover{background:rgba(16,185,129,.15);border-color:#10b981}
@@ -4326,40 +4328,92 @@ function renderCalculatorTab(r){
   h += cRow('Monthly Revenue', cDisplay(noComps ? '$0' : fmtAcct(Math.round(v.monthlyRevenue)), {computed:!noComps}), {total:true});
   h += '</div></div>';
 
-  // Payback Period Table
-  h += '<div class="calc-section"><div class="calc-section-header">Pay-Back Period (From Cash Flows)</div><div class="calc-section-body" style="padding:6px 4px;overflow-x:auto">';
-  h += '<table class="calc-payback"><thead><tr><th></th>';
-  for(let y=0; y<=10; y++) h += '<th>Yr '+y+'</th>';
-  h += '</tr></thead><tbody>';
+  // Payback Period Visual
   const inv = v.totalInvested;
   const acf = Math.round(v.annualCF);
-  h += '<tr><td>Initial Investment</td>';
-  h += '<td class="neg">'+fmtMoney(-inv)+'</td>';
-  for(let y=1; y<=10; y++) h += '<td>'+fmtMoney(0)+'</td>';
-  h += '</tr>';
-  h += '<tr><td>Future Cash Flows</td>';
-  h += '<td>'+fmtMoney(0)+'</td>';
+
+  // Calculate cumulative values and break-even year
+  const cumVals = [];
+  let cumRun = -inv;
+  cumVals.push(cumRun);
+  let breakEvenYear = null;
   for(let y=1; y<=10; y++){
-    const cls = acf < 0 ? 'neg' : 'pos';
-    h += '<td class="'+cls+'">'+fmtMoney(acf)+'</td>';
+    const prev = cumRun;
+    cumRun += acf;
+    cumVals.push(cumRun);
+    if(breakEvenYear === null && prev < 0 && cumRun >= 0){
+      // Interpolate fractional year for break-even
+      breakEvenYear = y - 1 + (Math.abs(prev) / (Math.abs(prev) + cumRun));
+    }
   }
-  h += '</tr>';
-  h += '<tr><td>Total Cash Flows</td>';
-  h += '<td class="neg">'+fmtMoney(-inv)+'</td>';
-  for(let y=1; y<=10; y++){
-    const cls = acf < 0 ? 'neg' : 'pos';
-    h += '<td class="'+cls+'">'+fmtMoney(acf)+'</td>';
+  const maxAbs = Math.max(...cumVals.map(v => Math.abs(v)), 1);
+
+  // Headline
+  let paybackHeadline, paybackSub, paybackColor;
+  if(inv === 0){
+    paybackHeadline = 'No Investment';
+    paybackSub = 'Enter your costs in Investment Details';
+    paybackColor = 'var(--text3)';
+  } else if(acf <= 0){
+    paybackHeadline = 'Not Recoverable';
+    paybackSub = 'Cash flow is negative — investment won\'t pay back';
+    paybackColor = 'var(--danger, #ef4444)';
+  } else if(breakEvenYear !== null){
+    const yrs = Math.floor(breakEvenYear);
+    const mos = Math.round((breakEvenYear - yrs) * 12);
+    paybackHeadline = yrs + (yrs===1?' year':' years') + (mos > 0 ? ', ' + mos + (mos===1?' month':' months') : '');
+    paybackSub = 'to recover your ' + fmtMoney(inv) + ' investment';
+    paybackColor = breakEvenYear <= 3 ? 'var(--success, #10b981)' : breakEvenYear <= 6 ? '#f59e0b' : 'var(--danger, #ef4444)';
+  } else {
+    paybackHeadline = '10+ years';
+    paybackSub = 'Investment not recovered within 10 years';
+    paybackColor = 'var(--danger, #ef4444)';
   }
-  h += '</tr>';
-  h += '<tr class="cumulative"><td>Cumulative</td>';
-  let cum = -inv;
-  h += '<td class="'+(cum<0?'neg':'pos')+'">'+fmtMoney(Math.round(cum))+'</td>';
-  for(let y=1; y<=10; y++){
-    cum += acf;
-    h += '<td class="'+(cum<0?'neg':'pos')+'">'+fmtMoney(Math.round(cum))+'</td>';
+
+  h += '<div class="calc-section"><div class="calc-section-header">Payback Period</div><div class="calc-section-body" style="padding:12px 14px">';
+
+  // Big headline number
+  h += '<div style="text-align:center;margin-bottom:16px">';
+  h += '<div style="font-size:1.4rem;font-weight:800;color:'+paybackColor+'">'+paybackHeadline+'</div>';
+  h += '<div style="font-size:.75rem;color:var(--text3);margin-top:2px">'+paybackSub+'</div>';
+  h += '</div>';
+
+  // Key figures row
+  h += '<div style="display:flex;justify-content:space-around;margin-bottom:16px;gap:8px;flex-wrap:wrap">';
+  h += '<div style="text-align:center"><div style="font-size:.65rem;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">Investment</div><div style="font-size:.9rem;font-weight:700;color:var(--danger, #ef4444)">'+fmtMoney(inv)+'</div></div>';
+  h += '<div style="text-align:center"><div style="font-size:.65rem;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">Annual Cash Flow</div><div style="font-size:.9rem;font-weight:700;color:'+(acf>=0?'var(--success, #10b981)':'var(--danger, #ef4444)')+'">'+fmtMoney(acf)+'/yr</div></div>';
+  h += '<div style="text-align:center"><div style="font-size:.65rem;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">Year 10 Balance</div><div style="font-size:.9rem;font-weight:700;color:'+(cumVals[10]>=0?'var(--success, #10b981)':'var(--danger, #ef4444)')+'">'+fmtMoney(Math.round(cumVals[10]))+'</div></div>';
+  h += '</div>';
+
+  // Visual bar chart
+  h += '<div class="payback-chart">';
+  for(let y=0; y<=10; y++){
+    const val = cumVals[y];
+    const pct = Math.min(Math.abs(val) / maxAbs * 100, 100);
+    const isNeg = val < 0;
+    const barColor = isNeg ? 'var(--danger, #ef4444)' : 'var(--success, #10b981)';
+    const isBreakEven = breakEvenYear !== null && y === Math.ceil(breakEvenYear);
+
+    h += '<div class="payback-row">';
+    h += '<div class="payback-yr-label">Yr '+y+'</div>';
+    h += '<div class="payback-bar-track">';
+    // Center line (zero point)
+    h += '<div class="payback-zero-line"></div>';
+    // Bar — left side for negative, right side for positive
+    if(isNeg){
+      h += '<div class="payback-bar payback-bar-neg" style="width:'+pct+'%;background:'+barColor+';opacity:'+(y===0?'1':'.75')+'"></div>';
+    } else {
+      h += '<div class="payback-bar payback-bar-pos" style="width:'+pct+'%;background:'+barColor+';opacity:.85"></div>';
+    }
+    if(isBreakEven){
+      h += '<div class="payback-break-marker" title="Break-even point">&#9733;</div>';
+    }
+    h += '</div>';
+    h += '<div class="payback-val" style="color:'+(isNeg?'var(--danger, #ef4444)':'var(--success, #10b981)')+'">'+fmtMoney(Math.round(val))+'</div>';
+    h += '</div>';
   }
-  h += '</tr>';
-  h += '</tbody></table>';
+  h += '</div>';
+
   h += '</div></div>';
 
   h += '</div>'; // end right panel
@@ -6065,17 +6119,20 @@ function editHeroRent(el, recId){
   input.focus();
   input.select();
 
+  let saved = false;
   function save(){
+    if(saved) return;
+    saved = true;
     const val = parseFloat(input.value) || 0;
     r.propertyDetails.monthlyRent = val;
     r.monthlyRent = val;
     saveData();
-    renderProfile(r.id);
+    render();
   }
   input.addEventListener('blur', save);
   input.addEventListener('keydown', (e) => {
     if(e.key === 'Enter'){ e.preventDefault(); input.blur(); }
-    if(e.key === 'Escape'){ input.removeEventListener('blur', save); renderProfile(r.id); }
+    if(e.key === 'Escape'){ input.removeEventListener('blur', save); render(); }
   });
 }
 
