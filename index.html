@@ -5938,11 +5938,25 @@ function setupAddressAutocomplete(inputEl, recId){
     wrapper.appendChild(dropdown);
   }
 
-  inputEl.addEventListener('input', function(){
+  function triggerSearch(delay){
     clearTimeout(addressAcTimeout);
-    const q = this.value.trim();
+    const q = inputEl.value.trim();
     if(q.length < 3){ dropdown.classList.remove('visible'); return; }
-    addressAcTimeout = setTimeout(() => fetchAddressSuggestions(q, dropdown, inputEl, recId), 300);
+    addressAcTimeout = setTimeout(() => fetchAddressSuggestions(q, dropdown, inputEl, recId), delay);
+  }
+
+  // Normal typing
+  inputEl.addEventListener('input', function(){ triggerSearch(300); });
+
+  // Paste — trigger immediately with short delay for value to settle
+  inputEl.addEventListener('paste', function(){ setTimeout(() => triggerSearch(50), 0); });
+
+  // Browser autofill fires 'change' not 'input'
+  inputEl.addEventListener('change', function(){ triggerSearch(50); });
+
+  // Also catch autofill via focus — some browsers fill on focus
+  inputEl.addEventListener('focus', function(){
+    if(this.value.trim().length >= 3) triggerSearch(200);
   });
 
   inputEl.addEventListener('blur', function(){
@@ -6049,20 +6063,32 @@ function formatFullAddress(parts){
 }
 
 async function fetchAddressSuggestions(query, dropdown, inputEl, recId){
-  try {
+  // Clean up pasted addresses: normalize whitespace, trim trailing commas
+  let q = query.replace(/\s+/g, ' ').replace(/,\s*$/, '').trim();
+  if(q.length < 3){ dropdown.classList.remove('visible'); return; }
+
+  async function doFetch(types){
+    const body = { input: q, includedRegionCodes: ['us'] };
+    if(types) body.includedPrimaryTypes = types;
     const resp = await fetch('https://places.googleapis.com/v1/places:autocomplete', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': GPLACES_KEY },
-      body: JSON.stringify({
-        input: query,
-        includedRegionCodes: ['us'],
-        includedPrimaryTypes: ['street_address', 'subpremise', 'premise']
-      })
+      body: JSON.stringify(body)
     });
-    const data = await resp.json();
-    if(!data.suggestions || !data.suggestions.length){ dropdown.classList.remove('visible'); return; }
+    return resp.json();
+  }
 
-    const places = data.suggestions.filter(s => s.placePrediction).map(s => s.placePrediction);
+  try {
+    // Try with address types first for best results
+    let data = await doFetch(['street_address', 'subpremise', 'premise']);
+    let places = (data.suggestions || []).filter(s => s.placePrediction).map(s => s.placePrediction);
+
+    // If no results, retry without type restriction (handles partial city/state/zip queries)
+    if(!places.length){
+      data = await doFetch(null);
+      places = (data.suggestions || []).filter(s => s.placePrediction).map(s => s.placePrediction);
+    }
+
     if(!places.length){ dropdown.classList.remove('visible'); return; }
 
     dropdown.innerHTML = places.map(p => {
@@ -6072,7 +6098,7 @@ async function fetchAddressSuggestions(query, dropdown, inputEl, recId){
       const display = secondary ? main + ', ' + secondary : main;
       return `<div class="address-ac-item" onmousedown="selectAddress(this,'${recId||''}')" data-place-id="${esc(placeId)}" data-description="${esc(display)}" data-main="${esc(main)}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
-        <span>${highlightMatch(display, query)}</span>
+        <span>${highlightMatch(display, q)}</span>
       </div>`;
     }).join('');
     dropdown.classList.add('visible');
