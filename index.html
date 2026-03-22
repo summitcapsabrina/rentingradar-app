@@ -3503,6 +3503,16 @@ function showManualAddForm(){
           <input id="add_unit_num" type="text" placeholder="Number" style="flex:1;max-width:140px">
         </div>
       </div>
+      <div class="field-row" style="gap:8px">
+        <div class="field-group" style="flex:1"><label class="field-label">Market</label><input id="add_market" type="text" placeholder="Phoenix/Scottsdale"></div>
+        <div class="field-group" style="flex:1"><label class="field-label">Submarket</label><input id="add_submarket" type="text" placeholder="Tempe"></div>
+      </div>
+      <div class="field-row" style="gap:8px">
+        <div class="field-group" style="flex:1"><label class="field-label">Beds</label><input id="add_beds" type="number" placeholder="3" min="0" step="1"></div>
+        <div class="field-group" style="flex:1"><label class="field-label">Baths</label><input id="add_baths" type="number" placeholder="2" min="0" step="0.5"></div>
+        <div class="field-group" style="flex:1"><label class="field-label">Sq Ft</label><input id="add_sqft" type="number" placeholder="1200" min="0"></div>
+        <div class="field-group" style="flex:1"><label class="field-label">Rent</label><input id="add_rent" type="number" placeholder="2500" min="0"></div>
+      </div>
       <div class="field-row">
         <div class="field-group"><label class="field-label">Contact Name</label><input id="add_name" type="text"></div>
         <div class="field-group"><label class="field-label">Phone</label><input id="add_phone" type="text"></div>
@@ -3512,16 +3522,25 @@ function showManualAddForm(){
         <div class="field-group"><label class="field-label">Status</label><select id="add_status">${SELECTABLE_STATUSES.map(s=>`<option value="${s}" ${s==='New'?'selected':''}>${s}</option>`).join('')}</select></div>
       </div>
       <div class="field-group"><label class="field-label">Listing Link</label><input id="add_link2" type="url" value="${esc(url)}" placeholder="https://..."></div>
-      <div class="field-group"><label class="field-label">Notes</label><textarea id="add_note" rows="3"></textarea></div>
+      <div class="field-group"><label class="field-label">Notes</label><textarea id="add_note" rows="2"></textarea></div>
       <div class="field-row">
         <div class="field-group"><label class="field-label">Follow-Up Date</label><input id="add_followup" type="date"></div>
-        <div></div>
+        <div class="field-group"><label class="field-label">Meeting Date</label><input id="add_meeting" type="date"></div>
       </div>
-      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:20px">
+      <div style="display:flex;gap:8px;justify-content:flex-end;align-items:center;margin-top:20px">
+        <div style="font-size:.65rem;color:var(--text3);margin-right:auto">Shift + Enter to save</div>
         <button class="btn btn-secondary" onclick="closeAddModal()">Cancel</button>
         <button class="btn btn-primary" onclick="saveNewRecord()">Save Property</button>
       </div>`;
-    setTimeout(() => { const el = document.getElementById('add_property'); if(el) setupAddressAutocomplete(el, null) }, 50);
+    setTimeout(() => {
+      const el = document.getElementById('add_property'); if(el) setupAddressAutocomplete(el, null);
+      // Shift+Enter to save from anywhere in the form
+      const modal = document.getElementById('detailModal');
+      if(modal && !modal._addShiftEnter){
+        modal._addShiftEnter = true;
+        modal.addEventListener('keydown', function(e){ if(e.shiftKey && e.key === 'Enter'){ e.preventDefault(); saveNewRecord(); }});
+      }
+    }, 50);
   } else {
     // Fallback if step2 doesn't exist (called from auto-import failure)
     const body = document.getElementById('addModalBody');
@@ -3540,6 +3559,16 @@ function showManualAddForm(){
           <input id="add_unit_num" type="text" placeholder="Number" style="flex:1;max-width:140px">
         </div>
       </div>
+      <div class="field-row" style="gap:8px">
+        <div class="field-group" style="flex:1"><label class="field-label">Market</label><input id="add_market" type="text" placeholder="Phoenix/Scottsdale"></div>
+        <div class="field-group" style="flex:1"><label class="field-label">Submarket</label><input id="add_submarket" type="text" placeholder="Tempe"></div>
+      </div>
+      <div class="field-row" style="gap:8px">
+        <div class="field-group" style="flex:1"><label class="field-label">Beds</label><input id="add_beds" type="number" placeholder="3" min="0" step="1"></div>
+        <div class="field-group" style="flex:1"><label class="field-label">Baths</label><input id="add_baths" type="number" placeholder="2" min="0" step="0.5"></div>
+        <div class="field-group" style="flex:1"><label class="field-label">Sq Ft</label><input id="add_sqft" type="number" placeholder="1200" min="0"></div>
+        <div class="field-group" style="flex:1"><label class="field-label">Rent</label><input id="add_rent" type="number" placeholder="2500" min="0"></div>
+      </div>
       <div class="field-row">
         <div class="field-group"><label class="field-label">Contact Name</label><input id="add_name" type="text"></div>
         <div class="field-group"><label class="field-label">Phone</label><input id="add_phone" type="text"></div>
@@ -3549,16 +3578,25 @@ function showManualAddForm(){
         <div class="field-group"><label class="field-label">Status</label><select id="add_status">${SELECTABLE_STATUSES.map(s=>`<option value="${s}" ${s==='New'?'selected':''}>${s}</option>`).join('')}</select></div>
       </div>
       <div class="field-group"><label class="field-label">Listing Link</label><input id="add_link2" type="url" value="${esc(url)}" placeholder="https://..."></div>
-      <div class="field-group"><label class="field-label">Notes</label><textarea id="add_note" rows="3"></textarea></div>
+      <div class="field-group"><label class="field-label">Notes</label><textarea id="add_note" rows="2"></textarea></div>
       <div class="field-row">
         <div class="field-group"><label class="field-label">Follow-Up Date</label><input id="add_followup" type="date"></div>
-        <div></div>
+        <div class="field-group"><label class="field-label">Meeting Date</label><input id="add_meeting" type="date"></div>
       </div>
-      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:20px">
+      <div style="display:flex;gap:8px;justify-content:flex-end;align-items:center;margin-top:20px">
+        <div style="font-size:.65rem;color:var(--text3);margin-right:auto">Shift + Enter to save</div>
         <button class="btn btn-secondary" onclick="closeAddModal()">Cancel</button>
         <button class="btn btn-primary" onclick="saveNewRecord()">Save Property</button>
       </div>`;
-    setTimeout(() => { const el = document.getElementById('add_property'); if(el) setupAddressAutocomplete(el, null) }, 50);
+    setTimeout(() => {
+      const el = document.getElementById('add_property'); if(el) setupAddressAutocomplete(el, null);
+      // Shift+Enter to save from anywhere in the form
+      const modal = document.getElementById('detailModal');
+      if(modal && !modal._addShiftEnter){
+        modal._addShiftEnter = true;
+        modal.addEventListener('keydown', function(e){ if(e.shiftKey && e.key === 'Enter'){ e.preventDefault(); saveNewRecord(); }});
+      }
+    }, 50);
   }
 }
 
@@ -3577,7 +3615,22 @@ function saveNewRecord(){
   const csz = [city, state].filter(Boolean).join(' ') + (zip ? ' ' + zip : '');
   if(csz.trim()) property += ', ' + csz.trim();
   const addrParts = { street, unit: unitStr, city, state, zip };
+  // Read property detail fields
+  const market = document.getElementById('add_market')?.value?.trim() || '';
+  const submarket = document.getElementById('add_submarket')?.value?.trim() || '';
+  const beds = document.getElementById('add_beds')?.value || '';
+  const baths = document.getElementById('add_baths')?.value || '';
+  const sqft = document.getElementById('add_sqft')?.value || '';
+  const rent = document.getElementById('add_rent')?.value || '';
+  const meetingDate = document.getElementById('add_meeting')?.value || null;
   const linkEl = document.getElementById('add_link2') || document.getElementById('add_link');
+  const propDetails = {};
+  if(market) propDetails.market = market;
+  if(submarket) propDetails.submarket = submarket;
+  if(beds) propDetails.bedrooms = beds;
+  if(baths) propDetails.bathrooms = baths;
+  if(sqft) propDetails.sqft = sqft;
+  if(rent) propDetails.monthlyRent = rent;
   const r = {
     id: uid(), property, addressParts: addrParts,
     name: document.getElementById('add_name').value.trim(),
@@ -3588,7 +3641,8 @@ function saveNewRecord(){
     note: document.getElementById('add_note').value.trim(),
     date: new Date().toISOString().split('T')[0],
     followUpDate: document.getElementById('add_followup').value || null,
-    notes:[], propertyDetails:{}, propertyNotes:[],
+    meetingDate: meetingDate,
+    notes:[], propertyDetails: propDetails, propertyNotes:[],
     createdAt: new Date().toISOString()
   };
   if(!checkPropertyLimit()){ return }
@@ -5973,8 +6027,13 @@ function setupAddressAutocomplete(inputEl, recId){
     if(!dropdown.classList.contains('visible')) return;
     const items = dropdown.querySelectorAll('.address-ac-item');
     let idx = Array.from(items).findIndex(i => i.classList.contains('active'));
-    if(e.key === 'ArrowDown'){ e.preventDefault(); idx = Math.min(idx+1, items.length-1); items.forEach((it,i) => it.classList.toggle('active',i===idx)); }
+    // Arrow Down or Shift (without other modifiers) to move down
+    if(e.key === 'ArrowDown' || (e.key === 'Shift' && !e.ctrlKey && !e.altKey && !e.metaKey)){
+      e.preventDefault(); idx = Math.min(idx+1, items.length-1); items.forEach((it,i) => it.classList.toggle('active',i===idx));
+    }
+    // Arrow Up to move up
     else if(e.key === 'ArrowUp'){ e.preventDefault(); idx = Math.max(idx-1, 0); items.forEach((it,i) => it.classList.toggle('active',i===idx)); }
+    // Enter to select highlighted item
     else if(e.key === 'Enter' && idx >= 0){ e.preventDefault(); items[idx]?.dispatchEvent(new MouseEvent('mousedown')); }
   });
 }
