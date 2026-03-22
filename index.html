@@ -4854,7 +4854,7 @@ function renderCalculatorTab(r){
   // Column definitions: order is Comp Avg, Best, Likely, Worst
   const cols = [
     { key:'avg', label:'Comp Avg', color:'var(--text2)', tooltip:'Average from Competitor Analysis comps',
-      rev: noComps ? 0 : Math.round(v.annualRevenue), exp: Math.round(v.annualExp), hasData: true },
+      rev: insufficientComps ? 0 : Math.round(v.annualRevenue), exp: insufficientComps ? 0 : Math.round(v.annualExp), hasData: !insufficientComps },
     { key:'best', label:'Best', color:'var(--num-success)', tooltip:'Best case scenario',
       rev: hasRated ? Math.round(v.bestRevenue) : 0, exp: hasRated ? Math.round(v.bestD.annualExp) : 0, hasData: hasRated },
     { key:'likely', label:'Likely', color:'var(--num-computed)', tooltip:'Likely projection based on comp ratings',
