@@ -958,11 +958,14 @@ h1 .hero-edit-input{font-size:1.35rem}
 .tp-accent-label{font-size:.65rem;text-align:center;color:var(--text3);margin-top:2px}
 
 /* ===== PIPELINE PROPERTY LIST ===== */
-.pipeline-category-tabs{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
-.pipeline-cat-tab{padding:8px 16px;font-size:.82rem;font-weight:500;cursor:pointer;border:2px solid transparent;border-radius:var(--radius);transition:all .15s;display:flex;align-items:center;gap:6px}
-.pipeline-cat-tab:hover{transform:scale(1.03)}
-.pipeline-cat-tab.active{font-weight:600}
-.pipeline-cat-tab .pct-count{font-size:.7rem;padding:1px 7px;border-radius:10px;font-weight:600;color:inherit;opacity:.7}
+.pipeline-category-tabs{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+.pipeline-cat-tab{display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:90px;padding:10px 16px;font-size:.75rem;font-weight:600;cursor:pointer;border:2px solid transparent;border-radius:var(--radius);transition:all .15s;gap:2px}
+.pipeline-cat-tab:hover{transform:scale(1.05)}
+.pipeline-cat-tab.active{font-weight:700}
+.pipeline-cat-tab .cat-icon{font-size:1.1rem;line-height:1}
+.pipeline-cat-tab .cat-label{font-size:.72rem;font-weight:500;opacity:.85}
+.pipeline-cat-tab .pct-count{font-size:.8rem;font-weight:800;line-height:1}
+.pipeline-cat-tab.active .cat-label{opacity:1}
 .pipeline-cat-tab.active .pct-count{opacity:1}
 .pipeline-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:10px}
 .pipeline-card{background:var(--surface);border-radius:var(--radius);border:1px solid var(--border);padding:12px 16px;cursor:pointer;transition:all .15s;display:flex;align-items:flex-start;gap:12px}
@@ -1347,17 +1350,21 @@ function renderDashboard(){
   }
 
   // Category tabs — outlined like trashcan, filled when active
-  const catColors = { prospects:'#818cf8', outreach:'#38bdf8', qualified:'#34d399' };
+  const catMeta = [
+    { key:'prospects', col:'129,140,248', icon:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>', label:'New Leads' },
+    { key:'outreach', col:'56,189,248', icon:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6A19.79 19.79 0 012.12 4.18 2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>', label:'In Outreach' },
+    { key:'qualified', col:'52,211,153', icon:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>', label:'Qualified' }
+  ];
   h += `<div class="pipeline-category-tabs" style="margin-top:14px">
-    ${cats.map(c => {
-      const isActive = activeCat===c.key;
-      const col = catColors[c.key];
-      const bg = isActive ? col+'2e' : col+'14';
-      const border = isActive ? col : col+'40';
-      const shadow = isActive ? '0 0 0 3px '+col+'26' : 'none';
-      return `<div class="pipeline-cat-tab ${isActive?'active':''}" onclick="pipelineCategory='${c.key}';render()" style="color:${col};background:${bg};border-color:${border};box-shadow:${shadow}">${c.name} <span class="pct-count">${c.count}</span></div>`;
+    ${catMeta.map(m => {
+      const c = cats.find(x => x.key===m.key);
+      const isActive = activeCat===m.key;
+      const bg = isActive ? 'rgba('+m.col+',.18)' : 'rgba('+m.col+',.08)';
+      const border = isActive ? 'rgb('+m.col+')' : 'rgba('+m.col+',.2)';
+      const shadow = isActive ? 'box-shadow:0 0 0 3px rgba('+m.col+',.15)' : '';
+      return `<div class="pipeline-cat-tab ${isActive?'active':''}" onclick="pipelineCategory='${m.key}';render()" style="color:rgb(${m.col});background:${bg};border-color:${border};${shadow}"><span class="cat-icon">${m.icon}</span><span class="pct-count">${c?c.count:0}</span><span class="cat-label">${m.label}</span></div>`;
     }).join('')}
-    <div class="pipeline-cat-tab ${activeCat==='lost'?'active':''}" onclick="pipelineCategory='lost';render()" style="color:var(--danger);background:${activeCat==='lost'?'rgba(239,68,68,.18)':'rgba(239,68,68,.08)'};border-color:${activeCat==='lost'?'var(--danger)':'rgba(239,68,68,.2)'};${activeCat==='lost'?'box-shadow:0 0 0 3px rgba(239,68,68,.15)':''}">Closed/Lost <span class="pct-count">${lostCount}</span></div>
+    <div class="pipeline-cat-tab ${activeCat==='lost'?'active':''}" onclick="pipelineCategory='lost';render()" style="color:var(--danger);background:${activeCat==='lost'?'rgba(239,68,68,.18)':'rgba(239,68,68,.08)'};border-color:${activeCat==='lost'?'var(--danger)':'rgba(239,68,68,.2)'};${activeCat==='lost'?'box-shadow:0 0 0 3px rgba(239,68,68,.15)':''}"><span class="cat-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></span><span class="pct-count">${lostCount}</span><span class="cat-label">Closed/Lost</span></div>
   </div>`;
 
   // Status breakdown for selected category — clicking navigates to Contacts
