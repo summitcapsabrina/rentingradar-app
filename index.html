@@ -185,10 +185,10 @@ textarea{resize:vertical;min-height:80px}
 .db-task-meta{font-size:.72rem;color:var(--text3)}
 .db-task-date{font-size:.72rem;font-weight:600;flex-shrink:0;white-space:nowrap}
 .db-empty{text-align:center;padding:24px 16px;color:var(--text3);font-size:.84rem}
-.db-funnel-bar{display:flex;height:36px;border-radius:var(--radius);overflow:hidden;gap:2px}
+.db-funnel-bar{display:flex;height:52px;border-radius:var(--radius);overflow:hidden;gap:2px}
 .db-funnel-seg{position:relative;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .15s;min-width:28px}
-.db-funnel-seg:hover{filter:brightness(1.15);transform:scaleY(1.08)}
-.db-funnel-seg span{font-size:.7rem;font-weight:700;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.3);pointer-events:none}
+.db-funnel-seg:hover{filter:brightness(1.15);transform:scaleY(1.05)}
+.db-funnel-seg span{font-size:.75rem;font-weight:700;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.3);pointer-events:none}
 .db-lost-bin{display:flex;flex-direction:column;align-items:center;justify-content:center;width:52px;height:52px;border-radius:var(--radius);background:rgba(239,68,68,.08);border:2px solid rgba(239,68,68,.2);color:var(--danger);cursor:pointer;transition:all .15s;flex-shrink:0;position:relative}
 .db-lost-bin:hover{background:rgba(239,68,68,.15);border-color:var(--danger);transform:scale(1.05)}
 .db-lost-bin.active{background:rgba(239,68,68,.18);border-color:var(--danger);box-shadow:0 0 0 3px rgba(239,68,68,.15)}
@@ -958,11 +958,11 @@ h1 .hero-edit-input{font-size:1.35rem}
 .tp-accent-label{font-size:.65rem;text-align:center;color:var(--text3);margin-top:2px}
 
 /* ===== PIPELINE PROPERTY LIST ===== */
-.pipeline-category-tabs{display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:14px}
-.pipeline-cat-tab{padding:8px 18px;font-size:.82rem;font-weight:500;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .15s;display:flex;align-items:center;gap:6px}
-.pipeline-cat-tab:hover{opacity:.85;background:var(--primary-light)}
+.pipeline-category-tabs{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+.pipeline-cat-tab{padding:8px 16px;font-size:.82rem;font-weight:500;cursor:pointer;border:2px solid transparent;border-radius:var(--radius);transition:all .15s;display:flex;align-items:center;gap:6px}
+.pipeline-cat-tab:hover{transform:scale(1.03)}
 .pipeline-cat-tab.active{font-weight:600}
-.pipeline-cat-tab .pct-count{font-size:.7rem;background:var(--bg);padding:1px 7px;border-radius:10px;font-weight:600;color:inherit;opacity:.7}
+.pipeline-cat-tab .pct-count{font-size:.7rem;padding:1px 7px;border-radius:10px;font-weight:600;color:inherit;opacity:.7}
 .pipeline-cat-tab.active .pct-count{opacity:1}
 .pipeline-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:10px}
 .pipeline-card{background:var(--surface);border-radius:var(--radius);border:1px solid var(--border);padding:12px 16px;cursor:pointer;transition:all .15s;display:flex;align-items:flex-start;gap:12px}
@@ -1346,15 +1346,18 @@ function renderDashboard(){
     h += '<div class="db-empty">No properties yet. Add your first property to see your pipeline.</div>';
   }
 
-  // Category tabs — colored to match funnel bar segments
+  // Category tabs — outlined like trashcan, filled when active
   const catColors = { prospects:'#818cf8', outreach:'#38bdf8', qualified:'#34d399' };
   h += `<div class="pipeline-category-tabs" style="margin-top:14px">
     ${cats.map(c => {
       const isActive = activeCat===c.key;
       const col = catColors[c.key];
-      return `<div class="pipeline-cat-tab ${isActive?'active':''}" onclick="pipelineCategory='${c.key}';render()" style="color:${col};${isActive?'border-bottom-color:'+col:''}">${c.name} <span class="pct-count">${c.count}</span></div>`;
+      const bg = isActive ? col+'2e' : col+'14';
+      const border = isActive ? col : col+'40';
+      const shadow = isActive ? '0 0 0 3px '+col+'26' : 'none';
+      return `<div class="pipeline-cat-tab ${isActive?'active':''}" onclick="pipelineCategory='${c.key}';render()" style="color:${col};background:${bg};border-color:${border};box-shadow:${shadow}">${c.name} <span class="pct-count">${c.count}</span></div>`;
     }).join('')}
-    <div class="pipeline-cat-tab ${activeCat==='lost'?'active':''}" onclick="pipelineCategory='lost';render()" style="color:var(--danger);${activeCat==='lost'?'border-bottom-color:var(--danger)':''}">Closed/Lost <span class="pct-count">${lostCount}</span></div>
+    <div class="pipeline-cat-tab ${activeCat==='lost'?'active':''}" onclick="pipelineCategory='lost';render()" style="color:var(--danger);background:${activeCat==='lost'?'rgba(239,68,68,.18)':'rgba(239,68,68,.08)'};border-color:${activeCat==='lost'?'var(--danger)':'rgba(239,68,68,.2)'};${activeCat==='lost'?'box-shadow:0 0 0 3px rgba(239,68,68,.15)':''}">Closed/Lost <span class="pct-count">${lostCount}</span></div>
   </div>`;
 
   // Status breakdown for selected category — clicking navigates to Contacts
