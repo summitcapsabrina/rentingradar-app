@@ -1065,6 +1065,10 @@ h1 .hero-edit-input{font-size:1.35rem}
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
         <span>Settings</span>
       </div>
+      <div class="nav-item" data-view="help" onclick="switchView('help')" title="Help">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><circle cx="12" cy="17" r=".5" fill="currentColor"/></svg>
+        <span>Help</span>
+      </div>
     </nav>
     <div class="sidebar-user" id="userSection">
       <button class="login-btn" onclick="handleGoogleLogin()" style="width:100%;justify-content:center">
@@ -1255,6 +1259,7 @@ function render(){
     case 'profile': area.innerHTML = renderProfile(); break;
     case 'pricing': area.innerHTML = renderPricing(); break;
     case 'settings': area.innerHTML = renderSettings(); break;
+    case 'help': area.innerHTML = renderHelp(); break;
   }
   updateNotifBadges();
   // Set up paste handlers for Activity Log editors
@@ -7594,6 +7599,177 @@ function renderSettings(){
     </div>
 
   </div>`;
+}
+
+function renderHelp(){
+  return `<div class="settings-page" style="max-width:720px">
+
+    <!-- GETTING STARTED -->
+    <div style="margin-bottom:28px">
+      <h2 style="font-size:1.3rem;font-weight:700;margin:0 0 4px">Help & Support</h2>
+      <p style="color:var(--text3);font-size:.85rem;margin:0">Find answers, report issues, or suggest new features.</p>
+    </div>
+
+    <!-- QUICK LINKS -->
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:28px">
+      <div class="db-kpi" style="cursor:pointer;text-align:center" onclick="document.getElementById('helpFaq').scrollIntoView({behavior:'smooth'})">
+        <div style="font-size:1.5rem;margin-bottom:4px">❓</div>
+        <div style="font-size:.82rem;font-weight:600">FAQ</div>
+        <div style="font-size:.7rem;color:var(--text3)">Common questions</div>
+      </div>
+      <div class="db-kpi" style="cursor:pointer;text-align:center" onclick="document.getElementById('helpTrouble').scrollIntoView({behavior:'smooth'})">
+        <div style="font-size:1.5rem;margin-bottom:4px">🔧</div>
+        <div style="font-size:.82rem;font-weight:600">Troubleshooting</div>
+        <div style="font-size:.7rem;color:var(--text3)">Fix common issues</div>
+      </div>
+      <div class="db-kpi" style="cursor:pointer;text-align:center" onclick="document.getElementById('helpFeature').scrollIntoView({behavior:'smooth'})">
+        <div style="font-size:1.5rem;margin-bottom:4px">💡</div>
+        <div style="font-size:.82rem;font-weight:600">Feature Request</div>
+        <div style="font-size:.7rem;color:var(--text3)">Suggest improvements</div>
+      </div>
+    </div>
+
+    <!-- FAQ -->
+    <div class="settings-section" id="helpFaq">
+      <div class="settings-section-header"><h3>❓ Frequently Asked Questions</h3></div>
+      <div class="settings-section-body" style="padding:0">
+        ${renderHelpAccordion('How do I add a new property?',
+          'Click the <strong>+ Add Property</strong> button in the top right. You can either paste a listing URL for auto-import (Pro plan) or use the manual entry form. When typing an address, suggestions will appear — select one to auto-fill the city, state, and zip fields.')}
+        ${renderHelpAccordion('What are the different pipeline categories?',
+          '<strong>New Leads</strong> — Properties you\'re tracking but haven\'t contacted yet (New, No Contact).<br><strong>In Outreach</strong> — Active communication (Messaged, Left Voicemail, Follow Up).<br><strong>Qualified</strong> — Promising prospects (Interested, Meeting).<br><strong>Closed/Lost</strong> — No longer pursuing (HOA Issues, Not Good Fit, Not Interested, Un-Listed).')}
+        ${renderHelpAccordion('How does the ROI calculator work?',
+          'Open any property profile and go to the <strong>Projected Returns</strong> tab. Enter the monthly rent, furnishing costs, and expected nightly rate. The calculator projects annual revenue, expenses, net operating income, and cash-on-cash return. Add comps in the <strong>Analysis</strong> tab to get Likely, Best, and Worst case projections.')}
+        ${renderHelpAccordion('Can I import properties from a spreadsheet?',
+          'Yes! Go to <strong>Settings → Data Management → Import CSV</strong> or use the import button on the dashboard. Your CSV should have columns for address, contact name, phone, email, and status. The importer will map your columns automatically.')}
+        ${renderHelpAccordion('What\'s the difference between the plans?',
+          '<strong>Free</strong> — Up to 50 properties, pipeline view, contact management, and follow-up reminders.<br><strong>Basic</strong> — Up to 250 properties, plus CSV import/export, dark mode & themes, property analysis, and ROI calculator.<br><strong>Pro</strong> — Unlimited properties, plus automatic data extraction via Chrome extension, AI-powered extraction, and priority feature requests.')}
+        ${renderHelpAccordion('How do follow-up reminders work?',
+          'Set a follow-up date on any property (in the Contact & Status card or when adding a property). You\'ll see upcoming follow-ups on your dashboard and receive browser notifications when they\'re due. Make sure notifications are enabled in <strong>Settings → Notifications</strong>.')}
+      </div>
+    </div>
+
+    <!-- TROUBLESHOOTING -->
+    <div class="settings-section" id="helpTrouble">
+      <div class="settings-section-header"><h3>🔧 Troubleshooting</h3></div>
+      <div class="settings-section-body" style="padding:0">
+        ${renderHelpAccordion('Google Sign-In isn\'t working',
+          '1. Make sure pop-ups are not blocked for this site.<br>2. Try clearing your browser cache and cookies.<br>3. If you see "Requested action is invalid," try signing in with a different browser.<br>4. Disable any browser extensions that might block pop-ups or scripts.<br>5. If the issue persists, contact support with the error message you see.')}
+        ${renderHelpAccordion('Address autocomplete isn\'t showing results',
+          '1. Make sure you\'ve typed at least 3 characters.<br>2. Try typing just the street number and name (e.g., "123 Main").<br>3. If pasting a full address, the dropdown may take a moment to appear.<br>4. Check your internet connection — the autocomplete requires an active connection.')}
+        ${renderHelpAccordion('My data isn\'t saving',
+          '1. Make sure you\'re signed in — data syncs to your account via the cloud.<br>2. Check if your browser\'s local storage is full (try clearing old site data).<br>3. If you see data on one device but not another, make sure you\'re signed into the same Google account on both.')}
+        ${renderHelpAccordion('Notifications aren\'t appearing',
+          '1. Go to <strong>Settings → Notifications</strong> and make sure meeting notifications are enabled.<br>2. Check that your browser has permission to show notifications (look for the bell or lock icon in the address bar).<br>3. Some browsers require the tab to be open for notifications to appear.')}
+        ${renderHelpAccordion('The Chrome extension isn\'t detected',
+          '1. Make sure you\'ve installed the <a href="#" style="color:var(--primary)">RentingRadar Importer</a> from the Chrome Web Store.<br>2. After installing, refresh this page.<br>3. Check that the extension is enabled in Chrome → Extensions (chrome://extensions).<br>4. The extension requires a Pro plan subscription.')}
+      </div>
+    </div>
+
+    <!-- KEYBOARD SHORTCUTS -->
+    <div class="settings-section">
+      <div class="settings-section-header"><h3>⌨️ Keyboard Shortcuts</h3></div>
+      <div class="settings-section-body">
+        <div style="display:grid;grid-template-columns:auto 1fr;gap:8px 16px;font-size:.82rem">
+          <kbd style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:2px 8px;font-size:.75rem;font-family:monospace;white-space:nowrap">Ctrl + S</kbd><span style="color:var(--text2)">Focus search bar</span>
+          <kbd style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:2px 8px;font-size:.75rem;font-family:monospace;white-space:nowrap">Ctrl + N</kbd><span style="color:var(--text2)">Focus activity log note editor</span>
+          <kbd style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:2px 8px;font-size:.75rem;font-family:monospace;white-space:nowrap">Shift + Enter</kbd><span style="color:var(--text2)">Save form (Add Property / Edit Contact)</span>
+          <kbd style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:2px 8px;font-size:.75rem;font-family:monospace;white-space:nowrap">Shift</kbd><span style="color:var(--text2)">Navigate address suggestions</span>
+          <kbd style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:2px 8px;font-size:.75rem;font-family:monospace;white-space:nowrap">↑ ↓</kbd><span style="color:var(--text2)">Navigate address suggestions</span>
+          <kbd style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:2px 8px;font-size:.75rem;font-family:monospace;white-space:nowrap">Enter</kbd><span style="color:var(--text2)">Select highlighted address suggestion</span>
+          <kbd style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:2px 8px;font-size:.75rem;font-family:monospace;white-space:nowrap">Escape</kbd><span style="color:var(--text2)">Close popup / modal</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- FEATURE REQUEST -->
+    <div class="settings-section" id="helpFeature">
+      <div class="settings-section-header"><h3>💡 Suggest a Feature</h3></div>
+      <div class="settings-section-body">
+        <p style="font-size:.82rem;color:var(--text2);margin:0 0 12px">Have an idea that would make RentingRadar better? We'd love to hear it. Fill out the form below and our team will review your suggestion.</p>
+        <div class="field-group" style="margin-bottom:10px"><label class="field-label">Your Name</label><input type="text" id="help_name" value="${esc((currentUser||{}).name||'')}" placeholder="Your name"></div>
+        <div class="field-group" style="margin-bottom:10px"><label class="field-label">Email</label><input type="email" id="help_email" value="${esc((currentUser||{}).email||'')}" placeholder="you@email.com"></div>
+        <div class="field-group" style="margin-bottom:10px">
+          <label class="field-label">Category</label>
+          <select id="help_category">
+            <option value="feature">Feature Request</option>
+            <option value="bug">Bug Report</option>
+            <option value="improvement">Improvement</option>
+            <option value="question">Question</option>
+          </select>
+        </div>
+        <div class="field-group" style="margin-bottom:10px"><label class="field-label">Subject</label><input type="text" id="help_subject" placeholder="Brief description of your idea or issue"></div>
+        <div class="field-group" style="margin-bottom:14px"><label class="field-label">Details</label><textarea id="help_details" rows="5" placeholder="Tell us more — what would this feature do? What problem does it solve? If reporting a bug, please include steps to reproduce it."></textarea></div>
+        <div style="display:flex;align-items:center;gap:12px">
+          <button class="btn btn-primary" onclick="submitHelpRequest()">Submit</button>
+          <span id="helpSubmitMsg" style="font-size:.8rem;color:var(--success);display:none">✓ Submitted — thank you!</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- CONTACT -->
+    <div class="settings-section">
+      <div class="settings-section-header"><h3>📬 Contact Support</h3></div>
+      <div class="settings-section-body">
+        <p style="font-size:.82rem;color:var(--text2);margin:0 0 8px">Can't find what you need? Reach out directly and we'll get back to you as soon as possible.</p>
+        <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:12px">
+          <a href="mailto:help@rentingradar.com" class="btn btn-secondary btn-sm" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+            help@rentingradar.com
+          </a>
+          <a href="https://rentingradar.com" target="_blank" class="btn btn-secondary btn-sm" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+            rentingradar.com
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <!-- APP INFO -->
+    <div style="text-align:center;padding:20px 0;font-size:.72rem;color:var(--text3)">
+      RentingRadar v1.0 · ${currentTier ? TIERS[currentTier].name + ' Plan' : 'Free Plan'} · ${records.length} properties
+    </div>
+
+  </div>`;
+}
+
+function renderHelpAccordion(question, answer){
+  const id = 'haq_' + question.replace(/\W+/g,'_').substring(0,30);
+  return `<div class="settings-row" style="display:block;cursor:pointer" onclick="const a=document.getElementById('${id}');const open=a.style.display!=='none';a.style.display=open?'none':'block';this.querySelector('.ha-arrow').style.transform=open?'':'rotate(90deg)'">
+    <div style="display:flex;align-items:center;gap:8px">
+      <svg class="ha-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="flex-shrink:0;transition:transform .15s"><path d="M9 18l6-6-6-6"/></svg>
+      <div style="font-size:.84rem;font-weight:600;color:var(--text)">${question}</div>
+    </div>
+    <div id="${id}" style="display:none;font-size:.82rem;color:var(--text2);line-height:1.6;padding:8px 0 4px 20px">${answer}</div>
+  </div>`;
+}
+
+function submitHelpRequest(){
+  const name = document.getElementById('help_name')?.value?.trim() || '';
+  const email = document.getElementById('help_email')?.value?.trim() || '';
+  const category = document.getElementById('help_category')?.value || 'feature';
+  const subject = document.getElementById('help_subject')?.value?.trim() || '';
+  const details = document.getElementById('help_details')?.value?.trim() || '';
+  if(!subject){ alert('Please enter a subject.'); return; }
+  if(!details){ alert('Please provide some details.'); return; }
+
+  // Store locally and could be sent to a backend in the future
+  const request = { id: uid(), name, email, category, subject, details, date: new Date().toISOString(), tier: currentTier };
+  try {
+    const existing = JSON.parse(localStorage.getItem('rr_help_requests') || '[]');
+    existing.push(request);
+    localStorage.setItem('rr_help_requests', JSON.stringify(existing));
+  } catch(e){}
+
+  // Send via mailto as a fallback
+  const mailSubject = encodeURIComponent('[' + category.charAt(0).toUpperCase() + category.slice(1) + '] ' + subject);
+  const mailBody = encodeURIComponent('Name: ' + name + '\\nEmail: ' + email + '\\nCategory: ' + category + '\\nTier: ' + (currentTier || 'free') + '\\n\\n' + details);
+  window.open('mailto:help@rentingradar.com?subject=' + mailSubject + '&body=' + mailBody, '_blank');
+
+  // Show success
+  document.getElementById('help_subject').value = '';
+  document.getElementById('help_details').value = '';
+  const msg = document.getElementById('helpSubmitMsg');
+  if(msg){ msg.style.display = 'inline'; setTimeout(() => msg.style.display = 'none', 4000); }
 }
 
 function openEditProfile(){
