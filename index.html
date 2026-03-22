@@ -186,12 +186,10 @@ textarea{resize:vertical;min-height:80px}
 .db-task-date{font-size:.72rem;font-weight:600;flex-shrink:0;white-space:nowrap}
 .db-empty{text-align:center;padding:24px 16px;color:var(--text3);font-size:.84rem}
 .db-pipeline-boxes{display:flex;gap:10px;flex-wrap:wrap}
-.db-pipeline-box{display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;min-width:80px;height:72px;border-radius:var(--radius);border:2px solid transparent;cursor:pointer;transition:all .15s;gap:2px;position:relative}
-.db-pipeline-box:hover{transform:scale(1.05)}
+.db-pipeline-box{display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:60px;height:64px;border-radius:var(--radius);border:2px solid transparent;cursor:pointer;transition:all .3s ease;gap:3px;position:relative}
+.db-pipeline-box:hover{transform:scale(1.05);filter:brightness(1.1)}
 .db-pipeline-box .pb-icon{line-height:1}
 .db-pipeline-box .pb-count{font-size:.85rem;font-weight:800;line-height:1}
-.db-pipeline-box .pb-label{font-size:.68rem;font-weight:500;opacity:.85;line-height:1}
-.db-pipeline-box.active .pb-label{opacity:1}
 .db-status-breakdown{display:flex;flex-direction:column;gap:2px;margin-top:4px}
 .db-status-row{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:var(--radius);cursor:pointer;transition:background .1s}
 .db-status-row:hover{background:var(--primary-light)}
@@ -1334,17 +1332,20 @@ function renderDashboard(){
     { key:'lost', col:'239,68,68', icon:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>', label:'Closed/Lost' }
   ];
   if(active > 0 || lostCount > 0){
+    // Compute counts and total for proportional widths
+    const boxCounts = boxMeta.map(m => m.key === 'lost' ? lostCount : (cats.find(x => x.key===m.key)?.count || 0));
+    const boxTotal = boxCounts.reduce((a,b) => a+b, 0) || 1;
     h += '<div class="db-pipeline-boxes">';
-    boxMeta.forEach(m => {
-      const count = m.key === 'lost' ? lostCount : (cats.find(x => x.key===m.key)?.count || 0);
+    boxMeta.forEach((m, i) => {
+      const count = boxCounts[i];
       const isActive = activeCat === m.key;
-      const bg = isActive ? 'rgba('+m.col+',.18)' : 'rgba('+m.col+',.08)';
-      const border = isActive ? 'rgb('+m.col+')' : 'rgba('+m.col+',.2)';
-      const shadow = isActive ? 'box-shadow:0 0 0 3px rgba('+m.col+',.15)' : '';
-      h += `<div class="db-pipeline-box ${isActive?'active':''}" onclick="pipelineCategory='${m.key}';render()" style="color:rgb(${m.col});background:${bg};border-color:${border};${shadow}">
+      const bg = isActive ? 'rgba('+m.col+',.22)' : 'rgba('+m.col+',.08)';
+      const border = isActive ? 'rgb('+m.col+')' : 'rgba('+m.col+',.25)';
+      const shadow = isActive ? 'box-shadow:0 0 0 3px rgba('+m.col+',.2)' : '';
+      const pct = Math.max((count/boxTotal)*100, count > 0 ? 12 : 8);
+      h += `<div class="db-pipeline-box ${isActive?'active':''}" onclick="pipelineCategory='${m.key}';render()" style="color:rgb(${m.col});background:${bg};border-color:${border};${shadow};flex:${pct} 0 0">
         <span class="pb-icon">${m.icon}</span>
         <span class="pb-count">${count}</span>
-        <span class="pb-label">${m.label}</span>
       </div>`;
     });
     h += '</div>';
