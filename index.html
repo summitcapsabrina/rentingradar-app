@@ -1197,7 +1197,8 @@ function switchView(view){
   currentView = view;
   currentProfileId = null;
   clearSearch();
-  document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.view === view));
+  const navView = view === 'pipeline' ? 'dashboard' : view;
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.view === navView));
   const titles = { dashboard:'Dashboard', pipeline:'Pipeline', contacts:'All Contacts', notifications:'Notifications', pricing:'Your Plan', settings:'Settings' };
   document.getElementById('headerTitle').textContent = titles[view] || '';
   if(!_handlingPopstate) history.pushState({ view: view, profileId: null }, '', '#' + view);
@@ -1232,7 +1233,7 @@ function render(){
   area.style.paddingTop = currentView === 'profile' ? '0' : '';
   switch(currentView){
     case 'dashboard': area.innerHTML = renderDashboard(); break;
-    case 'pipeline': area.innerHTML = renderPipeline(); break;
+    case 'pipeline': pipelineCategory=pipelineCategory||'all'; currentView='dashboard'; area.innerHTML = renderDashboard(); document.querySelector('.pipeline-category-tabs')?.scrollIntoView({behavior:'smooth',block:'nearest'}); break;
     case 'contacts': area.innerHTML = renderContacts(); break;
     case 'notifications': area.innerHTML = renderNotifications(); break;
     case 'profile': area.innerHTML = renderProfile(); break;
@@ -1293,41 +1294,121 @@ function renderDashboard(){
   // ── KPI CARDS ──
   h += '<div class="db-kpis">';
   h += `<div class="db-kpi" onclick="switchView('contacts')" style="cursor:pointer"><div class="kpi-icon" style="background:rgba(99,129,250,.12);color:var(--primary)">📋</div><div class="kpi-val">${total}</div><div class="kpi-label">Total Properties</div><div class="kpi-sub">${withContact} with contacts</div></div>`;
-  h += `<div class="db-kpi" onclick="pipelineCategory='all';switchView('pipeline')" style="cursor:pointer"><div class="kpi-icon" style="background:rgba(56,189,248,.12);color:#38bdf8">🔄</div><div class="kpi-val">${active}</div><div class="kpi-label">Active Pipeline</div><div class="kpi-sub">${closed} closed/lost</div></div>`;
-  h += `<div class="db-kpi" onclick="pipelineCategory='qualified';switchView('pipeline')" style="cursor:pointer"><div class="kpi-icon" style="background:rgba(52,211,153,.12);color:#34d399">🔥</div><div class="kpi-val">${hotLeads}</div><div class="kpi-label">Hot Leads</div><div class="kpi-sub">${convRate}% qualification rate</div></div>`;
+  h += `<div class="db-kpi" onclick="pipelineCategory='all';pipelineSubCategory=null;render();document.querySelector('.pipeline-category-tabs')?.scrollIntoView({behavior:'smooth',block:'nearest'})" style="cursor:pointer"><div class="kpi-icon" style="background:rgba(56,189,248,.12);color:#38bdf8">🔄</div><div class="kpi-val">${active}</div><div class="kpi-label">Active Pipeline</div><div class="kpi-sub">${closed} closed/lost</div></div>`;
+  h += `<div class="db-kpi" onclick="pipelineCategory='qualified';pipelineSubCategory=null;render();document.querySelector('.pipeline-category-tabs')?.scrollIntoView({behavior:'smooth',block:'nearest'})" style="cursor:pointer"><div class="kpi-icon" style="background:rgba(52,211,153,.12);color:#34d399">🔥</div><div class="kpi-val">${hotLeads}</div><div class="kpi-label">Hot Leads</div><div class="kpi-sub">${convRate}% qualification rate</div></div>`;
   h += `<div class="db-kpi" onclick="switchView('notifications')" style="cursor:pointer"><div class="kpi-icon" style="background:${overdue.length?'rgba(239,68,68,.12)':'rgba(52,211,153,.12)'};color:${overdue.length?'var(--danger)':'var(--success)'}">📅</div><div class="kpi-val" style="color:${overdue.length?'var(--danger)':'var(--text)'}">${followUps.length}</div><div class="kpi-label">Follow-Ups Due</div><div class="kpi-sub">${overdue.length} overdue${todayFU.length ? ', '+todayFU.length+' today' : ''}</div></div>`;
   h += `<div class="db-kpi"><div class="kpi-icon" style="background:rgba(168,85,247,.12);color:#a855f7">📅</div><div class="kpi-val">${meetings.length}</div><div class="kpi-label">Upcoming Meetings</div><div class="kpi-sub">${pastMeetings} completed</div></div>`;
   h += '</div>';
 
-  // ── FUNNEL BAR + STAGE BREAKDOWN ──
+  // ── PIPELINE (funnel bar + category tabs + property cards) ──
+  const activeCat = pipelineCategory || 'all';
+  const cats = FUNNEL_CATEGORIES.map(c => ({
+    ...c,
+    count: records.filter(r => c.statuses.includes(r.status)).length,
+    records: records.filter(r => c.statuses.includes(r.status))
+  }));
+  const allActive = records.filter(r => PIPELINE_STAGES.includes(r.status));
+  const lostRecords = records.filter(r => CLOSED_STAGES.includes(r.status));
+  const lostCount = lostRecords.length;
+
   h += '<div class="db-card">';
-  h += '<div class="db-card-hdr"><h3>📊 Pipeline Funnel</h3><span class="db-hdr-action" onclick="pipelineCategory=\'all\';switchView(\'pipeline\')">View Pipeline →</span></div>';
+  h += '<div class="db-card-hdr"><h3>📊 Pipeline</h3><span class="db-hdr-action" onclick="switchView(\'contacts\')">All Contacts →</span></div>';
   h += '<div class="db-card-body">';
-  if(active > 0){
+
+  // Funnel bar
+  if(active > 0 || lostCount > 0){
     h += '<div class="db-funnel-bar">';
     funnelStages.forEach(s => {
-      const pct = active > 0 ? Math.max((s.count/active)*100, s.count > 0 ? 6 : 0) : 0;
-      if(s.count > 0) h += `<div class="db-funnel-seg" style="width:${pct}%;background:${s.color}" onclick="pipelineCategory='${s.catKey}';switchView('pipeline')" title="${s.name}: ${s.count}"><span>${s.count}</span></div>`;
+      const barTotal = active + lostCount;
+      const pct = barTotal > 0 ? Math.max((s.count/barTotal)*100, s.count > 0 ? 5 : 0) : 0;
+      if(s.count > 0) h += `<div class="db-funnel-seg" style="width:${pct}%;background:${s.color}" onclick="pipelineCategory='${s.catKey}';pipelineSubCategory=null;render()" title="${s.name}: ${s.count}"><span>${s.count}</span></div>`;
     });
+    if(lostCount > 0){
+      const barTotal = active + lostCount;
+      const pct = Math.max((lostCount/barTotal)*100, 5);
+      h += `<div class="db-funnel-seg" style="width:${pct}%;background:var(--danger)" onclick="pipelineCategory='lost';pipelineSubCategory=null;render()" title="Closed/Lost: ${lostCount}"><span>${lostCount}</span></div>`;
+    }
     h += '</div>';
     h += '<div class="db-funnel-legend">';
     funnelStages.forEach(s => {
-      h += `<div class="db-funnel-leg" onclick="pipelineCategory='${s.catKey}';switchView('pipeline')"><div class="db-funnel-dot" style="background:${s.color}"></div>${s.name} (${s.count})</div>`;
+      h += `<div class="db-funnel-leg" onclick="pipelineCategory='${s.catKey}';pipelineSubCategory=null;render()"><div class="db-funnel-dot" style="background:${s.color}"></div>${s.name} (${s.count})</div>`;
     });
-    if(closed > 0) h += `<div class="db-funnel-leg" onclick="pipelineCategory='lost';switchView('pipeline')"><div class="db-funnel-dot" style="background:var(--danger)"></div>Closed/Lost (${closed})</div>`;
+    if(lostCount > 0) h += `<div class="db-funnel-leg" onclick="pipelineCategory='lost';pipelineSubCategory=null;render()"><div class="db-funnel-dot" style="background:var(--danger)"></div>Closed/Lost (${lostCount})</div>`;
     h += '</div>';
   } else {
-    h += '<div class="db-empty">No active properties yet. Add your first property to see your pipeline.</div>';
+    h += '<div class="db-empty">No properties yet. Add your first property to see your pipeline.</div>';
   }
-  // Stage breakdown grid
-  if(total > 0){
-    h += '<div class="db-stage-grid">';
-    PIPELINE_STAGES.forEach(s => {
-      const cnt = counts[s] || 0;
-      h += `<div class="db-stage-item" onclick="filterStatus='${s}';switchView('contacts')"><div class="db-stage-count">${cnt}</div><div class="db-stage-label">${s}</div></div>`;
+
+  // Category tabs
+  h += `<div class="pipeline-category-tabs" style="margin-top:14px">
+    <div class="pipeline-cat-tab ${activeCat==='all'?'active':''}" onclick="pipelineCategory='all';pipelineSubCategory=null;render()">All Active <span class="pct-count">${allActive.length}</span></div>
+    ${cats.map(c => `<div class="pipeline-cat-tab ${activeCat===c.key?'active':''}" onclick="pipelineCategory='${c.key}';pipelineSubCategory=null;render()">${c.name} <span class="pct-count">${c.count}</span></div>`).join('')}
+    <div class="pipeline-cat-tab ${activeCat==='lost'?'active':''}" onclick="pipelineCategory='lost';pipelineSubCategory=null;render()" style="${activeCat==='lost'?'color:var(--danger);border-bottom-color:var(--danger)':''}">🗑 Closed/Lost <span class="pct-count">${lostCount}</span></div>
+  </div>`;
+
+  // Sub-category chips
+  if(activeCat !== 'all'){
+    const isLost = activeCat === 'lost';
+    const cat = isLost ? { name:'Closed/Lost', statuses:CLOSED_STAGES, count:lostCount } : cats.find(c => c.key === activeCat);
+    if(cat && cat.statuses.length > 1){
+      h += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
+        <span class="chip ${!pipelineSubCategory?'active':''}" onclick="pipelineSubCategory=null;render()">All ${cat.name} (${cat.count})</span>
+        ${cat.statuses.map(st => {
+          const cnt = records.filter(r => r.status === st).length;
+          return cnt > 0 ? `<span class="chip ${pipelineSubCategory===st?'active':''}" onclick="pipelineSubCategory='${st}';render()">${st} (${cnt})</span>` : '';
+        }).join('')}
+      </div>`;
+    }
+  }
+
+  // Get records for selected category
+  let displayRecords;
+  if(activeCat === 'all'){
+    displayRecords = allActive;
+  } else if(activeCat === 'lost'){
+    displayRecords = lostRecords;
+    if(pipelineSubCategory) displayRecords = displayRecords.filter(r => r.status === pipelineSubCategory);
+  } else {
+    const cat = cats.find(c => c.key === activeCat);
+    displayRecords = cat ? cat.records : [];
+    if(pipelineSubCategory) displayRecords = displayRecords.filter(r => r.status === pipelineSubCategory);
+  }
+
+  // Apply search filter
+  if(searchQuery){
+    const words = searchQuery.split(/\s+/).filter(w => w.length > 0);
+    displayRecords = displayRecords.filter(r => {
+      const blob = [r.property, r.name, r.phone, r.email, r.status].filter(Boolean).join(' ').toLowerCase();
+      return words.every(w => blob.includes(w));
+    });
+  }
+
+  // Property cards
+  if(displayRecords.length === 0){
+    h += '<div style="text-align:center;padding:30px;color:var(--text3);font-size:.88rem">No properties in this category</div>';
+  } else {
+    h += '<div class="pipeline-list">';
+    displayRecords.forEach(r => {
+      const d = r.propertyDetails || {};
+      const rent = d.monthlyRent ? '$'+Number(d.monthlyRent).toLocaleString()+'/mo' : '';
+      h += `<div class="pipeline-card" onclick="openDetail('${r.id}')">
+        <div class="plc-main">
+          <div class="plc-property">${esc(r.property)}</div>
+          ${r.name ? `<div class="plc-name">${esc(r.name)}</div>` : ''}
+          <div class="plc-meta">
+            ${rent ? `<span>${rent}</span>` : ''}
+            ${d.bedrooms ? `<span>${d.bedrooms} bd</span>` : ''}
+            ${d.bathrooms ? `<span>${d.bathrooms} ba</span>` : ''}
+            ${r.phone ? `<span>📞 ${esc(r.phone)}</span>` : ''}
+            ${r.date ? `<span>${fmtDate(r.date)}</span>` : ''}
+          </div>
+        </div>
+        <div class="plc-status">${statusPill(r.status)}</div>
+      </div>`;
     });
     h += '</div>';
   }
+
   h += '</div></div>';
 
   // ── MIDDLE ROW: Tasks + Meetings ──
