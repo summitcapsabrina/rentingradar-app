@@ -6048,15 +6048,37 @@ function parseAddressParts(property){
 }
 
 function highlightMatch(text, query){
-  // Bold all matching portions of the query within the text
-  const words = query.toLowerCase().split(/\s+/).filter(w => w.length > 0);
-  let result = esc(text);
-  // Sort words longest first so we don't double-match substrings
+  // Bold matching portions of query words within the text
+  // Use marker tokens to avoid regex corrupting inserted HTML tags
+  const words = query.toLowerCase().split(/\s+/).filter(w => w.length > 1);
+  if(!words.length) return esc(text);
+  // Sort longest first to avoid partial overwrites
   words.sort((a,b) => b.length - a.length);
+  // Work on raw text, mark matches with tokens, then escape and convert tokens to HTML
+  let marks = new Array(text.length).fill(false);
   for(const word of words){
     const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    result = result.replace(new RegExp('(' + escaped + ')', 'gi'), '<strong>$1</strong>');
+    const re = new RegExp(escaped, 'gi');
+    let m;
+    while((m = re.exec(text)) !== null){
+      for(let i = m.index; i < m.index + m[0].length; i++) marks[i] = true;
+    }
   }
+  // Build result with bold spans around marked runs
+  let result = '';
+  let inBold = false;
+  for(let i = 0; i < text.length; i++){
+    if(marks[i] && !inBold){ result += '<strong>'; inBold = true; }
+    else if(!marks[i] && inBold){ result += '</strong>'; inBold = false; }
+    // Escape each character individually
+    const c = text[i];
+    if(c === '&') result += '&amp;';
+    else if(c === '<') result += '&lt;';
+    else if(c === '>') result += '&gt;';
+    else if(c === '"') result += '&quot;';
+    else result += c;
+  }
+  if(inBold) result += '</strong>';
   return result;
 }
 
