@@ -385,7 +385,7 @@ tr.clickable:hover{background:var(--primary-light)}
 
 /* ===== PROFILE PAGE ===== */
 .profile-hero{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:20px;flex-wrap:wrap}
-.profile-sticky-header{position:sticky;top:0;z-index:40;background:var(--bg);padding:20px 24px 0;border-bottom:none;margin:0 -24px 16px}
+.profile-sticky-header{position:sticky;top:0;z-index:40;background:var(--bg);padding:20px 24px 12px;border-bottom:1px solid var(--border);margin:0 -24px 16px}
 .profile-hero-left{flex:1;min-width:0;position:relative}
 .hero-contact-name{font-size:1.05rem;color:var(--text2);margin-top:2px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
 .hero-contact-item{display:inline-flex;align-items:center;gap:4px}
@@ -572,15 +572,10 @@ h1 .hero-edit-input{font-size:1.35rem}
 .hero-stat-divider{width:1px;height:16px;background:var(--border)}
 
 /* ===== PROFILE TABS ===== */
-.profile-tabs{display:flex;gap:0;align-items:flex-end;width:100%;margin-top:3px;position:relative}
-.profile-tabs::before{content:'';flex:1;min-width:0}
-.profile-tabs::after{content:'';position:absolute;bottom:0;left:0;right:0;height:1.5px;background:var(--primary);z-index:0;pointer-events:none}
-.profile-tab{padding:7px 14px;font-size:.78rem;font-weight:500;color:var(--text3);cursor:pointer;border-radius:6px 6px 0 0;border:1.5px solid transparent;border-bottom:none;transition:all .15s;display:flex;align-items:center;gap:4px;white-space:nowrap;background:transparent;position:relative}
-.profile-tab:hover{color:var(--text);background:var(--primary-light)}
-.profile-tab.active{color:var(--primary);background:var(--bg);border:1.5px solid var(--primary);border-bottom:none;border-radius:6px 6px 0 0;font-weight:600;z-index:2}
-.profile-tab.active::before,.profile-tab.active::after{content:'';position:absolute;bottom:0;width:6px;height:6px;background:transparent;z-index:2}
-.profile-tab.active::before{left:calc(-6px - 1.5px);border-bottom-right-radius:6px;border-width:0 1.5px 1.5px 0;border-style:solid;border-color:var(--primary);box-shadow:2px 2px 0 var(--bg)}
-.profile-tab.active::after{right:calc(-6px - 1.5px);border-bottom-left-radius:6px;border-width:0 0 1.5px 1.5px;border-style:solid;border-color:var(--primary);box-shadow:-2px 2px 0 var(--bg)}
+.profile-tabs{display:flex;gap:4px;align-items:center;margin-left:auto;flex-shrink:0}
+.profile-tab{padding:5px 12px;font-size:.78rem;font-weight:500;color:var(--text3);cursor:pointer;border-radius:var(--radius);border:1px solid var(--border);transition:all .15s;display:flex;align-items:center;gap:4px;white-space:nowrap;background:var(--surface)}
+.profile-tab:hover{color:var(--text);background:var(--primary-light);border-color:var(--primary)}
+.profile-tab.active{color:var(--primary);background:var(--primary-light);border-color:var(--primary);font-weight:600}
 .profile-tab .tab-lock{font-size:.6rem;padding:1px 6px;border-radius:8px;font-weight:700;text-transform:uppercase;letter-spacing:.3px}
 .profile-tab .tab-lock.locked{background:rgba(148,163,184,.15);color:#94a3b8}
 .profile-tab .tab-lock.basic{background:rgba(245,158,11,.15);color:#f59e0b}
@@ -1757,13 +1752,13 @@ function _renderProfileInner(){
         ${r.link ? `<a class="profile-platform" href="${esc(r.link)}" target="_blank">${plat.icon} ${plat.name} <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"/></svg></a>` : '<span style="font-size:.8rem;color:var(--text3)">No listing link</span>'}
         ${r.followUpDate ? (()=>{ const fp = new Date(r.followUpDate+'T'+(r.followUpTime||'23:59')) < new Date(); return `<span style="font-size:.75rem;color:${fp?'var(--text3)':'var(--danger, #ef4444)'};display:inline-flex;align-items:center;gap:3px"><span style="font-size:.8rem">${fp?'\uD83D\uDD15':'\uD83D\uDD14'}</span> Follow-up: ${fmtDateTimeForCard(r.followUpDate, r.followUpTime)}</span>`; })() : ''}
         ${r.meetingDate ? (()=>{ const mp = new Date(r.meetingDate+'T'+(r.meetingTime||'23:59')) < new Date(); return `<span style="font-size:.75rem;color:${mp?'var(--text3)':'var(--primary)'};display:inline-flex;align-items:center;gap:3px"><span style="font-size:.8rem">📅</span> Meeting: ${fmtDateTimeForCard(r.meetingDate, r.meetingTime)}</span>`; })() : ''}
+        <div class="profile-tabs">
+          <div class="profile-tab ${activeTab==='details'?'active':''}" data-tab="details" onclick="setProfileTab('details')">🏠 Property Details</div>
+          <div class="profile-tab ${activeTab==='expenses'?'active':''}" data-tab="expenses" onclick="setProfileTab('expenses')">💸 Expenses ${!calcOk?'<span class=\\"tab-lock basic\\">BASIC</span>':''}</div>
+          <div class="profile-tab ${activeTab==='analysis'?'active':''}" data-tab="analysis" onclick="setProfileTab('analysis')">📊 Competitor Analysis ${!proOk?'<span class=\\"tab-lock basic\\">BASIC</span>':''}</div>
+          <div class="profile-tab ${activeTab==='calculator'?'active':''}" data-tab="calculator" onclick="setProfileTab('calculator')">💰 Projected Returns ${!calcOk?'<span class=\\"tab-lock basic\\">BASIC</span>':''}</div>
+        </div>
       </div>
-    </div>
-    <div class="profile-tabs">
-      <div class="profile-tab ${activeTab==='details'?'active':''}" data-tab="details" onclick="setProfileTab('details')">🏠 Property Details</div>
-      <div class="profile-tab ${activeTab==='expenses'?'active':''}" data-tab="expenses" onclick="setProfileTab('expenses')">💸 Expenses ${!calcOk?'<span class=\\"tab-lock basic\\">BASIC</span>':''}</div>
-      <div class="profile-tab ${activeTab==='analysis'?'active':''}" data-tab="analysis" onclick="setProfileTab('analysis')">📊 Competitor Analysis ${!proOk?'<span class=\\"tab-lock basic\\">BASIC</span>':''}</div>
-      <div class="profile-tab ${activeTab==='calculator'?'active':''}" data-tab="calculator" onclick="setProfileTab('calculator')">💰 Projected Returns ${!calcOk?'<span class=\\"tab-lock basic\\">BASIC</span>':''}</div>
     </div>
   </div>`;
 
