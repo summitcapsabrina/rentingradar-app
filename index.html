@@ -5094,30 +5094,12 @@ function renderAnalysisTab(r){
   // Expenses = total Monthly Operating Expenses from Pro Forma (includes all utilities + cleaning)
   const expenses = v.totalMonthlyExp;
 
-  // Build Design & Amenities summary from Property Details key highlights
-  const highlights = [];
-  if(pd.flooring && pd.flooring.length) highlights.push('Flooring: ' + (Array.isArray(pd.flooring) ? pd.flooring.join(', ') : pd.flooring));
-  if(pd.countertops) highlights.push('Countertops: ' + pd.countertops);
-  if(pd.appliances && pd.appliances.length) highlights.push('Appliances: ' + (Array.isArray(pd.appliances) ? pd.appliances.join(', ') : pd.appliances));
-  if(pd.laundry) highlights.push('Laundry: ' + pd.laundry);
-  if(pd.ac) highlights.push('A/C: ' + pd.ac);
-  if(pd.parking) highlights.push('Parking: ' + pd.parking);
-  if(pd.pool && pd.pool !== 'None') highlights.push('Pool: ' + pd.pool);
-  if(pd.communityAmenities && pd.communityAmenities.length) highlights.push('Community: ' + (Array.isArray(pd.communityAmenities) ? pd.communityAmenities.join(', ') : pd.communityAmenities));
-  const amenitySummary = highlights.length > 0 ? highlights.join(' · ') : 'No amenities entered yet — fill out Property Details to auto-populate.';
-
   let h = '';
 
-  // ── Top: Property Snapshot + Required Revenue side by side ──
+  // ── Top: Required Revenue + Revenue Projections side by side ──
   h += '<div class="an-top-grid">';
 
-  // Left: Property snapshot (Design/Amenities read-only + Notes)
-  h += '<div class="an-section"><div class="an-section-hdr">Property Notes</div><div class="an-section-body">';
-  h += '<div class="an-field-row"><div class="an-field-label">Amenities</div><div class="an-field-val"><div class="an-readonly-summary">'+esc(amenitySummary)+'</div></div></div>';
-  h += '<div class="an-field-row"><div class="an-field-label">Notes</div><div class="an-field-val"><textarea placeholder="Any notes or concerns about this property..." onchange="updateAnalysisField(\''+r.id+'\',\'concerns\',this.value)">'+esc(an.concerns||'')+'</textarea></div></div>';
-  h += '</div></div>';
-
-  // Right: Required Revenue
+  // Left: Required Revenue
   h += '<div class="an-section"><div class="an-section-hdr">Required Revenue</div><div class="an-section-body" style="padding:0">';
   h += '<div class="an-req-bar" style="border:none;border-radius:0;margin:0">';
   h += '<div class="an-req-item"><div class="req-label">Rent</div><div class="req-val">'+fmtMoney(v.monthlyRent*12)+'<span class="req-period">/yr</span></div><div class="req-annual">'+fmtMoney(v.monthlyRent)+'/mo</div></div>';
@@ -5130,9 +5112,7 @@ function renderAnalysisTab(r){
   h += '</div>';
   h += '</div></div>';
 
-  h += '</div>'; // end an-top-grid
-
-  // ── Revenue Projections + Averages Bar (combined, no title) ──
+  // ── Revenue Projections (right side of top grid) ──
   // Rating-weighted projection logic:
   //   Each comp's annual revenue is adjusted by how our property compares:
   //   Beats  → we earn MORE   (Likely ×1.15, Best ×1.20, Worst ×1.05)
@@ -5175,12 +5155,16 @@ function renderAnalysisTab(r){
     projWorst = Math.round(sumWorst / compsWithRev.length);
   }
 
-  // Revenue Projections bar (read-only, driven by comp ratings)
-  h += '<div class="comp-avg-bar comp-proj-bar" style="margin-bottom:10px">';
-  h += '<div class="comp-avg-item"><div class="avg-label">Likely Revenue</div><div class="avg-value">'+(projLikely ? fmtMoney(projLikely) : '$0')+'</div></div>';
-  h += '<div class="comp-avg-item"><div class="avg-label">Best Case</div><div class="avg-value" style="color:var(--num-success)">'+(projBest ? fmtMoney(projBest) : '$0')+'</div></div>';
-  h += '<div class="comp-avg-item"><div class="avg-label">Worst Case</div><div class="avg-value" style="color:var(--num-danger)">'+(projWorst ? fmtMoney(projWorst) : '$0')+'</div></div>';
+  // Right: Revenue Projections (Likely, Best, Worst Case)
+  h += '<div class="an-section"><div class="an-section-hdr">Revenue Projections</div><div class="an-section-body" style="padding:0">';
+  h += '<div class="an-req-bar" style="border:none;border-radius:0;margin:0">';
+  h += '<div class="an-req-item"><div class="req-label">Likely Revenue</div><div class="req-val">'+(projLikely ? fmtMoney(projLikely) : '$0')+'<span class="req-period">/yr</span></div><div class="req-annual">'+(projLikely ? fmtMoney(Math.round(projLikely/12)) : '$0')+'/mo</div></div>';
+  h += '<div class="an-req-item"><div class="req-label">Best Case</div><div class="req-val" style="color:var(--num-success)">'+(projBest ? fmtMoney(projBest) : '$0')+'<span class="req-period">/yr</span></div><div class="req-annual">'+(projBest ? fmtMoney(Math.round(projBest/12)) : '$0')+'/mo</div></div>';
+  h += '<div class="an-req-item"><div class="req-label">Worst Case</div><div class="req-val" style="color:var(--num-danger)">'+(projWorst ? fmtMoney(projWorst) : '$0')+'<span class="req-period">/yr</span></div><div class="req-annual">'+(projWorst ? fmtMoney(Math.round(projWorst/12)) : '$0')+'/mo</div></div>';
   h += '</div>';
+  h += '</div></div>';
+
+  h += '</div>'; // end an-top-grid
 
   // Averages bar (only count comps that have actual values for each metric)
   if(comps.length > 0){
