@@ -1132,12 +1132,12 @@ h1 .hero-edit-input{font-size:1.35rem}
 /* ===== DATA LAYER ===== */
 const INITIAL_DATA = [];
 
-const STATUSES = ['New','No Contact','Messaged','Left Voicemail','Follow Up','Interested','Meeting','HOA Issues','Not Good Fit','Not Interested','No Longer Interested','Lost','Un-Listed'];
+const STATUSES = ['New','No Contact','Messaged','Left Voicemail','Follow Up','Interested','Meeting','HOA Issues','Not Good Fit','Not Interested','Lost','Un-Listed'];
 const STATUS_ORDER = {};
 STATUSES.forEach((s,i) => STATUS_ORDER[s] = i);
 
 const PIPELINE_STAGES = ['New','No Contact','Messaged','Left Voicemail','Follow Up','Interested','Meeting'];
-const CLOSED_STAGES = ['HOA Issues','Not Good Fit','Not Interested','No Longer Interested','Lost','Un-Listed'];
+const CLOSED_STAGES = ['HOA Issues','Not Good Fit','Not Interested','Lost','Un-Listed'];
 
 const SELECTABLE_STATUSES = STATUSES.filter(s => s !== 'Lost');
 
@@ -1151,7 +1151,7 @@ let filterStatus = 'All';
 let contactsViewMode = 'table';
 let previousView = 'dashboard';
 let currentProfileId = null;
-let pipelineCategory = 'all'; // 'all', 'prospects', 'outreach', 'qualified'
+let pipelineCategory = 'prospects'; // 'prospects', 'outreach', 'qualified', 'lost'
 let pipelineSubCategory = null; // null = all within category, or a specific status string
 // profileActiveTab defined in PROFILE TABS section
 
@@ -1178,7 +1178,7 @@ async function loadDataFromFirestore(userUid){
     if(doc.exists){
       const data = doc.data();
       records = JSON.parse(data.data || '[]');
-      records.forEach(r => { if(!r.propertyDetails) r.propertyDetails={}; if(!r.propertyNotes) r.propertyNotes=[]; });
+      records.forEach(r => { if(!r.propertyDetails) r.propertyDetails={}; if(!r.propertyNotes) r.propertyNotes=[]; if(r.status==='No Longer Interested') r.status='Not Interested'; });
     } else {
       records = [];
     }
@@ -1245,7 +1245,7 @@ function render(){
   area.style.paddingTop = currentView === 'profile' ? '0' : '';
   switch(currentView){
     case 'dashboard': area.innerHTML = renderDashboard(); break;
-    case 'pipeline': pipelineCategory=pipelineCategory||'all'; currentView='dashboard'; area.innerHTML = renderDashboard(); document.querySelector('.pipeline-category-tabs')?.scrollIntoView({behavior:'smooth',block:'nearest'}); break;
+    case 'pipeline': pipelineCategory=pipelineCategory||'prospects'; currentView='dashboard'; area.innerHTML = renderDashboard(); document.querySelector('.pipeline-category-tabs')?.scrollIntoView({behavior:'smooth',block:'nearest'}); break;
     case 'contacts': area.innerHTML = renderContacts(); break;
     case 'notifications': area.innerHTML = renderNotifications(); break;
     case 'profile': area.innerHTML = renderProfile(); break;
@@ -1306,7 +1306,7 @@ function renderDashboard(){
   // ── KPI CARDS ──
   h += '<div class="db-kpis">';
   h += `<div class="db-kpi" onclick="switchView('contacts')" style="cursor:pointer"><div class="kpi-icon" style="background:rgba(99,129,250,.12);color:var(--primary)">📋</div><div class="kpi-val">${total}</div><div class="kpi-label">Total Properties</div><div class="kpi-sub">${withContact} with contacts</div></div>`;
-  h += `<div class="db-kpi" onclick="pipelineCategory='all';render();document.querySelector('.pipeline-category-tabs')?.scrollIntoView({behavior:'smooth',block:'nearest'})" style="cursor:pointer"><div class="kpi-icon" style="background:rgba(56,189,248,.12);color:#38bdf8">🔄</div><div class="kpi-val">${active}</div><div class="kpi-label">Active Pipeline</div><div class="kpi-sub">${closed} closed/lost</div></div>`;
+  h += `<div class="db-kpi" onclick="pipelineCategory='prospects';render();document.querySelector('.pipeline-category-tabs')?.scrollIntoView({behavior:'smooth',block:'nearest'})" style="cursor:pointer"><div class="kpi-icon" style="background:rgba(56,189,248,.12);color:#38bdf8">🔄</div><div class="kpi-val">${active}</div><div class="kpi-label">Active Pipeline</div><div class="kpi-sub">${closed} closed/lost</div></div>`;
   h += `<div class="db-kpi" onclick="pipelineCategory='qualified';render();document.querySelector('.pipeline-category-tabs')?.scrollIntoView({behavior:'smooth',block:'nearest'})" style="cursor:pointer"><div class="kpi-icon" style="background:rgba(52,211,153,.12);color:#34d399">🔥</div><div class="kpi-val">${hotLeads}</div><div class="kpi-label">Hot Leads</div><div class="kpi-sub">${convRate}% qualification rate</div></div>`;
   h += `<div class="db-kpi" onclick="switchView('notifications')" style="cursor:pointer"><div class="kpi-icon" style="background:${overdue.length?'rgba(239,68,68,.12)':'rgba(52,211,153,.12)'};color:${overdue.length?'var(--danger)':'var(--success)'}">📅</div><div class="kpi-val" style="color:${overdue.length?'var(--danger)':'var(--text)'}">${followUps.length}</div><div class="kpi-label">Follow-Ups Due</div><div class="kpi-sub">${overdue.length} overdue${todayFU.length ? ', '+todayFU.length+' today' : ''}</div></div>`;
   h += `<div class="db-kpi"><div class="kpi-icon" style="background:rgba(168,85,247,.12);color:#a855f7">📅</div><div class="kpi-val">${meetings.length}</div><div class="kpi-label">Upcoming Meetings</div><div class="kpi-sub">${pastMeetings} completed</div></div>`;
@@ -1349,19 +1349,18 @@ function renderDashboard(){
   // Category tabs — colored to match funnel bar segments
   const catColors = { prospects:'#818cf8', outreach:'#38bdf8', qualified:'#34d399' };
   h += `<div class="pipeline-category-tabs" style="margin-top:14px">
-    <div class="pipeline-cat-tab ${activeCat==='all'?'active':''}" onclick="pipelineCategory='all';render()" style="color:var(--primary);${activeCat==='all'?'border-bottom-color:var(--primary)':''}">All Active <span class="pct-count">${allActive.length}</span></div>
     ${cats.map(c => {
       const isActive = activeCat===c.key;
       const col = catColors[c.key];
       return `<div class="pipeline-cat-tab ${isActive?'active':''}" onclick="pipelineCategory='${c.key}';render()" style="color:${col};${isActive?'border-bottom-color:'+col:''}">${c.name} <span class="pct-count">${c.count}</span></div>`;
     }).join('')}
-    <div class="pipeline-cat-tab ${activeCat==='lost'?'active':''}" onclick="pipelineCategory='lost';render()" style="color:var(--danger);${activeCat==='lost'?'border-bottom-color:var(--danger)':''}">🗑 Closed/Lost <span class="pct-count">${lostCount}</span></div>
+    <div class="pipeline-cat-tab ${activeCat==='lost'?'active':''}" onclick="pipelineCategory='lost';render()" style="color:var(--danger);${activeCat==='lost'?'border-bottom-color:var(--danger)':''}">Closed/Lost <span class="pct-count">${lostCount}</span></div>
   </div>`;
 
   // Status breakdown for selected category — clicking navigates to Contacts
   const isLost = activeCat === 'lost';
-  const catStatuses = activeCat === 'all' ? PIPELINE_STAGES : isLost ? CLOSED_STAGES : (cats.find(c => c.key === activeCat)?.statuses || []);
-  const statusItems = catStatuses.map(st => ({ status: st, count: records.filter(r => r.status === st).length })).filter(s => s.count > 0 || activeCat !== 'all');
+  const catStatuses = isLost ? CLOSED_STAGES : (cats.find(c => c.key === activeCat)?.statuses || []);
+  const statusItems = catStatuses.map(st => ({ status: st, count: records.filter(r => r.status === st).length }));
 
   if(statusItems.length > 0){
     h += '<div class="db-status-breakdown">';
