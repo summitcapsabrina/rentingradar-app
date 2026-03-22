@@ -228,7 +228,7 @@ tr.clickable:hover{background:var(--primary-light)}
 /* ===== NOTES / ACTIVITY ===== */
 .note-list{display:flex;flex-direction:column;gap:10px}
 .note-item{background:var(--bg);border-radius:var(--radius);padding:10px 14px;position:relative}
-.note-item .note-date{font-size:.75rem;color:var(--text3);margin-bottom:4px}
+.note-item .note-date{font-size:.75rem;color:var(--text3);text-align:right;margin-top:6px}
 .note-item .note-text{font-size:.9rem;line-height:1.5}
 .note-item .note-edited{font-size:.7rem;color:var(--text3);font-style:italic;margin-top:2px}
 .note-item .note-actions{position:absolute;top:8px;right:8px;display:flex;gap:4px;opacity:0;transition:opacity .15s;z-index:2}
@@ -275,10 +275,10 @@ tr.clickable:hover{background:var(--primary-light)}
 .rte-img-preview-item .rte-img-remove{position:absolute;top:-4px;right:-4px;width:18px;height:18px;border-radius:50%;background:var(--danger);color:#fff;border:none;cursor:pointer;font-size:.65rem;display:flex;align-items:center;justify-content:center;line-height:1;opacity:0;transition:opacity .15s}
 .rte-img-preview-item:hover .rte-img-remove{opacity:1}
 .note-img-popup-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(2px)}
-.note-img-popup{background:var(--surface);border-radius:12px;padding:48px 20px 20px;max-width:90vw;max-height:90vh;overflow:auto;position:relative;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.note-img-popup{background:var(--surface);border-radius:12px;padding:20px;max-width:90vw;max-height:90vh;overflow:auto;position:relative;box-shadow:0 20px 60px rgba(0,0,0,.3)}
 .note-img-popup img{max-width:100%;max-height:70vh;border-radius:8px;display:block;margin:0 auto}
 .note-img-popup .nip-text{margin-bottom:14px;font-size:.9rem;line-height:1.5;color:var(--text);text-align:left}
-.note-img-popup .nip-date{position:absolute;top:16px;right:52px;font-size:.75rem;color:var(--text3);text-align:right}
+.note-img-popup .nip-date{font-size:.75rem;color:var(--text3);text-align:right;margin-top:12px}
 .note-img-popup .nip-actions{position:absolute;top:12px;right:12px;display:flex;gap:6px;opacity:0;transition:opacity .15s}
 .note-img-popup:hover .nip-actions{opacity:1}
 .nip-actions button{width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:6px;color:var(--text3);background:var(--bg);border:1px solid var(--border);cursor:pointer;transition:all .12s}
@@ -1836,15 +1836,15 @@ function _renderProfileInner(){
         <div class="note-list">
           ${(r.notes.length || r.date) ? r.notes.slice().reverse().map(n => {
             const isUserNote = n.type==='note'||n.type==='call'||n.type==='text'||n.type==='email';
-            const emoji = n.type==='call'?'📞 ':n.type==='text'?'💬 ':n.type==='email'?'📧 ':n.type==='note'?'📝 ':'';
+            const emoji = n.type==='call'?'<span style="font-size:1.1em">📞</span> ':n.type==='text'?'<span style="font-size:1.1em">💬</span> ':n.type==='email'?'<span style="font-size:1.1em">📧</span> ':n.type==='note'?'<span style="font-size:1.1em">📝</span> ':'';
             const label = n.type==='import'?'Imported':n.type==='followup'?'Follow-up':n.type==='status'?'Status change':n.type==='call'?'Call':n.type==='text'?'Text':n.type==='email'?'Email':'Note';
             const noteContent = n.html ? n.html : esc(n.text);
             const noteImages = n.images || [];
             const imgHtml = noteImages.length > 0 ? '<div class="note-images">' + noteImages.map((src, imgIdx) => '<img class="note-img-thumb" src="'+src+'" alt="Attachment" onclick="openNoteImagePopup(\''+r.id+'\',\''+n.id+'\','+imgIdx+')">').join('') + '</div>' + '<div class="note-img-badge">📎 ' + noteImages.length + ' image' + (noteImages.length > 1 ? 's' : '') + ' attached</div>' : '';
             const actionsHtml = isUserNote ? '<div class="note-actions"><button onclick="editNote(\''+r.id+'\',\''+n.id+'\')" title="Edit"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="del" onclick="deleteNote(\''+r.id+'\',\''+n.id+'\')" title="Delete"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button></div>' : '';
-            const dateHtml = '<div class="note-date">' + fmtDateTime(n.date) + ' • ' + emoji + label + (n.editedAt ? ' <span class="note-edited">(edited '+fmtDateTime(n.editedAt)+')</span>' : '') + '</div>';
-            return '<div class="note-item">' + actionsHtml + dateHtml + '<div class="note-text">' + noteContent + '</div>' + imgHtml + '</div>';
-          }).join('') + (r.date ? '<div class="note-item" style="opacity:.7"><div class="note-date">'+fmtDateTime(r.date)+' • 🏁 Account Created</div><div class="note-text">Property added to RentingRadar</div></div>' : '') : '<div style="color:var(--text3);font-size:.82rem">No activity yet</div>'}
+            const dateHtml = '<div class="note-date">' + emoji + label + ' • ' + fmtDateTime(n.date) + (n.editedAt ? ' <span class="note-edited">(edited '+fmtDateTime(n.editedAt)+')</span>' : '') + '</div>';
+            return '<div class="note-item">' + actionsHtml + '<div class="note-text">' + noteContent + '</div>' + imgHtml + dateHtml + '</div>';
+          }).join('') + (r.date ? '<div class="note-item" style="opacity:.7"><div class="note-text">Property added to RentingRadar</div><div class="note-date"><span style="font-size:1.1em">🏁</span> Account Created • '+fmtDateTime(r.date)+'</div></div>' : '') : '<div style="color:var(--text3);font-size:.82rem">No activity yet</div>'}
         </div>
       </div>
     </div>
@@ -2845,10 +2845,10 @@ function openNoteImagePopup(recId, noteId, imgIdx){
       <button onclick="document.getElementById('noteImgPopup').remove();editNote('${recId}','${noteId}')" title="Edit"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
       <button class="del" onclick="document.getElementById('noteImgPopup').remove();deleteNote('${recId}','${noteId}')" title="Delete"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>
     </div>`:''}
-    <div class="nip-date">${fmtDateTime(note.date)} • ${emoji}${label}${note.editedAt?' <span style="font-style:italic">(edited '+fmtDateTime(note.editedAt)+')</span>':''}</div>
     <div class="nip-text">${noteContent}</div>
     <img src="${note.images[imgIdx]}" alt="Attachment">
     ${navHtml}
+    <div class="nip-date">${fmtDateTime(note.date)} • ${emoji}${label}${note.editedAt?' <span style="font-style:italic">(edited '+fmtDateTime(note.editedAt)+')</span>':''}</div>
   </div>`;
 
   // Close on backdrop click
