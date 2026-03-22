@@ -411,7 +411,7 @@ tr.clickable:hover{background:var(--primary-light)}
 .billing-toggle .bt-opt{padding:6px 18px;border-radius:20px;font-size:.82rem;font-weight:500;cursor:pointer;transition:all .15s;color:var(--text3)}
 .billing-toggle .bt-opt.active{background:var(--primary);color:#fff}
 .billing-toggle .bt-opt:not(.active):hover{color:var(--text)}
-.billing-save-badge{font-size:.65rem;font-weight:700;color:var(--success);background:var(--success-light);padding:1px 7px;border-radius:8px;margin-left:4px}
+.billing-save-badge{font-size:.7rem;font-weight:700;color:#fff;background:#10b981;padding:3px 10px;border-radius:10px;margin-left:6px}
 .pc-price-old{font-size:.9rem;color:var(--text3);text-decoration:line-through;margin-right:6px;font-weight:400}
 .pc-billed{font-size:.72rem;color:var(--text3);margin-top:2px}
 .pricing-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
@@ -4167,7 +4167,7 @@ function renderPricing(){
       <p>Scale your rental arbitrage prospecting with the right tools</p>
       <div class="billing-toggle">
         <div class="bt-opt ${!isYearly?'active':''}" onclick="billingPeriod='monthly';render()">Monthly</div>
-        <div class="bt-opt ${isYearly?'active':''}" onclick="billingPeriod='yearly';render()">Yearly <span class="billing-save-badge">Save up to 17%</span></div>
+        <div class="bt-opt ${isYearly?'active':''}" onclick="billingPeriod='yearly';render()">Yearly <span class="billing-save-badge">Save up to 31%</span></div>
       </div>
     </div>
     <div class="pricing-cards">
