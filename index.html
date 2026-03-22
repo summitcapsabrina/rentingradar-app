@@ -247,9 +247,11 @@ tr.clickable:hover{background:var(--primary-light)}
 .rte-toolbar button:hover{background:var(--surface);color:var(--text)}
 .rte-toolbar button.active{background:var(--primary-light);color:var(--primary)}
 .rte-toolbar .rte-sep{width:1px;background:var(--border);margin:3px 4px;flex-shrink:0}
-.rte-editor{min-height:52px;max-height:140px;overflow-y:auto;padding:8px 10px;font-size:.9rem;line-height:1.5;border:1px solid var(--border);border-radius:0 0 var(--radius) var(--radius);background:var(--input-bg);color:var(--text);outline:none}
+.rte-editor{min-height:72px;max-height:140px;overflow-y:auto;padding:8px 10px;font-size:.9rem;line-height:1.5;border:1px solid var(--border);border-radius:0 0 var(--radius) var(--radius);background:var(--input-bg);color:var(--text);outline:none;position:relative}
 .rte-editor:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(79,110,247,.15)}
 .rte-editor:empty::before{content:attr(data-placeholder);color:var(--text3);pointer-events:none}
+.rte-editor:empty::after{content:attr(data-hint);position:absolute;bottom:6px;right:10px;font-size:.6rem;color:var(--text3);opacity:.6;pointer-events:none}
+.rte-editor:focus::before,.rte-editor:focus::after{display:none}
 .rte-editor ul,.rte-editor ol{margin:2px 0;padding-left:20px}
 .rte-editor ul ul,.rte-editor ol ol{margin:0}
 .rte-editor li{margin:1px 0}
@@ -1817,15 +1819,16 @@ function _renderProfileInner(){
           <button class="note-type-btn" data-type="text" onclick="setNoteType('${r.id}','text')">💬 Text</button>
           <button class="note-type-btn" data-type="email" onclick="setNoteType('${r.id}','email')">📧 Email</button>
         </div>
-        <div style="display:flex;gap:8px;margin-top:10px">
-          <div style="flex:1">
-            ${buildRteToolbarHtml('newNoteRte_'+r.id)}
-            <div class="rte-editor" contenteditable="true" id="newNoteRte_${r.id}" data-placeholder="Add a note...  (Ctrl+N)" onkeydown="handleRteKeydown(event,'${r.id}')"></div>
-            <div class="rte-img-preview" id="imgPreview_${r.id}"></div>
+        <div style="margin-top:10px">
+          <div style="display:flex;gap:8px">
+            <div style="flex:1">
+              ${buildRteToolbarHtml('newNoteRte_'+r.id)}
+              <div class="rte-editor" contenteditable="true" id="newNoteRte_${r.id}" data-placeholder="Add a note...  (Ctrl+N)" data-hint="Paste screenshots to attach · Shift + Enter to save" onkeydown="handleRteKeydown(event,'${r.id}')"></div>
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="addNote('${r.id}')" style="align-self:flex-end;white-space:nowrap">Add</button>
           </div>
-          <button class="btn btn-primary btn-sm" onclick="addNote('${r.id}')" style="align-self:flex-end;white-space:nowrap">Add</button>
+          <div class="rte-img-preview" id="imgPreview_${r.id}"></div>
         </div>
-        <div style="font-size:.6rem;color:var(--text3);opacity:.6;margin-top:3px;text-align:right">Paste screenshots to attach · Shift + Enter to save</div>
       </div>
       <div style="flex:1;overflow-y:auto;max-height:240px;padding:10px 16px 14px">
         <div class="note-list">
