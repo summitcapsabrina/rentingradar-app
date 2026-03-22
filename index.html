@@ -185,14 +185,13 @@ textarea{resize:vertical;min-height:80px}
 .db-task-meta{font-size:.72rem;color:var(--text3)}
 .db-task-date{font-size:.72rem;font-weight:600;flex-shrink:0;white-space:nowrap}
 .db-empty{text-align:center;padding:24px 16px;color:var(--text3);font-size:.84rem}
-.db-funnel-bar{display:flex;height:52px;border-radius:var(--radius);overflow:hidden;gap:2px}
-.db-funnel-seg{position:relative;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .15s;min-width:28px}
-.db-funnel-seg:hover{filter:brightness(1.15);transform:scaleY(1.05)}
-.db-funnel-seg span{font-size:.75rem;font-weight:700;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.3);pointer-events:none}
-.db-lost-bin{display:flex;flex-direction:column;align-items:center;justify-content:center;width:52px;height:52px;border-radius:var(--radius);background:rgba(239,68,68,.08);border:2px solid rgba(239,68,68,.2);color:var(--danger);cursor:pointer;transition:all .15s;flex-shrink:0;position:relative}
-.db-lost-bin:hover{background:rgba(239,68,68,.15);border-color:var(--danger);transform:scale(1.05)}
-.db-lost-bin.active{background:rgba(239,68,68,.18);border-color:var(--danger);box-shadow:0 0 0 3px rgba(239,68,68,.15)}
-.db-lost-bin .db-lost-count{font-size:.65rem;font-weight:800;margin-top:1px;line-height:1}
+.db-pipeline-boxes{display:flex;gap:10px;flex-wrap:wrap}
+.db-pipeline-box{display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;min-width:80px;height:72px;border-radius:var(--radius);border:2px solid transparent;cursor:pointer;transition:all .15s;gap:2px;position:relative}
+.db-pipeline-box:hover{transform:scale(1.05)}
+.db-pipeline-box .pb-icon{line-height:1}
+.db-pipeline-box .pb-count{font-size:.85rem;font-weight:800;line-height:1}
+.db-pipeline-box .pb-label{font-size:.68rem;font-weight:500;opacity:.85;line-height:1}
+.db-pipeline-box.active .pb-label{opacity:1}
 .db-status-breakdown{display:flex;flex-direction:column;gap:2px;margin-top:4px}
 .db-status-row{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:var(--radius);cursor:pointer;transition:background .1s}
 .db-status-row:hover{background:var(--primary-light)}
@@ -958,14 +957,11 @@ h1 .hero-edit-input{font-size:1.35rem}
 .tp-accent-label{font-size:.65rem;text-align:center;color:var(--text3);margin-top:2px}
 
 /* ===== PIPELINE PROPERTY LIST ===== */
-.pipeline-category-tabs{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap}
-.pipeline-cat-tab{display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:90px;padding:10px 16px;font-size:.75rem;font-weight:600;cursor:pointer;border:2px solid transparent;border-radius:var(--radius);transition:all .15s;gap:2px}
-.pipeline-cat-tab:hover{transform:scale(1.05)}
-.pipeline-cat-tab.active{font-weight:700}
-.pipeline-cat-tab .cat-icon{font-size:1.1rem;line-height:1}
-.pipeline-cat-tab .cat-label{font-size:.72rem;font-weight:500;opacity:.85}
-.pipeline-cat-tab .pct-count{font-size:.8rem;font-weight:800;line-height:1}
-.pipeline-cat-tab.active .cat-label{opacity:1}
+.pipeline-category-tabs{display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:14px}
+.pipeline-cat-tab{padding:8px 18px;font-size:.82rem;font-weight:500;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .15s;display:flex;align-items:center;gap:6px}
+.pipeline-cat-tab:hover{opacity:.85;background:var(--primary-light)}
+.pipeline-cat-tab.active{font-weight:600}
+.pipeline-cat-tab .pct-count{font-size:.7rem;background:var(--bg);padding:1px 7px;border-radius:10px;font-weight:600;color:inherit;opacity:.7}
 .pipeline-cat-tab.active .pct-count{opacity:1}
 .pipeline-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:10px}
 .pipeline-card{background:var(--surface);border-radius:var(--radius);border:1px solid var(--border);padding:12px 16px;cursor:pointer;transition:all .15s;display:flex;align-items:flex-start;gap:12px}
@@ -1330,41 +1326,41 @@ function renderDashboard(){
   h += '<div class="db-card-hdr"><h3>📊 Pipeline</h3><span class="db-hdr-action" onclick="switchView(\'contacts\')">All Contacts →</span></div>';
   h += '<div class="db-card-body">';
 
-  // Funnel bar + Closed/Lost trashcan
+  // Pipeline visual boxes — trashcan style for each category
+  const boxMeta = [
+    { key:'prospects', col:'129,140,248', icon:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>', label:'New Leads' },
+    { key:'outreach', col:'56,189,248', icon:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6A19.79 19.79 0 012.12 4.18 2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>', label:'In Outreach' },
+    { key:'qualified', col:'52,211,153', icon:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>', label:'Qualified' },
+    { key:'lost', col:'239,68,68', icon:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>', label:'Closed/Lost' }
+  ];
   if(active > 0 || lostCount > 0){
-    h += '<div style="display:flex;align-items:center;gap:12px">';
-    h += '<div class="db-funnel-bar" style="flex:1">';
-    funnelStages.forEach(s => {
-      const pct = active > 0 ? Math.max((s.count/active)*100, s.count > 0 ? 6 : 0) : 0;
-      if(s.count > 0) h += `<div class="db-funnel-seg" style="width:${pct}%;background:${s.color}" onclick="pipelineCategory='${s.catKey}';pipelineSubCategory=null;render()" title="${s.name}: ${s.count}"><span>${s.count}</span></div>`;
+    h += '<div class="db-pipeline-boxes">';
+    boxMeta.forEach(m => {
+      const count = m.key === 'lost' ? lostCount : (cats.find(x => x.key===m.key)?.count || 0);
+      const isActive = activeCat === m.key;
+      const bg = isActive ? 'rgba('+m.col+',.18)' : 'rgba('+m.col+',.08)';
+      const border = isActive ? 'rgb('+m.col+')' : 'rgba('+m.col+',.2)';
+      const shadow = isActive ? 'box-shadow:0 0 0 3px rgba('+m.col+',.15)' : '';
+      h += `<div class="db-pipeline-box ${isActive?'active':''}" onclick="pipelineCategory='${m.key}';render()" style="color:rgb(${m.col});background:${bg};border-color:${border};${shadow}">
+        <span class="pb-icon">${m.icon}</span>
+        <span class="pb-count">${count}</span>
+        <span class="pb-label">${m.label}</span>
+      </div>`;
     });
-    h += '</div>';
-    // Closed/Lost trashcan
-    h += `<div class="db-lost-bin ${activeCat==='lost'?'active':''}" onclick="pipelineCategory='lost';pipelineSubCategory=null;render()" title="Closed/Lost: ${lostCount}">`;
-    h += '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>';
-    h += `<span class="db-lost-count">${lostCount}</span>`;
-    h += '</div>';
     h += '</div>';
   } else {
     h += '<div class="db-empty">No properties yet. Add your first property to see your pipeline.</div>';
   }
 
-  // Category tabs — outlined like trashcan, filled when active
-  const catMeta = [
-    { key:'prospects', col:'129,140,248', icon:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>', label:'New Leads' },
-    { key:'outreach', col:'56,189,248', icon:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6A19.79 19.79 0 012.12 4.18 2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>', label:'In Outreach' },
-    { key:'qualified', col:'52,211,153', icon:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>', label:'Qualified' }
-  ];
+  // Category tabs — simple colored text tabs
+  const catColors = { prospects:'#818cf8', outreach:'#38bdf8', qualified:'#34d399' };
   h += `<div class="pipeline-category-tabs" style="margin-top:14px">
-    ${catMeta.map(m => {
-      const c = cats.find(x => x.key===m.key);
-      const isActive = activeCat===m.key;
-      const bg = isActive ? 'rgba('+m.col+',.18)' : 'rgba('+m.col+',.08)';
-      const border = isActive ? 'rgb('+m.col+')' : 'rgba('+m.col+',.2)';
-      const shadow = isActive ? 'box-shadow:0 0 0 3px rgba('+m.col+',.15)' : '';
-      return `<div class="pipeline-cat-tab ${isActive?'active':''}" onclick="pipelineCategory='${m.key}';render()" style="color:rgb(${m.col});background:${bg};border-color:${border};${shadow}"><span class="cat-icon">${m.icon}</span><span class="pct-count">${c?c.count:0}</span><span class="cat-label">${m.label}</span></div>`;
+    ${cats.map(c => {
+      const isActive = activeCat===c.key;
+      const col = catColors[c.key];
+      return `<div class="pipeline-cat-tab ${isActive?'active':''}" onclick="pipelineCategory='${c.key}';render()" style="color:${col};${isActive?'border-bottom-color:'+col:''}">${c.name} <span class="pct-count">${c.count}</span></div>`;
     }).join('')}
-    <div class="pipeline-cat-tab ${activeCat==='lost'?'active':''}" onclick="pipelineCategory='lost';render()" style="color:var(--danger);background:${activeCat==='lost'?'rgba(239,68,68,.18)':'rgba(239,68,68,.08)'};border-color:${activeCat==='lost'?'var(--danger)':'rgba(239,68,68,.2)'};${activeCat==='lost'?'box-shadow:0 0 0 3px rgba(239,68,68,.15)':''}"><span class="cat-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></span><span class="pct-count">${lostCount}</span><span class="cat-label">Closed/Lost</span></div>
+    <div class="pipeline-cat-tab ${activeCat==='lost'?'active':''}" onclick="pipelineCategory='lost';render()" style="color:var(--danger);${activeCat==='lost'?'border-bottom-color:var(--danger)':''}">Closed/Lost <span class="pct-count">${lostCount}</span></div>
   </div>`;
 
   // Status breakdown for selected category — clicking navigates to Contacts
