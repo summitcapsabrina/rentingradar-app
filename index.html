@@ -4114,8 +4114,8 @@ document.addEventListener('keydown', function(e){
 /* ===== TIER SYSTEM ===== */
 const TIERS = {
   free:  { name:'Free',  monthly:0,     yearly:0,      badge:'tier-free',  badgeText:'FREE',  maxProperties:50 },
-  basic: { name:'Basic', monthly:10.99,  yearly:89.99,  badge:'tier-basic', badgeText:'BASIC', maxProperties:250 },
-  pro:   { name:'Pro',   monthly:17.99, yearly:149.99, badge:'tier-pro',   badgeText:'PRO',   maxProperties:Infinity }
+  basic: { name:'Basic', monthly:9.99,   yearly:89.99,  badge:'tier-basic', badgeText:'BASIC', maxProperties:250 },
+  pro:   { name:'Pro',   monthly:14.99, yearly:149.99, badge:'tier-pro',   badgeText:'PRO',   maxProperties:Infinity }
 };
 
 function checkPropertyLimit(){
@@ -4139,9 +4139,9 @@ function checkCsvAccess(){
 
 // Stripe checkout URLs
 const STRIPE_LINKS = {
-  basic_monthly: 'https://buy.stripe.com/8x2bJ3a1B4I41QxdCm77O01',
+  basic_monthly: 'https://buy.stripe.com/7sY6oJ7Tt1vS52J8i277O05',
   basic_yearly:  'https://buy.stripe.com/fZueVf0r17Ug9iZbue77O02',
-  pro_monthly:   'https://buy.stripe.com/9B6dRb0r14I4eDj55Q77O03',
+  pro_monthly:   'https://buy.stripe.com/9B63cx3DddeAdzf1TE77O06',
   pro_yearly:    'https://buy.stripe.com/14AeVfb5F4I40Mt2XI77O04'
 };
 
@@ -4202,7 +4202,7 @@ function renderPricing(){
       <p>Scale your rental arbitrage prospecting with the right tools</p>
       <div class="billing-toggle">
         <div class="bt-opt ${!isYearly?'active':''}" onclick="billingPeriod='monthly';render()">Monthly</div>
-        <div class="bt-opt ${isYearly?'active':''}" onclick="billingPeriod='yearly';render()">Yearly <span class="billing-save-badge">Save up to 31%</span></div>
+        <div class="bt-opt ${isYearly?'active':''}" onclick="billingPeriod='yearly';render()">Yearly <span class="billing-save-badge">Save up to 25%</span></div>
       </div>
     </div>
     <div class="pricing-cards">
