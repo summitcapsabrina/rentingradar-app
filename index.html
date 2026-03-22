@@ -3477,7 +3477,11 @@ function showManualAddForm(){
     step2.style.display = 'block';
     step2.innerHTML = `
       <div class="field-group" style="position:relative"><label class="field-label">Property Address *</label><input id="add_property" type="text" placeholder="Start typing an address..."></div>
-      <input type="hidden" id="add_city"><input type="hidden" id="add_state"><input type="hidden" id="add_zip">
+      <div class="field-row" style="gap:8px">
+        <div class="field-group" style="flex:2"><label class="field-label">City</label><input id="add_city" type="text" placeholder="Auto-filled"></div>
+        <div class="field-group" style="flex:.8"><label class="field-label">State</label><input id="add_state" type="text" placeholder="ST" maxlength="2" style="text-transform:uppercase"></div>
+        <div class="field-group" style="flex:1"><label class="field-label">Zip</label><input id="add_zip" type="text" placeholder="00000" maxlength="10"></div>
+      </div>
       <div class="field-group" style="margin-top:-4px">
         <label class="field-label">Unit / Suite / # (optional)</label>
         <div style="display:flex;gap:6px;align-items:center">
@@ -3510,7 +3514,11 @@ function showManualAddForm(){
     if(!body) return;
     body.innerHTML = `
       <div class="field-group" style="position:relative"><label class="field-label">Property Address *</label><input id="add_property" type="text" placeholder="Start typing an address..."></div>
-      <input type="hidden" id="add_city"><input type="hidden" id="add_state"><input type="hidden" id="add_zip">
+      <div class="field-row" style="gap:8px">
+        <div class="field-group" style="flex:2"><label class="field-label">City</label><input id="add_city" type="text" placeholder="Auto-filled"></div>
+        <div class="field-group" style="flex:.8"><label class="field-label">State</label><input id="add_state" type="text" placeholder="ST" maxlength="2" style="text-transform:uppercase"></div>
+        <div class="field-group" style="flex:1"><label class="field-label">Zip</label><input id="add_zip" type="text" placeholder="00000" maxlength="10"></div>
+      </div>
       <div class="field-group" style="margin-top:-4px">
         <label class="field-label">Unit / Suite / # (optional)</label>
         <div style="display:flex;gap:6px;align-items:center">
