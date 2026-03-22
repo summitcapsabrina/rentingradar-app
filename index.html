@@ -189,6 +189,10 @@ textarea{resize:vertical;min-height:80px}
 .db-funnel-seg{position:relative;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .15s;min-width:28px}
 .db-funnel-seg:hover{filter:brightness(1.15);transform:scaleY(1.08)}
 .db-funnel-seg span{font-size:.7rem;font-weight:700;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.3);pointer-events:none}
+.db-lost-bin{display:flex;flex-direction:column;align-items:center;justify-content:center;width:52px;height:52px;border-radius:var(--radius);background:rgba(239,68,68,.08);border:2px solid rgba(239,68,68,.2);color:var(--danger);cursor:pointer;transition:all .15s;flex-shrink:0;position:relative}
+.db-lost-bin:hover{background:rgba(239,68,68,.15);border-color:var(--danger);transform:scale(1.05)}
+.db-lost-bin.active{background:rgba(239,68,68,.18);border-color:var(--danger);box-shadow:0 0 0 3px rgba(239,68,68,.15)}
+.db-lost-bin .db-lost-count{font-size:.65rem;font-weight:800;margin-top:1px;line-height:1}
 .db-funnel-legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:8px}
 .db-funnel-leg{display:flex;align-items:center;gap:5px;font-size:.72rem;color:var(--text2);cursor:pointer}
 .db-funnel-leg:hover{color:var(--primary)}
@@ -1315,25 +1319,25 @@ function renderDashboard(){
   h += '<div class="db-card-hdr"><h3>📊 Pipeline</h3><span class="db-hdr-action" onclick="switchView(\'contacts\')">All Contacts →</span></div>';
   h += '<div class="db-card-body">';
 
-  // Funnel bar
+  // Funnel bar + Closed/Lost trashcan
   if(active > 0 || lostCount > 0){
-    h += '<div class="db-funnel-bar">';
+    h += '<div style="display:flex;align-items:center;gap:12px">';
+    h += '<div class="db-funnel-bar" style="flex:1">';
     funnelStages.forEach(s => {
-      const barTotal = active + lostCount;
-      const pct = barTotal > 0 ? Math.max((s.count/barTotal)*100, s.count > 0 ? 5 : 0) : 0;
+      const pct = active > 0 ? Math.max((s.count/active)*100, s.count > 0 ? 6 : 0) : 0;
       if(s.count > 0) h += `<div class="db-funnel-seg" style="width:${pct}%;background:${s.color}" onclick="pipelineCategory='${s.catKey}';pipelineSubCategory=null;render()" title="${s.name}: ${s.count}"><span>${s.count}</span></div>`;
     });
-    if(lostCount > 0){
-      const barTotal = active + lostCount;
-      const pct = Math.max((lostCount/barTotal)*100, 5);
-      h += `<div class="db-funnel-seg" style="width:${pct}%;background:var(--danger)" onclick="pipelineCategory='lost';pipelineSubCategory=null;render()" title="Closed/Lost: ${lostCount}"><span>${lostCount}</span></div>`;
-    }
+    h += '</div>';
+    // Closed/Lost trashcan
+    h += `<div class="db-lost-bin ${activeCat==='lost'?'active':''}" onclick="pipelineCategory='lost';pipelineSubCategory=null;render()" title="Closed/Lost: ${lostCount}">`;
+    h += '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>';
+    h += `<span class="db-lost-count">${lostCount}</span>`;
+    h += '</div>';
     h += '</div>';
     h += '<div class="db-funnel-legend">';
     funnelStages.forEach(s => {
       h += `<div class="db-funnel-leg" onclick="pipelineCategory='${s.catKey}';pipelineSubCategory=null;render()"><div class="db-funnel-dot" style="background:${s.color}"></div>${s.name} (${s.count})</div>`;
     });
-    if(lostCount > 0) h += `<div class="db-funnel-leg" onclick="pipelineCategory='lost';pipelineSubCategory=null;render()"><div class="db-funnel-dot" style="background:var(--danger)"></div>Closed/Lost (${lostCount})</div>`;
     h += '</div>';
   } else {
     h += '<div class="db-empty">No properties yet. Add your first property to see your pipeline.</div>';
