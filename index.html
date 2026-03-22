@@ -4269,8 +4269,8 @@ function renderPricingCard(tier, opts){
 
   let priceDisplay, billedNote, btnLabel;
   if(t.monthly === 0){
-    priceDisplay = 'Free';
-    billedNote = '';
+    priceDisplay = '$0.00<span>/mo</span>';
+    billedNote = '<div class="pc-billed">Free forever</div>';
     btnLabel = 'Get Started';
   } else if(isYearly){
     const perMonth = (t.yearly / 12).toFixed(2);
