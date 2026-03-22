@@ -3477,6 +3477,7 @@ function showManualAddForm(){
     step2.style.display = 'block';
     step2.innerHTML = `
       <div class="field-group" style="position:relative"><label class="field-label">Property Address *</label><input id="add_property" type="text" placeholder="Start typing an address..."></div>
+      <input type="hidden" id="add_city"><input type="hidden" id="add_state"><input type="hidden" id="add_zip">
       <div class="field-group" style="margin-top:-4px">
         <label class="field-label">Unit / Suite / # (optional)</label>
         <div style="display:flex;gap:6px;align-items:center">
@@ -3509,6 +3510,7 @@ function showManualAddForm(){
     if(!body) return;
     body.innerHTML = `
       <div class="field-group" style="position:relative"><label class="field-label">Property Address *</label><input id="add_property" type="text" placeholder="Start typing an address..."></div>
+      <input type="hidden" id="add_city"><input type="hidden" id="add_state"><input type="hidden" id="add_zip">
       <div class="field-group" style="margin-top:-4px">
         <label class="field-label">Unit / Suite / # (optional)</label>
         <div style="display:flex;gap:6px;align-items:center">
@@ -3539,14 +3541,23 @@ function showManualAddForm(){
 }
 
 function saveNewRecord(){
-  let property = document.getElementById('add_property').value.trim();
-  if(!property){ alert('Property address is required'); return }
+  let street = document.getElementById('add_property').value.trim();
+  if(!street){ alert('Property address is required'); return }
   const unitType = document.getElementById('add_unit_type')?.value || '';
   const unitNum = document.getElementById('add_unit_num')?.value?.trim() || '';
-  if(unitType && unitNum) property += ' ' + unitType + ' ' + unitNum;
+  const city = document.getElementById('add_city')?.value?.trim() || '';
+  const state = document.getElementById('add_state')?.value?.trim() || '';
+  const zip = document.getElementById('add_zip')?.value?.trim() || '';
+  const unitStr = (unitType && unitNum) ? unitType + ' ' + unitNum : '';
+  // Build full property string: "Street Unit, City State Zip"
+  let property = street;
+  if(unitStr) property += ' ' + unitStr;
+  const csz = [city, state].filter(Boolean).join(' ') + (zip ? ' ' + zip : '');
+  if(csz.trim()) property += ', ' + csz.trim();
+  const addrParts = { street, unit: unitStr, city, state, zip };
   const linkEl = document.getElementById('add_link2') || document.getElementById('add_link');
   const r = {
-    id: uid(), property,
+    id: uid(), property, addressParts: addrParts,
     name: document.getElementById('add_name').value.trim(),
     phone: document.getElementById('add_phone').value.trim(),
     email: document.getElementById('add_email').value.trim(),
@@ -6090,6 +6101,16 @@ async function selectAddress(el, recId){
       if(ceCityEl && parts.city) ceCityEl.value = parts.city;
       if(ceStateEl && parts.state) ceStateEl.value = parts.state;
       if(ceZipEl && parts.zip) ceZipEl.value = parts.zip;
+    }
+    // Auto-fill city/state/zip in the Add Property manual form
+    if(addInput){
+      addInput.value = parts.street || full;
+      const addCityEl = document.getElementById('add_city');
+      const addStateEl = document.getElementById('add_state');
+      const addZipEl = document.getElementById('add_zip');
+      if(addCityEl) addCityEl.value = parts.city || '';
+      if(addStateEl) addStateEl.value = parts.state || '';
+      if(addZipEl) addZipEl.value = parts.zip || '';
     }
   }
 
