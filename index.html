@@ -102,7 +102,13 @@ textarea{resize:vertical;min-height:80px}
 .sidebar-user .su-info{flex:1;min-width:0;overflow:hidden;opacity:1;position:relative;pointer-events:auto;transition:opacity .15s ease .05s}
 .sidebar-user .su-name{font-size:.82rem;font-weight:600;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sidebar-user .su-tier{display:inline-flex}
-.sidebar-user .user-menu{position:fixed;bottom:auto;left:auto;right:auto;top:auto;z-index:9999;min-width:220px}
+.sidebar-user .user-menu{position:fixed;bottom:auto;left:auto;right:auto;top:auto;z-index:9999;min-width:220px;background:var(--sidebar-bg);color:#e4e6f0;border-color:rgba(255,255,255,.1);box-shadow:0 8px 24px rgba(0,0,0,.4)}
+.sidebar-user .user-menu .user-menu-header{border-color:rgba(255,255,255,.1)}
+.sidebar-user .user-menu .um-name{color:#e4e6f0}
+.sidebar-user .user-menu .um-email{color:#9399b2}
+.sidebar-user .user-menu .user-menu-item{color:#e4e6f0}
+.sidebar-user .user-menu .user-menu-item:hover{background:rgba(255,255,255,.08)}
+.sidebar-user .user-menu .user-menu-item svg{color:#9399b2}
 
 .main{flex:1;display:flex;flex-direction:column;overflow:hidden}
 .header{height:var(--header-h);background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 24px;gap:16px;flex-shrink:0}
