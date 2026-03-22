@@ -1214,6 +1214,15 @@ function saveData(){
 let _handlingPopstate = false;
 
 function switchView(view){
+  // Save current profile tab/scroll into history before navigating away
+  if(!_handlingPopstate && currentView === 'profile' && currentProfileId){
+    const scrollContainer = document.querySelector('.content');
+    const savedScrolls = Object.assign({}, tabScrollPositions);
+    if(scrollContainer && profileActiveTab) savedScrolls[profileActiveTab] = scrollContainer.scrollTop;
+    try {
+      history.replaceState(Object.assign({}, history.state, { _profileTab: profileActiveTab, _tabScrolls: savedScrolls }), '');
+    } catch(ex){}
+  }
   currentView = view;
   currentProfileId = null;
   clearSearch();
@@ -1832,22 +1841,38 @@ function updateNotifBadges(){
 }
 
 /* ===== DETAIL MODAL ===== */
-function openDetail(id){
+function openDetail(id, restoreTab){
   const r = records.find(x => x.id === id);
   if(!r) return;
   r.lastAccessed = new Date().toISOString();
   if(!r.propertyDetails) r.propertyDetails = {};
   if(!r.propertyNotes) r.propertyNotes = [];
   saveData();
+  // Save current profile tab/scroll into history before navigating to new profile
+  if(!_handlingPopstate && currentView === 'profile' && currentProfileId){
+    const scrollContainer = document.querySelector('.content');
+    const savedScrolls = Object.assign({}, tabScrollPositions);
+    if(scrollContainer && profileActiveTab) savedScrolls[profileActiveTab] = scrollContainer.scrollTop;
+    try {
+      history.replaceState(Object.assign({}, history.state, { _profileTab: profileActiveTab, _tabScrolls: savedScrolls }), '');
+    } catch(ex){}
+  }
   previousView = currentView;
   currentProfileId = id;
   currentView = 'profile';
+  // Fresh open: reset to Property Details tab at top; Back/Forward: restore saved tab
+  if(!restoreTab){
+    profileActiveTab = 'details';
+    Object.keys(tabScrollPositions).forEach(k => delete tabScrollPositions[k]);
+  }
   document.getElementById('searchAutocomplete')?.classList.remove('visible');
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.getElementById('headerTitle').textContent = 'Property Profile';
   if(!_handlingPopstate) history.pushState({ view: 'profile', profileId: id, previousView: previousView }, '', '#profile/' + id);
   saveViewState();
   render();
+  const scrollContainer = document.querySelector('.content');
+  if(scrollContainer) scrollContainer.scrollTop = 0;
   window.scrollTo(0,0);
   // Check for pending comps from extension
   checkPendingExtensionComps();
@@ -7884,11 +7909,26 @@ window.addEventListener('popstate', function(e){
     _handlingPopstate = false;
     return;
   }
+  // Before navigating away, save current profile tab/scroll into the CURRENT history entry
+  if(currentView === 'profile' && currentProfileId){
+    const scrollContainer = document.querySelector('.content');
+    const savedScrolls = Object.assign({}, tabScrollPositions);
+    if(scrollContainer && profileActiveTab) savedScrolls[profileActiveTab] = scrollContainer.scrollTop;
+    try {
+      history.replaceState(Object.assign({}, history.state, { _profileTab: profileActiveTab, _tabScrolls: savedScrolls }), '');
+    } catch(ex){}
+  }
   _handlingPopstate = true;
   try {
     if(state.view === 'profile' && state.profileId){
       const r = records.find(x => x.id === state.profileId);
       if(r){
+        // Restore saved tab and scroll positions from history state
+        if(state._profileTab){
+          profileActiveTab = state._profileTab;
+          Object.keys(tabScrollPositions).forEach(k => delete tabScrollPositions[k]);
+          if(state._tabScrolls) Object.assign(tabScrollPositions, state._tabScrolls);
+        }
         previousView = state.previousView || 'dashboard';
         currentProfileId = state.profileId;
         currentView = 'profile';
@@ -7897,7 +7937,13 @@ window.addEventListener('popstate', function(e){
         document.getElementById('headerTitle').textContent = 'Property Profile';
         saveViewState();
         render();
-        window.scrollTo(0,0);
+        // Restore scroll position for the active tab
+        const scrollContainer = document.querySelector('.content');
+        if(scrollContainer && state._profileTab && tabScrollPositions[state._profileTab] !== undefined){
+          requestAnimationFrame(() => { scrollContainer.scrollTop = tabScrollPositions[state._profileTab]; });
+        } else {
+          window.scrollTo(0,0);
+        }
       } else {
         switchView('dashboard');
       }
