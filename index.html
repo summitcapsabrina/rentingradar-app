@@ -1022,7 +1022,6 @@ h1 .hero-edit-input{font-size:1.35rem}
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-<script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
 <div class="app">
@@ -4308,44 +4307,30 @@ firebase.auth().onAuthStateChanged(async (user) => {
 });
 let currentUser = null;
 
-// Google Identity Services (GIS) login — bypasses Firebase __/auth/handler entirely
-const GIS_CLIENT_ID = '622768449810-9g8kodrp6420fo497pk7hdp3dmujqj9k.apps.googleusercontent.com';
-
 function handleGoogleLogin(){
-  if(window.google && window.google.accounts && window.google.accounts.oauth2){
-    const tokenClient = google.accounts.oauth2.initTokenClient({
-      client_id: GIS_CLIENT_ID,
-      scope: 'openid email profile',
-      prompt: 'select_account',
-      callback: (tokenResponse) => {
-        if(tokenResponse && tokenResponse.access_token){
-          const credential = firebase.auth.GoogleAuthProvider.credential(null, tokenResponse.access_token);
-          firebase.auth().signInWithCredential(credential).then(result => {
-            setUser(result.user);
-          }).catch(err => {
-            console.error('Firebase credential error:', err.code, err.message);
-            alert('Sign-in failed: ' + err.message);
-          });
-        }
-      },
-      error_callback: (err) => {
-        console.error('Google sign-in error:', err);
-        if(err.type !== 'popup_closed') alert('Google sign-in error: ' + (err.message || err.type || 'Unknown error'));
-      }
-    });
-    tokenClient.requestAccessToken();
-  } else {
-    // GIS library not loaded yet — fallback to Firebase popup
-    const provider = new firebase.auth.GoogleAuthProvider();
-    provider.setCustomParameters({ prompt: 'select_account' });
-    firebase.auth().signInWithPopup(provider).then(result => {
-      setUser(result.user);
-    }).catch(err => {
-      console.error('Login error:', err.code, err.message);
-      if(err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') return;
+  const provider = new firebase.auth.GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: 'select_account' });
+  firebase.auth().signInWithPopup(provider).then(result => {
+    setUser(result.user);
+  }).catch(err => {
+    console.error('Login error:', err.code, err.message, err);
+    if(err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') return;
+    if(err.code === 'auth/popup-blocked'){
+      firebase.auth().signInWithRedirect(provider);
+    } else {
       alert('Login failed (' + err.code + '): ' + err.message);
-    });
+    }
+  });
+}
+
+// Handle redirect result (fallback for popup-blocked)
+firebase.auth().getRedirectResult().then(result => {
+  if(result.user) setUser(result.user);
+}).catch(err => {
+  if(err.code && err.code !== 'auth/popup-closed-by-user'){
+    console.error('Redirect login error:', err.code, err.message);
   }
+});
 
 function handleSignOut(){
   firebase.auth().signOut().then(() => {
