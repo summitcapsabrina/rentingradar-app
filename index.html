@@ -573,13 +573,14 @@ h1 .hero-edit-input{font-size:1.35rem}
 
 /* ===== PROFILE TABS ===== */
 .profile-tabs{display:flex;gap:0;align-items:flex-end;width:100%;margin-top:3px;position:relative}
-.profile-tabs::before{content:'';flex:1;border-bottom:1.2px solid var(--primary);align-self:flex-end;min-width:0}
-.profile-tab{padding:7px 14px;font-size:.78rem;font-weight:500;color:var(--text3);cursor:pointer;border-radius:8px 8px 0 0;border:1.2px solid transparent;border-bottom:1.2px solid var(--primary);transition:all .15s;display:flex;align-items:center;gap:4px;white-space:nowrap;background:transparent;position:relative}
+.profile-tabs::before{content:'';flex:1;min-width:0}
+.profile-tabs::after{content:'';position:absolute;bottom:0;left:0;right:0;height:1.5px;background:var(--primary);z-index:0;pointer-events:none}
+.profile-tab{padding:7px 14px;font-size:.78rem;font-weight:500;color:var(--text3);cursor:pointer;border-radius:6px 6px 0 0;border:1.5px solid transparent;border-bottom:none;transition:all .15s;display:flex;align-items:center;gap:4px;white-space:nowrap;background:transparent;position:relative}
 .profile-tab:hover{color:var(--text);background:var(--primary-light)}
-.profile-tab.active{color:var(--primary);background:var(--bg);border:1.2px solid var(--primary);border-bottom:none;border-radius:8px 8px 0 0;font-weight:600;z-index:1}
-.profile-tab.active::before,.profile-tab.active::after{content:'';position:absolute;bottom:0;width:8px;height:8px;background:transparent;z-index:1}
-.profile-tab.active::before{left:-9.2px;border-bottom-right-radius:8px;box-shadow:3px 0 0 0 var(--bg);border-bottom:1.2px solid var(--primary);border-right:1.2px solid var(--primary)}
-.profile-tab.active::after{right:-9.2px;border-bottom-left-radius:8px;box-shadow:-3px 0 0 0 var(--bg);border-bottom:1.2px solid var(--primary);border-left:1.2px solid var(--primary)}
+.profile-tab.active{color:var(--primary);background:var(--bg);border:1.5px solid var(--primary);border-bottom:none;border-radius:6px 6px 0 0;font-weight:600;z-index:2}
+.profile-tab.active::before,.profile-tab.active::after{content:'';position:absolute;bottom:0;width:6px;height:6px;background:transparent;z-index:2}
+.profile-tab.active::before{left:calc(-6px - 1.5px);border-bottom-right-radius:6px;border-width:0 1.5px 1.5px 0;border-style:solid;border-color:var(--primary);box-shadow:2px 2px 0 var(--bg)}
+.profile-tab.active::after{right:calc(-6px - 1.5px);border-bottom-left-radius:6px;border-width:0 0 1.5px 1.5px;border-style:solid;border-color:var(--primary);box-shadow:-2px 2px 0 var(--bg)}
 .profile-tab .tab-lock{font-size:.6rem;padding:1px 6px;border-radius:8px;font-weight:700;text-transform:uppercase;letter-spacing:.3px}
 .profile-tab .tab-lock.locked{background:rgba(148,163,184,.15);color:#94a3b8}
 .profile-tab .tab-lock.basic{background:rgba(245,158,11,.15);color:#f59e0b}
