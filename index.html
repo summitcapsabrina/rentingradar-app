@@ -411,7 +411,7 @@ tr.clickable:hover{background:var(--primary-light)}
 .profile-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px}
 @media(max-width:900px){.profile-grid{grid-template-columns:1fr}}
 .profile-card{background:var(--surface);border-radius:var(--radius);border:1px solid var(--border);box-shadow:var(--shadow);overflow:hidden}
-.profile-card-header{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;cursor:pointer;user-select:none;transition:background .1s}
+.profile-card-header{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;cursor:pointer;user-select:none;transition:background .1s;min-height:38px;box-sizing:border-box}
 .profile-card-header:hover{background:var(--primary-light)}
 .profile-card-header h3{font-size:.85rem;font-weight:600;display:flex;align-items:center;gap:8px;margin:0}
 .profile-card-header .chevron{width:16px;height:16px;color:var(--text3);transition:transform .2s}
@@ -761,7 +761,7 @@ h1 .hero-edit-input{font-size:1.35rem}
 .proj-original{font-size:.72rem;color:var(--text3);font-style:italic;margin-top:2px}
 
 /* ===== CARD EDIT HOVER ===== */
-.profile-card-header .card-edit-btn{opacity:0;transition:opacity .15s;width:30px;height:30px;display:flex;align-items:center;justify-content:center;border-radius:var(--radius);color:var(--text3);margin-left:auto;flex-shrink:0;cursor:pointer;z-index:2}
+.profile-card-header .card-edit-btn{opacity:0;transition:opacity .15s;width:18px;height:18px;display:flex;align-items:center;justify-content:center;border-radius:var(--radius);color:var(--text3);margin-left:auto;flex-shrink:0;cursor:pointer;z-index:2}
 .profile-card:hover .card-edit-btn{opacity:1}
 .card-edit-btn:hover{background:var(--primary-light);color:var(--primary)}
 .clickable-edit{cursor:pointer;transition:background .15s}
@@ -1010,7 +1010,7 @@ h1 .hero-edit-input{font-size:1.35rem}
       <div class="header-title" id="headerTitle">Dashboard</div>
       <div class="header-search">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
-        <input type="text" id="globalSearch" placeholder="Search properties, contacts...  (Ctrl+S)" oninput="handleSearch(this.value)" onfocus="showAutocomplete()" autocomplete="off" onkeydown="handleSearchKeydown(event)">
+        <input type="text" id="globalSearch" placeholder="Search properties, contacts...  Ctrl+S" oninput="handleSearch(this.value)" onfocus="showAutocomplete()" autocomplete="off" onkeydown="handleSearchKeydown(event)">
         <div class="search-autocomplete" id="searchAutocomplete"></div>
       </div>
       <div class="header-actions">
@@ -1823,7 +1823,7 @@ function _renderProfileInner(){
           <div style="display:flex;gap:8px">
             <div style="flex:1">
               ${buildRteToolbarHtml('newNoteRte_'+r.id)}
-              <div class="rte-editor" contenteditable="true" id="newNoteRte_${r.id}" data-placeholder="Add a note...  (Ctrl+N)" data-hint="Paste screenshots to attach · Shift + Enter to save" onkeydown="handleRteKeydown(event,'${r.id}')"></div>
+              <div class="rte-editor" contenteditable="true" id="newNoteRte_${r.id}" data-placeholder="Add a note...  Ctrl+N" data-hint="Paste screenshots to attach | Shift + Enter to save" onkeydown="handleRteKeydown(event,'${r.id}')"></div>
             </div>
             <button class="btn btn-primary btn-sm" onclick="addNote('${r.id}')" style="align-self:flex-end;white-space:nowrap">Add</button>
           </div>
@@ -2640,7 +2640,7 @@ function setNoteType(recId, type){
   // Update placeholder
   const ed = document.getElementById('newNoteRte_'+recId);
   if(ed){
-    const labels = { note:'Add a note...  (Ctrl+N)', call:'Log a call...  (Ctrl+N)', text:'Log a text message...  (Ctrl+N)', email:'Log an email...  (Ctrl+N)' };
+    const labels = { note:'Add a note...  Ctrl+N', call:'Log a call...  Ctrl+N', text:'Log a text message...  Ctrl+N', email:'Log an email...  Ctrl+N' };
     ed.setAttribute('data-placeholder', labels[type] || 'Add a note...');
     ed.focus();
   }
