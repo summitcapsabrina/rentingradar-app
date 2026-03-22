@@ -157,6 +157,57 @@ textarea{resize:vertical;min-height:80px}
 :root.light .st-new{background:#e0e7ff;color:#3730a3}:root.light .st-new::before{background:#3730a3}
 
 /* ===== DASHBOARD ===== */
+.db-grid{display:grid;gap:16px}
+.db-kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
+.db-kpi{background:var(--surface);border-radius:var(--radius);padding:14px 16px;box-shadow:var(--shadow);border:1px solid var(--border);position:relative;overflow:hidden;transition:all .15s}
+.db-kpi:hover{border-color:var(--primary);transform:translateY(-1px)}
+.db-kpi .kpi-icon{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:1rem;margin-bottom:8px}
+.db-kpi .kpi-val{font-size:1.5rem;font-weight:800;line-height:1.1}
+.db-kpi .kpi-label{font-size:.7rem;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;margin-top:3px}
+.db-kpi .kpi-sub{font-size:.72rem;color:var(--text3);margin-top:4px}
+.db-kpi .kpi-trend{position:absolute;top:12px;right:12px;font-size:.68rem;font-weight:600;padding:2px 6px;border-radius:4px}
+.db-row{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.db-row-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
+.db-card{background:var(--surface);border-radius:var(--radius);border:1px solid var(--border);box-shadow:var(--shadow);overflow:hidden}
+.db-card-hdr{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--border)}
+.db-card-hdr h3{font-size:.85rem;font-weight:600;display:flex;align-items:center;gap:6px;margin:0}
+.db-card-hdr .db-hdr-action{font-size:.72rem;color:var(--primary);cursor:pointer;font-weight:500}
+.db-card-hdr .db-hdr-action:hover{text-decoration:underline}
+.db-card-body{padding:12px 16px}
+.db-card-body.no-pad{padding:0}
+.db-task-list{list-style:none;padding:0;margin:0}
+.db-task-item{display:flex;align-items:center;gap:10px;padding:9px 16px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .1s;font-size:.84rem}
+.db-task-item:last-child{border-bottom:none}
+.db-task-item:hover{background:var(--primary-light)}
+.db-task-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.db-task-info{flex:1;min-width:0}
+.db-task-property{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.db-task-meta{font-size:.72rem;color:var(--text3)}
+.db-task-date{font-size:.72rem;font-weight:600;flex-shrink:0;white-space:nowrap}
+.db-empty{text-align:center;padding:24px 16px;color:var(--text3);font-size:.84rem}
+.db-funnel-bar{display:flex;height:36px;border-radius:var(--radius);overflow:hidden;gap:2px}
+.db-funnel-seg{position:relative;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .15s;min-width:28px}
+.db-funnel-seg:hover{filter:brightness(1.15);transform:scaleY(1.08)}
+.db-funnel-seg span{font-size:.7rem;font-weight:700;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.3);pointer-events:none}
+.db-funnel-legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:8px}
+.db-funnel-leg{display:flex;align-items:center;gap:5px;font-size:.72rem;color:var(--text2);cursor:pointer}
+.db-funnel-leg:hover{color:var(--primary)}
+.db-funnel-dot{width:10px;height:10px;border-radius:3px;flex-shrink:0}
+.db-stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:6px;margin-top:10px}
+.db-stage-item{background:var(--bg);border-radius:var(--radius);padding:8px 10px;cursor:pointer;transition:all .15s;text-align:center}
+.db-stage-item:hover{background:var(--primary-light);transform:translateY(-1px)}
+.db-stage-count{font-size:1.15rem;font-weight:700}
+.db-stage-label{font-size:.65rem;color:var(--text3);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.db-recent-item{display:flex;align-items:center;gap:10px;padding:9px 16px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .1s}
+.db-recent-item:last-child{border-bottom:none}
+.db-recent-item:hover{background:var(--primary-light)}
+.db-recent-prop{flex:1;min-width:0;font-size:.84rem;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.db-recent-date{font-size:.7rem;color:var(--text3);flex-shrink:0}
+.db-insight-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)}
+.db-insight-row:last-child{border-bottom:none}
+.db-insight-icon{width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:.85rem;flex-shrink:0}
+.db-insight-text{flex:1;font-size:.82rem;line-height:1.4}
+.db-insight-text strong{font-weight:600}
 .stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px}
 .stat-card{background:var(--surface);border-radius:var(--radius);padding:16px 20px;box-shadow:var(--shadow);border:1px solid var(--border)}
 .stat-card .label{font-size:.8rem;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
@@ -980,10 +1031,6 @@ h1 .hero-edit-input{font-size:1.35rem}
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
         <span>Dashboard</span>
       </div>
-      <div class="nav-item" data-view="pipeline" onclick="switchView('pipeline')" title="Funnel">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 4h18l-7 8v6l-4 2v-8L3 4z"/></svg>
-        <span>Funnel</span>
-      </div>
       <div class="nav-item" data-view="contacts" onclick="switchView('contacts')" title="Contacts">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
         <span>Contacts</span>
@@ -1151,7 +1198,7 @@ function switchView(view){
   currentProfileId = null;
   clearSearch();
   document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.view === view));
-  const titles = { dashboard:'Dashboard', pipeline:'Funnel', contacts:'All Contacts', notifications:'Notifications', pricing:'Your Plan', settings:'Settings' };
+  const titles = { dashboard:'Dashboard', pipeline:'Pipeline', contacts:'All Contacts', notifications:'Notifications', pricing:'Your Plan', settings:'Settings' };
   document.getElementById('headerTitle').textContent = titles[view] || '';
   if(!_handlingPopstate) history.pushState({ view: view, profileId: null }, '', '#' + view);
   saveViewState();
@@ -1210,36 +1257,173 @@ function renderDashboard(){
   const withContact = records.filter(r => r.name || r.phone || r.email).length;
   const active = records.filter(r => PIPELINE_STAGES.includes(r.status)).length;
   const followUps = getFollowUps();
-  const overdue = followUps.filter(f => f.type === 'overdue').length;
-  const recentActivity = records.filter(r => r.date).sort((a,b) => new Date(b.date) - new Date(a.date)).slice(0,8);
+  const overdue = followUps.filter(f => f.type === 'overdue');
+  const todayFU = followUps.filter(f => f.type === 'today');
+  const upcomingFU = followUps.filter(f => f.type === 'upcoming').slice(0,5);
+  const hotLeads = (counts['Interested']||0) + (counts['Meeting']||0);
+  const closed = records.filter(r => CLOSED_STAGES.includes(r.status)).length;
 
-  return `
-    <div class="stats-row">
-      <div class="stat-card"><div class="label">Total Properties</div><div class="value">${total}</div><div class="sub">${withContact} with contact info</div></div>
-      <div class="stat-card"><div class="label">Active Pipeline</div><div class="value">${active}</div><div class="sub">${PIPELINE_STAGES.length} stages</div></div>
-      <div class="stat-card"><div class="label">Follow Ups Due</div><div class="value" style="color:${overdue?'var(--danger)':'var(--success)'}">${followUps.length}</div><div class="sub">${overdue} overdue</div></div>
-      <div class="stat-card"><div class="label">Interested / Meeting</div><div class="value" style="color:var(--success)">${(counts['Interested']||0)+(counts['Meeting']||0)}</div><div class="sub">Hot leads</div></div>
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
-      <div>
-        <h3 style="font-size:.95rem;margin-bottom:12px">Pipeline Breakdown</h3>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Status</th><th style="text-align:right">Count</th><th style="text-align:right">%</th></tr></thead>
-            <tbody>${STATUSES.map(s => `<tr style="cursor:pointer" onclick="filterStatus='${s}';switchView('contacts')"><td>${statusPill(s)}</td><td style="text-align:right;font-weight:600">${counts[s]||0}</td><td style="text-align:right;color:var(--text3)">${total?Math.round((counts[s]||0)/total*100):0}%</td></tr>`).join('')}</tbody>
-          </table>
-        </div>
-      </div>
-      <div>
-        <h3 style="font-size:.95rem;margin-bottom:12px">Recent Activity</h3>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Property</th><th>Status</th><th>Date</th></tr></thead>
-            <tbody>${recentActivity.length ? recentActivity.map(r => `<tr class="clickable" onclick="openDetail('${r.id}')"><td class="td-property">${truncate(r.property,35)}</td><td>${statusPill(r.status)}</td><td class="td-date">${fmtDate(r.date)}</td></tr>`).join('') : '<tr><td colspan="3" class="empty-row">No recent activity</td></tr>'}</tbody>
-          </table>
-        </div>
-      </div>
-    </div>`;
+  // Meetings upcoming
+  const today = new Date().toISOString().split('T')[0];
+  const meetings = records.filter(r => r.meetingDate && r.meetingDate >= today)
+    .sort((a,b) => a.meetingDate.localeCompare(b.meetingDate)).slice(0,5);
+  const pastMeetings = records.filter(r => r.meetingDate && r.meetingDate < today).length;
+
+  // Recent activity — latest notes and status changes
+  const recentActivity = records.filter(r => r.date).sort((a,b) => new Date(b.date) - new Date(a.date)).slice(0,6);
+
+  // Needs attention: Follow Up status but no date, or no contact info on active leads
+  const needsFollowUp = records.filter(r => r.status === 'Follow Up' && !r.followUpDate);
+  const noContact = records.filter(r => PIPELINE_STAGES.includes(r.status) && !r.name && !r.phone && !r.email);
+
+  // Funnel stages
+  const funnelStages = [
+    { name:'New Leads', statuses:['New','No Contact'], color:'#818cf8', catKey:'prospects' },
+    { name:'In Outreach', statuses:['Messaged','Left Voicemail','Follow Up'], color:'#38bdf8', catKey:'outreach' },
+    { name:'Qualified', statuses:['Interested','Meeting'], color:'#34d399', catKey:'qualified' }
+  ];
+  funnelStages.forEach(s => { s.count = records.filter(r => s.statuses.includes(r.status)).length });
+
+  // Conversion rate
+  const contacted = records.filter(r => !['New','No Contact'].includes(r.status)).length;
+  const convRate = total > 0 ? ((hotLeads/total)*100).toFixed(1) : '0.0';
+
+  let h = '<div class="db-grid">';
+
+  // ── KPI CARDS ──
+  h += '<div class="db-kpis">';
+  h += `<div class="db-kpi" onclick="switchView('contacts')" style="cursor:pointer"><div class="kpi-icon" style="background:rgba(99,129,250,.12);color:var(--primary)">📋</div><div class="kpi-val">${total}</div><div class="kpi-label">Total Properties</div><div class="kpi-sub">${withContact} with contacts</div></div>`;
+  h += `<div class="db-kpi" onclick="pipelineCategory='all';switchView('pipeline')" style="cursor:pointer"><div class="kpi-icon" style="background:rgba(56,189,248,.12);color:#38bdf8">🔄</div><div class="kpi-val">${active}</div><div class="kpi-label">Active Pipeline</div><div class="kpi-sub">${closed} closed/lost</div></div>`;
+  h += `<div class="db-kpi" onclick="pipelineCategory='qualified';switchView('pipeline')" style="cursor:pointer"><div class="kpi-icon" style="background:rgba(52,211,153,.12);color:#34d399">🔥</div><div class="kpi-val">${hotLeads}</div><div class="kpi-label">Hot Leads</div><div class="kpi-sub">${convRate}% qualification rate</div></div>`;
+  h += `<div class="db-kpi" onclick="switchView('notifications')" style="cursor:pointer"><div class="kpi-icon" style="background:${overdue.length?'rgba(239,68,68,.12)':'rgba(52,211,153,.12)'};color:${overdue.length?'var(--danger)':'var(--success)'}">📅</div><div class="kpi-val" style="color:${overdue.length?'var(--danger)':'var(--text)'}">${followUps.length}</div><div class="kpi-label">Follow-Ups Due</div><div class="kpi-sub">${overdue.length} overdue${todayFU.length ? ', '+todayFU.length+' today' : ''}</div></div>`;
+  h += `<div class="db-kpi"><div class="kpi-icon" style="background:rgba(168,85,247,.12);color:#a855f7">📅</div><div class="kpi-val">${meetings.length}</div><div class="kpi-label">Upcoming Meetings</div><div class="kpi-sub">${pastMeetings} completed</div></div>`;
+  h += '</div>';
+
+  // ── FUNNEL BAR + STAGE BREAKDOWN ──
+  h += '<div class="db-card">';
+  h += '<div class="db-card-hdr"><h3>📊 Pipeline Funnel</h3><span class="db-hdr-action" onclick="pipelineCategory=\'all\';switchView(\'pipeline\')">View Pipeline →</span></div>';
+  h += '<div class="db-card-body">';
+  if(active > 0){
+    h += '<div class="db-funnel-bar">';
+    funnelStages.forEach(s => {
+      const pct = active > 0 ? Math.max((s.count/active)*100, s.count > 0 ? 6 : 0) : 0;
+      if(s.count > 0) h += `<div class="db-funnel-seg" style="width:${pct}%;background:${s.color}" onclick="pipelineCategory='${s.catKey}';switchView('pipeline')" title="${s.name}: ${s.count}"><span>${s.count}</span></div>`;
+    });
+    h += '</div>';
+    h += '<div class="db-funnel-legend">';
+    funnelStages.forEach(s => {
+      h += `<div class="db-funnel-leg" onclick="pipelineCategory='${s.catKey}';switchView('pipeline')"><div class="db-funnel-dot" style="background:${s.color}"></div>${s.name} (${s.count})</div>`;
+    });
+    if(closed > 0) h += `<div class="db-funnel-leg" onclick="pipelineCategory='lost';switchView('pipeline')"><div class="db-funnel-dot" style="background:var(--danger)"></div>Closed/Lost (${closed})</div>`;
+    h += '</div>';
+  } else {
+    h += '<div class="db-empty">No active properties yet. Add your first property to see your pipeline.</div>';
+  }
+  // Stage breakdown grid
+  if(total > 0){
+    h += '<div class="db-stage-grid">';
+    PIPELINE_STAGES.forEach(s => {
+      const cnt = counts[s] || 0;
+      h += `<div class="db-stage-item" onclick="filterStatus='${s}';switchView('contacts')"><div class="db-stage-count">${cnt}</div><div class="db-stage-label">${s}</div></div>`;
+    });
+    h += '</div>';
+  }
+  h += '</div></div>';
+
+  // ── MIDDLE ROW: Tasks + Meetings ──
+  h += '<div class="db-row">';
+
+  // Today's Tasks & Follow-Ups
+  h += '<div class="db-card">';
+  h += '<div class="db-card-hdr"><h3>✅ Tasks & Follow-Ups</h3><span class="db-hdr-action" onclick="switchView(\'notifications\')">View All →</span></div>';
+  h += '<div class="db-card-body no-pad">';
+  const taskItems = [...overdue, ...todayFU, ...upcomingFU, ...needsFollowUp.slice(0,3)];
+  if(taskItems.length > 0){
+    h += '<ul class="db-task-list">';
+    overdue.forEach(r => {
+      h += `<li class="db-task-item" onclick="openDetail('${r.id}')"><div class="db-task-dot" style="background:var(--danger)"></div><div class="db-task-info"><div class="db-task-property">${truncate(r.property,35)}</div><div class="db-task-meta">Follow up · ${r.name||'No contact'}</div></div><div class="db-task-date" style="color:var(--danger)">Overdue ${Math.abs(r.diff)}d</div></li>`;
+    });
+    todayFU.forEach(r => {
+      h += `<li class="db-task-item" onclick="openDetail('${r.id}')"><div class="db-task-dot" style="background:var(--warning)"></div><div class="db-task-info"><div class="db-task-property">${truncate(r.property,35)}</div><div class="db-task-meta">Follow up · ${r.name||'No contact'}</div></div><div class="db-task-date" style="color:var(--warning)">Today</div></li>`;
+    });
+    upcomingFU.forEach(r => {
+      h += `<li class="db-task-item" onclick="openDetail('${r.id}')"><div class="db-task-dot" style="background:var(--info)"></div><div class="db-task-info"><div class="db-task-property">${truncate(r.property,35)}</div><div class="db-task-meta">Follow up · ${r.name||'No contact'}</div></div><div class="db-task-date" style="color:var(--info)">${fmtDate(r.followUpDate)}</div></li>`;
+    });
+    needsFollowUp.slice(0,3).forEach(r => {
+      h += `<li class="db-task-item" onclick="openDetail('${r.id}')"><div class="db-task-dot" style="background:var(--text3)"></div><div class="db-task-info"><div class="db-task-property">${truncate(r.property,35)}</div><div class="db-task-meta">Needs follow-up date</div></div><div class="db-task-date" style="color:var(--text3)">No date</div></li>`;
+    });
+    h += '</ul>';
+  } else {
+    h += '<div class="db-empty">All caught up! No pending tasks.</div>';
+  }
+  h += '</div></div>';
+
+  // Upcoming Meetings
+  h += '<div class="db-card">';
+  h += '<div class="db-card-hdr"><h3>📅 Upcoming Meetings</h3></div>';
+  h += '<div class="db-card-body no-pad">';
+  if(meetings.length > 0){
+    h += '<ul class="db-task-list">';
+    meetings.forEach(r => {
+      const isToday = r.meetingDate === today;
+      h += `<li class="db-task-item" onclick="openDetail('${r.id}')"><div class="db-task-dot" style="background:${isToday?'var(--warning)':'var(--primary)'}"></div><div class="db-task-info"><div class="db-task-property">${truncate(r.property,35)}</div><div class="db-task-meta">${r.name||'No contact'}${r.meetingTime ? ' · '+r.meetingTime : ''}</div></div><div class="db-task-date" style="color:${isToday?'var(--warning)':'var(--primary)'}">${isToday ? 'Today' : fmtDate(r.meetingDate)}</div></li>`;
+    });
+    h += '</ul>';
+  } else {
+    h += '<div class="db-empty">No upcoming meetings scheduled.</div>';
+  }
+  h += '</div></div>';
+
+  h += '</div>'; // end db-row
+
+  // ── BOTTOM ROW: Recent Activity + Insights ──
+  h += '<div class="db-row">';
+
+  // Recent Activity
+  h += '<div class="db-card">';
+  h += '<div class="db-card-hdr"><h3>🕐 Recent Activity</h3><span class="db-hdr-action" onclick="switchView(\'contacts\')">All Contacts →</span></div>';
+  h += '<div class="db-card-body no-pad">';
+  if(recentActivity.length > 0){
+    recentActivity.forEach(r => {
+      const lastNote = r.notes && r.notes.length > 0 ? r.notes[r.notes.length - 1] : null;
+      const noteSnippet = lastNote ? (lastNote.html ? lastNote.html.replace(/<[^>]+>/g,' ').substring(0,50) : (lastNote.text||'').substring(0,50)) : '';
+      h += `<div class="db-recent-item" onclick="openDetail('${r.id}')">${statusPill(r.status)}<div class="db-recent-prop">${truncate(r.property,30)}${noteSnippet ? ' <span style="color:var(--text3);font-weight:400;font-size:.76rem">— '+esc(noteSnippet)+'</span>' : ''}</div><div class="db-recent-date">${fmtDate(r.date)}</div></div>`;
+    });
+  } else {
+    h += '<div class="db-empty">No recent activity yet.</div>';
+  }
+  h += '</div></div>';
+
+  // Insights & Quick Stats
+  h += '<div class="db-card">';
+  h += '<div class="db-card-hdr"><h3>💡 Insights</h3></div>';
+  h += '<div class="db-card-body">';
+  const insights = [];
+  if(overdue.length > 0) insights.push({ icon:'⚠️', bg:'rgba(239,68,68,.1)', text:`<strong>${overdue.length} overdue follow-up${overdue.length>1?'s':''}</strong> need${overdue.length===1?'s':''} attention today` });
+  if(noContact.length > 0) insights.push({ icon:'👤', bg:'rgba(245,158,11,.1)', text:`<strong>${noContact.length} active lead${noContact.length>1?'s':''}</strong> missing contact info` });
+  const newCount = counts['New']||0;
+  if(newCount > 0) insights.push({ icon:'🆕', bg:'rgba(129,140,248,.1)', text:`<strong>${newCount} new propert${newCount>1?'ies':'y'}</strong> waiting for outreach` });
+  if(contacted > 0 && total > 0) insights.push({ icon:'📈', bg:'rgba(56,189,248,.1)', text:`<strong>${((contacted/total)*100).toFixed(0)}%</strong> contact rate — ${contacted} of ${total} properties reached` });
+  if(hotLeads > 0) insights.push({ icon:'🔥', bg:'rgba(52,211,153,.1)', text:`<strong>${hotLeads} hot lead${hotLeads>1?'s':''}</strong> in Interested or Meeting stage` });
+  const messaged = counts['Messaged']||0;
+  const voicemail = counts['Left Voicemail']||0;
+  if(messaged + voicemail > 0) insights.push({ icon:'📤', bg:'rgba(56,189,248,.1)', text:`<strong>${messaged + voicemail}</strong> in outreach — ${messaged} messaged, ${voicemail} voicemail` });
+  if(closed > 0 && total > 0) insights.push({ icon:'📊', bg:'rgba(239,68,68,.08)', text:`<strong>${((closed/total)*100).toFixed(0)}%</strong> loss rate — ${closed} of ${total} properties closed or lost` });
+
+  if(insights.length > 0){
+    insights.slice(0,6).forEach(ins => {
+      h += `<div class="db-insight-row"><div class="db-insight-icon" style="background:${ins.bg}">${ins.icon}</div><div class="db-insight-text">${ins.text}</div></div>`;
+    });
+  } else {
+    h += '<div class="db-empty">Add properties to start seeing insights.</div>';
+  }
+  h += '</div></div>';
+
+  h += '</div>'; // end db-row
+
+  h += '</div>'; // end db-grid
+
+  return h;
 }
 
 /* ===== PIPELINE ===== */
@@ -1250,7 +1434,8 @@ const FUNNEL_CATEGORIES = [
 ];
 
 function renderPipeline(){
-  let html = renderFunnel(records);
+  let html = '<div style="margin-bottom:12px"><span style="font-size:.78rem;color:var(--primary);cursor:pointer;display:inline-flex;align-items:center;gap:4px" onclick="switchView(\'dashboard\')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg> Back to Dashboard</span></div>';
+  html += renderFunnel(records);
 
   // Category tabs
   const allActive = records.filter(r => PIPELINE_STAGES.includes(r.status));
@@ -7228,7 +7413,7 @@ if(currentView === 'profile' && currentProfileId){
   document.getElementById('headerTitle').textContent = 'Property Profile';
 } else {
   document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.view === currentView));
-  const titles = { dashboard:'Dashboard', pipeline:'Funnel', contacts:'All Contacts', notifications:'Notifications', pricing:'Your Plan', settings:'Settings' };
+  const titles = { dashboard:'Dashboard', pipeline:'Pipeline', contacts:'All Contacts', notifications:'Notifications', pricing:'Your Plan', settings:'Settings' };
   document.getElementById('headerTitle').textContent = titles[currentView] || '';
 }
 render();
@@ -7268,7 +7453,7 @@ window.addEventListener('popstate', function(e){
       currentProfileId = null;
       clearSearch();
       document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.view === state.view));
-      const titles = { dashboard:'Dashboard', pipeline:'Funnel', contacts:'All Contacts', notifications:'Notifications', pricing:'Your Plan', settings:'Settings' };
+      const titles = { dashboard:'Dashboard', pipeline:'Pipeline', contacts:'All Contacts', notifications:'Notifications', pricing:'Your Plan', settings:'Settings' };
       document.getElementById('headerTitle').textContent = titles[state.view] || '';
       saveViewState();
       render();
