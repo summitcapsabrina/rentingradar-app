@@ -3643,7 +3643,7 @@ function daysDiff(today, target){
 }
 
 /* ===== THEME TOGGLE ===== */
-let isDark = true;
+let isDark = false;
 let currentAccent = 'standard'; // standard, crimson, ocean, emerald
 
 const ACCENTS = [
@@ -3673,7 +3673,8 @@ function initTheme(){
   try {
     const saved = localStorage.getItem('rr_theme_mode');
     const savedAccent = localStorage.getItem('rr_theme_accent');
-    if(saved === 'light') isDark = false;
+    if(saved === 'dark') isDark = true;
+    else if(saved === 'light') isDark = false;
     if(savedAccent && ACCENTS.find(a => a.key === savedAccent)) currentAccent = savedAccent;
     // Free tier forced to light standard
     if(currentTier === 'free'){ isDark = false; currentAccent = 'standard' }
@@ -4032,13 +4033,15 @@ let billingPeriod = 'yearly'; // default to yearly to show savings
 let currentTier = 'free';
 
 function loadTier(){
-  try { currentTier = localStorage.getItem('rr_tier') || 'pro' } catch(e){}
+  try { currentTier = localStorage.getItem('rr_tier') || 'free' } catch(e){}
   updateTierUI();
 }
 
 function setTier(tier){
   currentTier = tier;
   try { localStorage.setItem('rr_tier', tier) } catch(e){}
+  // Free tier defaults to light mode + standard color profile
+  if(tier === 'free'){ isDark = false; currentAccent = 'standard'; applyTheme(); }
   updateTierUI();
   render();
 }
