@@ -1977,6 +1977,7 @@ function _renderProfileInner(){
   const activeTab = profileActiveTab || 'details';
   const calcOk = requireTier('basic','Pro Forma');
   const proOk = requireTier('basic','Property Analysis');
+  const expensesOk = true; // Expenses available on all tiers including Free
 
   const heroMarket = d.market || '';
   const heroSubmarket = d.submarket || '';
@@ -2019,9 +2020,9 @@ function _renderProfileInner(){
         ${r.meetingDate ? (()=>{ const mp = new Date(r.meetingDate+'T'+(r.meetingTime||'23:59')) < new Date(); return `<span style="font-size:.75rem;color:${mp?'var(--text3)':'var(--primary)'};display:inline-flex;align-items:center;gap:3px"><span style="font-size:.8rem">📅</span> Meeting: ${fmtDateTimeForCard(r.meetingDate, r.meetingTime)}</span>`; })() : ''}
         <div class="profile-tabs">
           <div class="profile-tab ${activeTab==='details'?'active':''}" data-tab="details" onclick="setProfileTab('details')">🏠 Property Details</div>
-          <div class="profile-tab ${activeTab==='expenses'?'active':''}" data-tab="expenses" onclick="setProfileTab('expenses')">💸 Expenses ${!calcOk?'<span class=\\"tab-lock basic\\">BASIC</span>':''}</div>
-          <div class="profile-tab ${activeTab==='analysis'?'active':''}" data-tab="analysis" onclick="setProfileTab('analysis')">📊 Competitor Analysis ${!proOk?'<span class=\\"tab-lock basic\\">BASIC</span>':''}</div>
-          <div class="profile-tab ${activeTab==='calculator'?'active':''}" data-tab="calculator" onclick="setProfileTab('calculator')">💰 Projected Returns ${!calcOk?'<span class=\\"tab-lock basic\\">BASIC</span>':''}</div>
+          <div class="profile-tab ${activeTab==='expenses'?'active':''}" data-tab="expenses" onclick="setProfileTab('expenses')">💸 Expenses</div>
+          <div class="profile-tab ${activeTab==='analysis'?'active':''}" data-tab="analysis" onclick="setProfileTab('analysis')">📊 Competitor Analysis ${!proOk?'<span class=\\"tab-lock\\">🔒</span>':''}</div>
+          <div class="profile-tab ${activeTab==='calculator'?'active':''}" data-tab="calculator" onclick="setProfileTab('calculator')">💰 Projected Returns ${!calcOk?'<span class=\\"tab-lock\\">🔒</span>':''}</div>
         </div>
       </div>
     </div>
@@ -2157,22 +2158,9 @@ function _renderProfileInner(){
 
   html += `</div>`; // end details tab
 
-  // ── TAB: Expenses ──
+  // ── TAB: Expenses (available on all tiers) ──
   html += `<div class="tab-content ${activeTab==='expenses'?'active':''}" data-tab="expenses">`;
-  if(calcOk){
-    html += renderExpensesTab(r);
-  } else {
-    html += `<div class="profile-card profile-full">
-      <div class="profile-card-body">
-        <div class="tab-locked-overlay">
-          <div class="tlo-icon">🔒</div>
-          <div class="tlo-title">Expenses</div>
-          <div class="tlo-desc">Track investment costs and monthly operating expenses for this property. Available on the Basic plan.</div>
-          <button class="btn btn-primary" onclick="switchView('pricing')">Upgrade to Basic — $10.99/mo</button>
-        </div>
-      </div>
-    </div>`;
-  }
+  html += renderExpensesTab(r);
   html += `</div>`;
 
   // ── TAB: Analysis ──
@@ -3539,11 +3527,17 @@ function showManualAddForm(){
       </div>`;
     setTimeout(() => {
       const el = document.getElementById('add_property'); if(el) setupAddressAutocomplete(el, null);
-      // Shift+Enter to save from anywhere in the form
-      const modal = document.getElementById('detailModal');
-      if(modal && !modal._addShiftEnter){
-        modal._addShiftEnter = true;
-        modal.addEventListener('keydown', function(e){ if(e.shiftKey && e.key === 'Enter'){ e.preventDefault(); saveNewRecord(); }});
+      // Shift+Enter to save from anywhere when Add Property is open
+      if(!document._addShiftEnter){
+        document._addShiftEnter = true;
+        document.addEventListener('keydown', function(e){
+          if(e.shiftKey && e.key === 'Enter'){
+            const modal = document.getElementById('detailModal');
+            if(modal && modal.classList.contains('open') && document.getElementById('add_property')){
+              e.preventDefault(); saveNewRecord();
+            }
+          }
+        });
       }
     }, 50);
   } else {
@@ -3595,11 +3589,17 @@ function showManualAddForm(){
       </div>`;
     setTimeout(() => {
       const el = document.getElementById('add_property'); if(el) setupAddressAutocomplete(el, null);
-      // Shift+Enter to save from anywhere in the form
-      const modal = document.getElementById('detailModal');
-      if(modal && !modal._addShiftEnter){
-        modal._addShiftEnter = true;
-        modal.addEventListener('keydown', function(e){ if(e.shiftKey && e.key === 'Enter'){ e.preventDefault(); saveNewRecord(); }});
+      // Shift+Enter to save from anywhere when Add Property is open
+      if(!document._addShiftEnter){
+        document._addShiftEnter = true;
+        document.addEventListener('keydown', function(e){
+          if(e.shiftKey && e.key === 'Enter'){
+            const modal = document.getElementById('detailModal');
+            if(modal && modal.classList.contains('open') && document.getElementById('add_property')){
+              e.preventDefault(); saveNewRecord();
+            }
+          }
+        });
       }
     }, 50);
   }
@@ -4182,6 +4182,7 @@ function renderPricing(){
           'Pipeline view',
           'Contact management',
           'Follow-up reminders & notifications',
+          'Expense tracking',
         ],
         disabled: [
           'CSV import & export',
@@ -7642,7 +7643,7 @@ function renderHelp(){
         ${renderHelpAccordion('Can I import properties from a spreadsheet?',
           'Yes! Go to <strong>Settings → Data Management → Import CSV</strong> or use the import button on the dashboard. Your CSV should have columns for address, contact name, phone, email, and status. The importer will map your columns automatically.')}
         ${renderHelpAccordion('What\'s the difference between the plans?',
-          '<strong>Free</strong> — Up to 50 properties, pipeline view, contact management, and follow-up reminders.<br><strong>Basic</strong> — Up to 250 properties, plus CSV import/export, dark mode & themes, property analysis, and ROI calculator.<br><strong>Pro</strong> — Unlimited properties, plus automatic data extraction via Chrome extension, AI-powered extraction, and priority feature requests.')}
+          '<strong>Free</strong> — Up to 50 properties, pipeline view, contact management, follow-up reminders, and expense tracking.<br><strong>Basic</strong> — Up to 250 properties, plus CSV import/export, dark mode & themes, property analysis, and ROI calculator.<br><strong>Pro</strong> — Unlimited properties, plus automatic data extraction via Chrome extension, AI-powered extraction, and priority feature requests.')}
         ${renderHelpAccordion('How do follow-up reminders work?',
           'Set a follow-up date on any property (in the Contact & Status card or when adding a property). You\'ll see upcoming follow-ups on your dashboard and receive browser notifications when they\'re due. Make sure notifications are enabled in <strong>Settings → Notifications</strong>.')}
       </div>
