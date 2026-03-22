@@ -1837,7 +1837,7 @@ function _renderProfileInner(){
             const noteImages = n.images || [];
             const imgHtml = noteImages.length > 0 ? '<div class="note-images">' + noteImages.map((src, imgIdx) => '<img class="note-img-thumb" src="'+src+'" alt="Attachment" onclick="openNoteImagePopup(\''+r.id+'\',\''+n.id+'\','+imgIdx+')">').join('') + '</div>' + '<div class="note-img-badge">📎 ' + noteImages.length + ' image' + (noteImages.length > 1 ? 's' : '') + ' attached</div>' : '';
             const actionsHtml = isUserNote ? '<div class="note-actions"><button onclick="editNote(\''+r.id+'\',\''+n.id+'\')" title="Edit"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="del" onclick="deleteNote(\''+r.id+'\',\''+n.id+'\')" title="Delete"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button></div>' : '';
-            const dateHtml = '<div class="note-date"><span>' + emoji + label + '</span><span>' + fmtDateTime(n.date) + (n.editedAt ? ' <span class="note-edited">(edited '+fmtDateTime(n.editedAt)+')</span>' : '') + '</span></div>';
+            const dateHtml = '<div class="note-date"><span>' + emoji + label + '</span><span>' + fmtDateTime(n.date) + (n.editedAt ? ' <span class="note-edited">(edited)</span>' : '') + '</span></div>';
             return '<div class="note-item">' + actionsHtml + dateHtml + '<div class="note-text">' + noteContent + '</div>' + imgHtml + '</div>';
           }).join('') + (r.date ? '<div class="note-item" style="opacity:.7"><div class="note-date"><span><span style="font-size:1.1em">🏁</span> Account Created</span><span>'+fmtDateTime(r.date)+'</span></div><div class="note-text">Property added to RentingRadar</div></div>' : '') : '<div style="color:var(--text3);font-size:.82rem">No activity yet</div>'}
         </div>
@@ -2838,7 +2838,7 @@ function openNoteImagePopup(recId, noteId, imgIdx){
     <div class="nip-text">${noteContent}</div>
     <img src="${note.images[imgIdx]}" alt="Attachment">
     ${navHtml}
-    <div class="nip-date">${fmtDateTime(note.date)} • ${emoji}${label}${note.editedAt?' <span style="font-style:italic">(edited '+fmtDateTime(note.editedAt)+')</span>':''}</div>
+    <div class="nip-date">${fmtDateTime(note.date)} • ${emoji}${label}${note.editedAt?' <span style="font-style:italic">(edited)</span>':''}</div>
   </div>`;
 
   // Close on backdrop click
