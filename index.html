@@ -3344,7 +3344,15 @@ function openAddModal(){
   checkExtension().then(h => updateAddServerStatus(h));
 }
 
-function closeAddModal(){
+function closeAddModal(force){
+  if(!force){
+    // Check if any field in the add form has data
+    const fields = ['add_property','add_city','add_state','add_zip','add_unit_num','add_name','add_phone','add_email','add_link','add_link2','add_note','add_followup'];
+    const hasData = fields.some(id => { const el = document.getElementById(id); return el && el.value && el.value.trim(); });
+    if(hasData){
+      if(!confirm('You have unsaved data. Discard changes?')) return;
+    }
+  }
   document.getElementById('detailModal').classList.remove('open');
 }
 
@@ -3580,8 +3588,8 @@ function saveNewRecord(){
   if(!checkPropertyLimit()){ return }
   if(r.note) r.notes.push({ id:uid(), text:r.note, date:r.date, type:'note' });
   records.unshift(r);
-  saveData(); closeAddModal();
-  render();
+  saveData(); closeAddModal(true);
+  openDetail(r.id);
 }
 
 /* ===== SEARCH & FILTER ===== */
