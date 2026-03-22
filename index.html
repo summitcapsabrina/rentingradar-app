@@ -4157,6 +4157,11 @@ function loadTier(){
 function setTier(tier){
   currentTier = tier;
   try { localStorage.setItem('rr_tier', tier) } catch(e){}
+  // Sync tier to Firestore so website can read it
+  try {
+    const user = firebase.auth().currentUser;
+    if(user && db) db.collection('users').doc(user.uid).update({ tier: tier, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }).catch(()=>{});
+  } catch(e){}
   // Free tier defaults to light mode + standard color profile
   if(tier === 'free'){ isDark = false; currentAccent = 'standard'; applyTheme(); }
   updateTierUI();
