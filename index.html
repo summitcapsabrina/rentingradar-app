@@ -4511,7 +4511,7 @@ function fmtNum(n){
 function fmtMoney(n){
   if(n===undefined||n===null||isNaN(n)) return '$—';
   const neg = n < 0;
-  return (neg?'(':'')+'$'+Math.abs(n).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0})+(neg?')':'');
+  return (neg?'-':'')+'$'+Math.abs(n).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0});
 }
 
 function cRow(label, valHtml, opts={}){
