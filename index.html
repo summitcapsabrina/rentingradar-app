@@ -4249,7 +4249,7 @@ function renderOllamaSetup(){
 // Firebase config — replace with your project credentials
 const FIREBASE_CONFIG = {
   apiKey: 'AIzaSyAiWI-bB-HxFmvgiFSIuYLtFnv7BniFlQk',
-  authDomain: 'app.rentingradar.com',
+  authDomain: 'rentingradar.firebaseapp.com',
   projectId: 'rentingradar',
   storageBucket: 'rentingradar.firebasestorage.app',
   messagingSenderId: '622768449810',
@@ -4310,26 +4310,25 @@ let currentUser = null;
 function handleGoogleLogin(){
   const provider = new firebase.auth.GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
-  // Use redirect-based auth (more reliable across domains/browsers)
-  firebase.auth().signInWithRedirect(provider);
+  firebase.auth().signInWithPopup(provider).then(result => {
+    setUser(result.user);
+  }).catch(err => {
+    console.error('Login error:', err.code, err.message, err);
+    if(err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') return;
+    if(err.code === 'auth/popup-blocked'){
+      firebase.auth().signInWithRedirect(provider);
+    } else {
+      alert('Login failed (' + err.code + '): ' + err.message);
+    }
+  });
 }
 
-// Handle redirect result
+// Handle redirect result (fallback for popup-blocked)
 firebase.auth().getRedirectResult().then(result => {
   if(result.user) setUser(result.user);
 }).catch(err => {
-  console.error('Login error:', err.code, err.message, err);
-  if(err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') return;
-  if(err.code === 'auth/unauthorized-domain'){
-    alert('This domain is not authorized for sign-in.\n\nPlease add "' + window.location.hostname + '" to:\nFirebase Console → Authentication → Settings → Authorized domains');
-  } else if(err.code === 'auth/invalid-api-key'){
-    alert('Invalid Firebase API key. Please check your Firebase configuration.');
-  } else if(err.code === 'auth/operation-not-allowed'){
-    alert('Google Sign-In is not enabled.\n\nPlease enable it in:\nFirebase Console → Authentication → Sign-in method');
-  } else if(err.code === 'auth/internal-error' || err.code === 'auth/invalid-credential'){
-    alert('Sign-in failed. This may happen if your Google Cloud OAuth consent screen is in "Testing" mode and this Google account is not listed as a test user.\n\nTo fix: Go to Google Cloud Console → APIs & Services → OAuth consent screen → either publish the app or add this email as a test user.');
-  } else {
-    alert('Login failed (' + err.code + '): ' + err.message);
+  if(err.code && err.code !== 'auth/popup-closed-by-user'){
+    console.error('Redirect login error:', err.code, err.message);
   }
 });
 
