@@ -1132,14 +1132,14 @@ h1 .hero-edit-input{font-size:1.35rem}
 /* ===== DATA LAYER ===== */
 const INITIAL_DATA = [];
 
-const STATUSES = ['New','No Contact','Messaged','Left Voicemail','Follow Up','Interested','Meeting','HOA Issues','Not Good Fit','Not Interested','Lost','Un-Listed'];
+const STATUSES = ['New','No Contact','Messaged','Left Voicemail','Follow Up','Interested','Meeting','HOA Issues','Not Good Fit','Not Interested','Un-Listed'];
 const STATUS_ORDER = {};
 STATUSES.forEach((s,i) => STATUS_ORDER[s] = i);
 
 const PIPELINE_STAGES = ['New','No Contact','Messaged','Left Voicemail','Follow Up','Interested','Meeting'];
-const CLOSED_STAGES = ['HOA Issues','Not Good Fit','Not Interested','Lost','Un-Listed'];
+const CLOSED_STAGES = ['HOA Issues','Not Good Fit','Not Interested','Un-Listed'];
 
-const SELECTABLE_STATUSES = STATUSES.filter(s => s !== 'Lost');
+const SELECTABLE_STATUSES = STATUSES;
 
 function statusClass(s){ return 'st-' + (s||'new').toLowerCase().replace(/\s+/g,'-') }
 function statusPill(s){ return `<span class="status-pill ${statusClass(s)}">${s||'New'}</span>` }
@@ -1178,7 +1178,7 @@ async function loadDataFromFirestore(userUid){
     if(doc.exists){
       const data = doc.data();
       records = JSON.parse(data.data || '[]');
-      records.forEach(r => { if(!r.propertyDetails) r.propertyDetails={}; if(!r.propertyNotes) r.propertyNotes=[]; if(r.status==='No Longer Interested') r.status='Not Interested'; });
+      records.forEach(r => { if(!r.propertyDetails) r.propertyDetails={}; if(!r.propertyNotes) r.propertyNotes=[]; if(r.status==='No Longer Interested') r.status='Not Interested'; if(r.status==='Lost') r.status='Not Interested'; });
     } else {
       records = [];
     }
@@ -1362,8 +1362,10 @@ function renderDashboard(){
   const catStatuses = isLost ? CLOSED_STAGES : (cats.find(c => c.key === activeCat)?.statuses || []);
   const statusItems = catStatuses.map(st => ({ status: st, count: records.filter(r => r.status === st).length }));
 
+  // Fixed height: max 4 status rows (Closed/Lost) — keeps card from jumping
+  const maxStatusRows = Math.max(...[...FUNNEL_CATEGORIES.map(c => c.statuses.length), CLOSED_STAGES.length]);
   if(statusItems.length > 0){
-    h += '<div class="db-status-breakdown">';
+    h += `<div class="db-status-breakdown" style="min-height:${maxStatusRows * 38}px">`;
     statusItems.forEach(s => {
       const catColor = isLost ? 'var(--danger)' : (funnelStages.find(fs => fs.statuses.includes(s.status))?.color || 'var(--primary)');
       h += `<div class="db-status-row" onclick="filterStatus='${s.status}';switchView('contacts')">
@@ -7327,7 +7329,7 @@ function renderSettings(){
           </select></div>
         </div>
         <div class="settings-row">
-          <div class="settings-row-left"><div class="sr-label">Show Closed Stages in Pipeline</div><div class="sr-desc">Display HOA Issues, Not Good Fit, Lost, etc. in the Kanban view</div></div>
+          <div class="settings-row-left"><div class="sr-label">Show Closed Stages in Pipeline</div><div class="sr-desc">Display HOA Issues, Not Good Fit, etc. in the Kanban view</div></div>
           <div class="settings-row-right"><div class="settings-toggle ${settingsPrefs.showClosed!==false?'on':''}" onclick="toggleSettingsPref('showClosed',this)"></div></div>
         </div>
       </div>
