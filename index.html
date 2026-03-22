@@ -5155,11 +5155,11 @@ function renderAnalysisTab(r){
     projWorst = Math.round(sumWorst / compsWithRev.length);
   }
 
-  // Right: Revenue Projections (Likely, Best, Worst Case)
+  // Right: Revenue Projections (Best, Likely, Worst Case)
   h += '<div class="an-section"><div class="an-section-hdr">Revenue Projections</div><div class="an-section-body" style="padding:0">';
   h += '<div class="an-req-bar" style="border:none;border-radius:0;margin:0">';
-  h += '<div class="an-req-item"><div class="req-label">Likely Revenue</div><div class="req-val">'+(projLikely ? fmtMoney(projLikely) : '$0')+'<span class="req-period">/yr</span></div><div class="req-annual">'+(projLikely ? fmtMoney(Math.round(projLikely/12)) : '$0')+'/mo</div></div>';
   h += '<div class="an-req-item"><div class="req-label">Best Case</div><div class="req-val" style="color:var(--num-success)">'+(projBest ? fmtMoney(projBest) : '$0')+'<span class="req-period">/yr</span></div><div class="req-annual">'+(projBest ? fmtMoney(Math.round(projBest/12)) : '$0')+'/mo</div></div>';
+  h += '<div class="an-req-item"><div class="req-label">Likely</div><div class="req-val" style="color:var(--primary)">'+(projLikely ? fmtMoney(projLikely) : '$0')+'<span class="req-period">/yr</span></div><div class="req-annual">'+(projLikely ? fmtMoney(Math.round(projLikely/12)) : '$0')+'/mo</div></div>';
   h += '<div class="an-req-item"><div class="req-label">Worst Case</div><div class="req-val" style="color:var(--num-danger)">'+(projWorst ? fmtMoney(projWorst) : '$0')+'<span class="req-period">/yr</span></div><div class="req-annual">'+(projWorst ? fmtMoney(Math.round(projWorst/12)) : '$0')+'/mo</div></div>';
   h += '</div>';
   h += '</div></div>';
