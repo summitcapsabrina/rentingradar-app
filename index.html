@@ -2574,7 +2574,7 @@ async function autoImport(recId){
   if(!r || !r.link) return;
   const container = document.getElementById('importContainer_'+recId);
   const plat = detectPlatform(r.link);
-  if(!requireTier('basic','Auto Import')){ container.innerHTML = tierGateHtml('basic','Auto Import','Automatically extract property details from listing pages.'); return }
+  if(!requireTier('pro','Auto Import')){ container.innerHTML = tierGateHtml('pro','Auto Import','Automatically extract property details from listing pages.'); return }
   container.innerHTML = '<div class="import-loading"><div class="spinner"></div><div>Importing from '+plat.name+'...</div><div style="font-size:.78rem;color:var(--text3);margin-top:6px" id="profileImportStatus">Connecting to import server...</div></div>';
 
   // Try extension-based import
@@ -3335,7 +3335,7 @@ function openAddModal(){
           <div class="import-option" id="addAutoBtn" onclick="handleAutoImportClick()" style="opacity:.5;pointer-events:none">
             <div class="io-icon">🤖</div>
             <div class="io-title">Auto Import</div>
-            <div class="io-desc">${requireTier('basic','Auto Import') ? 'Extracts all property details from the listing automatically' : '<span class=\"tier-badge tier-basic\">BASIC</span> Upgrade to unlock automatic data extraction'}</div>
+            <div class="io-desc">${requireTier('pro','Auto Import') ? 'Extracts all property details from the listing automatically' : '<span class=\"tier-badge tier-pro\">PRO</span> Upgrade to unlock automatic data extraction'}</div>
           </div>
           <div class="import-option" onclick="showManualAddForm()">
             <div class="io-icon">✏️</div>
@@ -3369,8 +3369,8 @@ function updateAddImportUI(){
   if(url.length > 10 && url.startsWith('http')){
     const plat = detectPlatform(url);
     badge.innerHTML = '<span class="profile-platform" style="cursor:default">'+plat.icon+' '+plat.name+'</span>';
-    if(extensionReady && requireTier('basic','Auto Import')){ btn.style.opacity='1'; btn.style.pointerEvents='auto' }
-    else if(requireTier('basic','Auto Import')){ /* extension not ready but tier ok */ }
+    if(extensionReady && requireTier('pro','Auto Import')){ btn.style.opacity='1'; btn.style.pointerEvents='auto' }
+    else if(requireTier('pro','Auto Import')){ /* extension not ready but tier ok */ }
     else { btn.style.opacity='1'; btn.style.pointerEvents='auto' } // Show but will gate on click
   } else {
     badge.innerHTML = '';
@@ -3400,7 +3400,7 @@ function updateAddServerStatus(health){
 
 
 function handleAutoImportClick(){
-  if(!requireTier('basic','Auto Import')){
+  if(!requireTier('pro','Auto Import')){
     switchView('pricing');
     closeAddModal();
     return;
@@ -4174,10 +4174,9 @@ function renderPricing(){
       ${renderPricingCard('free', {
         features: [
           'Up to 50 properties',
-          'Kanban pipeline view',
+          'Pipeline view',
           'Contact management',
           'Follow-up reminders & notifications',
-          'Light mode',
         ],
         disabled: [
           'CSV import & export',
@@ -4197,20 +4196,19 @@ function renderPricing(){
           'CSV import & export',
           'Dark mode & 8 color themes',
           'Property analysis',
-          'Automatic data extraction via extension',
-          'Extension setup walkthrough',
-          'Property notes auto-populated',
         ],
         disabled: [
+          'Automatic data extraction via extension',
           'AI-powered extraction',
           'ROI calculator',
         ],
-        desc: 'Automate your workflow with one-click property imports from any listing site.'
+        desc: 'Unlock analysis tools, themes, and data import/export for serious prospecting.'
       })}
       ${renderPricingCard('pro', {
         features: [
           'Unlimited properties',
           'Everything in Basic',
+          'Automatic data extraction via extension',
           'AI-powered data extraction',
           'Advanced property analysis',
           'ROI calculator',
@@ -4227,7 +4225,7 @@ function renderPricing(){
       <button class="btn btn-secondary btn-sm" style="color:var(--text3)" onclick="if(confirm('Downgrade to Free? You will lose access to paid features.')){setTier('free')}">Downgrade to Free</button>
     </div>` : ''}
 
-    ${(currentTier === 'basic' || currentTier === 'pro') ? renderExtensionSetup() : ''}
+    ${currentTier === 'pro' ? renderExtensionSetup() : ''}
     ${currentTier === 'pro' ? renderOllamaSetup() : ''}
   </div>`;
 }
@@ -6407,7 +6405,7 @@ function openStatsEditor(recId){
   const hasAnyStats = d.bedrooms || d.bathrooms || d.sqft || d.availableDate;
 
   // For Pro/Advanced with auto-imported data, show warning first
-  if(isAutoImported && hasAnyStats && requireTier('basic','Auto Import')){
+  if(isAutoImported && hasAnyStats && requireTier('pro','Auto Import')){
     showStatsEditWarning(recId);
     return;
   }
