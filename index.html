@@ -2126,6 +2126,14 @@ function _renderProfileInner(){
     </div>`;
   });
 
+  // Delete Property button
+  html += `<div style="display:flex;justify-content:flex-end;margin-top:16px">
+    <button class="btn" onclick="confirmDeleteProperty('${r.id}')" style="background:transparent;color:var(--danger);border:1px solid var(--danger);font-size:.8rem;padding:6px 16px;border-radius:var(--radius);cursor:pointer;display:flex;align-items:center;gap:6px;opacity:.7;transition:opacity .15s" onmouseenter="this.style.opacity='1';this.style.background='rgba(239,68,68,.08)'" onmouseleave="this.style.opacity='.7';this.style.background='transparent'">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+      Delete Property
+    </button>
+  </div>`;
+
   html += `</div>`; // end details tab
 
   // ── TAB: Expenses ──
