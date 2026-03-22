@@ -1395,7 +1395,8 @@ function renderDashboard(){
       h += `<li class="db-task-item" onclick="openDetail('${r.id}')"><div class="db-task-dot" style="background:var(--warning)"></div><div class="db-task-info"><div class="db-task-property">${truncate(r.property,35)}</div><div class="db-task-meta">Follow up · ${r.name||'No contact'}</div></div><div class="db-task-date" style="color:var(--warning)">Today</div></li>`;
     });
     upcomingFU.forEach(r => {
-      h += `<li class="db-task-item" onclick="openDetail('${r.id}')"><div class="db-task-dot" style="background:var(--info)"></div><div class="db-task-info"><div class="db-task-property">${truncate(r.property,35)}</div><div class="db-task-meta">Follow up · ${r.name||'No contact'}</div></div><div class="db-task-date" style="color:var(--info)">${fmtDate(r.followUpDate)}</div></li>`;
+      const dLabel = r.diff === -1 ? 'Tomorrow' : fmtDate(r.followUpDate);
+      h += `<li class="db-task-item" onclick="openDetail('${r.id}')"><div class="db-task-dot" style="background:var(--info)"></div><div class="db-task-info"><div class="db-task-property">${truncate(r.property,35)}</div><div class="db-task-meta">Follow up · ${r.name||'No contact'}</div></div><div class="db-task-date" style="color:var(--info)">${dLabel}</div></li>`;
     });
     needsFollowUp.slice(0,3).forEach(r => {
       h += `<li class="db-task-item" onclick="openDetail('${r.id}')"><div class="db-task-dot" style="background:var(--text3)"></div><div class="db-task-info"><div class="db-task-property">${truncate(r.property,35)}</div><div class="db-task-meta">Needs follow-up date</div></div><div class="db-task-date" style="color:var(--text3)">No date</div></li>`;
@@ -1727,7 +1728,8 @@ function renderContactsCards(items){
 
 /* ===== NOTIFICATIONS ===== */
 function getFollowUps(){
-  const today = new Date().toISOString().split('T')[0];
+  const now = new Date();
+  const today = now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0');
   return records.filter(r => r.followUpDate).map(r => {
     const diff = daysDiff(today, r.followUpDate);
     let type = 'upcoming';
