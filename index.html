@@ -7743,7 +7743,9 @@ function renderHelpAccordion(question, answer){
   </div>`;
 }
 
-function submitHelpRequest(){
+const FORMSPREE_ID = 'xpqygwvo';
+
+async function submitHelpRequest(){
   const name = document.getElementById('help_name')?.value?.trim() || '';
   const email = document.getElementById('help_email')?.value?.trim() || '';
   const category = document.getElementById('help_category')?.value || 'feature';
@@ -7752,24 +7754,37 @@ function submitHelpRequest(){
   if(!subject){ alert('Please enter a subject.'); return; }
   if(!details){ alert('Please provide some details.'); return; }
 
-  // Store locally and could be sent to a backend in the future
-  const request = { id: uid(), name, email, category, subject, details, date: new Date().toISOString(), tier: currentTier };
-  try {
-    const existing = JSON.parse(localStorage.getItem('rr_help_requests') || '[]');
-    existing.push(request);
-    localStorage.setItem('rr_help_requests', JSON.stringify(existing));
-  } catch(e){}
-
-  // Send via mailto as a fallback
-  const mailSubject = encodeURIComponent('[' + category.charAt(0).toUpperCase() + category.slice(1) + '] ' + subject);
-  const mailBody = encodeURIComponent('Name: ' + name + '\\nEmail: ' + email + '\\nCategory: ' + category + '\\nTier: ' + (currentTier || 'free') + '\\n\\n' + details);
-  window.open('mailto:help@rentingradar.com?subject=' + mailSubject + '&body=' + mailBody, '_blank');
-
-  // Show success
-  document.getElementById('help_subject').value = '';
-  document.getElementById('help_details').value = '';
+  const submitBtn = document.querySelector('#helpFeature .btn-primary');
   const msg = document.getElementById('helpSubmitMsg');
-  if(msg){ msg.style.display = 'inline'; setTimeout(() => msg.style.display = 'none', 4000); }
+  if(submitBtn){ submitBtn.disabled = true; submitBtn.textContent = 'Submitting...'; }
+
+  try {
+    const resp = await fetch('https://formspree.io/f/' + FORMSPREE_ID, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify({
+        name: name,
+        _replyto: email,
+        category: category,
+        _subject: '[' + category.charAt(0).toUpperCase() + category.slice(1) + '] ' + subject,
+        message: details,
+        tier: currentTier || 'free'
+      })
+    });
+    if(resp.ok){
+      document.getElementById('help_subject').value = '';
+      document.getElementById('help_details').value = '';
+      if(msg){ msg.style.display = 'inline'; msg.textContent = '✓ Submitted — thank you!'; msg.style.color = 'var(--success)'; setTimeout(() => msg.style.display = 'none', 5000); }
+    } else {
+      const data = await resp.json().catch(() => ({}));
+      if(msg){ msg.style.display = 'inline'; msg.textContent = '⚠ Submission failed — please try again.'; msg.style.color = 'var(--danger)'; setTimeout(() => msg.style.display = 'none', 5000); }
+      console.error('Formspree error:', data);
+    }
+  } catch(e){
+    console.error('Help submit error:', e);
+    if(msg){ msg.style.display = 'inline'; msg.textContent = '⚠ Network error — please try again.'; msg.style.color = 'var(--danger)'; setTimeout(() => msg.style.display = 'none', 5000); }
+  }
+  if(submitBtn){ submitBtn.disabled = false; submitBtn.textContent = 'Submit'; }
 }
 
 function openEditProfile(){
