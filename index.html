@@ -193,6 +193,14 @@ textarea{resize:vertical;min-height:80px}
 .db-lost-bin:hover{background:rgba(239,68,68,.15);border-color:var(--danger);transform:scale(1.05)}
 .db-lost-bin.active{background:rgba(239,68,68,.18);border-color:var(--danger);box-shadow:0 0 0 3px rgba(239,68,68,.15)}
 .db-lost-bin .db-lost-count{font-size:.65rem;font-weight:800;margin-top:1px;line-height:1}
+.db-status-breakdown{display:flex;flex-direction:column;gap:2px;margin-top:4px}
+.db-status-row{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:var(--radius);cursor:pointer;transition:background .1s}
+.db-status-row:hover{background:var(--primary-light)}
+.db-status-pill-wrap{width:120px;flex-shrink:0}
+.db-status-bar-track{flex:1;height:8px;background:var(--bg);border-radius:4px;overflow:hidden}
+.db-status-bar-fill{height:100%;border-radius:4px;transition:width .3s ease}
+.db-status-count{font-size:.85rem;font-weight:700;min-width:28px;text-align:right;color:var(--text)}
+.db-status-arrow{color:var(--text3);flex-shrink:0}
 .db-funnel-legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:8px}
 .db-funnel-leg{display:flex;align-items:center;gap:5px;font-size:.72rem;color:var(--text2);cursor:pointer}
 .db-funnel-leg:hover{color:var(--primary)}
@@ -1298,8 +1306,8 @@ function renderDashboard(){
   // ── KPI CARDS ──
   h += '<div class="db-kpis">';
   h += `<div class="db-kpi" onclick="switchView('contacts')" style="cursor:pointer"><div class="kpi-icon" style="background:rgba(99,129,250,.12);color:var(--primary)">📋</div><div class="kpi-val">${total}</div><div class="kpi-label">Total Properties</div><div class="kpi-sub">${withContact} with contacts</div></div>`;
-  h += `<div class="db-kpi" onclick="pipelineCategory='all';pipelineSubCategory=null;render();document.querySelector('.pipeline-category-tabs')?.scrollIntoView({behavior:'smooth',block:'nearest'})" style="cursor:pointer"><div class="kpi-icon" style="background:rgba(56,189,248,.12);color:#38bdf8">🔄</div><div class="kpi-val">${active}</div><div class="kpi-label">Active Pipeline</div><div class="kpi-sub">${closed} closed/lost</div></div>`;
-  h += `<div class="db-kpi" onclick="pipelineCategory='qualified';pipelineSubCategory=null;render();document.querySelector('.pipeline-category-tabs')?.scrollIntoView({behavior:'smooth',block:'nearest'})" style="cursor:pointer"><div class="kpi-icon" style="background:rgba(52,211,153,.12);color:#34d399">🔥</div><div class="kpi-val">${hotLeads}</div><div class="kpi-label">Hot Leads</div><div class="kpi-sub">${convRate}% qualification rate</div></div>`;
+  h += `<div class="db-kpi" onclick="pipelineCategory='all';render();document.querySelector('.pipeline-category-tabs')?.scrollIntoView({behavior:'smooth',block:'nearest'})" style="cursor:pointer"><div class="kpi-icon" style="background:rgba(56,189,248,.12);color:#38bdf8">🔄</div><div class="kpi-val">${active}</div><div class="kpi-label">Active Pipeline</div><div class="kpi-sub">${closed} closed/lost</div></div>`;
+  h += `<div class="db-kpi" onclick="pipelineCategory='qualified';render();document.querySelector('.pipeline-category-tabs')?.scrollIntoView({behavior:'smooth',block:'nearest'})" style="cursor:pointer"><div class="kpi-icon" style="background:rgba(52,211,153,.12);color:#34d399">🔥</div><div class="kpi-val">${hotLeads}</div><div class="kpi-label">Hot Leads</div><div class="kpi-sub">${convRate}% qualification rate</div></div>`;
   h += `<div class="db-kpi" onclick="switchView('notifications')" style="cursor:pointer"><div class="kpi-icon" style="background:${overdue.length?'rgba(239,68,68,.12)':'rgba(52,211,153,.12)'};color:${overdue.length?'var(--danger)':'var(--success)'}">📅</div><div class="kpi-val" style="color:${overdue.length?'var(--danger)':'var(--text)'}">${followUps.length}</div><div class="kpi-label">Follow-Ups Due</div><div class="kpi-sub">${overdue.length} overdue${todayFU.length ? ', '+todayFU.length+' today' : ''}</div></div>`;
   h += `<div class="db-kpi"><div class="kpi-icon" style="background:rgba(168,85,247,.12);color:#a855f7">📅</div><div class="kpi-val">${meetings.length}</div><div class="kpi-label">Upcoming Meetings</div><div class="kpi-sub">${pastMeetings} completed</div></div>`;
   h += '</div>';
@@ -1345,69 +1353,25 @@ function renderDashboard(){
 
   // Category tabs
   h += `<div class="pipeline-category-tabs" style="margin-top:14px">
-    <div class="pipeline-cat-tab ${activeCat==='all'?'active':''}" onclick="pipelineCategory='all';pipelineSubCategory=null;render()">All Active <span class="pct-count">${allActive.length}</span></div>
-    ${cats.map(c => `<div class="pipeline-cat-tab ${activeCat===c.key?'active':''}" onclick="pipelineCategory='${c.key}';pipelineSubCategory=null;render()">${c.name} <span class="pct-count">${c.count}</span></div>`).join('')}
-    <div class="pipeline-cat-tab ${activeCat==='lost'?'active':''}" onclick="pipelineCategory='lost';pipelineSubCategory=null;render()" style="${activeCat==='lost'?'color:var(--danger);border-bottom-color:var(--danger)':''}">🗑 Closed/Lost <span class="pct-count">${lostCount}</span></div>
+    <div class="pipeline-cat-tab ${activeCat==='all'?'active':''}" onclick="pipelineCategory='all';render()">All Active <span class="pct-count">${allActive.length}</span></div>
+    ${cats.map(c => `<div class="pipeline-cat-tab ${activeCat===c.key?'active':''}" onclick="pipelineCategory='${c.key}';render()">${c.name} <span class="pct-count">${c.count}</span></div>`).join('')}
+    <div class="pipeline-cat-tab ${activeCat==='lost'?'active':''}" onclick="pipelineCategory='lost';render()" style="${activeCat==='lost'?'color:var(--danger);border-bottom-color:var(--danger)':''}">🗑 Closed/Lost <span class="pct-count">${lostCount}</span></div>
   </div>`;
 
-  // Sub-category chips
-  if(activeCat !== 'all'){
-    const isLost = activeCat === 'lost';
-    const cat = isLost ? { name:'Closed/Lost', statuses:CLOSED_STAGES, count:lostCount } : cats.find(c => c.key === activeCat);
-    if(cat && cat.statuses.length > 1){
-      h += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
-        <span class="chip ${!pipelineSubCategory?'active':''}" onclick="pipelineSubCategory=null;render()">All ${cat.name} (${cat.count})</span>
-        ${cat.statuses.map(st => {
-          const cnt = records.filter(r => r.status === st).length;
-          return cnt > 0 ? `<span class="chip ${pipelineSubCategory===st?'active':''}" onclick="pipelineSubCategory='${st}';render()">${st} (${cnt})</span>` : '';
-        }).join('')}
-      </div>`;
-    }
-  }
+  // Status breakdown for selected category — clicking navigates to Contacts
+  const isLost = activeCat === 'lost';
+  const catStatuses = activeCat === 'all' ? PIPELINE_STAGES : isLost ? CLOSED_STAGES : (cats.find(c => c.key === activeCat)?.statuses || []);
+  const statusItems = catStatuses.map(st => ({ status: st, count: records.filter(r => r.status === st).length })).filter(s => s.count > 0 || activeCat !== 'all');
 
-  // Get records for selected category
-  let displayRecords;
-  if(activeCat === 'all'){
-    displayRecords = allActive;
-  } else if(activeCat === 'lost'){
-    displayRecords = lostRecords;
-    if(pipelineSubCategory) displayRecords = displayRecords.filter(r => r.status === pipelineSubCategory);
-  } else {
-    const cat = cats.find(c => c.key === activeCat);
-    displayRecords = cat ? cat.records : [];
-    if(pipelineSubCategory) displayRecords = displayRecords.filter(r => r.status === pipelineSubCategory);
-  }
-
-  // Apply search filter
-  if(searchQuery){
-    const words = searchQuery.split(/\s+/).filter(w => w.length > 0);
-    displayRecords = displayRecords.filter(r => {
-      const blob = [r.property, r.name, r.phone, r.email, r.status].filter(Boolean).join(' ').toLowerCase();
-      return words.every(w => blob.includes(w));
-    });
-  }
-
-  // Property cards
-  if(displayRecords.length === 0){
-    h += '<div style="text-align:center;padding:30px;color:var(--text3);font-size:.88rem">No properties in this category</div>';
-  } else {
-    h += '<div class="pipeline-list">';
-    displayRecords.forEach(r => {
-      const d = r.propertyDetails || {};
-      const rent = d.monthlyRent ? '$'+Number(d.monthlyRent).toLocaleString()+'/mo' : '';
-      h += `<div class="pipeline-card" onclick="openDetail('${r.id}')">
-        <div class="plc-main">
-          <div class="plc-property">${esc(r.property)}</div>
-          ${r.name ? `<div class="plc-name">${esc(r.name)}</div>` : ''}
-          <div class="plc-meta">
-            ${rent ? `<span>${rent}</span>` : ''}
-            ${d.bedrooms ? `<span>${d.bedrooms} bd</span>` : ''}
-            ${d.bathrooms ? `<span>${d.bathrooms} ba</span>` : ''}
-            ${r.phone ? `<span>📞 ${esc(r.phone)}</span>` : ''}
-            ${r.date ? `<span>${fmtDate(r.date)}</span>` : ''}
-          </div>
-        </div>
-        <div class="plc-status">${statusPill(r.status)}</div>
+  if(statusItems.length > 0){
+    h += '<div class="db-status-breakdown">';
+    statusItems.forEach(s => {
+      const catColor = isLost ? 'var(--danger)' : (funnelStages.find(fs => fs.statuses.includes(s.status))?.color || 'var(--primary)');
+      h += `<div class="db-status-row" onclick="filterStatus='${s.status}';switchView('contacts')">
+        <div class="db-status-pill-wrap">${statusPill(s.status)}</div>
+        <div class="db-status-bar-track"><div class="db-status-bar-fill" style="width:${total > 0 ? Math.max((s.count/total)*100, s.count > 0 ? 3 : 0) : 0}%;background:${catColor}"></div></div>
+        <div class="db-status-count">${s.count}</div>
+        <svg class="db-status-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
       </div>`;
     });
     h += '</div>';
