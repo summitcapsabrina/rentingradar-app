@@ -4865,16 +4865,16 @@ function setCalcProjMode(mode){
 
 /* ===== CALCULATOR TAB ===== */
 const CALC_DEFAULTS = {
-  applicationFees:50, securityDeposit:1000, firstLastRent:0,
-  additionalFee1:0, additionalFee2:0, costPerBR:5000,
+  applicationFees:0, securityDeposit:0, firstLastRent:0,
+  additionalFee1:0, additionalFee2:0, costPerBR:0,
   extraCommonSpaces:0, costPerExtraSpace:0,
-  avgDailyRate:0, estOccupancyRate:85,
-  insurance:20, strFee:0, water:60, gas:50, electric:200,
-  wifiTv:75, futureRepairs:100, incidentals:30, parking:0,
-  garbageRecycling:20, channelManager:25, cityPermit:20.83,
+  avgDailyRate:0, estOccupancyRate:0,
+  insurance:0, strFee:0, water:0, gas:0, electric:0,
+  wifiTv:0, futureRepairs:0, incidentals:0, parking:0,
+  garbageRecycling:0, channelManager:0, cityPermit:0,
   coHostPct:0
 };
-const CLEANING_DEFAULTS = {0:0, 1:500, 2:650, 3:900, 4:1200, 5:2000, 6:3000};
+const CLEANING_DEFAULTS = {0:0, 1:0, 2:0, 3:0, 4:0, 5:0, 6:0};
 
 function getCalc(r){
   if(!r.details) r.details = {};
