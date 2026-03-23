@@ -5012,6 +5012,7 @@ function activateHeroInput(recId, field, containerId, currentVal){
 
 /* ===== PROFILE TABS ===== */
 let profileActiveTab = 'details';
+let calcProjMode = 'projected'; // 'optimistic','projected','pessimistic'
 const tabScrollPositions = {};
 
 function setProfileTab(tab){
@@ -5030,6 +5031,11 @@ function setProfileTab(tab){
   } else if(scrollContainer){
     requestAnimationFrame(() => { scrollContainer.scrollTop = 0; });
   }
+}
+
+function setCalcProjMode(mode){
+  calcProjMode = mode;
+  render();
 }
 
 /* ===== CALCULATOR TAB ===== */
@@ -5294,16 +5300,21 @@ function renderCalculatorTab(r){
   // ══════ LEFT PANEL: KPIs + PAYBACK ══════
   h += '<div class="calc-panel">';
 
-  // Single projection drives all KPIs, Deal Temp, Payback — no user selection
-  const activeD = v.hasProjectionData ? v.projectedD : { monthlyNOI: v.monthlyNOI, annualNOI: v.annualNOI, monthlyCF: v.monthlyCF, annualCF: v.annualCF, cocReturn: v.cocReturn };
-  const kpiNOI = activeD.monthlyNOI;
-  const kpiAnnualNOI = activeD.annualNOI;
-  const kpiMonthlyCF = activeD.monthlyCF;
-  const kpiAnnualCF = activeD.annualCF;
-  const kpiCoC = activeD.cocReturn;
+  // KPIs driven by user-selected projection mode (optimistic/projected/pessimistic)
+  const modeMap = { optimistic: v.optimisticD, projected: v.projectedD, pessimistic: v.pessimisticD };
+  const selectedD = v.hasProjectionData && modeMap[calcProjMode] ? modeMap[calcProjMode] : (v.hasProjectionData ? v.projectedD : { monthlyNOI: v.monthlyNOI, annualNOI: v.annualNOI, monthlyCF: v.monthlyCF, annualCF: v.annualCF, cocReturn: v.cocReturn });
+  const kpiNOI = selectedD.monthlyNOI;
+  const kpiAnnualNOI = selectedD.annualNOI;
+  const kpiMonthlyCF = selectedD.monthlyCF;
+  const kpiAnnualCF = selectedD.annualCF;
+  const kpiCoC = selectedD.cocReturn;
   const cfClass = kpiMonthlyCF >= 0 ? 'positive' : 'negative';
   const cocClass = kpiCoC >= 0 ? 'positive' : 'negative';
-  const projTagHtml = '<div class="kpi-proj-tag" style="color:var(--num-computed);border-color:var(--num-computed)">Projected</div>';
+  const modeLabels = { optimistic: 'Optimistic', projected: 'Projected', pessimistic: 'Pessimistic' };
+  const modeColors = { optimistic: 'var(--num-success)', projected: 'var(--num-computed)', pessimistic: 'var(--num-danger)' };
+  const modeLabel = modeLabels[calcProjMode] || 'Projected';
+  const modeColor = modeColors[calcProjMode] || 'var(--num-computed)';
+  const projTagHtml = '<div class="kpi-proj-tag" style="color:'+modeColor+';border-color:'+modeColor+'">'+modeLabel+'</div>';
   const insufficientComps = v.compsCount < 3;
   const nedHtml = '<span style="color:var(--text3);font-size:.78rem;font-style:italic">Not Enough Data</span>';
   const nedSubHtml = '<span style="color:var(--text3);font-size:.7rem;font-style:italic">Add at least 3 comps in Competitor Analysis</span>';
@@ -5376,7 +5387,7 @@ function renderCalculatorTab(r){
 
     // Labels under bell curve
     h += '<div style="display:flex;justify-content:space-between;font-size:.62rem;color:var(--text3);margin-bottom:12px;padding:0 8px">';
-    h += '<span>Loses to all</span><span>Neutral</span><span>Beats all</span>';
+    h += '<span>Loses to all</span><span>Competes</span><span>Beats all</span>';
     h += '</div>';
 
     // Comp distribution breakdown
@@ -5404,7 +5415,7 @@ function renderCalculatorTab(r){
 
   // Payback Period Visual (compact for left panel) — driven by selected projection
   const inv = v.totalInvested;
-  const acf = Math.round(activeD.annualCF);
+  const acf = Math.round(selectedD.annualCF);
   const cumVals = [];
   let cumRun = -inv;
   cumVals.push(cumRun);
@@ -5521,15 +5532,15 @@ function renderCalculatorTab(r){
 
   h += '<div class="calc-section"><div class="calc-section-header" title="Projected annual profit across three scenarios. Each column uses different directional multipliers applied to your comp data, then discounted by your competitive position." style="cursor:help">Projected Yearly Net</div>';
 
-  // Non-clickable column headers
+  // Clickable column headers — selecting a column drives KPIs, Deal Temp, and Payback
   h += '<div class="pyn-col-headers">';
   h += '<div class="pyn-label-spacer"></div>';
-  const colTitles = { optimistic: 'Best-case: Loses To ×0.95, Competes ×1.10, Beats ×1.25 applied to comp revenue', projected: 'Weighted projection: Loses To ×0.85, Competes ×1.00, Beats ×1.15 applied to comp revenue', pessimistic: 'Conservative: Loses To ×0.75, Competes ×0.90, Beats ×1.05 applied to comp revenue' };
+  const colTitles = { optimistic: 'Best-case: Loses To ×0.95, Competes ×1.10, Beats ×1.25 applied to comp revenue. Click to use for KPIs and Deal Temperature.', projected: 'Weighted projection: Loses To ×0.85, Competes ×1.00, Beats ×1.15 applied to comp revenue. Click to use for KPIs and Deal Temperature.', pessimistic: 'Conservative: Loses To ×0.75, Competes ×0.90, Beats ×1.05 applied to comp revenue. Click to use for KPIs and Deal Temperature.' };
   cols.forEach(col => {
-    const isProjected = col.key === 'projected';
-    h += '<div class="pyn-col-header'+(isProjected?' pyn-col-active':'')+'" style="--col-color:'+col.color+';cursor:default" title="'+(colTitles[col.key] || '')+'">';
+    const isActive = col.key === calcProjMode;
+    h += '<div class="pyn-col-header'+(isActive?' pyn-col-active':'')+'" style="--col-color:'+col.color+';cursor:pointer" title="'+(colTitles[col.key] || '')+'" onclick="setCalcProjMode(\''+col.key+'\')">';
     h += '<span class="pyn-col-label">'+col.label+'</span>';
-    if(isProjected) h += '<div class="pyn-col-indicator"></div>';
+    if(isActive) h += '<div class="pyn-col-indicator"></div>';
     h += '</div>';
   });
   h += '</div>';
@@ -5542,8 +5553,8 @@ function renderCalculatorTab(r){
     h += '<div class="calc-row'+(isTotal?' total-row':'')+'">';
     h += '<div class="calc-label"'+tip+' style="'+(tip?'cursor:help':'')+'">'+label+'</div>';
     cols.forEach(col => {
-      const isProjected = col.key === 'projected';
-      h += '<div class="calc-val pyn-val'+(isProjected?' pyn-val-active':'')+'">';
+      const isActive = col.key === calcProjMode;
+      h += '<div class="calc-val pyn-val'+(isActive?' pyn-val-active':'')+'">';
       h += getVal(col);
       h += '</div>';
     });
@@ -5594,9 +5605,10 @@ function renderCalculatorTab(r){
 
   h += '</div></div>';
 
-  // Deal Temperature — driven by adjusted projected cash flow
-  const rawMonthlyNet = hasProj ? cols[1].monthlyNet : 0;
-  const dealMonthlyNet = hasProj ? cols[1].adjustedMonthlyNet : 0;
+  // Deal Temperature — driven by the user-selected column's adjusted cash flow
+  const selectedCol = cols.find(c => c.key === calcProjMode) || cols[1];
+  const rawMonthlyNet = selectedCol.hasData ? selectedCol.monthlyNet : 0;
+  const dealMonthlyNet = selectedCol.hasData ? selectedCol.adjustedMonthlyNet : 0;
   const dealTemp = insufficientComps ? null : (dealMonthlyNet >= 1000 ? 'slam-dunk' : dealMonthlyNet >= 500 ? 'potential' : dealMonthlyNet > 0 ? 'risky' : 'no-go');
   const dealSource = insufficientComps ? 'Add at least 3 comps in Competitor Analysis' : confidencePct + '% confidence · ' + ordinal(v.marketPercentile) + ' percentile in market';
   const temps = [
@@ -5675,7 +5687,7 @@ function renderCalculatorTab(r){
     h += '</div>';
 
     // Deal source summary
-    h += '<div style="text-align:center;font-size:.65rem;color:var(--text3);font-style:italic;margin-bottom:16px">Projected Monthly Net '+fmtMoney(rawMonthlyNet)+' × '+confidencePct+'% Position Adjustment = <span style="font-weight:700;color:var(--text2)">'+fmtMoney(dealMonthlyNet)+'/mo</span></div>';
+    h += '<div style="text-align:center;font-size:.65rem;color:var(--text3);font-style:italic;margin-bottom:16px"><span style="color:'+modeColor+'">'+modeLabel+'</span> Monthly Net '+fmtMoney(rawMonthlyNet)+' × '+confidencePct+'% Position Adjustment = <span style="font-weight:700;color:var(--text2)">'+fmtMoney(dealMonthlyNet)+'/mo</span></div>';
   } else {
     h += '<div style="text-align:right;font-size:.62rem;color:var(--text3);font-style:italic;margin-bottom:16px">'+dealSource+'</div>';
   }
