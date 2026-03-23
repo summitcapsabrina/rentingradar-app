@@ -5786,10 +5786,10 @@ function renderCalculatorTab(r){
   const dealTemp = insufficientComps ? null : (dealMonthlyNet >= 1000 ? 'slam-dunk' : dealMonthlyNet >= 500 ? 'potential' : dealMonthlyNet > 0 ? 'risky' : 'no-go');
   const dealSource = insufficientComps ? 'Add at least 3 comps in Competitor Analysis' : confidencePct + '% confidence · ' + ordinal(v.marketPercentile) + ' percentile in market';
   const temps = [
-    { key:'no-go', label:'No-Go', icon:'🚫', color:'#ef4444', desc:'Negative or zero cash flow', hint:'Adjusted Monthly Net is $0 or less. This deal loses money after accounting for competitive position.' },
-    { key:'risky', label:'Risky', icon:'⚠️', color:'#f59e0b', desc:'Under $500/mo net', hint:'Adjusted Monthly Net is $1–$499/mo. Thin margins that leave little room for unexpected costs or vacancies.' },
-    { key:'potential', label:'Potential', icon:'🔥', color:'#3b82f6', desc:'$500–$999/mo net', hint:'Adjusted Monthly Net is $500–$999/mo. Solid returns with reasonable margin of safety.' },
-    { key:'slam-dunk', label:'Slam-Dunk', icon:'🏆', color:'#10b981', desc:'$1,000+/mo net', hint:'Adjusted Monthly Net is $1,000+/mo. Strong returns even after competitive position discount.' }
+    { key:'no-go', label:'No-Go', icon:'🚫', color:'#ef4444', desc:'This deal loses money after accounting for competitive position.', hint:'Adjusted Monthly Net is $0 or less. This deal loses money after accounting for competitive position.' },
+    { key:'risky', label:'Risky', icon:'⚠️', color:'#f59e0b', desc:'Thin margins that leave little room for unexpected costs or vacancies.', hint:'Adjusted Monthly Net is $1–$499/mo. Thin margins that leave little room for unexpected costs or vacancies.' },
+    { key:'potential', label:'Potential', icon:'🔥', color:'#3b82f6', desc:'Solid returns with reasonable margin of safety.', hint:'Adjusted Monthly Net is $500–$999/mo. Solid returns with reasonable margin of safety.' },
+    { key:'slam-dunk', label:'Slam-Dunk', icon:'🏆', color:'#10b981', desc:'Strong returns even after competitive position discount.', hint:'Adjusted Monthly Net is $1,000+/mo. Strong returns even after competitive position discount.' }
   ];
   dealHtml += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px' + (insufficientComps ? ';opacity:.5' : '') + '">';
   temps.forEach(t => {
@@ -5798,7 +5798,7 @@ function renderCalculatorTab(r){
     const border = active ? t.color : 'var(--border)';
     const textColor = active ? '#fff' : 'var(--text3)';
     const opacity = active ? '1' : '0.5';
-    dealHtml += '<div onclick="showTip(\''+t.label+'\',\''+t.hint.replace(/'/g,'\\x27')+'\')" style="background:'+bg+';border:2px solid '+border+';border-radius:var(--radius);padding:14px 8px 12px;text-align:center;opacity:'+opacity+';transition:all .2s;cursor:pointer">';
+    dealHtml += '<div onclick="showTip(\''+t.label+'\',\''+t.hint.replace(/'/g,'\\x27')+'\')" style="background:'+bg+';border:2px solid '+border+';border-radius:var(--radius);padding:14px 8px 12px;text-align:center;opacity:'+opacity+';transition:all .2s;cursor:help">';
     dealHtml += '<div style="font-size:1.5rem;margin-bottom:6px">'+t.icon+'</div>';
     dealHtml += '<div style="font-size:.88rem;font-weight:700;color:'+textColor+'">'+t.label+'</div>';
     dealHtml += '<div style="font-size:.68rem;color:'+textColor+';opacity:.8;margin-top:3px">'+t.desc+'</div>';
@@ -8091,7 +8091,7 @@ function showTip(title, body){
   const overlay = document.createElement('div');
   overlay.id = 'tipOverlay';
   overlay.className = 'tip-overlay';
-  overlay.innerHTML = '<div class="tip-popup"><div class="tip-popup-title"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>'+title+'</div><div class="tip-popup-body">'+body+'</div><div class="tip-popup-actions"><button class="tip-btn tip-btn-disable" onclick="confirmDisableTips()">Disable Tips</button><button class="tip-btn tip-btn-ok" onclick="closeTip()">Ok</button></div></div>';
+  overlay.innerHTML = '<div class="tip-popup"><div class="tip-popup-title"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>'+title+'</div><div class="tip-popup-body">'+body+'</div><div class="tip-popup-actions" style="display:flex;gap:8px"><button class="tip-btn tip-btn-ok" style="flex:1" onclick="closeTip()">Ok</button><button class="tip-btn tip-btn-disable" style="flex:1" onclick="confirmDisableTips()">Disable Tips</button></div></div>';
   overlay.addEventListener('click', function(e){ if(e.target === overlay) closeTip(); });
   document.body.appendChild(overlay);
 }
@@ -8102,7 +8102,7 @@ function closeTip(){
 function confirmDisableTips(){
   const overlay = document.getElementById('tipOverlay');
   if(overlay){
-    overlay.querySelector('.tip-popup').innerHTML = '<div class="tip-popup-title"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>Disable Tips?</div><div class="tip-popup-body">Are you sure you want to disable calculation tips? You can re-enable them anytime in Settings.</div><div class="tip-popup-actions"><button class="tip-btn tip-btn-disable" onclick="closeTip()">Cancel</button><button class="tip-btn tip-btn-ok" onclick="doDisableTips()">Disable</button></div>';
+    overlay.querySelector('.tip-popup').innerHTML = '<div class="tip-popup-title"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>Disable Tips?</div><div class="tip-popup-body">Are you sure you want to disable calculation tips? You can re-enable them anytime in Settings.</div><div class="tip-popup-actions" style="display:flex;gap:8px"><button class="tip-btn tip-btn-ok" style="flex:1" onclick="doDisableTips()">Disable</button><button class="tip-btn tip-btn-disable" style="flex:1" onclick="closeTip()">Cancel</button></div>';
   }
 }
 function doDisableTips(){
