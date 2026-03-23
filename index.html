@@ -5621,14 +5621,14 @@ function renderCalculatorTab(r){
     return '<span style="color:var(--num-danger)">-$'+Math.abs(val).toLocaleString()+suffix+'</span>';
   }
 
-  // Three clickable columns: Optimistic, Realistic, Pessimistic
+  // Three clickable columns: Pessimistic, Realistic, Optimistic
   const cols = [
-    { key:'optimistic', label:'Optimistic', color:'var(--num-success)',
-      rev: hasProj ? Math.round(v.optimisticRevenue) : 0, exp: hasProj ? Math.round(v.optimisticD.annualExp) : 0, hasData: hasProj },
+    { key:'pessimistic', label:'Pessimistic', color:'var(--num-danger)',
+      rev: hasProj ? Math.round(v.pessimisticRevenue) : 0, exp: hasProj ? Math.round(v.pessimisticD.annualExp) : 0, hasData: hasProj },
     { key:'realistic', label:'Realistic', color:'var(--num-computed)',
       rev: hasProj ? Math.round(v.projectedRevenue) : 0, exp: hasProj ? Math.round(v.projectedD.annualExp) : 0, hasData: hasProj },
-    { key:'pessimistic', label:'Pessimistic', color:'var(--num-danger)',
-      rev: hasProj ? Math.round(v.pessimisticRevenue) : 0, exp: hasProj ? Math.round(v.pessimisticD.annualExp) : 0, hasData: hasProj }
+    { key:'optimistic', label:'Optimistic', color:'var(--num-success)',
+      rev: hasProj ? Math.round(v.optimisticRevenue) : 0, exp: hasProj ? Math.round(v.optimisticD.annualExp) : 0, hasData: hasProj }
   ];
   cols.forEach(col => {
     col.net = col.hasData ? (col.rev - col.exp - projAnnualRent) : 0;
