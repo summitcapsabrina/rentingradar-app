@@ -3579,11 +3579,11 @@ function showManualAddForm(){
   if(step2){
     step2.style.display = 'block';
     step2.innerHTML = `
-      <div class="field-group" style="position:relative"><label class="field-label">Property Address *</label><input id="add_property" type="text" placeholder="Start typing an address..."></div>
+      <div class="field-group" style="position:relative"><label class="field-label">Property Address *</label><input id="add_property" type="text" placeholder="Start typing an address..." autocomplete="off" data-form-type="other"></div>
       <div class="field-row" style="gap:8px">
-        <div class="field-group" style="flex:2"><label class="field-label">City</label><input id="add_city" type="text" placeholder="Auto-filled"></div>
-        <div class="field-group" style="flex:.8"><label class="field-label">State</label><input id="add_state" type="text" placeholder="ST" maxlength="2" style="text-transform:uppercase"></div>
-        <div class="field-group" style="flex:1"><label class="field-label">Zip</label><input id="add_zip" type="text" placeholder="00000" maxlength="10"></div>
+        <div class="field-group" style="flex:2"><label class="field-label">City</label><input id="add_city" type="text" placeholder="Auto-filled" autocomplete="off" data-form-type="other"></div>
+        <div class="field-group" style="flex:.8"><label class="field-label">State</label><input id="add_state" type="text" placeholder="ST" maxlength="2" style="text-transform:uppercase" autocomplete="off" data-form-type="other"></div>
+        <div class="field-group" style="flex:1"><label class="field-label">Zip</label><input id="add_zip" type="text" placeholder="00000" maxlength="10" autocomplete="off" data-form-type="other"></div>
       </div>
       <div class="field-group" style="margin-top:-4px">
         <label class="field-label">Unit / Suite / # (optional)</label>
@@ -3641,11 +3641,11 @@ function showManualAddForm(){
     const body = document.getElementById('addModalBody');
     if(!body) return;
     body.innerHTML = `
-      <div class="field-group" style="position:relative"><label class="field-label">Property Address *</label><input id="add_property" type="text" placeholder="Start typing an address..."></div>
+      <div class="field-group" style="position:relative"><label class="field-label">Property Address *</label><input id="add_property" type="text" placeholder="Start typing an address..." autocomplete="off" data-form-type="other"></div>
       <div class="field-row" style="gap:8px">
-        <div class="field-group" style="flex:2"><label class="field-label">City</label><input id="add_city" type="text" placeholder="Auto-filled"></div>
-        <div class="field-group" style="flex:.8"><label class="field-label">State</label><input id="add_state" type="text" placeholder="ST" maxlength="2" style="text-transform:uppercase"></div>
-        <div class="field-group" style="flex:1"><label class="field-label">Zip</label><input id="add_zip" type="text" placeholder="00000" maxlength="10"></div>
+        <div class="field-group" style="flex:2"><label class="field-label">City</label><input id="add_city" type="text" placeholder="Auto-filled" autocomplete="off" data-form-type="other"></div>
+        <div class="field-group" style="flex:.8"><label class="field-label">State</label><input id="add_state" type="text" placeholder="ST" maxlength="2" style="text-transform:uppercase" autocomplete="off" data-form-type="other"></div>
+        <div class="field-group" style="flex:1"><label class="field-label">Zip</label><input id="add_zip" type="text" placeholder="00000" maxlength="10" autocomplete="off" data-form-type="other"></div>
       </div>
       <div class="field-group" style="margin-top:-4px">
         <label class="field-label">Unit / Suite / # (optional)</label>
@@ -6915,7 +6915,7 @@ function showAddressEditorPopup(recId){
     <div class="sp-desc">Update the property address shown in the profile header.</div>
     <div style="margin-bottom:12px;position:relative">
       <label style="display:block;font-size:.7rem;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px">Street Address</label>
-      <input type="text" id="addrEdStreet" value="${esc(addr.street || r.property)}" placeholder="Start typing an address..." style="font-size:.9rem;padding:7px 10px;width:100%">
+      <input type="text" id="addrEdStreet" value="${esc(addr.street || r.property)}" placeholder="Start typing an address..." style="font-size:.9rem;padding:7px 10px;width:100%" autocomplete="off" data-form-type="other">
     </div>
     <div class="sp-grid">
       <div class="sp-field">
@@ -6932,19 +6932,19 @@ function showAddressEditorPopup(recId){
       </div>
       <div class="sp-field">
         <label>Unit Number</label>
-        <input type="text" id="addrEdUnitNum" value="${esc(unitNum)}" placeholder="${unitType ? unitType + ' number' : 'Unit number'}" style="${unitType||unitNum?'':'opacity:.5'}">
+        <input type="text" id="addrEdUnitNum" value="${esc(unitNum)}" placeholder="${unitType ? unitType + ' number' : 'Unit number'}" style="${unitType||unitNum?'':'opacity:.5'}" autocomplete="off" data-form-type="other">
       </div>
       <div class="sp-field">
         <label>City</label>
-        <input type="text" id="addrEdCity" value="${esc(addr.city||'')}" placeholder="City">
+        <input type="text" id="addrEdCity" value="${esc(addr.city||'')}" placeholder="City" autocomplete="off" data-form-type="other">
       </div>
       <div class="sp-field">
         <label>State</label>
-        <input type="text" id="addrEdState" value="${esc(addr.state||'')}" placeholder="AZ" maxlength="2" style="text-transform:uppercase">
+        <input type="text" id="addrEdState" value="${esc(addr.state||'')}" placeholder="AZ" maxlength="2" style="text-transform:uppercase" autocomplete="off" data-form-type="other">
       </div>
       <div class="sp-field">
         <label>ZIP Code</label>
-        <input type="text" id="addrEdZip" value="${esc(addr.zip||'')}" placeholder="85001" maxlength="10">
+        <input type="text" id="addrEdZip" value="${esc(addr.zip||'')}" placeholder="85001" maxlength="10" autocomplete="off" data-form-type="other">
       </div>
     </div>
     <div class="sp-actions">
