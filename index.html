@@ -5012,7 +5012,7 @@ function activateHeroInput(recId, field, containerId, currentVal){
 
 /* ===== PROFILE TABS ===== */
 let profileActiveTab = 'details';
-let calcProjMode = 'projected'; // 'optimistic','projected','pessimistic'
+let calcProjMode = 'realistic'; // 'optimistic','realistic','pessimistic'
 const tabScrollPositions = {};
 
 function setProfileTab(tab){
@@ -5300,9 +5300,13 @@ function renderCalculatorTab(r){
   // ══════ LEFT PANEL: KPIs + PAYBACK ══════
   h += '<div class="calc-panel">';
 
-  // KPIs driven by user-selected projection mode (optimistic/projected/pessimistic)
-  const modeMap = { optimistic: v.optimisticD, projected: v.projectedD, pessimistic: v.pessimisticD };
+  // KPIs driven by user-selected projection mode (optimistic/realistic/pessimistic)
+  const modeMap = { optimistic: v.optimisticD, realistic: v.projectedD, pessimistic: v.pessimisticD };
   const selectedD = v.hasProjectionData && modeMap[calcProjMode] ? modeMap[calcProjMode] : (v.hasProjectionData ? v.projectedD : { monthlyNOI: v.monthlyNOI, annualNOI: v.annualNOI, monthlyCF: v.monthlyCF, annualCF: v.annualCF, cocReturn: v.cocReturn });
+  // Confidence factor — used for Payback Period adjustment and deal temp
+  const confidence = 0.55 + 0.45 * ((v.positionScore + 1) / 2);
+  const confidencePct = Math.round(confidence * 100);
+  const cpColor = confidencePct >= 80 ? '#10b981' : confidencePct >= 65 ? '#f59e0b' : '#ef4444';
   const kpiNOI = selectedD.monthlyNOI;
   const kpiAnnualNOI = selectedD.annualNOI;
   const kpiMonthlyCF = selectedD.monthlyCF;
@@ -5310,22 +5314,16 @@ function renderCalculatorTab(r){
   const kpiCoC = selectedD.cocReturn;
   const cfClass = kpiMonthlyCF >= 0 ? 'positive' : 'negative';
   const cocClass = kpiCoC >= 0 ? 'positive' : 'negative';
-  const modeLabels = { optimistic: 'Optimistic', projected: 'Projected', pessimistic: 'Pessimistic' };
-  const modeColors = { optimistic: 'var(--num-success)', projected: 'var(--num-computed)', pessimistic: 'var(--num-danger)' };
-  const modeLabel = modeLabels[calcProjMode] || 'Projected';
+  const modeLabels = { optimistic: 'Optimistic', realistic: 'Realistic', pessimistic: 'Pessimistic' };
+  const modeColors = { optimistic: 'var(--num-success)', realistic: 'var(--num-computed)', pessimistic: 'var(--num-danger)' };
+  const modeLabel = modeLabels[calcProjMode] || 'Realistic';
   const modeColor = modeColors[calcProjMode] || 'var(--num-computed)';
   const projTagHtml = '<div class="kpi-proj-tag" style="color:'+modeColor+';border-color:'+modeColor+'">'+modeLabel+'</div>';
   const insufficientComps = v.compsCount < 3;
   const nedHtml = '<span style="color:var(--text3);font-size:.78rem;font-style:italic">Not Enough Data</span>';
   const nedSubHtml = '<span style="color:var(--text3);font-size:.7rem;font-style:italic">Add at least 3 comps in Competitor Analysis</span>';
-  h += '<div class="calc-kpi-grid calc-kpi-grid-left">';
-  h += '<div class="calc-kpi" title="Projected revenue minus all operating expenses (co-host, Airbnb fees, cleaning, utilities, etc.). Does not include rent."><div class="kpi-label">Net Operating Income'+projTagHtml+'</div><div class="kpi-monthly">'+(insufficientComps ? nedHtml : fmtMoney(Math.round(kpiNOI))+'<span class="kpi-per">/mo</span>')+'</div><div class="kpi-annual">'+(insufficientComps ? nedSubHtml : fmtMoney(Math.round(kpiAnnualNOI))+'/yr')+'</div></div>';
-  h += '<div class="calc-kpi" title="Your monthly lease payment for this property — entered in the Expenses tab."><div class="kpi-label">Monthly Rent<div class="kpi-proj-tag" style="color:#eab308;border-color:#eab308">Fixed</div></div><div class="kpi-monthly">'+(v.monthlyRent ? fmtMoney(v.monthlyRent) : '<span style="color:var(--text3);font-style:italic">Set in Property Details</span>')+'<span class="kpi-per">/mo</span></div><div class="kpi-annual">'+fmtMoney(v.monthlyRent*12)+'/yr</div></div>';
-  h += '<div class="calc-kpi '+(insufficientComps?'':cfClass)+'" title="Net Operating Income minus monthly rent. This is your actual take-home profit after all expenses and rent."><div class="kpi-label">Cash Flow'+projTagHtml+'</div><div class="kpi-monthly">'+(insufficientComps ? nedHtml : fmtMoney(Math.round(kpiMonthlyCF))+'<span class="kpi-per">/mo</span>')+'</div><div class="kpi-annual">'+(insufficientComps ? nedSubHtml : fmtMoney(Math.round(kpiAnnualCF))+'/yr')+'</div></div>';
-  h += '<div class="calc-kpi '+(insufficientComps?'':cocClass)+'" title="Annual cash flow divided by total investment (furnishing + setup costs). Measures how quickly your investment pays for itself as a percentage."><div class="kpi-label">Cash on Cash Return'+projTagHtml+'</div><div class="kpi-monthly">'+(insufficientComps ? nedHtml : kpiCoC.toFixed(1)+'%')+'</div><div class="kpi-annual">'+(insufficientComps ? nedSubHtml : fmtMoney(Math.round(v.totalInvested))+' invested')+'</div></div>';
-  h += '</div>';
 
-  // Competitive Position Gauge
+  // Competitive Position Gauge — rendered FIRST at top of left panel
   if(!insufficientComps && v.compsCount >= 3){
     const ps = v.positionScore;
     const mp = v.marketPercentile;
@@ -5413,9 +5411,17 @@ function renderCalculatorTab(r){
     h += '</div></div>';
   }
 
-  // Payback Period Visual (compact for left panel) — driven by selected projection
+  // KPI Cards — underneath Competitive Position
+  h += '<div class="calc-kpi-grid calc-kpi-grid-left">';
+  h += '<div class="calc-kpi" title="Projected revenue minus all operating expenses (co-host, Airbnb fees, cleaning, utilities, etc.). Does not include rent."><div class="kpi-label">Net Operating Income'+projTagHtml+'</div><div class="kpi-monthly">'+(insufficientComps ? nedHtml : fmtMoney(Math.round(kpiNOI))+'<span class="kpi-per">/mo</span>')+'</div><div class="kpi-annual">'+(insufficientComps ? nedSubHtml : fmtMoney(Math.round(kpiAnnualNOI))+'/yr')+'</div></div>';
+  h += '<div class="calc-kpi" title="Your monthly lease payment for this property — entered in the Expenses tab."><div class="kpi-label">Monthly Rent<div class="kpi-proj-tag" style="color:#eab308;border-color:#eab308">Fixed</div></div><div class="kpi-monthly">'+(v.monthlyRent ? fmtMoney(v.monthlyRent) : '<span style="color:var(--text3);font-style:italic">Set in Property Details</span>')+'<span class="kpi-per">/mo</span></div><div class="kpi-annual">'+fmtMoney(v.monthlyRent*12)+'/yr</div></div>';
+  h += '<div class="calc-kpi '+(insufficientComps?'':cfClass)+'" title="Net Operating Income minus monthly rent. This is your actual take-home profit after all expenses and rent."><div class="kpi-label">Cash Flow'+projTagHtml+'</div><div class="kpi-monthly">'+(insufficientComps ? nedHtml : fmtMoney(Math.round(kpiMonthlyCF))+'<span class="kpi-per">/mo</span>')+'</div><div class="kpi-annual">'+(insufficientComps ? nedSubHtml : fmtMoney(Math.round(kpiAnnualCF))+'/yr')+'</div></div>';
+  h += '<div class="calc-kpi '+(insufficientComps?'':cocClass)+'" title="Annual cash flow divided by total investment (furnishing + setup costs). Measures how quickly your investment pays for itself as a percentage."><div class="kpi-label">Cash on Cash Return'+projTagHtml+'</div><div class="kpi-monthly">'+(insufficientComps ? nedHtml : kpiCoC.toFixed(1)+'%')+'</div><div class="kpi-annual">'+(insufficientComps ? nedSubHtml : fmtMoney(Math.round(v.totalInvested))+' invested')+'</div></div>';
+  h += '</div>';
+
+  // Payback Period Visual — driven by selected projection × position adjustment
   const inv = v.totalInvested;
-  const acf = Math.round(selectedD.annualCF);
+  const acf = Math.round(selectedD.annualCF * confidence);
   const cumVals = [];
   let cumRun = -inv;
   cumVals.push(cumRun);
@@ -5452,7 +5458,7 @@ function renderCalculatorTab(r){
     paybackColor = 'var(--num-danger)';
   }
 
-  h += '<div class="calc-section"><div class="calc-section-header" title="How long it takes for your cumulative projected cash flow to recover your total upfront investment (furnishing + setup costs). Based on the Projected column\'s annual cash flow." style="cursor:help">Payback Period</div><div class="calc-section-body" style="padding:8px 10px">';
+  h += '<div class="calc-section"><div class="calc-section-header" title="How long it takes for your cumulative cash flow to recover your total upfront investment. Uses the selected column\'s annual cash flow discounted by the Position Adjustment ('+confidencePct+'%)." style="cursor:help">Payback Period</div><div class="calc-section-body" style="padding:8px 10px">';
   if(insufficientComps){
     h += '<div style="text-align:center;padding:20px 8px">';
     h += '<div style="font-size:1.1rem;font-weight:800;color:var(--text3)">Not Enough Data</div>';
@@ -5516,11 +5522,11 @@ function renderCalculatorTab(r){
     return '<span style="color:var(--num-danger)">-$'+Math.abs(val).toLocaleString()+suffix+'</span>';
   }
 
-  // Three non-clickable columns: Optimistic, Projected, Pessimistic
+  // Three clickable columns: Optimistic, Realistic, Pessimistic
   const cols = [
     { key:'optimistic', label:'Optimistic', color:'var(--num-success)',
       rev: hasProj ? Math.round(v.optimisticRevenue) : 0, exp: hasProj ? Math.round(v.optimisticD.annualExp) : 0, hasData: hasProj },
-    { key:'projected', label:'Projected', color:'var(--num-computed)',
+    { key:'realistic', label:'Realistic', color:'var(--num-computed)',
       rev: hasProj ? Math.round(v.projectedRevenue) : 0, exp: hasProj ? Math.round(v.projectedD.annualExp) : 0, hasData: hasProj },
     { key:'pessimistic', label:'Pessimistic', color:'var(--num-danger)',
       rev: hasProj ? Math.round(v.pessimisticRevenue) : 0, exp: hasProj ? Math.round(v.pessimisticD.annualExp) : 0, hasData: hasProj }
@@ -5535,7 +5541,7 @@ function renderCalculatorTab(r){
   // Clickable column headers — selecting a column drives KPIs, Deal Temp, and Payback
   h += '<div class="pyn-col-headers">';
   h += '<div class="pyn-label-spacer"></div>';
-  const colTitles = { optimistic: 'Best-case: Loses To ×0.95, Competes ×1.10, Beats ×1.25 applied to comp revenue. Click to use for KPIs and Deal Temperature.', projected: 'Weighted projection: Loses To ×0.85, Competes ×1.00, Beats ×1.15 applied to comp revenue. Click to use for KPIs and Deal Temperature.', pessimistic: 'Conservative: Loses To ×0.75, Competes ×0.90, Beats ×1.05 applied to comp revenue. Click to use for KPIs and Deal Temperature.' };
+  const colTitles = { optimistic: 'Best-case: Loses To ×0.95, Competes ×1.10, Beats ×1.25 applied to comp revenue. Click to use for KPIs and Deal Temperature.', realistic: 'Weighted estimate: Loses To ×0.85, Competes ×1.00, Beats ×1.15 applied to comp revenue. Click to use for KPIs and Deal Temperature.', pessimistic: 'Conservative: Loses To ×0.75, Competes ×0.90, Beats ×1.05 applied to comp revenue. Click to use for KPIs and Deal Temperature.' };
   cols.forEach(col => {
     const isActive = col.key === calcProjMode;
     h += '<div class="pyn-col-header'+(isActive?' pyn-col-active':'')+'" style="--col-color:'+col.color+';cursor:pointer" title="'+(colTitles[col.key] || '')+'" onclick="setCalcProjMode(\''+col.key+'\')">';
@@ -5582,11 +5588,6 @@ function renderCalculatorTab(r){
   }, {tip:'Projected Yearly Net divided by 12'});
 
   // Competitive Position Adjustment row + Adjusted Monthly Net row
-  // Confidence applies to Optimistic, Projected, Pessimistic but not Comp Avg
-  const confidence = 0.55 + 0.45 * ((v.positionScore + 1) / 2);
-  const confidencePct = Math.round(confidence * 100);
-  const cpColor = confidencePct >= 80 ? '#10b981' : confidencePct >= 65 ? '#f59e0b' : '#ef4444';
-
   // Store adjusted values on each col for use in deal temp later
   cols.forEach(col => {
     col.adjustedMonthlyNet = col.hasData ? Math.round(col.monthlyNet * confidence) : 0;
@@ -5955,13 +5956,13 @@ function renderAnalysisTab(r){
   });
 
   // Right: Revenue Projection panel
-  h += '<div class="an-section"><div class="an-section-hdr" title="Revenue projections using directional multipliers. Optimistic uses higher multipliers (best-case), Projected uses base multipliers (weighted estimate), Pessimistic uses lower multipliers (conservative). Multipliers adjust comp revenue based on whether you Lose To, Compete With, or Beat each comp." style="cursor:help">Revenue Projection</div><div class="an-section-body" style="padding:0">';
+  h += '<div class="an-section"><div class="an-section-hdr" title="Revenue projections using directional multipliers. Optimistic uses higher multipliers (best-case), Realistic uses base multipliers (weighted estimate), Pessimistic uses lower multipliers (conservative). Multipliers adjust comp revenue based on whether you Lose To, Compete With, or Beat each comp." style="cursor:help">Revenue Projection</div><div class="an-section-body" style="padding:0">';
   h += '<div class="an-req-bar" style="border:none;border-radius:0;margin:0">';
   if(insuffComps){
     h += '<div class="an-req-item" style="text-align:center;padding:18px 14px"><div class="req-label" style="color:var(--text3);font-size:.82rem">Add at least 3 comps to see projections</div></div>';
   } else {
     h += '<div class="an-req-item"><div class="req-label" style="color:var(--num-success)">Optimistic</div><div class="req-val" style="color:var(--num-success)">'+(optRev ? fmtMoney(optRev) : '$0')+'<span class="req-period">/yr</span></div><div class="req-annual">'+(optRev ? fmtMoney(Math.round(optRev/12)) : '$0')+'/mo</div></div>';
-    h += '<div class="an-req-item" style="background:rgba(99,129,250,.06)"><div class="req-label" style="color:var(--num-computed)">Projected</div><div class="req-val" style="color:var(--num-computed)">'+(projRev ? fmtMoney(projRev) : '$0')+'<span class="req-period">/yr</span></div><div class="req-annual">'+(projRev ? fmtMoney(Math.round(projRev/12)) : '$0')+'/mo</div></div>';
+    h += '<div class="an-req-item" style="background:rgba(99,129,250,.06)"><div class="req-label" style="color:var(--num-computed)">Realistic</div><div class="req-val" style="color:var(--num-computed)">'+(projRev ? fmtMoney(projRev) : '$0')+'<span class="req-period">/yr</span></div><div class="req-annual">'+(projRev ? fmtMoney(Math.round(projRev/12)) : '$0')+'/mo</div></div>';
     h += '<div class="an-req-item"><div class="req-label" style="color:var(--num-danger)">Pessimistic</div><div class="req-val" style="color:var(--num-danger)">'+(pessRev ? fmtMoney(pessRev) : '$0')+'<span class="req-period">/yr</span></div><div class="req-annual">'+(pessRev ? fmtMoney(Math.round(pessRev/12)) : '$0')+'/mo</div></div>';
   }
   h += '</div>';
