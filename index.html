@@ -5353,10 +5353,16 @@ function renderCalculatorTab(r){
   const nedHtml = '<span style="color:var(--text3);font-size:.78rem;font-style:italic">Not Enough Data</span>';
   const nedSubHtml = '<span style="color:var(--text3);font-size:.7rem;font-style:italic">Add at least 3 comps in Competitor Analysis</span>';
 
+  // ══════ SECTION VARIABLES ══════
+  let kpiHtml = '';
+  let cpHtml = '';
+  let pynHtml = '';
+  let dealHtml = '';
+  let paybackHtml = '';
+
   // ─────────────────────────────────────────
-  // LEFT PANEL: Competitive Position + PYN
+  // SECTION 1: Competitive Position
   // ─────────────────────────────────────────
-  h += '<div class="calc-panel">';
 
   // ── Section: Competitive Position ──
   if(!insufficientComps && v.compsCount >= 3){
@@ -5366,15 +5372,15 @@ function renderCalculatorTab(r){
     const psColor = ps >= 0.3 ? 'var(--num-success)' : ps >= -0.3 ? 'var(--num-warning)' : 'var(--num-danger)';
     const psLabel = ps >= 0.5 ? 'Strong' : ps >= 0.15 ? 'Favorable' : ps >= -0.15 ? 'Neutral' : ps >= -0.5 ? 'Challenging' : 'Weak';
 
-    h += '<div class="calc-section"><div class="calc-section-header"'+tipAttrs('Competitive Position','How your property compares to the competitive landscape based on the comps you\\x27ve categorized as Loses To, Competes With, and Beats. This directly affects the Position Adjustment percentage applied to your projections.')+'>Competitive Position</div><div class="calc-section-body" style="padding:12px 14px">';
+    cpHtml += '<div class="calc-section"><div class="calc-section-header"'+tipAttrs('Competitive Position','How your property compares to the competitive landscape based on the comps you\\x27ve categorized as Loses To, Competes With, and Beats. This directly affects the Position Adjustment percentage applied to your projections.')+'>Competitive Position</div><div class="calc-section-body" style="padding:12px 14px">';
 
     // Position summary
-    h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">';
-    h += '<div><div style="font-size:1rem;font-weight:800;color:'+psColor+';cursor:help"'+tipAttrs('Position Rating','Based on how your property compares to comps. Strong (+0.5 to +1.0), Favorable (+0.15 to +0.5), Neutral (-0.15 to +0.15), Challenging (-0.5 to -0.15), Weak (-1.0 to -0.5).',true)+'>'+psLabel+'</div>';
-    h += '<div style="font-size:.72rem;color:var(--text3);margin-top:2px;cursor:help"'+tipAttrs('Market Percentile','Percentage of the market your property is estimated to outperform. Calculated as (beats + 0.5 × competes) ÷ total comps × 100.',true)+'>'+ordinal(mp)+' percentile in market</div></div>';
-    h += '<div style="text-align:right"><div style="font-size:.68rem;color:var(--text3);text-transform:uppercase;letter-spacing:.3px;cursor:help"'+tipAttrs('Position Score','Score from -1.0 (loses to all) to +1.0 (beats all). Formula: (-1 × loses + 0 × competes + 1 × beats) ÷ total comps.',true)+'>Position Score</div>';
-    h += '<div style="font-size:1.1rem;font-weight:700;color:'+psColor+'">'+(ps >= 0 ? '+' : '')+ps.toFixed(2)+'</div></div>';
-    h += '</div>';
+    cpHtml += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">';
+    cpHtml += '<div><div style="font-size:1rem;font-weight:800;color:'+psColor+';cursor:help"'+tipAttrs('Position Rating','Based on how your property compares to comps. Strong (+0.5 to +1.0), Favorable (+0.15 to +0.5), Neutral (-0.15 to +0.15), Challenging (-0.5 to -0.15), Weak (-1.0 to -0.5).',true)+'>'+psLabel+'</div>';
+    cpHtml += '<div style="font-size:.72rem;color:var(--text3);margin-top:2px;cursor:help"'+tipAttrs('Market Percentile','Percentage of the market your property is estimated to outperform. Calculated as (beats + 0.5 × competes) ÷ total comps × 100.',true)+'>'+ordinal(mp)+' percentile in market</div></div>';
+    cpHtml += '<div style="text-align:right"><div style="font-size:.68rem;color:var(--text3);text-transform:uppercase;letter-spacing:.3px;cursor:help"'+tipAttrs('Position Score','Score from -1.0 (loses to all) to +1.0 (beats all). Formula: (-1 × loses + 0 × competes + 1 × beats) ÷ total comps.',true)+'>Position Score</div>';
+    cpHtml += '<div style="font-size:1.1rem;font-weight:700;color:'+psColor+'">'+(ps >= 0 ? '+' : '')+ps.toFixed(2)+'</div></div>';
+    cpHtml += '</div>';
 
     // Bell curve visual — spans full card width with comfortable padding
     // SVG uses viewBox so it scales responsively
@@ -5398,69 +5404,70 @@ function renderCalculatorTab(r){
     const markerGauss = Math.exp(-Math.pow(markerT - 0.5, 2) / (2 * 0.22 * 0.22));
     const markerY = (bellH - 6 - markerGauss * (bellH - 16)).toFixed(1);
 
-    h += '<div style="margin-bottom:4px;padding:0 4px">';
-    h += '<svg viewBox="0 0 '+bellW+' '+bellH+'" style="width:100%;display:block">';
+    cpHtml += '<div style="margin-bottom:4px;padding:0 4px">';
+    cpHtml += '<svg viewBox="0 0 '+bellW+' '+bellH+'" style="width:100%;display:block">';
     // Gradient definition: red → yellow → green
     const bellGradId = 'bellGrad_' + r.id;
-    h += '<defs><linearGradient id="'+bellGradId+'" x1="0%" y1="0%" x2="100%" y2="0%">';
-    h += '<stop offset="0%" stop-color="#ef4444" stop-opacity="0.25"/>';
-    h += '<stop offset="50%" stop-color="#f59e0b" stop-opacity="0.25"/>';
-    h += '<stop offset="100%" stop-color="#10b981" stop-opacity="0.25"/>';
-    h += '</linearGradient></defs>';
+    cpHtml += '<defs><linearGradient id="'+bellGradId+'" x1="0%" y1="0%" x2="100%" y2="0%">';
+    cpHtml += '<stop offset="0%" stop-color="#ef4444" stop-opacity="0.25"/>';
+    cpHtml += '<stop offset="50%" stop-color="#f59e0b" stop-opacity="0.25"/>';
+    cpHtml += '<stop offset="100%" stop-color="#10b981" stop-opacity="0.25"/>';
+    cpHtml += '</linearGradient></defs>';
     // Filled area under curve
-    h += '<path d="'+curvePath+'" fill="url(#'+bellGradId+')"/>';
+    cpHtml += '<path d="'+curvePath+'" fill="url(#'+bellGradId+')"/>';
     // Curve outline
-    h += '<path d="'+curveLinePath+'" fill="none" stroke="rgba(255,255,255,.15)" stroke-width="1.5"/>';
+    cpHtml += '<path d="'+curveLinePath+'" fill="none" stroke="rgba(255,255,255,.15)" stroke-width="1.5"/>';
     // Vertical marker line
-    h += '<line x1="'+markerX+'" y1="'+(bellH - 6)+'" x2="'+markerX+'" y2="'+markerY+'" stroke="'+psColor+'" stroke-width="2" stroke-dasharray="3,2" opacity=".7"/>';
+    cpHtml += '<line x1="'+markerX+'" y1="'+(bellH - 6)+'" x2="'+markerX+'" y2="'+markerY+'" stroke="'+psColor+'" stroke-width="2" stroke-dasharray="3,2" opacity=".7"/>';
     // Marker dot
-    h += '<circle cx="'+markerX+'" cy="'+markerY+'" r="6" fill="'+psColor+'" stroke="var(--surface)" stroke-width="2.5" filter="drop-shadow(0 1px 3px rgba(0,0,0,.4))"/>';
-    h += '</svg>';
-    h += '</div>';
+    cpHtml += '<circle cx="'+markerX+'" cy="'+markerY+'" r="6" fill="'+psColor+'" stroke="var(--surface)" stroke-width="2.5" filter="drop-shadow(0 1px 3px rgba(0,0,0,.4))"/>';
+    cpHtml += '</svg>';
+    cpHtml += '</div>';
 
     // Labels under bell curve
-    h += '<div style="display:flex;justify-content:space-between;font-size:.62rem;color:var(--text3);margin-bottom:12px;padding:0 8px">';
-    h += '<span>Loses to all</span><span>Competes</span><span>Beats all</span>';
-    h += '</div>';
+    cpHtml += '<div style="display:flex;justify-content:space-between;font-size:.62rem;color:var(--text3);margin-bottom:12px;padding:0 8px">';
+    cpHtml += '<span>Loses to all</span><span>Competes</span><span>Beats all</span>';
+    cpHtml += '</div>';
 
     // Comp distribution breakdown
-    h += '<div style="display:flex;gap:0;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">';
+    cpHtml += '<div style="display:flex;gap:0;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">';
     const total = v.losesCount + v.competesCount + v.beatsCount;
-    h += '<div style="flex:1;text-align:center;padding:8px 6px;border-right:1px solid var(--border)">';
-    h += '<div style="font-size:.62rem;color:#ef4444;font-weight:600;text-transform:uppercase;letter-spacing:.3px">Loses To</div>';
-    h += '<div style="font-size:1rem;font-weight:700;color:#ef4444">'+v.losesCount+'</div>';
-    h += '<div style="font-size:.6rem;color:var(--text3)">'+Math.round(v.losesCount/total*100)+'%</div>';
-    h += '</div>';
-    h += '<div style="flex:1;text-align:center;padding:8px 6px;border-right:1px solid var(--border)">';
-    h += '<div style="font-size:.62rem;color:var(--primary);font-weight:600;text-transform:uppercase;letter-spacing:.3px">Competes</div>';
-    h += '<div style="font-size:1rem;font-weight:700;color:var(--primary)">'+v.competesCount+'</div>';
-    h += '<div style="font-size:.6rem;color:var(--text3)">'+Math.round(v.competesCount/total*100)+'%</div>';
-    h += '</div>';
-    h += '<div style="flex:1;text-align:center;padding:8px 6px">';
-    h += '<div style="font-size:.62rem;color:#10b981;font-weight:600;text-transform:uppercase;letter-spacing:.3px">Beats</div>';
-    h += '<div style="font-size:1rem;font-weight:700;color:#10b981">'+v.beatsCount+'</div>';
-    h += '<div style="font-size:.6rem;color:var(--text3)">'+Math.round(v.beatsCount/total*100)+'%</div>';
-    h += '</div>';
-    h += '</div>';
+    cpHtml += '<div style="flex:1;text-align:center;padding:8px 6px;border-right:1px solid var(--border)">';
+    cpHtml += '<div style="font-size:.62rem;color:#ef4444;font-weight:600;text-transform:uppercase;letter-spacing:.3px">Loses To</div>';
+    cpHtml += '<div style="font-size:1rem;font-weight:700;color:#ef4444">'+v.losesCount+'</div>';
+    cpHtml += '<div style="font-size:.6rem;color:var(--text3)">'+Math.round(v.losesCount/total*100)+'%</div>';
+    cpHtml += '</div>';
+    cpHtml += '<div style="flex:1;text-align:center;padding:8px 6px;border-right:1px solid var(--border)">';
+    cpHtml += '<div style="font-size:.62rem;color:var(--primary);font-weight:600;text-transform:uppercase;letter-spacing:.3px">Competes</div>';
+    cpHtml += '<div style="font-size:1rem;font-weight:700;color:var(--primary)">'+v.competesCount+'</div>';
+    cpHtml += '<div style="font-size:.6rem;color:var(--text3)">'+Math.round(v.competesCount/total*100)+'%</div>';
+    cpHtml += '</div>';
+    cpHtml += '<div style="flex:1;text-align:center;padding:8px 6px">';
+    cpHtml += '<div style="font-size:.62rem;color:#10b981;font-weight:600;text-transform:uppercase;letter-spacing:.3px">Beats</div>';
+    cpHtml += '<div style="font-size:1rem;font-weight:700;color:#10b981">'+v.beatsCount+'</div>';
+    cpHtml += '<div style="font-size:.6rem;color:var(--text3)">'+Math.round(v.beatsCount/total*100)+'%</div>';
+    cpHtml += '</div>';
+    cpHtml += '</div>';
 
-    h += '</div></div>';
+    cpHtml += '</div></div>';
   }
-  h += '</div>'; // end LEFT panel (Competitive Position)
 
-  // ─────────────────────────────────────────────────────────────
-  // RIGHT PANEL: KPI Cards + Payback Period + PYN + Deal Temperature
-  // ─────────────────────────────────────────────────────────────
-  h += '<div class="calc-panel">';
+  // ─────────────────────────────────────────
+  // SECTION 2: KPI Cards
+  // ─────────────────────────────────────────
 
   // KPI Cards
-  h += '<div class="calc-kpi-grid calc-kpi-grid-left">';
-  h += '<div class="calc-kpi"'+tipAttrs('Net Operating Income','Projected revenue minus all operating expenses (co-host, Airbnb fees, cleaning, utilities, etc.). Does not include rent.')+'><div class="kpi-label">Net Operating Income'+projTagHtml+'</div><div class="kpi-monthly">'+(insufficientComps ? nedHtml : fmtMoney(Math.round(kpiNOI))+'<span class="kpi-per">/mo</span>')+'</div><div class="kpi-annual">'+(insufficientComps ? nedSubHtml : fmtMoney(Math.round(kpiAnnualNOI))+'/yr')+'</div></div>';
-  h += '<div class="calc-kpi"'+tipAttrs('Monthly Rent','Your monthly lease payment for this property — entered in the Expenses tab.')+'><div class="kpi-label">Monthly Rent<div class="kpi-proj-tag" style="color:#eab308;border-color:#eab308">Fixed</div></div><div class="kpi-monthly">'+(v.monthlyRent ? fmtMoney(v.monthlyRent) : '<span style="color:var(--text3);font-style:italic">Set in Property Details</span>')+'<span class="kpi-per">/mo</span></div><div class="kpi-annual">'+fmtMoney(v.monthlyRent*12)+'/yr</div></div>';
-  h += '<div class="calc-kpi '+(insufficientComps?'':cfClass)+'"'+tipAttrs('Cash Flow','NOI minus rent, adjusted by Position Adjustment ('+confidencePct+'%). This is your confidence-discounted take-home profit after all expenses and rent.')+'><div class="kpi-label">Cash Flow'+projTagHtml+'</div><div class="kpi-monthly">'+(insufficientComps ? nedHtml : fmtMoney(Math.round(kpiMonthlyCF))+'<span class="kpi-per">/mo</span>')+'</div><div class="kpi-annual">'+(insufficientComps ? nedSubHtml : fmtMoney(Math.round(kpiAnnualCF))+'/yr')+'</div></div>';
-  h += '<div class="calc-kpi '+(insufficientComps?'':cocClass)+'"'+tipAttrs('Cash on Cash Return','Adjusted annual cash flow divided by total investment. Uses the confidence-discounted cash flow ('+confidencePct+'% Position Adjustment) to measure how quickly your investment pays for itself.')+'><div class="kpi-label">Cash on Cash Return'+projTagHtml+'</div><div class="kpi-monthly">'+(insufficientComps ? nedHtml : kpiCoC.toFixed(1)+'%')+'</div><div class="kpi-annual">'+(insufficientComps ? nedSubHtml : fmtMoney(Math.round(v.totalInvested))+' invested')+'</div></div>';
-  h += '</div>';
+  kpiHtml += '<div class="calc-kpi-grid calc-kpi-grid-left">';
+  kpiHtml += '<div class="calc-kpi"'+tipAttrs('Net Operating Income','Projected revenue minus all operating expenses (co-host, Airbnb fees, cleaning, utilities, etc.). Does not include rent.')+'><div class="kpi-label">Net Operating Income'+projTagHtml+'</div><div class="kpi-monthly">'+(insufficientComps ? nedHtml : fmtMoney(Math.round(kpiNOI))+'<span class="kpi-per">/mo</span>')+'</div><div class="kpi-annual">'+(insufficientComps ? nedSubHtml : fmtMoney(Math.round(kpiAnnualNOI))+'/yr')+'</div></div>';
+  kpiHtml += '<div class="calc-kpi"'+tipAttrs('Monthly Rent','Your monthly lease payment for this property — entered in the Expenses tab.')+'><div class="kpi-label">Monthly Rent<div class="kpi-proj-tag" style="color:#eab308;border-color:#eab308">Fixed</div></div><div class="kpi-monthly">'+(v.monthlyRent ? fmtMoney(v.monthlyRent) : '<span style="color:var(--text3);font-style:italic">Set in Property Details</span>')+'<span class="kpi-per">/mo</span></div><div class="kpi-annual">'+fmtMoney(v.monthlyRent*12)+'/yr</div></div>';
+  kpiHtml += '<div class="calc-kpi '+(insufficientComps?'':cfClass)+'"'+tipAttrs('Cash Flow','NOI minus rent, adjusted by Position Adjustment ('+confidencePct+'%). This is your confidence-discounted take-home profit after all expenses and rent.')+'><div class="kpi-label">Cash Flow'+projTagHtml+'</div><div class="kpi-monthly">'+(insufficientComps ? nedHtml : fmtMoney(Math.round(kpiMonthlyCF))+'<span class="kpi-per">/mo</span>')+'</div><div class="kpi-annual">'+(insufficientComps ? nedSubHtml : fmtMoney(Math.round(kpiAnnualCF))+'/yr')+'</div></div>';
+  kpiHtml += '<div class="calc-kpi '+(insufficientComps?'':cocClass)+'"'+tipAttrs('Cash on Cash Return','Adjusted annual cash flow divided by total investment. Uses the confidence-discounted cash flow ('+confidencePct+'% Position Adjustment) to measure how quickly your investment pays for itself.')+'><div class="kpi-label">Cash on Cash Return'+projTagHtml+'</div><div class="kpi-monthly">'+(insufficientComps ? nedHtml : kpiCoC.toFixed(1)+'%')+'</div><div class="kpi-annual">'+(insufficientComps ? nedSubHtml : fmtMoney(Math.round(v.totalInvested))+' invested')+'</div></div>';
+  kpiHtml += '</div>';
 
-  // Payback Period Visual — driven by selected projection × position adjustment
+  // ─────────────────────────────────────────
+  // SECTION 3: Payback Period
+  // ─────────────────────────────────────────
+
   const inv = v.totalInvested;
   const acf = Math.round(selectedD.annualCF * confidence);
   const cumVals = [];
@@ -5499,26 +5506,26 @@ function renderCalculatorTab(r){
     paybackColor = 'var(--num-danger)';
   }
 
-  h += '<div class="calc-section"><div class="calc-section-header"'+tipAttrs('Payback Period','How long it takes for your cumulative cash flow to recover your total upfront investment. Uses the selected projection mode\\x27s annual cash flow, discounted by the Position Adjustment ('+confidencePct+'%).') +'>Payback Period</div><div class="calc-section-body" style="padding:8px 10px">';
+  paybackHtml += '<div class="calc-section"><div class="calc-section-header"'+tipAttrs('Payback Period','How long it takes for your cumulative cash flow to recover your total upfront investment. Uses the selected projection mode\\x27s annual cash flow, discounted by the Position Adjustment ('+confidencePct+'%).') +'>Payback Period</div><div class="calc-section-body" style="padding:8px 10px">';
   if(insufficientComps){
-    h += '<div style="text-align:center;padding:20px 8px">';
-    h += '<div style="font-size:1.1rem;font-weight:800;color:var(--text3)">Not Enough Data</div>';
-    h += '<div style="font-size:.7rem;color:var(--text3);margin-top:4px">Add at least 3 comps in Competitor Analysis</div>';
-    h += '</div>';
+    paybackHtml += '<div style="text-align:center;padding:20px 8px">';
+    paybackHtml += '<div style="font-size:1.1rem;font-weight:800;color:var(--text3)">Not Enough Data</div>';
+    paybackHtml += '<div style="font-size:.7rem;color:var(--text3);margin-top:4px">Add at least 3 comps in Competitor Analysis</div>';
+    paybackHtml += '</div>';
   } else {
-    h += '<div style="text-align:center;margin-bottom:10px">';
-    h += '<div style="font-size:1.1rem;font-weight:800;color:'+paybackColor+'">'+paybackHeadline+'</div>';
-    h += '<div style="font-size:.7rem;color:var(--text3);margin-top:1px">'+paybackSub+'</div>';
-    h += '</div>';
+    paybackHtml += '<div style="text-align:center;margin-bottom:10px">';
+    paybackHtml += '<div style="font-size:1.1rem;font-weight:800;color:'+paybackColor+'">'+paybackHeadline+'</div>';
+    paybackHtml += '<div style="font-size:.7rem;color:var(--text3);margin-top:1px">'+paybackSub+'</div>';
+    paybackHtml += '</div>';
 
-    h += '<div style="display:flex;justify-content:space-around;margin-bottom:10px;gap:4px">';
-    h += '<div style="text-align:center"><div style="font-size:.6rem;color:var(--text3);text-transform:uppercase;letter-spacing:.4px">Investment</div><div style="font-size:.78rem;font-weight:700;color:var(--num-danger)">'+fmtMoney(inv)+'</div></div>';
-    h += '<div style="text-align:center"><div style="font-size:.6rem;color:var(--text3);text-transform:uppercase;letter-spacing:.4px">Annual Cash Flow</div><div style="font-size:.78rem;font-weight:700;color:'+(acf>=0?'var(--num-success)':'var(--num-danger)')+'">'+fmtMoney(acf)+'/yr</div></div>';
-    h += '<div style="text-align:center"><div style="font-size:.6rem;color:var(--text3);text-transform:uppercase;letter-spacing:.4px">Yr 10 Balance</div><div style="font-size:.78rem;font-weight:700;color:'+(cumVals[10]>=0?'var(--num-success)':'var(--num-danger)')+'">'+fmtMoney(Math.round(cumVals[10]))+'</div></div>';
-    h += '</div>';
+    paybackHtml += '<div style="display:flex;justify-content:space-around;margin-bottom:10px;gap:4px">';
+    paybackHtml += '<div style="text-align:center"><div style="font-size:.6rem;color:var(--text3);text-transform:uppercase;letter-spacing:.4px">Investment</div><div style="font-size:.78rem;font-weight:700;color:var(--num-danger)">'+fmtMoney(inv)+'</div></div>';
+    paybackHtml += '<div style="text-align:center"><div style="font-size:.6rem;color:var(--text3);text-transform:uppercase;letter-spacing:.4px">Annual Cash Flow</div><div style="font-size:.78rem;font-weight:700;color:'+(acf>=0?'var(--num-success)':'var(--num-danger)')+'">'+fmtMoney(acf)+'/yr</div></div>';
+    paybackHtml += '<div style="text-align:center"><div style="font-size:.6rem;color:var(--text3);text-transform:uppercase;letter-spacing:.4px">Yr 10 Balance</div><div style="font-size:.78rem;font-weight:700;color:'+(cumVals[10]>=0?'var(--num-success)':'var(--num-danger)')+'">'+fmtMoney(Math.round(cumVals[10]))+'</div></div>';
+    paybackHtml += '</div>';
 
-    // SVG Break-Even Chart
-    const svgW = 400, svgH = 160, padL = 48, padR = 12, padT = 12, padB = 28;
+    // SVG Break-Even Chart — wider and shorter for full-width layout
+    const svgW = 800, svgH = 120, padL = 48, padR = 16, padT = 10, padB = 24;
     const chartW = svgW - padL - padR, chartH = svgH - padT - padB;
     const allVals = cumVals.slice(0, 11);
     const minVal = Math.min(...allVals);
@@ -5528,23 +5535,23 @@ function renderCalculatorTab(r){
     function beY(val){ return padT + chartH * (1 - (val + range) / (2 * range)); }
     function beX(yr){ return padL + (yr / 10) * chartW; }
     const zeroY = beY(0);
-    h += '<div style="padding:0 4px">';
-    h += '<svg viewBox="0 0 '+svgW+' '+svgH+'" style="width:100%;display:block">';
+    paybackHtml += '<div style="padding:0 4px">';
+    paybackHtml += '<svg viewBox="0 0 '+svgW+' '+svgH+'" style="width:100%;display:block">';
     // Gradient defs for area fill
     const beGradId = 'beGrad_'+r.id;
-    h += '<defs>';
-    h += '<linearGradient id="'+beGradId+'_pos" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#10b981" stop-opacity=".25"/><stop offset="100%" stop-color="#10b981" stop-opacity=".03"/></linearGradient>';
-    h += '<linearGradient id="'+beGradId+'_neg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ef4444" stop-opacity=".03"/><stop offset="100%" stop-color="#ef4444" stop-opacity=".25"/></linearGradient>';
-    h += '</defs>';
+    paybackHtml += '<defs>';
+    paybackHtml += '<linearGradient id="'+beGradId+'_pos" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#10b981" stop-opacity=".25"/><stop offset="100%" stop-color="#10b981" stop-opacity=".03"/></linearGradient>';
+    paybackHtml += '<linearGradient id="'+beGradId+'_neg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ef4444" stop-opacity=".03"/><stop offset="100%" stop-color="#ef4444" stop-opacity=".25"/></linearGradient>';
+    paybackHtml += '</defs>';
     // Grid lines (light horizontal)
     const gridSteps = 4;
     for(let g = 0; g <= gridSteps; g++){
       const gy = padT + (g / gridSteps) * chartH;
-      h += '<line x1="'+padL+'" y1="'+gy.toFixed(1)+'" x2="'+(svgW-padR)+'" y2="'+gy.toFixed(1)+'" stroke="rgba(148,163,184,.08)" stroke-width="1"/>';
+      paybackHtml += '<line x1="'+padL+'" y1="'+gy.toFixed(1)+'" x2="'+(svgW-padR)+'" y2="'+gy.toFixed(1)+'" stroke="rgba(148,163,184,.08)" stroke-width="1"/>';
     }
     // Zero / x-axis line (prominent)
-    h += '<line x1="'+padL+'" y1="'+zeroY.toFixed(1)+'" x2="'+(svgW-padR)+'" y2="'+zeroY.toFixed(1)+'" stroke="rgba(148,163,184,.35)" stroke-width="1.5" stroke-dasharray="4,3"/>';
-    h += '<text x="'+(padL-4)+'" y="'+(zeroY+3).toFixed(1)+'" text-anchor="end" fill="rgba(148,163,184,.5)" font-size="9" font-weight="600">$0</text>';
+    paybackHtml += '<line x1="'+padL+'" y1="'+zeroY.toFixed(1)+'" x2="'+(svgW-padR)+'" y2="'+zeroY.toFixed(1)+'" stroke="rgba(148,163,184,.35)" stroke-width="1.5" stroke-dasharray="4,3"/>';
+    paybackHtml += '<text x="'+(padL-4)+'" y="'+(zeroY+3).toFixed(1)+'" text-anchor="end" fill="rgba(148,163,184,.5)" font-size="9" font-weight="600">$0</text>';
     // Positive area fill (above zero line)
     let posAreaPath = 'M'+beX(0).toFixed(1)+','+zeroY.toFixed(1);
     for(let y=0;y<=10;y++){
@@ -5552,7 +5559,7 @@ function renderCalculatorTab(r){
       posAreaPath += ' L'+beX(y).toFixed(1)+','+py.toFixed(1);
     }
     posAreaPath += ' L'+beX(10).toFixed(1)+','+zeroY.toFixed(1)+' Z';
-    h += '<path d="'+posAreaPath+'" fill="url(#'+beGradId+'_pos)"/>';
+    paybackHtml += '<path d="'+posAreaPath+'" fill="url(#'+beGradId+'_pos)"/>';
     // Negative area fill (below zero line)
     let negAreaPath = 'M'+beX(0).toFixed(1)+','+zeroY.toFixed(1);
     for(let y=0;y<=10;y++){
@@ -5560,44 +5567,47 @@ function renderCalculatorTab(r){
       negAreaPath += ' L'+beX(y).toFixed(1)+','+py.toFixed(1);
     }
     negAreaPath += ' L'+beX(10).toFixed(1)+','+zeroY.toFixed(1)+' Z';
-    h += '<path d="'+negAreaPath+'" fill="url(#'+beGradId+'_neg)"/>';
+    paybackHtml += '<path d="'+negAreaPath+'" fill="url(#'+beGradId+'_neg)"/>';
     // Main line path with color segments
     for(let y=0;y<10;y++){
       const x1 = beX(y), y1 = beY(allVals[y]);
       const x2 = beX(y+1), y2 = beY(allVals[y+1]);
       const segColor = (allVals[y] < 0 && allVals[y+1] < 0) ? '#ef4444' : (allVals[y] >= 0 && allVals[y+1] >= 0) ? '#10b981' : '#f59e0b';
-      h += '<line x1="'+x1.toFixed(1)+'" y1="'+y1.toFixed(1)+'" x2="'+x2.toFixed(1)+'" y2="'+y2.toFixed(1)+'" stroke="'+segColor+'" stroke-width="2.5" stroke-linecap="round"/>';
+      paybackHtml += '<line x1="'+x1.toFixed(1)+'" y1="'+y1.toFixed(1)+'" x2="'+x2.toFixed(1)+'" y2="'+y2.toFixed(1)+'" stroke="'+segColor+'" stroke-width="2.5" stroke-linecap="round"/>';
     }
     // Data point dots
     for(let y=0;y<=10;y++){
       const cx = beX(y), cy = beY(allVals[y]);
       const dotColor = allVals[y] < 0 ? '#ef4444' : '#10b981';
-      h += '<circle cx="'+cx.toFixed(1)+'" cy="'+cy.toFixed(1)+'" r="'+(y===0||y===10||(breakEvenYear!==null&&y===Math.ceil(breakEvenYear))?'4':'2.5')+'" fill="'+dotColor+'" stroke="var(--surface)" stroke-width="1.5"/>';
+      paybackHtml += '<circle cx="'+cx.toFixed(1)+'" cy="'+cy.toFixed(1)+'" r="'+(y===0||y===10||(breakEvenYear!==null&&y===Math.ceil(breakEvenYear))?'4':'2.5')+'" fill="'+dotColor+'" stroke="var(--surface)" stroke-width="1.5"/>';
     }
     // Break-even marker (vertical dashed line + label)
     if(breakEvenYear !== null){
       const bx = beX(breakEvenYear);
-      h += '<line x1="'+bx.toFixed(1)+'" y1="'+padT+'" x2="'+bx.toFixed(1)+'" y2="'+(svgH-padB)+'" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="4,3" opacity=".6"/>';
-      h += '<circle cx="'+bx.toFixed(1)+'" cy="'+zeroY.toFixed(1)+'" r="5" fill="#f59e0b" stroke="var(--surface)" stroke-width="2" filter="drop-shadow(0 1px 3px rgba(0,0,0,.3))"/>';
+      paybackHtml += '<line x1="'+bx.toFixed(1)+'" y1="'+padT+'" x2="'+bx.toFixed(1)+'" y2="'+(svgH-padB)+'" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="4,3" opacity=".6"/>';
+      paybackHtml += '<circle cx="'+bx.toFixed(1)+'" cy="'+zeroY.toFixed(1)+'" r="5" fill="#f59e0b" stroke="var(--surface)" stroke-width="2" filter="drop-shadow(0 1px 3px rgba(0,0,0,.3))"/>';
       const beLabel = Math.floor(breakEvenYear)+'y '+Math.round((breakEvenYear-Math.floor(breakEvenYear))*12)+'m';
       const labelX = bx + (bx > svgW/2 ? -8 : 8);
       const labelAnchor = bx > svgW/2 ? 'end' : 'start';
-      h += '<text x="'+labelX.toFixed(1)+'" y="'+(padT+10)+'" text-anchor="'+labelAnchor+'" fill="#f59e0b" font-size="9" font-weight="700">Break-even</text>';
-      h += '<text x="'+labelX.toFixed(1)+'" y="'+(padT+20)+'" text-anchor="'+labelAnchor+'" fill="#f59e0b" font-size="8" font-weight="600">'+beLabel+'</text>';
+      paybackHtml += '<text x="'+labelX.toFixed(1)+'" y="'+(padT+10)+'" text-anchor="'+labelAnchor+'" fill="#f59e0b" font-size="9" font-weight="700">Break-even</text>';
+      paybackHtml += '<text x="'+labelX.toFixed(1)+'" y="'+(padT+20)+'" text-anchor="'+labelAnchor+'" fill="#f59e0b" font-size="8" font-weight="600">'+beLabel+'</text>';
     }
     // X-axis year labels
     for(let y=0;y<=10;y+=2){
-      h += '<text x="'+beX(y).toFixed(1)+'" y="'+(svgH-6)+'" text-anchor="middle" fill="rgba(148,163,184,.5)" font-size="8" font-weight="500">Yr '+y+'</text>';
+      paybackHtml += '<text x="'+beX(y).toFixed(1)+'" y="'+(svgH-6)+'" text-anchor="middle" fill="rgba(148,163,184,.5)" font-size="8" font-weight="500">Yr '+y+'</text>';
     }
     // Y-axis labels (min and max)
-    h += '<text x="'+(padL-4)+'" y="'+(beY(maxVal)+3).toFixed(1)+'" text-anchor="end" fill="rgba(148,163,184,.4)" font-size="8">'+fmtMoney(Math.round(maxVal))+'</text>';
-    h += '<text x="'+(padL-4)+'" y="'+(beY(minVal)+3).toFixed(1)+'" text-anchor="end" fill="rgba(148,163,184,.4)" font-size="8">'+fmtMoney(Math.round(minVal))+'</text>';
-    h += '</svg>';
-    h += '</div>';
+    paybackHtml += '<text x="'+(padL-4)+'" y="'+(beY(maxVal)+3).toFixed(1)+'" text-anchor="end" fill="rgba(148,163,184,.4)" font-size="8">'+fmtMoney(Math.round(maxVal))+'</text>';
+    paybackHtml += '<text x="'+(padL-4)+'" y="'+(beY(minVal)+3).toFixed(1)+'" text-anchor="end" fill="rgba(148,163,184,.4)" font-size="8">'+fmtMoney(Math.round(minVal))+'</text>';
+    paybackHtml += '</svg>';
+    paybackHtml += '</div>';
   }
-  h += '</div></div>';
+  paybackHtml += '</div></div>';
 
-  // Projected Yearly Net — two columns: Comp Avg (reference) + Projected (drives everything)
+  // ─────────────────────────────────────────
+  // SECTION 4: Projected Yearly Net
+  // ─────────────────────────────────────────
+
   const noComps = v.compsCount === 0;
   const hasProj = v.hasProjectionData;
   const projAnnualRent = Math.round(v.monthlyRent * 12);
@@ -5625,35 +5635,35 @@ function renderCalculatorTab(r){
     col.monthlyNet = col.hasData ? Math.round(col.net / 12) : 0;
   });
 
-  h += '<div class="calc-section"><div class="calc-section-header"'+tipAttrs('Projected Yearly Net','Projected annual profit across three scenarios. Each column uses different directional multipliers applied to your comp data, then discounted by your competitive position. Select a column to drive the KPIs, Deal Temperature, and Payback Period.')+'>Projected Yearly Net</div>';
+  pynHtml += '<div class="calc-section"><div class="calc-section-header"'+tipAttrs('Projected Yearly Net','Projected annual profit across three scenarios. Each column uses different directional multipliers applied to your comp data, then discounted by your competitive position. Select a column to drive the KPIs, Deal Temperature, and Payback Period.')+'>Projected Yearly Net</div>';
 
   // Clickable column headers — selecting a column drives KPIs, Deal Temp, and Payback
-  h += '<div class="pyn-col-headers">';
-  h += '<div class="pyn-label-spacer"></div>';
+  pynHtml += '<div class="pyn-col-headers">';
+  pynHtml += '<div class="pyn-label-spacer"></div>';
   const colTitles = { optimistic: 'Best-case: Loses To ×0.95, Competes ×1.10, Beats ×1.25 applied to comp revenue. Click to use for KPIs and Deal Temperature.', realistic: 'Weighted estimate: Loses To ×0.85, Competes ×1.00, Beats ×1.15 applied to comp revenue. Click to use for KPIs and Deal Temperature.', pessimistic: 'Conservative: Loses To ×0.75, Competes ×0.90, Beats ×1.05 applied to comp revenue. Click to use for KPIs and Deal Temperature.' };
   cols.forEach(col => {
     const isActive = col.key === calcProjMode;
-    h += '<div class="pyn-col-header'+(isActive?' pyn-col-active':'')+'" style="--col-color:'+col.color+';cursor:pointer" onclick="setCalcProjMode(\''+col.key+'\')">';
-    h += '<span class="pyn-col-label">'+col.label+'</span>';
-    if(isActive) h += '<div class="pyn-col-indicator"></div>';
-    h += '</div>';
+    pynHtml += '<div class="pyn-col-header'+(isActive?' pyn-col-active':'')+'" style="--col-color:'+col.color+';cursor:pointer" onclick="setCalcProjMode(\''+col.key+'\')">';
+    pynHtml += '<span class="pyn-col-label">'+col.label+'</span>';
+    if(isActive) pynHtml += '<div class="pyn-col-indicator"></div>';
+    pynHtml += '</div>';
   });
-  h += '</div>';
+  pynHtml += '</div>';
 
-  h += '<div class="calc-section-body pyn-body">';
+  pynHtml += '<div class="calc-section-body pyn-body">';
 
   function pynRow(label, getVal, opts){
     const isTotal = opts && opts.total;
     const tipA = opts && opts.tip ? tipAttrs(label, opts.tip) : '';
-    h += '<div class="calc-row'+(isTotal?' total-row':'')+'">';
-    h += '<div class="calc-label"'+tipA+'>'+label+'</div>';
+    pynHtml += '<div class="calc-row'+(isTotal?' total-row':'')+'">';
+    pynHtml += '<div class="calc-label"'+tipA+'>'+label+'</div>';
     cols.forEach(col => {
       const isActive = col.key === calcProjMode;
-      h += '<div class="calc-val pyn-val'+(isActive?' pyn-val-active':'')+'">';
-      h += getVal(col);
-      h += '</div>';
+      pynHtml += '<div class="calc-val pyn-val'+(isActive?' pyn-val-active':'')+'">';
+      pynHtml += getVal(col);
+      pynHtml += '</div>';
     });
-    h += '</div>';
+    pynHtml += '</div>';
   }
 
   pynRow('Annual Revenue', col => {
@@ -5693,9 +5703,12 @@ function renderCalculatorTab(r){
     return '<span style="color:var(--num-danger);font-weight:700">-$'+Math.abs(adj).toLocaleString()+'/mo</span>';
   }, {total:true, tip:'Monthly Net × Position Adjustment percentage. This confidence-adjusted figure drives the Deal Temperature recommendation below.'});
 
-  h += '</div></div>';
+  pynHtml += '</div></div>';
 
-  // Deal Temperature — driven by the user-selected column's adjusted cash flow
+  // ─────────────────────────────────────────
+  // SECTION 5: Deal Temperature
+  // ─────────────────────────────────────────
+
   const selectedCol = cols.find(c => c.key === calcProjMode) || cols[1];
   const rawMonthlyNet = selectedCol.hasData ? selectedCol.monthlyNet : 0;
   const dealMonthlyNet = selectedCol.hasData ? selectedCol.adjustedMonthlyNet : 0;
@@ -5707,20 +5720,20 @@ function renderCalculatorTab(r){
     { key:'risky', label:'Risky', icon:'⚠️', color:'#f59e0b', desc:'Under $500/mo net', hint:'Adjusted Monthly Net is $1–$499/mo. Thin margins that leave little room for unexpected costs or vacancies.' },
     { key:'no-go', label:'No-Go', icon:'🚫', color:'#ef4444', desc:'Negative or zero cash flow', hint:'Adjusted Monthly Net is $0 or less. This deal loses money after accounting for competitive position.' }
   ];
-  h += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px">';
+  dealHtml += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px">';
   temps.forEach(t => {
     const active = dealTemp === t.key;
     const bg = active ? t.color : 'var(--surface)';
     const border = active ? t.color : 'var(--border)';
     const textColor = active ? '#fff' : 'var(--text3)';
     const opacity = active ? '1' : '0.5';
-    h += '<div onclick="showTip(\''+t.label+'\',\''+t.hint.replace(/'/g,'\\x27')+'\')" style="background:'+bg+';border:2px solid '+border+';border-radius:var(--radius);padding:10px 8px;text-align:center;opacity:'+opacity+';transition:all .2s;cursor:pointer">';
-    h += '<div style="font-size:1.3rem;margin-bottom:4px">'+t.icon+'</div>';
-    h += '<div style="font-size:.82rem;font-weight:700;color:'+textColor+'">'+t.label+'</div>';
-    h += '<div style="font-size:.65rem;color:'+textColor+';opacity:.8;margin-top:2px">'+t.desc+'</div>';
-    h += '</div>';
+    dealHtml += '<div onclick="showTip(\''+t.label+'\',\''+t.hint.replace(/'/g,'\\x27')+'\')" style="background:'+bg+';border:2px solid '+border+';border-radius:var(--radius);padding:10px 8px;text-align:center;opacity:'+opacity+';transition:all .2s;cursor:pointer">';
+    dealHtml += '<div style="font-size:1.3rem;margin-bottom:4px">'+t.icon+'</div>';
+    dealHtml += '<div style="font-size:.82rem;font-weight:700;color:'+textColor+'">'+t.label+'</div>';
+    dealHtml += '<div style="font-size:.65rem;color:'+textColor+';opacity:.8;margin-top:2px">'+t.desc+'</div>';
+    dealHtml += '</div>';
   });
-  h += '</div>';
+  dealHtml += '</div>';
 
   // Deal Temperature Gauge — continuous bar showing exactly where the adjusted value falls
   if(!insufficientComps){
@@ -5740,48 +5753,63 @@ function renderCalculatorTab(r){
     // Determine marker color based on which zone it's in
     const markerColor = dealMonthlyNet >= 1000 ? '#10b981' : dealMonthlyNet >= 500 ? '#3b82f6' : dealMonthlyNet > 0 ? '#f59e0b' : '#ef4444';
 
-    h += '<div style="margin-bottom:6px">';
+    dealHtml += '<div style="margin-bottom:6px">';
     // Gauge track — 4 colored zone segments (horizontal orientation)
-    h += '<div style="position:relative;width:100%;height:32px;margin-bottom:2px">';
-    h += '<div style="position:absolute;top:10px;left:0;width:100%;height:12px;border-radius:6px;overflow:hidden;display:flex">';
+    dealHtml += '<div style="position:relative;width:100%;height:32px;margin-bottom:2px">';
+    dealHtml += '<div style="position:absolute;top:10px;left:0;width:100%;height:12px;border-radius:6px;overflow:hidden;display:flex">';
     let prevPct = 0;
     zoneBreaks.forEach(z => {
       const w_zone = z.pct - prevPct;
-      h += '<div style="width:'+w_zone+'%;height:100%;background:'+z.color+';opacity:.18"></div>';
+      dealHtml += '<div style="width:'+w_zone+'%;height:100%;background:'+z.color+';opacity:.18"></div>';
       prevPct = z.pct;
     });
-    h += '</div>';
+    dealHtml += '</div>';
     // Active fill — uses matching zone colors up to the marker position
-    h += '<div style="position:absolute;top:10px;left:0;width:'+gaugePct+'%;height:12px;border-radius:6px 0 0 6px;overflow:hidden;display:flex">';
-    h += '<div style="display:flex;width:'+((100 / parseFloat(gaugePct)) * 100)+'%;height:100%">';
+    dealHtml += '<div style="position:absolute;top:10px;left:0;width:'+gaugePct+'%;height:12px;border-radius:6px 0 0 6px;overflow:hidden;display:flex">';
+    dealHtml += '<div style="display:flex;width:'+((100 / parseFloat(gaugePct)) * 100)+'%;height:100%">';
     let prevPct2 = 0;
     zoneBreaks.forEach(z => {
       const w_zone = z.pct - prevPct2;
-      h += '<div style="width:'+w_zone+'%;height:100%;background:'+z.color+';opacity:.55"></div>';
+      dealHtml += '<div style="width:'+w_zone+'%;height:100%;background:'+z.color+';opacity:.55"></div>';
       prevPct2 = z.pct;
     });
-    h += '</div></div>';
+    dealHtml += '</div></div>';
     // Marker circle — color matches current zone
-    h += '<div style="position:absolute;top:calc(50% - 13px);left:calc('+gaugePct+'% - 13px);width:26px;height:26px;border-radius:50%;background:'+markerColor+';border:3px solid var(--surface);box-shadow:0 2px 8px rgba(0,0,0,.35);transition:left .3s"></div>';
-    h += '</div>';
+    dealHtml += '<div style="position:absolute;top:calc(50% - 13px);left:calc('+gaugePct+'% - 13px);width:26px;height:26px;border-radius:50%;background:'+markerColor+';border:3px solid var(--surface);box-shadow:0 2px 8px rgba(0,0,0,.35);transition:left .3s"></div>';
+    dealHtml += '</div>';
 
     // Zone boundary labels (horizontal)
-    h += '<div style="position:relative;width:100%;margin-top:4px;display:flex;justify-content:space-between;font-size:.58rem;color:var(--text3)">';
-    h += '<div>-$500</div>';
-    h += '<div>$0</div>';
-    h += '<div>$500</div>';
-    h += '<div>$1,000</div>';
-    h += '<div>$1,500+</div>';
-    h += '</div>';
-    h += '</div>';
+    dealHtml += '<div style="position:relative;width:100%;margin-top:4px;display:flex;justify-content:space-between;font-size:.58rem;color:var(--text3)">';
+    dealHtml += '<div>-$500</div>';
+    dealHtml += '<div>$0</div>';
+    dealHtml += '<div>$500</div>';
+    dealHtml += '<div>$1,000</div>';
+    dealHtml += '<div>$1,500+</div>';
+    dealHtml += '</div>';
+    dealHtml += '</div>';
 
   } else {
-    h += '<div style="text-align:center;font-size:.62rem;color:var(--text3);font-style:italic;margin-bottom:16px">'+dealSource+'</div>';
+    dealHtml += '<div style="text-align:center;font-size:.62rem;color:var(--text3);font-style:italic;margin-bottom:16px">'+dealSource+'</div>';
   }
 
-  h += '</div>'; // end RIGHT panel
+  // ══════ ASSEMBLE PANELS ══════
+  // LEFT PANEL: KPIs + Competitive Position
+  h += '<div class="calc-panel">';
+  h += kpiHtml;
+  h += cpHtml;
+  h += '</div>';
+
+  // RIGHT PANEL: PYN + Deal Temperature
+  h += '<div class="calc-panel">';
+  h += pynHtml;
+  h += dealHtml;
+  h += '</div>';
 
   h += '</div>'; // end calc-layout
+
+  // FULL WIDTH: Payback Period (below the grid)
+  h += paybackHtml;
+
   return h;
 }
 
