@@ -753,8 +753,7 @@ h1 .hero-edit-input{font-size:1.35rem}
 .tip-btn-disable{background:transparent;color:var(--text3);border:1px solid var(--border)}
 .tip-btn-disable:hover{background:var(--bg);color:var(--text2)}
 /* Tip question mark icon */
-.tip-trigger{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:rgba(148,163,184,.15);color:var(--text3);font-size:.62rem;font-weight:700;cursor:pointer;margin-left:5px;transition:background .15s,color .15s;vertical-align:middle;flex-shrink:0;line-height:1}
-.tip-trigger:hover{background:var(--primary);color:#fff}
+/* Tip trigger: no visible element — cursor changes to ? on hover via inline style */
 /* AI button */
 .calc-ai-btn{display:inline-flex;align-items:center;gap:4px;font-size:.68rem;padding:2px 8px;border-radius:12px;border:1px solid rgba(16,185,129,.3);background:rgba(16,185,129,.08);color:#10b981;cursor:pointer;font-weight:600;transition:all .15s;margin-left:auto}
 .calc-ai-btn:hover{background:rgba(16,185,129,.15);border-color:#10b981}
@@ -5109,8 +5108,8 @@ function fmtMoney(n){
 function cRow(label, valHtml, opts={}){
   const cls = opts.total ? ' total-row' : '';
   const hint = opts.hint ? '<span class="calc-label-hint">'+opts.hint+'</span>' : '';
-  const tip = opts.tip ? tipIcon(label.replace(/<[^>]*>/g,''), opts.tip) : '';
-  return '<div class="calc-row'+cls+'"><div class="calc-label">'+label+hint+tip+'</div>'+valHtml+'</div>';
+  const tipA = opts.tip ? tipAttrs(label.replace(/<[^>]*>/g,''), opts.tip) : '';
+  return '<div class="calc-row'+cls+'"><div class="calc-label"'+tipA+'>'+label+hint+'</div>'+valHtml+'</div>';
 }
 function cInput(id, value, opts={}){
   const cls = opts.pct ? ' calc-pct' : '';
@@ -5349,13 +5348,13 @@ function renderCalculatorTab(r){
     const psColor = ps >= 0.3 ? 'var(--num-success)' : ps >= -0.3 ? 'var(--num-warning)' : 'var(--num-danger)';
     const psLabel = ps >= 0.5 ? 'Strong' : ps >= 0.15 ? 'Favorable' : ps >= -0.15 ? 'Neutral' : ps >= -0.5 ? 'Challenging' : 'Weak';
 
-    h += '<div class="calc-section"><div class="calc-section-header">Competitive Position'+tipIcon('Competitive Position','How your property compares to the competitive landscape based on the comps you\\x27ve categorized as Loses To, Competes With, and Beats. This directly affects the Position Adjustment percentage applied to your projections.')+'</div><div class="calc-section-body" style="padding:12px 14px">';
+    h += '<div class="calc-section"><div class="calc-section-header"'+tipAttrs('Competitive Position','How your property compares to the competitive landscape based on the comps you\\x27ve categorized as Loses To, Competes With, and Beats. This directly affects the Position Adjustment percentage applied to your projections.')+'>Competitive Position</div><div class="calc-section-body" style="padding:12px 14px">';
 
     // Position summary
     h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">';
-    h += '<div><div style="font-size:1rem;font-weight:800;color:'+psColor+'">'+psLabel+tipIcon('Position Rating','Based on how your property compares to comps. Strong (+0.5 to +1.0), Favorable (+0.15 to +0.5), Neutral (-0.15 to +0.15), Challenging (-0.5 to -0.15), Weak (-1.0 to -0.5).')+'</div>';
-    h += '<div style="font-size:.72rem;color:var(--text3);margin-top:2px">'+ordinal(mp)+' percentile in market'+tipIcon('Market Percentile','Percentage of the market your property is estimated to outperform. Calculated as (beats + 0.5 × competes) ÷ total comps × 100.')+'</div></div>';
-    h += '<div style="text-align:right"><div style="font-size:.68rem;color:var(--text3);text-transform:uppercase;letter-spacing:.3px">Position Score'+tipIcon('Position Score','Score from -1.0 (loses to all) to +1.0 (beats all). Formula: (-1 × loses + 0 × competes + 1 × beats) ÷ total comps.')+'</div>';
+    h += '<div><div style="font-size:1rem;font-weight:800;color:'+psColor+';cursor:help"'+tipAttrs('Position Rating','Based on how your property compares to comps. Strong (+0.5 to +1.0), Favorable (+0.15 to +0.5), Neutral (-0.15 to +0.15), Challenging (-0.5 to -0.15), Weak (-1.0 to -0.5).',true)+'>'+psLabel+'</div>';
+    h += '<div style="font-size:.72rem;color:var(--text3);margin-top:2px;cursor:help"'+tipAttrs('Market Percentile','Percentage of the market your property is estimated to outperform. Calculated as (beats + 0.5 × competes) ÷ total comps × 100.',true)+'>'+ordinal(mp)+' percentile in market</div></div>';
+    h += '<div style="text-align:right"><div style="font-size:.68rem;color:var(--text3);text-transform:uppercase;letter-spacing:.3px;cursor:help"'+tipAttrs('Position Score','Score from -1.0 (loses to all) to +1.0 (beats all). Formula: (-1 × loses + 0 × competes + 1 × beats) ÷ total comps.',true)+'>Position Score</div>';
     h += '<div style="font-size:1.1rem;font-weight:700;color:'+psColor+'">'+(ps >= 0 ? '+' : '')+ps.toFixed(2)+'</div></div>';
     h += '</div>';
 
@@ -5431,10 +5430,10 @@ function renderCalculatorTab(r){
 
   // KPI Cards — underneath Competitive Position
   h += '<div class="calc-kpi-grid calc-kpi-grid-left">';
-  h += '<div class="calc-kpi"><div class="kpi-label">Net Operating Income'+projTagHtml+tipIcon('Net Operating Income','Projected revenue minus all operating expenses (co-host, Airbnb fees, cleaning, utilities, etc.). Does not include rent.')+'</div><div class="kpi-monthly">'+(insufficientComps ? nedHtml : fmtMoney(Math.round(kpiNOI))+'<span class="kpi-per">/mo</span>')+'</div><div class="kpi-annual">'+(insufficientComps ? nedSubHtml : fmtMoney(Math.round(kpiAnnualNOI))+'/yr')+'</div></div>';
-  h += '<div class="calc-kpi"><div class="kpi-label">Monthly Rent<div class="kpi-proj-tag" style="color:#eab308;border-color:#eab308">Fixed</div>'+tipIcon('Monthly Rent','Your monthly lease payment for this property — entered in the Expenses tab.')+'</div><div class="kpi-monthly">'+(v.monthlyRent ? fmtMoney(v.monthlyRent) : '<span style="color:var(--text3);font-style:italic">Set in Property Details</span>')+'<span class="kpi-per">/mo</span></div><div class="kpi-annual">'+fmtMoney(v.monthlyRent*12)+'/yr</div></div>';
-  h += '<div class="calc-kpi '+(insufficientComps?'':cfClass)+'"><div class="kpi-label">Cash Flow'+projTagHtml+tipIcon('Cash Flow','NOI minus rent, adjusted by Position Adjustment ('+confidencePct+'%). This is your confidence-discounted take-home profit after all expenses and rent.')+'</div><div class="kpi-monthly">'+(insufficientComps ? nedHtml : fmtMoney(Math.round(kpiMonthlyCF))+'<span class="kpi-per">/mo</span>')+'</div><div class="kpi-annual">'+(insufficientComps ? nedSubHtml : fmtMoney(Math.round(kpiAnnualCF))+'/yr')+'</div></div>';
-  h += '<div class="calc-kpi '+(insufficientComps?'':cocClass)+'"><div class="kpi-label">Cash on Cash Return'+projTagHtml+tipIcon('Cash on Cash Return','Adjusted annual cash flow divided by total investment. Uses the confidence-discounted cash flow ('+confidencePct+'% Position Adjustment) to measure how quickly your investment pays for itself.')+'</div><div class="kpi-monthly">'+(insufficientComps ? nedHtml : kpiCoC.toFixed(1)+'%')+'</div><div class="kpi-annual">'+(insufficientComps ? nedSubHtml : fmtMoney(Math.round(v.totalInvested))+' invested')+'</div></div>';
+  h += '<div class="calc-kpi"'+tipAttrs('Net Operating Income','Projected revenue minus all operating expenses (co-host, Airbnb fees, cleaning, utilities, etc.). Does not include rent.')+'><div class="kpi-label">Net Operating Income'+projTagHtml+'</div><div class="kpi-monthly">'+(insufficientComps ? nedHtml : fmtMoney(Math.round(kpiNOI))+'<span class="kpi-per">/mo</span>')+'</div><div class="kpi-annual">'+(insufficientComps ? nedSubHtml : fmtMoney(Math.round(kpiAnnualNOI))+'/yr')+'</div></div>';
+  h += '<div class="calc-kpi"'+tipAttrs('Monthly Rent','Your monthly lease payment for this property — entered in the Expenses tab.')+'><div class="kpi-label">Monthly Rent<div class="kpi-proj-tag" style="color:#eab308;border-color:#eab308">Fixed</div></div><div class="kpi-monthly">'+(v.monthlyRent ? fmtMoney(v.monthlyRent) : '<span style="color:var(--text3);font-style:italic">Set in Property Details</span>')+'<span class="kpi-per">/mo</span></div><div class="kpi-annual">'+fmtMoney(v.monthlyRent*12)+'/yr</div></div>';
+  h += '<div class="calc-kpi '+(insufficientComps?'':cfClass)+'"'+tipAttrs('Cash Flow','NOI minus rent, adjusted by Position Adjustment ('+confidencePct+'%). This is your confidence-discounted take-home profit after all expenses and rent.')+'><div class="kpi-label">Cash Flow'+projTagHtml+'</div><div class="kpi-monthly">'+(insufficientComps ? nedHtml : fmtMoney(Math.round(kpiMonthlyCF))+'<span class="kpi-per">/mo</span>')+'</div><div class="kpi-annual">'+(insufficientComps ? nedSubHtml : fmtMoney(Math.round(kpiAnnualCF))+'/yr')+'</div></div>';
+  h += '<div class="calc-kpi '+(insufficientComps?'':cocClass)+'"'+tipAttrs('Cash on Cash Return','Adjusted annual cash flow divided by total investment. Uses the confidence-discounted cash flow ('+confidencePct+'% Position Adjustment) to measure how quickly your investment pays for itself.')+'><div class="kpi-label">Cash on Cash Return'+projTagHtml+'</div><div class="kpi-monthly">'+(insufficientComps ? nedHtml : kpiCoC.toFixed(1)+'%')+'</div><div class="kpi-annual">'+(insufficientComps ? nedSubHtml : fmtMoney(Math.round(v.totalInvested))+' invested')+'</div></div>';
   h += '</div>';
 
   // Payback Period Visual — driven by selected projection × position adjustment
@@ -5476,7 +5475,7 @@ function renderCalculatorTab(r){
     paybackColor = 'var(--num-danger)';
   }
 
-  h += '<div class="calc-section"><div class="calc-section-header">Payback Period'+tipIcon('Payback Period','How long it takes for your cumulative cash flow to recover your total upfront investment. Uses the selected projection mode\\x27s annual cash flow, discounted by the Position Adjustment ('+confidencePct+'%).')+'</div><div class="calc-section-body" style="padding:8px 10px">';
+  h += '<div class="calc-section"><div class="calc-section-header"'+tipAttrs('Payback Period','How long it takes for your cumulative cash flow to recover your total upfront investment. Uses the selected projection mode\\x27s annual cash flow, discounted by the Position Adjustment ('+confidencePct+'%).') +'>Payback Period</div><div class="calc-section-body" style="padding:8px 10px">';
   if(insufficientComps){
     h += '<div style="text-align:center;padding:20px 8px">';
     h += '<div style="font-size:1.1rem;font-weight:800;color:var(--text3)">Not Enough Data</div>';
@@ -5607,7 +5606,7 @@ function renderCalculatorTab(r){
     col.monthlyNet = col.hasData ? Math.round(col.net / 12) : 0;
   });
 
-  h += '<div class="calc-section"><div class="calc-section-header">Projected Yearly Net'+tipIcon('Projected Yearly Net','Projected annual profit across three scenarios. Each column uses different directional multipliers applied to your comp data, then discounted by your competitive position. Select a column to drive the KPIs, Deal Temperature, and Payback Period.')+'</div>';
+  h += '<div class="calc-section"><div class="calc-section-header"'+tipAttrs('Projected Yearly Net','Projected annual profit across three scenarios. Each column uses different directional multipliers applied to your comp data, then discounted by your competitive position. Select a column to drive the KPIs, Deal Temperature, and Payback Period.')+'>Projected Yearly Net</div>';
 
   // Clickable column headers — selecting a column drives KPIs, Deal Temp, and Payback
   h += '<div class="pyn-col-headers">';
@@ -5626,9 +5625,9 @@ function renderCalculatorTab(r){
 
   function pynRow(label, getVal, opts){
     const isTotal = opts && opts.total;
-    const tip = opts && opts.tip ? tipIcon(label, opts.tip) : '';
+    const tipA = opts && opts.tip ? tipAttrs(label, opts.tip) : '';
     h += '<div class="calc-row'+(isTotal?' total-row':'')+'">';
-    h += '<div class="calc-label">'+label+tip+'</div>';
+    h += '<div class="calc-label"'+tipA+'>'+label+'</div>';
     cols.forEach(col => {
       const isActive = col.key === calcProjMode;
       h += '<div class="calc-val pyn-val'+(isActive?' pyn-val-active':'')+'">';
@@ -5986,7 +5985,7 @@ function renderAnalysisTab(r){
   h += '<div class="an-top-grid">';
 
   // Left: Required Revenue
-  h += '<div class="an-section"><div class="an-section-hdr">Required Revenue'+tipIcon('Required Revenue','The minimum annual/monthly revenue needed to cover rent, operating expenses, and your desired profit requirement.')+'</div><div class="an-section-body" style="padding:0">';
+  h += '<div class="an-section"><div class="an-section-hdr"'+tipAttrs('Required Revenue','The minimum annual/monthly revenue needed to cover rent, operating expenses, and your desired profit requirement.')+'>Required Revenue</div><div class="an-section-body" style="padding:0">';
   h += '<div class="an-req-bar" style="border:none;border-radius:0;margin:0">';
   h += '<div class="an-req-item"><div class="req-label">Rent</div><div class="req-val">'+fmtMoney(v.monthlyRent*12)+'<span class="req-period">/yr</span></div><div class="req-annual">'+fmtMoney(v.monthlyRent)+'/mo</div></div>';
   h += '<div class="an-req-item" onclick="showAppAlert(\'Expenses are calculated from your Monthly Operating Expenses in the Pro Forma tab. Edit individual amounts there.\', {title: \'About Expenses\', icon: \'ℹ️\'})" style="cursor:help" title="Edit in Pro Forma → Monthly Operating Expenses"><div class="req-label">Expenses</div><div class="req-val">'+fmtMoney(Math.round(expenses*12))+'<span class="req-period">/yr</span></div><div class="req-annual">'+fmtMoney(Math.round(expenses))+'/mo</div></div>';
@@ -6015,7 +6014,7 @@ function renderAnalysisTab(r){
   });
 
   // Right: Revenue Projection panel
-  h += '<div class="an-section"><div class="an-section-hdr">Revenue Projection'+tipIcon('Revenue Projection','Revenue projections using directional multipliers. Optimistic uses higher multipliers (best-case), Realistic uses base multipliers (weighted estimate), Pessimistic uses lower multipliers (conservative). Multipliers adjust comp revenue based on whether you Lose To, Compete With, or Beat each comp.')+'</div><div class="an-section-body" style="padding:0">';
+  h += '<div class="an-section"><div class="an-section-hdr"'+tipAttrs('Revenue Projection','Revenue projections using directional multipliers. Optimistic uses higher multipliers (best-case), Realistic uses base multipliers (weighted estimate), Pessimistic uses lower multipliers (conservative). Multipliers adjust comp revenue based on whether you Lose To, Compete With, or Beat each comp.')+'>Revenue Projection</div><div class="an-section-body" style="padding:0">';
   h += '<div class="an-req-bar" style="border:none;border-radius:0;margin:0">';
   if(insuffComps){
     h += '<div class="an-req-item" style="text-align:center;padding:18px 14px"><div class="req-label" style="color:var(--text3);font-size:.82rem">Add at least 3 comps to see projections</div></div>';
@@ -7973,7 +7972,7 @@ function closeTip(){
 function confirmDisableTips(){
   const overlay = document.getElementById('tipOverlay');
   if(overlay){
-    overlay.querySelector('.tip-popup').innerHTML = '<div class="tip-popup-title"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>Disable Tips?</div><div class="tip-popup-body">Are you sure you want to disable calculation tips? You can re-enable them anytime in <strong>Settings → Appearance → Calculation Tips</strong>.</div><div class="tip-popup-actions"><button class="tip-btn tip-btn-disable" onclick="closeTip()">Cancel</button><button class="tip-btn tip-btn-ok" onclick="doDisableTips()">Disable</button></div>';
+    overlay.querySelector('.tip-popup').innerHTML = '<div class="tip-popup-title"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>Disable Tips?</div><div class="tip-popup-body">Are you sure you want to disable calculation tips? You can re-enable them anytime in Settings.</div><div class="tip-popup-actions"><button class="tip-btn tip-btn-disable" onclick="closeTip()">Cancel</button><button class="tip-btn tip-btn-ok" onclick="doDisableTips()">Disable</button></div>';
   }
 }
 function doDisableTips(){
@@ -7981,14 +7980,17 @@ function doDisableTips(){
   settingsPrefs.tipsEnabled = false;
   saveSettingsPrefs();
   closeTip();
-  showToast('Calculation tips disabled. Re-enable in Settings → Appearance.', 'info');
+  showToast('Calculation tips disabled. Re-enable in Settings.', 'info');
 }
-function tipIcon(title, body){
+// tipAttrs: returns onclick + style attributes for an opening tag. Pass noStyle=true if element already has style=
+function tipAttrs(title, body, noStyle){
   if(!tipsEnabled()) return '';
   const safeTitle = title.replace(/'/g, '\\x27').replace(/"/g, '&quot;');
   const safeBody = body.replace(/'/g, '\\x27').replace(/"/g, '&quot;');
-  return '<span class="tip-trigger" onclick="event.stopPropagation();showTip(\''+safeTitle+'\',\''+safeBody+'\')">?</span>';
+  return ' onclick="event.stopPropagation();showTip(\''+safeTitle+'\',\''+safeBody+'\')"'+(noStyle?'':' style="cursor:help"');
 }
+// tipIcon: legacy wrapper — returns empty string (attributes now injected via tipAttrs)
+function tipIcon(title, body){ return ''; }
 
 /* ===== SETTINGS PAGE ===== */
 let settingsPrefs = {};
