@@ -2570,13 +2570,20 @@ function savePropertyNote(recId){
   render();
 }
 function clearPropertyNote(recId){
-  if(!confirm('Delete this property note?')) return;
-  const r = records.find(x => x.id === recId);
-  if(!r) return;
-  r.propertyNote = null;
-  saveData();
-  document.getElementById('propNoteEditorOverlay')?.remove();
-  render();
+  showAppConfirm('Delete this property note?', {
+    title: 'Delete Note',
+    icon: '🗑️',
+    confirmText: 'Delete',
+    confirmClass: 'btn-danger',
+    onConfirm: function(){
+      const r = records.find(x => x.id === recId);
+      if(!r) return;
+      r.propertyNote = null;
+      saveData();
+      document.getElementById('propNoteEditorOverlay')?.remove();
+      render();
+    }
+  });
 }
 
 function showManualEntry(recId){
@@ -3090,10 +3097,17 @@ function saveEditNote(recId, noteId){
 function deleteNote(recId, noteId){
   const r = records.find(x => x.id===recId);
   if(!r) return;
-  if(!confirm('Delete this note?')) return;
-  r.notes = r.notes.filter(n => n.id !== noteId);
-  saveData();
-  render();
+  showAppConfirm('Delete this note?', {
+    title: 'Delete Note',
+    icon: '🗑️',
+    confirmText: 'Delete',
+    confirmClass: 'btn-danger',
+    onConfirm: function(){
+      r.notes = r.notes.filter(n => n.id !== noteId);
+      saveData();
+      render();
+    }
+  });
 }
 
 function openNoteImagePopup(recId, noteId, imgIdx){
@@ -3374,7 +3388,16 @@ function closeAddModal(force){
     const fields = ['add_property','add_city','add_state','add_zip','add_unit_num','add_name','add_phone','add_email','add_link','add_link2','add_note','add_followup'];
     const hasData = fields.some(id => { const el = document.getElementById(id); return el && el.value && el.value.trim(); });
     if(hasData){
-      if(!confirm('You have unsaved data. Discard changes?')) return;
+      showAppConfirm('You have unsaved data. Discard changes?', {
+        title: 'Unsaved Changes',
+        icon: '⚠️',
+        confirmText: 'Discard',
+        confirmClass: 'btn-danger',
+        onConfirm: function(){
+          document.getElementById('detailModal').classList.remove('open');
+        }
+      });
+      return;
     }
   }
   document.getElementById('detailModal').classList.remove('open');
@@ -3427,8 +3450,8 @@ function handleAutoImportClick(){
 }
 async function startAutoImport(){
   const url = document.getElementById('add_link')?.value?.trim();
-  if(!url){ alert('Please enter a listing URL first'); return }
-  if(!extensionReady){ if(EXTENSION_URL.startsWith('http')){ window.open(EXTENSION_URL,'_blank') } else { alert('RentingRadar Importer extension is not detected. Please install it from the Chrome Web Store.') }; return }
+  if(!url){ showAppAlert('Please enter a listing URL first', {title: 'Validation', icon: '⚠️'}); return }
+  if(!extensionReady){ if(EXTENSION_URL.startsWith('http')){ window.open(EXTENSION_URL,'_blank') } else { showAppAlert('RentingRadar Importer extension is not detected. Please install it from the Chrome Web Store.', {title: 'Extension Required', icon: '🔌'}) }; return }
   const plat = detectPlatform(url);
   const body = document.getElementById('addModalBody');
   body.innerHTML = `<div style="text-align:center;padding:40px 20px">
@@ -3632,7 +3655,7 @@ function showManualAddForm(){
 
 function saveNewRecord(){
   let street = document.getElementById('add_property').value.trim();
-  if(!street){ alert('Property address is required'); return }
+  if(!street){ showAppAlert('Property address is required', {title: 'Validation', icon: '⚠️'}); return }
   const unitType = document.getElementById('add_unit_type')?.value || '';
   const unitNum = document.getElementById('add_unit_num')?.value?.trim() || '';
   const city = document.getElementById('add_city')?.value?.trim() || '';
@@ -3876,7 +3899,7 @@ function buildThemePickerHtml(canChange, ctx){
     <div class="tp-section">
       <div class="tp-label">Mode</div>
       <div class="tp-mode-toggle">
-        <button class="${!isDark?'active':''}" onclick="event.stopPropagation();${canChange?'isDark=false;applyTheme();'+refreshFn:"alert('Upgrade to Basic to unlock themes')"}" ${!canChange && isDark?'style="opacity:.5"':''}>
+        <button class="${!isDark?'active':''}" onclick="event.stopPropagation();${canChange?'isDark=false;applyTheme();'+refreshFn:"showAppAlert('Upgrade to Basic to unlock themes', {title: 'Feature Locked', icon: '🔒'})"}" ${!canChange && isDark?'style="opacity:.5"':''}>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/></svg> Light
         </button>
         <button class="${isDark?'active':''}" onclick="event.stopPropagation();${canChange?'isDark=true;applyTheme();'+refreshFn:"switchView('pricing');"+closeFn}" ${!canChange?'style="opacity:.5"':''}>
@@ -4119,19 +4142,91 @@ const TIERS = {
 };
 
 function checkPropertyLimit(){
-  const limit = TIERS[currentTier]?.maxProperties || 50;
+  const limit = TIERS[currentTier]?.maxProperties || 15;
   if(records.length >= limit){
-    alert("You've reached the "+TIERS[currentTier].name+" plan limit of "+(limit===Infinity?"unlimited":limit)+" properties. Upgrade your plan to add more.");
-    switchView('pricing');
+    showPropertyLimitModal(limit);
     return false;
   }
   return true;
 }
 
+function showPropertyLimitModal(limit){
+  const existing = document.getElementById('propertyLimitOverlay');
+  if(existing) existing.remove();
+  const tierName = TIERS[currentTier]?.name || 'current';
+  const nextTier = currentTier === 'free' ? 'basic' : 'pro';
+  const nextName = TIERS[nextTier]?.name || 'next';
+  const overlay = document.createElement('div');
+  overlay.className = 'multi-editor-overlay';
+  overlay.id = 'propertyLimitOverlay';
+  overlay.innerHTML = `<div class="multi-editor" style="max-width:440px">
+    <div class="multi-editor-header">
+      <h3>Property Limit Reached</h3>
+      <button class="modal-close" onclick="document.getElementById('propertyLimitOverlay').remove()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+    </div>
+    <div class="multi-editor-body" style="text-align:center;padding:24px 20px">
+      <div style="font-size:2.2rem;margin-bottom:12px">📦</div>
+      <div style="font-size:1rem;font-weight:700;margin-bottom:6px">You've reached the ${limit}-property limit</div>
+      <div style="font-size:.85rem;color:var(--text2);margin-bottom:20px;max-width:340px;margin-left:auto;margin-right:auto">Your ${tierName} plan supports up to ${limit} properties.${currentTier !== 'pro' ? ' Upgrade to '+nextName+' to add more.' : ''}</div>
+      <div style="display:flex;gap:10px;justify-content:center">
+        <button class="btn btn-secondary" onclick="document.getElementById('propertyLimitOverlay').remove()">OK</button>
+        ${currentTier !== 'pro' ? '<button class="btn btn-primary" onclick="document.getElementById(\'propertyLimitOverlay\').remove();switchView(\'pricing\')">Upgrade Plan</button>' : ''}
+      </div>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+}
+
+function showAppAlert(message, opts = {}){
+  const existing = document.getElementById('appAlertOverlay');
+  if(existing) existing.remove();
+  const { title = 'Alert', icon = 'ℹ️', onOk = () => {} } = opts;
+  const overlay = document.createElement('div');
+  overlay.className = 'multi-editor-overlay';
+  overlay.id = 'appAlertOverlay';
+  overlay.innerHTML = `<div class="multi-editor" style="max-width:440px">
+    <div class="multi-editor-header">
+      <h3>${title}</h3>
+      <button class="modal-close" onclick="document.getElementById('appAlertOverlay').remove()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+    </div>
+    <div class="multi-editor-body" style="text-align:center;padding:24px 20px">
+      <div style="font-size:2.2rem;margin-bottom:12px">${icon}</div>
+      <div style="font-size:.95rem;color:var(--text);margin-bottom:20px;max-width:380px;margin-left:auto;margin-right:auto;line-height:1.5">${message}</div>
+      <div style="display:flex;gap:10px;justify-content:center">
+        <button class="btn btn-primary" onclick="document.getElementById('appAlertOverlay').remove();(${onOk.toString()})()">OK</button>
+      </div>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+}
+
+function showAppConfirm(message, opts = {}){
+  const existing = document.getElementById('appConfirmOverlay');
+  if(existing) existing.remove();
+  const { title = 'Confirm', icon = '⚠️', confirmText = 'Confirm', cancelText = 'Cancel', confirmClass = 'btn-primary', onConfirm = () => {}, onCancel = () => {} } = opts;
+  const overlay = document.createElement('div');
+  overlay.className = 'multi-editor-overlay';
+  overlay.id = 'appConfirmOverlay';
+  overlay.innerHTML = `<div class="multi-editor" style="max-width:440px">
+    <div class="multi-editor-header">
+      <h3>${title}</h3>
+      <button class="modal-close" onclick="document.getElementById('appConfirmOverlay').remove();(${onCancel.toString()})()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+    </div>
+    <div class="multi-editor-body" style="text-align:center;padding:24px 20px">
+      <div style="font-size:2.2rem;margin-bottom:12px">${icon}</div>
+      <div style="font-size:.95rem;color:var(--text);margin-bottom:20px;max-width:380px;margin-left:auto;margin-right:auto;line-height:1.5">${message}</div>
+      <div style="display:flex;gap:10px;justify-content:center">
+        <button class="btn btn-secondary" onclick="document.getElementById('appConfirmOverlay').remove();(${onCancel.toString()})();">${cancelText}</button>
+        <button class="btn ${confirmClass}" onclick="document.getElementById('appConfirmOverlay').remove();(${onConfirm.toString()})();">${confirmText}</button>
+      </div>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+}
+
 function checkCsvAccess(){
   if(!requireTier('basic','CSV Import & Export')){
-    alert('CSV import & export is available on the Basic plan and above.');
-    switchView('pricing');
+    showAppAlert('CSV import & export is available on the Basic plan and above.', {title: 'Feature Locked', icon: '🔒', onOk: () => switchView('pricing')});
     return false;
   }
   return true;
@@ -4258,7 +4353,7 @@ function renderPricing(){
 
     ${currentTier !== 'free' ? `
     <div style="text-align:center;margin-top:24px">
-      <button class="btn btn-secondary btn-sm" style="color:var(--text3)" onclick="if(confirm('Downgrade to Free? You will lose access to paid features.')){setTier('free')}">Downgrade to Free</button>
+      <button class="btn btn-secondary btn-sm" style="color:var(--text3)" onclick="showAppConfirm('You will lose access to paid features.', {title: 'Downgrade to Free?', icon: '⚠️', confirmText: 'Downgrade', confirmClass: 'btn-danger', onConfirm: () => setTier('free')})">Downgrade to Free</button>
     </div>` : ''}
 
     ${currentTier === 'pro' ? renderExtensionSetup() : ''}
@@ -4313,9 +4408,12 @@ function handleUpgrade(tier){
   if(link && link.startsWith('http')){
     window.open(link, '_blank');
     setTimeout(() => {
-      if(confirm('Did you complete the payment? Click OK to activate your '+TIERS[tier].name+' plan.')){
-        setTier(tier);
-      }
+      showAppConfirm('Click OK to activate your '+TIERS[tier].name+' plan.', {
+        title: 'Payment Complete?',
+        icon: '💳',
+        confirmText: 'Activate Plan',
+        onConfirm: () => setTier(tier)
+      });
     }, 2000);
   } else {
     // Stripe not configured yet — activate directly for testing
@@ -4449,14 +4547,14 @@ function handleGoogleLogin(){
               setUser(result.user);
             }).catch(function(err){
               console.error('Firebase credential error:', err.code, err.message);
-              alert('Sign-in failed: ' + err.message);
+              showAppAlert('Sign-in failed: ' + err.message, {title: 'Sign-in Error', icon: '❌'});
             });
           }
         },
         error_callback: function(err){
           console.error('Google sign-in error:', err);
           if(err.type !== 'popup_closed'){
-            alert('Google sign-in error: ' + (err.message || err.type || 'Unknown error'));
+            showAppAlert('Google sign-in error: ' + (err.message || err.type || 'Unknown error'), {title: 'Sign-in Error', icon: '❌'});
           }
         }
       });
@@ -4481,7 +4579,7 @@ function handleGoogleLoginLegacy(){
     if(err.code === 'auth/popup-blocked'){
       firebase.auth().signInWithRedirect(provider);
     } else {
-      alert('Login failed (' + err.code + '): ' + err.message);
+      showAppAlert('Login failed (' + err.code + '): ' + err.message, {title: 'Login Error', icon: '❌'});
     }
   });
 }
@@ -4632,7 +4730,7 @@ function handleCsvFile(file){
 
 function parseCsv(text){
   const lines = text.split(/\r?\n/).filter(l => l.trim());
-  if(lines.length < 2){ alert('CSV must have a header row and at least one data row.'); return }
+  if(lines.length < 2){ showAppAlert('CSV must have a header row and at least one data row.', {title: 'CSV Error', icon: '❌'}); return }
 
   // Parse headers
   csvHeaders = parseCSVLine(lines[0]);
@@ -4716,7 +4814,7 @@ function executeCsvImport(){
   }
 
   if(maps.property < 0){
-    alert('Property Address is required. Please map it to a CSV column.');
+    showAppAlert('Property Address is required. Please map it to a CSV column.', {title: 'CSV Error', icon: '❌'});
     return;
   }
 
@@ -4731,54 +4829,60 @@ function executeCsvImport(){
   const remaining = limit === Infinity ? Infinity : limit - records.length;
   const toImport = Math.min(csvImportData.length, remaining === Infinity ? csvImportData.length : remaining);
   if(remaining <= 0){
-    alert("You've reached the "+TIERS[currentTier].name+" plan limit of "+limit+" properties. Upgrade to add more.");
-    switchView('pricing'); return;
+    showAppAlert("You've reached the "+TIERS[currentTier].name+" plan limit of "+limit+" properties. Upgrade to add more.", {title: 'Property Limit Reached', icon: '📦', onOk: () => switchView('pricing')});
+    return;
   }
   const limitNote = remaining !== Infinity && csvImportData.length > remaining ? `\n\nNote: Your ${TIERS[currentTier].name} plan allows ${limit} properties. Only the first ${toImport} of ${csvImportData.length} rows will be imported.` : '';
 
-  if(!confirm(`Import ${toImport} records?${limitNote}\n\nFirst few: ${preview}...`)) return;
+  const confirmMsg = `Import ${toImport} records?${limitNote}\n\nFirst few: ${preview}...`.replace(/\n\n/g, ' ');
+  showAppConfirm(confirmMsg, {
+    title: 'Confirm Import',
+    icon: '📁',
+    confirmText: 'Import',
+    onConfirm: function(){
+      let imported = 0;
+      for(const row of csvImportData){
+        // Enforce limit during import
+        const curLimit = TIERS[currentTier]?.maxProperties || 50;
+        if(curLimit !== Infinity && records.length >= curLimit) break;
+        const prop = maps.property >= 0 ? (row[maps.property]||'').trim() : '';
+        if(!prop) continue;
 
-  let imported = 0;
-  for(const row of csvImportData){
-    // Enforce limit during import
-    const curLimit = TIERS[currentTier]?.maxProperties || 50;
-    if(curLimit !== Infinity && records.length >= curLimit) break;
-    const prop = maps.property >= 0 ? (row[maps.property]||'').trim() : '';
-    if(!prop) continue;
+        const r = {
+          id: uid(),
+          property: prop,
+          name: maps.name >= 0 ? (row[maps.name]||'').trim() : '',
+          phone: maps.phone >= 0 ? (row[maps.phone]||'').trim() : '',
+          email: maps.email >= 0 ? (row[maps.email]||'').trim() : '',
+          status: maps.status >= 0 ? (row[maps.status]||'').trim() || 'New' : 'New',
+          link: maps.link >= 0 ? (row[maps.link]||'').trim() : '',
+          note: maps.note >= 0 ? (row[maps.note]||'').trim() : '',
+          date: maps.date >= 0 ? (row[maps.date]||'').trim() : new Date().toISOString().split('T')[0],
+          followUpDate: null,
+          notes: [],
+          propertyDetails: {},
+          propertyNotes: [],
+          createdAt: new Date().toISOString()
+        };
 
-    const r = {
-      id: uid(),
-      property: prop,
-      name: maps.name >= 0 ? (row[maps.name]||'').trim() : '',
-      phone: maps.phone >= 0 ? (row[maps.phone]||'').trim() : '',
-      email: maps.email >= 0 ? (row[maps.email]||'').trim() : '',
-      status: maps.status >= 0 ? (row[maps.status]||'').trim() || 'New' : 'New',
-      link: maps.link >= 0 ? (row[maps.link]||'').trim() : '',
-      note: maps.note >= 0 ? (row[maps.note]||'').trim() : '',
-      date: maps.date >= 0 ? (row[maps.date]||'').trim() : new Date().toISOString().split('T')[0],
-      followUpDate: null,
-      notes: [],
-      propertyDetails: {},
-      propertyNotes: [],
-      createdAt: new Date().toISOString()
-    };
+        // Validate status — default to New if unrecognized
+        if(r.status && !STATUSES.includes(r.status)){
+          // Try to fuzzy match
+          const match = STATUSES.find(s => s.toLowerCase() === r.status.toLowerCase());
+          r.status = match || 'New';
+        }
 
-    // Validate status — default to New if unrecognized
-    if(r.status && !STATUSES.includes(r.status)){
-      // Try to fuzzy match
-      const match = STATUSES.find(s => s.toLowerCase() === r.status.toLowerCase());
-      r.status = match || 'New';
+        if(r.note) r.notes.push({ id:uid(), text:r.note, date:r.date, type:'import' });
+        records.push(r);
+        imported++;
+      }
+
+      saveData();
+      document.getElementById('detailModal').classList.remove('open');
+      render();
+      showAppAlert(`Successfully imported ${imported} properties!`, {title: 'Import Complete', icon: '✅'});
     }
-
-    if(r.note) r.notes.push({ id:uid(), text:r.note, date:r.date, type:'import' });
-    records.push(r);
-    imported++;
-  }
-
-  saveData();
-  document.getElementById('detailModal').classList.remove('open');
-  render();
-  alert(`Successfully imported ${imported} properties!`);
+  });
 }
 
 
@@ -5084,7 +5188,7 @@ function renderExpensesTab(r){
   // Right panel: Monthly Operating Expenses
   h += '<div class="calc-panel">';
   h += '<div class="calc-section"><div class="calc-section-header">Monthly Operating Expenses';
-  h += '<button class="calc-ai-btn '+(isProUser?'':'locked')+'" onclick="'+(isProUser?'estimateExpensesAI(\''+r.id+'\')':'alert(\'AI expense estimation requires Pro plan.\')')+'" title="'+(isProUser?'Estimate for this market':'Pro plan required')+'">✨ AI Estimate'+(isProUser?'':' 🔒')+'</button>';
+  h += '<button class="calc-ai-btn '+(isProUser?'':'locked')+'" onclick="'+(isProUser?'estimateExpensesAI(\''+r.id+'\')':'showAppAlert(\'AI expense estimation requires Pro plan.\', {title: \'Feature Locked\', icon: \'🔒\'})')+'" title="'+(isProUser?'Estimate for this market':'Pro plan required')+'">✨ AI Estimate'+(isProUser?'':' 🔒')+'</button>';
   h += '</div><div class="calc-section-body">';
   h += cRow('Insurance', cInput('insurance', c.insurance));
   h += cRow('STR Fee', cInput('strFee', c.strFee), {hint:'to landlord, if any'});
@@ -5444,8 +5548,68 @@ function calcEditCell(el, skipBlurSave){
 
   // Cleaning confirmation
   if(isCleaning){
-    const ok = confirm('The cleaning fee is auto-set based on bedroom count. Are you sure you want to override it?\n\nIf you change bedrooms in Property Details, this will reset to the default.');
-    if(!ok) return;
+    showAppConfirm('The cleaning fee is auto-set based on bedroom count. If you change bedrooms in Property Details, this will reset to the default.', {
+      title: 'Override Auto-set Cleaning Fee?',
+      icon: '⚠️',
+      confirmText: 'Override',
+      onConfirm: () => {
+        // Lock width to prevent layout shift
+        const parentVal = el.closest('.calc-val');
+        if(parentVal) parentVal.style.width = parentVal.offsetWidth + 'px';
+
+        el.innerHTML = '';
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.className = 'calc-inline-input';
+        input.value = raw;
+        input.step = isPct ? '1' : 'any';
+        if(isPct){ input.min = '0'; input.max = '100'; }
+        el.appendChild(input);
+        input.focus();
+        input.select();
+
+        const editCtx = { input, field, _skipRerender: false };
+        _activeCalcEdit = editCtx;
+
+        input.addEventListener('blur', () => {
+          if(_activeCalcEdit === editCtx){
+            _saveActiveCalcEdit();
+            _rerenderCalcTab();
+          }
+        });
+
+        input.addEventListener('keydown', (e) => {
+          if(e.key === 'Enter'){
+            e.preventDefault();
+            _saveActiveCalcEdit();
+            _rerenderCalcTab();
+            return;
+          }
+          if(e.key === 'Escape'){
+            _activeCalcEdit = null;
+            _rerenderCalcTab();
+            return;
+          }
+          if(e.key === 'Tab'){
+            e.preventDefault();
+            _saveActiveCalcEdit();
+            const allEditables = Array.from(document.querySelectorAll('.calc-editable'));
+            const currentIdx = allEditables.indexOf(el);
+            const nextIdx = e.shiftKey ? currentIdx - 1 : currentIdx + 1;
+            if(nextIdx >= 0 && nextIdx < allEditables.length){
+              _rerenderCalcTab();
+              requestAnimationFrame(() => {
+                const newEditables = Array.from(document.querySelectorAll('.calc-editable'));
+                if(newEditables[nextIdx]) calcEditCell(newEditables[nextIdx]);
+              });
+            } else {
+              _rerenderCalcTab();
+            }
+          }
+        });
+      }
+    });
+    return;
   }
 
   // Lock width to prevent layout shift
@@ -5508,7 +5672,7 @@ function estimateExpensesAI(recId){
   const r = records.find(x => x.id === recId);
   if(!r) return;
   const addr = r.propertyDetails?.address || r.propertyDetails?.street || r.name || '';
-  alert('AI estimation coming soon! Will analyze market data for ' + (addr || 'this area') + '.');
+  showAppAlert('AI estimation coming soon! Will analyze market data for ' + (addr || 'this area') + '.', {title: 'Coming Soon', icon: '🔮'});
 }
 
 /* ===== ANALYSIS TAB ===== */
@@ -5545,7 +5709,7 @@ function renderAnalysisTab(r){
   h += '<div class="an-req-bar" style="border:none;border-radius:0;margin:0">';
   h += '<div class="an-req-item"><div class="req-label">Rent</div><div class="req-val">'+fmtMoney(v.monthlyRent*12)+'<span class="req-period">/yr</span></div><div class="req-annual">'+fmtMoney(v.monthlyRent)+'/mo</div></div>';
   // Expenses — not editable, total from Pro Forma (includes utilities + cleaning)
-  h += '<div class="an-req-item" onclick="alert(\'Expenses are calculated from your Monthly Operating Expenses in the Pro Forma tab. Edit individual amounts there.\')" style="cursor:help" title="Edit in Pro Forma → Monthly Operating Expenses"><div class="req-label">Expenses</div><div class="req-val">'+fmtMoney(Math.round(expenses*12))+'<span class="req-period">/yr</span></div><div class="req-annual">'+fmtMoney(Math.round(expenses))+'/mo</div></div>';
+  h += '<div class="an-req-item" onclick="showAppAlert(\'Expenses are calculated from your Monthly Operating Expenses in the Pro Forma tab. Edit individual amounts there.\', {title: \'About Expenses\', icon: \'ℹ️\'})" style="cursor:help" title="Edit in Pro Forma → Monthly Operating Expenses"><div class="req-label">Expenses</div><div class="req-val">'+fmtMoney(Math.round(expenses*12))+'<span class="req-period">/yr</span></div><div class="req-annual">'+fmtMoney(Math.round(expenses))+'/mo</div></div>';
   // Profit Requirement — editable with warning under $1000
   h += '<div class="an-req-item an-req-editable" onclick="editAnalysisProfitReq(\''+r.id+'\')"><div class="req-label">Profit Req <span class="req-edit-hint">✎</span></div><div class="req-val">'+fmtMoney(profitReq*12)+'<span class="req-period">/yr</span></div><div class="req-annual">'+fmtMoney(profitReq)+'/mo</div></div>';
   const monthlyReqRev = v.monthlyRent + expenses + profitReq;
@@ -5689,9 +5853,9 @@ function addComp(recId){
   if(!r) return;
   const input = document.getElementById('compLinkInput');
   const link = input?.value?.trim();
-  if(!link){ alert('Please paste an Airbnb link'); return }
+  if(!link){ showAppAlert('Please paste an Airbnb link', {title: 'Validation', icon: '⚠️'}); return }
   const comps = getComps(r);
-  if(comps.length >= 20){ alert('Maximum 20 comparables reached'); return }
+  if(comps.length >= 20){ showAppAlert('Maximum 20 comparables reached', {title: 'Limit Reached', icon: '📊'}); return }
   const shortLink = link.replace(/\?.*$/,'').replace(/https?:\/\/(www\.)?airbnb\.com\/rooms\//,'').substring(0,18)+'...';
   comps.push({
     link: link, linkShort: shortLink,
@@ -5704,8 +5868,13 @@ function addComp(recId){
 }
 
 function confirmRemoveComp(recId, idx){
-  if(!confirm('Are you sure you want to remove this comparable?')) return;
-  removeComp(recId, idx);
+  showAppConfirm('Are you sure you want to remove this comparable?', {
+    title: 'Remove Comparable',
+    icon: '🗑️',
+    confirmText: 'Remove',
+    confirmClass: 'btn-danger',
+    onConfirm: () => removeComp(recId, idx)
+  });
 }
 
 function removeComp(recId, idx){
@@ -5974,12 +6143,55 @@ function editAnalysisCleaning(recId, defaultVal){
   if(!r) return;
   const an = getAnalysis(r);
   const current = (an.cleaningOverride !== undefined && an.cleaningOverride !== null) ? an.cleaningOverride : defaultVal;
-  if(!confirm('The cleaning fee is auto-set based on bedroom count. Are you sure you want to edit it?')) return;
-  const val = prompt('Monthly cleaning fee ($):', current);
-  if(val === null) return;
-  an.cleaningOverride = parseFloat(val) || 0;
-  saveData();
-  render();
+  showAppConfirm('The cleaning fee is auto-set based on bedroom count. Are you sure you want to edit it?', {
+    title: 'Edit Cleaning Fee',
+    icon: '⚠️',
+    confirmText: 'Edit',
+    onConfirm: () => {
+      showCleaningFeeInputModal(recId, current);
+    }
+  });
+}
+
+function showCleaningFeeInputModal(recId, currentVal){
+  const r = records.find(x => x.id === recId);
+  if(!r) return;
+  const an = getAnalysis(r);
+
+  const existing = document.getElementById('cleaningFeeInputOverlay');
+  if(existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.className = 'multi-editor-overlay';
+  overlay.id = 'cleaningFeeInputOverlay';
+  overlay.innerHTML = `<div class="multi-editor" style="max-width:440px">
+    <div class="multi-editor-header">
+      <h3>Monthly Cleaning Fee</h3>
+      <button class="modal-close" onclick="document.getElementById('cleaningFeeInputOverlay').remove()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+    </div>
+    <div class="multi-editor-body" style="padding:24px 20px">
+      <input type="number" id="cleaningFeeInput" placeholder="Enter amount" value="${currentVal}" style="font-size:1rem;padding:10px 12px;margin-bottom:16px">
+      <div style="display:flex;gap:10px;justify-content:flex-end">
+        <button class="btn btn-secondary" onclick="document.getElementById('cleaningFeeInputOverlay').remove()">Cancel</button>
+        <button class="btn btn-primary" onclick="(function(){
+          const val = document.getElementById('cleaningFeeInput')?.value;
+          if(val === null || val === '') return;
+          const r = records.find(x => x.id === '${recId}');
+          if(r){
+            const an = r.details?.analysis || {};
+            an.cleaningOverride = parseFloat(val) || 0;
+            if(!r.details) r.details = {};
+            r.details.analysis = an;
+            saveData();
+            render();
+          }
+          document.getElementById('cleaningFeeInputOverlay').remove();
+        })()">Save</button>
+      </div>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+  document.getElementById('cleaningFeeInput').focus();
 }
 
 function editAnalysisProfitReq(recId){
@@ -5987,14 +6199,58 @@ function editAnalysisProfitReq(recId){
   if(!r) return;
   const an = getAnalysis(r);
   const current = parseFloat(an.profitRequirement) || 1000;
-  const val = prompt('Monthly profit requirement ($):', current);
-  if(val === null) return;
-  const num = parseFloat(val) || 0;
-  if(num < 1000){
-    if(!confirm('⚠️ A profit requirement under $1,000/mo can be risky — unexpected expenses (repairs, vacancies, seasonal dips) could put you in the red. Are you sure?')) return;
-  }
+  showProfitReqInputModal(recId, current);
+}
+
+function showProfitReqInputModal(recId, currentVal){
+  const r = records.find(x => x.id === recId);
+  if(!r) return;
+
+  const existing = document.getElementById('profitReqInputOverlay');
+  if(existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.className = 'multi-editor-overlay';
+  overlay.id = 'profitReqInputOverlay';
+  overlay.innerHTML = `<div class="multi-editor" style="max-width:440px">
+    <div class="multi-editor-header">
+      <h3>Monthly Profit Requirement</h3>
+      <button class="modal-close" onclick="document.getElementById('profitReqInputOverlay').remove()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+    </div>
+    <div class="multi-editor-body" style="padding:24px 20px">
+      <input type="number" id="profitReqInput" placeholder="Enter amount" value="${currentVal}" style="font-size:1rem;padding:10px 12px;margin-bottom:16px">
+      <div style="display:flex;gap:10px;justify-content:flex-end">
+        <button class="btn btn-secondary" onclick="document.getElementById('profitReqInputOverlay').remove()">Cancel</button>
+        <button class="btn btn-primary" onclick="(function(){
+          const val = document.getElementById('profitReqInput')?.value;
+          const num = parseFloat(val) || 0;
+          if(num < 1000){
+            showAppConfirm('A profit requirement under \$1,000/mo can be risky — unexpected expenses (repairs, vacancies, seasonal dips) could put you in the red.', {
+              title: 'Confirm Low Profit Requirement',
+              icon: '⚠️',
+              confirmText: 'Confirm',
+              confirmClass: 'btn-danger',
+              onConfirm: () => saveProfitReq('${recId}', num),
+              onCancel: () => showProfitReqInputModal('${recId}', ${currentVal})
+            });
+          } else {
+            saveProfitReq('${recId}', num);
+          }
+        })()">Save</button>
+      </div>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+  document.getElementById('profitReqInput').focus();
+}
+
+function saveProfitReq(recId, num){
+  const r = records.find(x => x.id === recId);
+  if(!r) return;
+  const an = getAnalysis(r);
   an.profitRequirement = num;
   saveData();
+  document.getElementById('profitReqInputOverlay')?.remove();
   render();
 }
 
@@ -7782,8 +8038,8 @@ async function submitHelpRequest(){
   const category = document.getElementById('help_category')?.value || 'feature';
   const subject = document.getElementById('help_subject')?.value?.trim() || '';
   const details = document.getElementById('help_details')?.value?.trim() || '';
-  if(!subject){ alert('Please enter a subject.'); return; }
-  if(!details){ alert('Please provide some details.'); return; }
+  if(!subject){ showAppAlert('Please enter a subject.', {title: 'Validation', icon: '⚠️'}); return; }
+  if(!details){ showAppAlert('Please provide some details.', {title: 'Validation', icon: '⚠️'}); return; }
 
   const submitBtn = document.querySelector('#helpFeature .btn-primary');
   const msg = document.getElementById('helpSubmitMsg');
@@ -7860,10 +8116,59 @@ function saveEditProfile(){
 }
 
 function confirmResetAllData(){
-  if(!confirm('Are you sure you want to delete ALL property data, notes, and settings? This cannot be undone.')) return;
-  if(!confirm('This will permanently erase everything. Type OK in the next prompt to confirm.')) return;
-  const typed = prompt('Type "RESET" to confirm:');
-  if(typed !== 'RESET'){ alert('Reset cancelled.'); return }
+  showAppConfirm('Are you sure you want to delete ALL property data, notes, and settings? This cannot be undone.', {
+    title: 'Delete All Data?',
+    icon: '⚠️',
+    confirmText: 'Delete',
+    confirmClass: 'btn-danger',
+    onConfirm: () => {
+      showAppConfirm('This will permanently erase everything. You will need to type "RESET" to confirm.', {
+        title: 'Final Confirmation',
+        icon: '⚠️',
+        confirmText: 'Continue',
+        confirmClass: 'btn-danger',
+        onConfirm: () => {
+          showResetConfirmationModal();
+        }
+      });
+    }
+  });
+}
+
+function showResetConfirmationModal(){
+  const existing = document.getElementById('resetConfirmOverlay');
+  if(existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.className = 'multi-editor-overlay';
+  overlay.id = 'resetConfirmOverlay';
+  overlay.innerHTML = `<div class="multi-editor" style="max-width:440px">
+    <div class="multi-editor-header">
+      <h3>Type to Confirm</h3>
+      <button class="modal-close" onclick="document.getElementById('resetConfirmOverlay').remove()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+    </div>
+    <div class="multi-editor-body" style="padding:24px 20px">
+      <div style="font-size:.9rem;color:var(--text2);margin-bottom:12px">Type <strong style="color:var(--text)">"RESET"</strong> to permanently delete all data:</div>
+      <input type="text" id="resetConfirmInput" placeholder="Type RESET" style="font-size:1rem;padding:10px 12px;margin-bottom:16px">
+      <div style="display:flex;gap:10px;justify-content:flex-end">
+        <button class="btn btn-secondary" onclick="document.getElementById('resetConfirmOverlay').remove()">Cancel</button>
+        <button class="btn btn-danger" onclick="(function(){
+          const typed = document.getElementById('resetConfirmInput')?.value || '';
+          if(typed === 'RESET'){
+            performReset();
+          } else {
+            showAppAlert('Reset cancelled. Text did not match.', {title: 'Cancelled', icon: 'ℹ️'});
+            document.getElementById('resetConfirmOverlay').remove();
+          }
+        })()">Delete All</button>
+      </div>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+  document.getElementById('resetConfirmInput').focus();
+}
+
+function performReset(){
   // Clear Firestore data
   if(_currentUid && typeof db !== 'undefined'){
     db.collection('users').doc(_currentUid).collection('properties').doc('records').delete().catch(e => console.error('Failed to delete Firestore data:', e));
