@@ -5791,17 +5791,17 @@ function renderCalculatorTab(r){
     { key:'potential', label:'Potential', icon:'🔥', color:'#3b82f6', desc:'$500–$999/mo net', hint:'Adjusted Monthly Net is $500–$999/mo. Solid returns with reasonable margin of safety.' },
     { key:'slam-dunk', label:'Slam-Dunk', icon:'🏆', color:'#10b981', desc:'$1,000+/mo net', hint:'Adjusted Monthly Net is $1,000+/mo. Strong returns even after competitive position discount.' }
   ];
-  dealHtml += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px' + (insufficientComps ? ';opacity:.5' : '') + '">';
+  dealHtml += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px' + (insufficientComps ? ';opacity:.5' : '') + '">';
   temps.forEach(t => {
     const active = dealTemp === t.key;
     const bg = active ? t.color : 'var(--surface)';
     const border = active ? t.color : 'var(--border)';
     const textColor = active ? '#fff' : 'var(--text3)';
     const opacity = active ? '1' : '0.5';
-    dealHtml += '<div onclick="showTip(\''+t.label+'\',\''+t.hint.replace(/'/g,'\\x27')+'\')" style="background:'+bg+';border:2px solid '+border+';border-radius:var(--radius);padding:10px 8px;text-align:center;opacity:'+opacity+';transition:all .2s;cursor:pointer">';
-    dealHtml += '<div style="font-size:1.3rem;margin-bottom:4px">'+t.icon+'</div>';
-    dealHtml += '<div style="font-size:.82rem;font-weight:700;color:'+textColor+'">'+t.label+'</div>';
-    dealHtml += '<div style="font-size:.65rem;color:'+textColor+';opacity:.8;margin-top:2px">'+t.desc+'</div>';
+    dealHtml += '<div onclick="showTip(\''+t.label+'\',\''+t.hint.replace(/'/g,'\\x27')+'\')" style="background:'+bg+';border:2px solid '+border+';border-radius:var(--radius);padding:14px 8px 12px;text-align:center;opacity:'+opacity+';transition:all .2s;cursor:pointer">';
+    dealHtml += '<div style="font-size:1.5rem;margin-bottom:6px">'+t.icon+'</div>';
+    dealHtml += '<div style="font-size:.88rem;font-weight:700;color:'+textColor+'">'+t.label+'</div>';
+    dealHtml += '<div style="font-size:.68rem;color:'+textColor+';opacity:.8;margin-top:3px">'+t.desc+'</div>';
     dealHtml += '</div>';
   });
   dealHtml += '</div>';
@@ -5826,8 +5826,8 @@ function renderCalculatorTab(r){
 
     dealHtml += '<div style="margin-bottom:6px">';
     // Gauge track — 4 colored zone segments (horizontal orientation)
-    dealHtml += '<div style="position:relative;width:100%;height:32px;margin-bottom:2px">';
-    dealHtml += '<div style="position:absolute;top:10px;left:0;width:100%;height:12px;border-radius:6px;overflow:hidden;display:flex">';
+    dealHtml += '<div style="position:relative;width:100%;height:40px;margin-bottom:2px">';
+    dealHtml += '<div style="position:absolute;top:10px;left:0;width:100%;height:18px;border-radius:9px;overflow:hidden;display:flex">';
     let prevPct = 0;
     zoneBreaks.forEach(z => {
       const w_zone = z.pct - prevPct;
@@ -5837,7 +5837,7 @@ function renderCalculatorTab(r){
     dealHtml += '</div>';
     // Active fill — clips a full-width zone bar at the marker position
     const clipRight = (100 - parseFloat(gaugePct)).toFixed(1);
-    dealHtml += '<div style="position:absolute;top:10px;left:0;width:100%;height:12px;border-radius:6px;overflow:hidden;display:flex;clip-path:inset(0 '+clipRight+'% 0 0)">';
+    dealHtml += '<div style="position:absolute;top:10px;left:0;width:100%;height:18px;border-radius:9px;overflow:hidden;display:flex;clip-path:inset(0 '+clipRight+'% 0 0)">';
     let prevPct2 = 0;
     zoneBreaks.forEach(z => {
       const w_zone = z.pct - prevPct2;
@@ -5846,7 +5846,7 @@ function renderCalculatorTab(r){
     });
     dealHtml += '</div>';
     // Marker circle — color matches current zone
-    dealHtml += '<div style="position:absolute;top:calc(50% - 13px);left:calc('+gaugePct+'% - 13px);width:26px;height:26px;border-radius:50%;background:'+markerColor+';border:3px solid var(--surface);box-shadow:0 2px 8px rgba(0,0,0,.35);transition:left .3s"></div>';
+    dealHtml += '<div style="position:absolute;top:calc(50% - 15px);left:calc('+gaugePct+'% - 15px);width:30px;height:30px;border-radius:50%;background:'+markerColor+';border:3px solid var(--surface);box-shadow:0 2px 8px rgba(0,0,0,.35);transition:left .3s"></div>';
     dealHtml += '</div>';
 
     // Zone boundary labels (horizontal)
@@ -5862,8 +5862,8 @@ function renderCalculatorTab(r){
   } else {
     // Grey placeholder gauge
     dealHtml += '<div style="margin-bottom:6px;opacity:.4">';
-    dealHtml += '<div style="position:relative;width:100%;height:32px;margin-bottom:2px">';
-    dealHtml += '<div style="position:absolute;top:10px;left:0;width:100%;height:12px;border-radius:6px;overflow:hidden;display:flex">';
+    dealHtml += '<div style="position:relative;width:100%;height:40px;margin-bottom:2px">';
+    dealHtml += '<div style="position:absolute;top:10px;left:0;width:100%;height:18px;border-radius:9px;overflow:hidden;display:flex">';
     dealHtml += '<div style="width:100%;height:100%;background:rgba(148,163,184,.15)"></div>';
     dealHtml += '</div>';
     dealHtml += '</div>';
