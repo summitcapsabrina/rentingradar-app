@@ -683,17 +683,20 @@ h1 .hero-edit-input{font-size:1.35rem}
 .calc-val{width:110px;flex-shrink:0;text-align:right;display:flex;align-items:center;justify-content:flex-end;gap:0}
 .pyn-col-headers{display:flex;align-items:flex-end;padding:8px 12px 0;gap:4px}
 .pyn-label-spacer{flex:1;min-width:0}
-.pyn-col-header{width:88px;flex-shrink:0;text-align:center;padding:6px 4px 4px;cursor:pointer;border-radius:6px 6px 0 0;transition:all .15s;position:relative;user-select:none}
+.pyn-col-header{width:108px;flex-shrink:0;text-align:center;padding:6px 4px 4px;cursor:pointer;border-radius:6px 6px 0 0;transition:all .15s;position:relative;user-select:none}
 .pyn-col-header:hover:not(.pyn-col-disabled){background:rgba(148,163,184,.08)}
 .pyn-col-header.pyn-col-active{background:rgba(99,129,250,.06)}
 .pyn-col-header.pyn-col-disabled{opacity:.4;cursor:default}
-.pyn-col-label{font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.3px;color:var(--col-color)}
-.pyn-col-active .pyn-col-label{font-size:.68rem}
+.pyn-col-label{font-size:.74rem;font-weight:700;text-transform:uppercase;letter-spacing:.3px;color:var(--col-color)}
+.pyn-col-active .pyn-col-label{font-size:.78rem}
 .pyn-col-indicator{height:3px;background:var(--col-color);border-radius:3px 3px 0 0;margin:-1px -4px 0;position:absolute;bottom:0;left:4px;right:4px}
 .pyn-body .calc-row{gap:4px}
-.pyn-val{width:88px;text-align:center;justify-content:center;font-size:.76rem;transition:opacity .15s}
-.pyn-val .calc-display{font-size:.76rem}
+.pyn-body .calc-label{font-size:.88rem}
+.pyn-body .total-row .calc-label{font-size:.92rem}
+.pyn-val{width:108px;text-align:center;justify-content:center;font-size:.88rem;transition:opacity .15s}
+.pyn-val .calc-display{font-size:.88rem}
 .pyn-val-active{background:rgba(99,129,250,.04);border-radius:4px}
+.pyn-body .total-row .pyn-val{font-size:.94rem}
 .calc-dollar-sign{font-size:.78rem;color:var(--text3);font-weight:500;margin-right:1px;flex-shrink:0}
 .calc-pct-sign{font-size:.78rem;color:var(--text3);font-weight:500;margin-left:1px;flex-shrink:0}
 .calc-editable{padding:0 6px;border-radius:4px;cursor:pointer;height:28px;line-height:28px;font-size:.82rem;transition:background .15s;display:flex;align-items:center;justify-content:flex-end;overflow:hidden;box-sizing:border-box;width:100%;font-variant-numeric:tabular-nums}
@@ -5083,7 +5086,8 @@ function fmtMoney(n){
 function cRow(label, valHtml, opts={}){
   const cls = opts.total ? ' total-row' : '';
   const hint = opts.hint ? '<span class="calc-label-hint">'+opts.hint+'</span>' : '';
-  return '<div class="calc-row'+cls+'"><div class="calc-label">'+label+hint+'</div>'+valHtml+'</div>';
+  const tip = opts.tip ? ' title="'+opts.tip+'" style="cursor:help"' : '';
+  return '<div class="calc-row'+cls+'"><div class="calc-label"'+tip+'>'+label+hint+'</div>'+valHtml+'</div>';
 }
 function cInput(id, value, opts={}){
   const cls = opts.pct ? ' calc-pct' : '';
@@ -5304,10 +5308,10 @@ function renderCalculatorTab(r){
   const nedHtml = '<span style="color:var(--text3);font-size:.78rem;font-style:italic">Not Enough Data</span>';
   const nedSubHtml = '<span style="color:var(--text3);font-size:.7rem;font-style:italic">Add at least 3 comps in Competitor Analysis</span>';
   h += '<div class="calc-kpi-grid calc-kpi-grid-left">';
-  h += '<div class="calc-kpi"><div class="kpi-label">Net Operating Income'+projTagHtml+'</div><div class="kpi-monthly">'+(insufficientComps ? nedHtml : fmtMoney(Math.round(kpiNOI))+'<span class="kpi-per">/mo</span>')+'</div><div class="kpi-annual">'+(insufficientComps ? nedSubHtml : fmtMoney(Math.round(kpiAnnualNOI))+'/yr')+'</div></div>';
-  h += '<div class="calc-kpi"><div class="kpi-label">Monthly Rent<div class="kpi-proj-tag" style="color:#eab308;border-color:#eab308">Fixed</div></div><div class="kpi-monthly">'+(v.monthlyRent ? fmtMoney(v.monthlyRent) : '<span style="color:var(--text3);font-style:italic">Set in Property Details</span>')+'<span class="kpi-per">/mo</span></div><div class="kpi-annual">'+fmtMoney(v.monthlyRent*12)+'/yr</div></div>';
-  h += '<div class="calc-kpi '+(insufficientComps?'':cfClass)+'"><div class="kpi-label">Cash Flow'+projTagHtml+'</div><div class="kpi-monthly">'+(insufficientComps ? nedHtml : fmtMoney(Math.round(kpiMonthlyCF))+'<span class="kpi-per">/mo</span>')+'</div><div class="kpi-annual">'+(insufficientComps ? nedSubHtml : fmtMoney(Math.round(kpiAnnualCF))+'/yr')+'</div></div>';
-  h += '<div class="calc-kpi '+(insufficientComps?'':cocClass)+'"><div class="kpi-label">Cash on Cash Return'+projTagHtml+'</div><div class="kpi-monthly">'+(insufficientComps ? nedHtml : kpiCoC.toFixed(1)+'%')+'</div><div class="kpi-annual">'+(insufficientComps ? nedSubHtml : fmtMoney(Math.round(v.totalInvested))+' invested')+'</div></div>';
+  h += '<div class="calc-kpi" title="Projected revenue minus all operating expenses (co-host, Airbnb fees, cleaning, utilities, etc.). Does not include rent."><div class="kpi-label">Net Operating Income'+projTagHtml+'</div><div class="kpi-monthly">'+(insufficientComps ? nedHtml : fmtMoney(Math.round(kpiNOI))+'<span class="kpi-per">/mo</span>')+'</div><div class="kpi-annual">'+(insufficientComps ? nedSubHtml : fmtMoney(Math.round(kpiAnnualNOI))+'/yr')+'</div></div>';
+  h += '<div class="calc-kpi" title="Your monthly lease payment for this property — entered in the Expenses tab."><div class="kpi-label">Monthly Rent<div class="kpi-proj-tag" style="color:#eab308;border-color:#eab308">Fixed</div></div><div class="kpi-monthly">'+(v.monthlyRent ? fmtMoney(v.monthlyRent) : '<span style="color:var(--text3);font-style:italic">Set in Property Details</span>')+'<span class="kpi-per">/mo</span></div><div class="kpi-annual">'+fmtMoney(v.monthlyRent*12)+'/yr</div></div>';
+  h += '<div class="calc-kpi '+(insufficientComps?'':cfClass)+'" title="Net Operating Income minus monthly rent. This is your actual take-home profit after all expenses and rent."><div class="kpi-label">Cash Flow'+projTagHtml+'</div><div class="kpi-monthly">'+(insufficientComps ? nedHtml : fmtMoney(Math.round(kpiMonthlyCF))+'<span class="kpi-per">/mo</span>')+'</div><div class="kpi-annual">'+(insufficientComps ? nedSubHtml : fmtMoney(Math.round(kpiAnnualCF))+'/yr')+'</div></div>';
+  h += '<div class="calc-kpi '+(insufficientComps?'':cocClass)+'" title="Annual cash flow divided by total investment (furnishing + setup costs). Measures how quickly your investment pays for itself as a percentage."><div class="kpi-label">Cash on Cash Return'+projTagHtml+'</div><div class="kpi-monthly">'+(insufficientComps ? nedHtml : kpiCoC.toFixed(1)+'%')+'</div><div class="kpi-annual">'+(insufficientComps ? nedSubHtml : fmtMoney(Math.round(v.totalInvested))+' invested')+'</div></div>';
   h += '</div>';
 
   // Competitive Position Gauge
@@ -5318,19 +5322,19 @@ function renderCalculatorTab(r){
     const psColor = ps >= 0.3 ? 'var(--num-success)' : ps >= -0.3 ? 'var(--num-warning)' : 'var(--num-danger)';
     const psLabel = ps >= 0.5 ? 'Strong' : ps >= 0.15 ? 'Favorable' : ps >= -0.15 ? 'Neutral' : ps >= -0.5 ? 'Challenging' : 'Weak';
 
-    h += '<div class="calc-section"><div class="calc-section-header">Competitive Position</div><div class="calc-section-body" style="padding:12px 14px">';
+    h += '<div class="calc-section"><div class="calc-section-header" title="How your property compares to the competitive landscape based on the comps you\'ve categorized as Loses To, Competes With, and Beats. This directly affects the Position Adjustment percentage applied to your projections." style="cursor:help">Competitive Position</div><div class="calc-section-body" style="padding:12px 14px">';
 
     // Position summary
     h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">';
-    h += '<div><div style="font-size:1rem;font-weight:800;color:'+psColor+'">'+psLabel+'</div>';
-    h += '<div style="font-size:.72rem;color:var(--text3);margin-top:2px">'+ordinal(mp)+' percentile in market</div></div>';
-    h += '<div style="text-align:right"><div style="font-size:.68rem;color:var(--text3);text-transform:uppercase;letter-spacing:.3px">Position Score</div>';
+    h += '<div title="Based on how your property compares to comps. Strong (+0.5 to +1.0), Favorable (+0.15 to +0.5), Neutral (-0.15 to +0.15), Challenging (-0.5 to -0.15), Weak (-1.0 to -0.5)." style="cursor:help"><div style="font-size:1rem;font-weight:800;color:'+psColor+'">'+psLabel+'</div>';
+    h += '<div style="font-size:.72rem;color:var(--text3);margin-top:2px" title="Percentage of the market your property is estimated to outperform. Calculated as (beats + 0.5 × competes) ÷ total comps × 100.">'+ordinal(mp)+' percentile in market</div></div>';
+    h += '<div style="text-align:right;cursor:help" title="Score from -1.0 (loses to all) to +1.0 (beats all). Formula: (-1 × loses + 0 × competes + 1 × beats) ÷ total comps."><div style="font-size:.68rem;color:var(--text3);text-transform:uppercase;letter-spacing:.3px">Position Score</div>';
     h += '<div style="font-size:1.1rem;font-weight:700;color:'+psColor+'">'+(ps >= 0 ? '+' : '')+ps.toFixed(2)+'</div></div>';
     h += '</div>';
 
-    // Bell curve visual
-    // SVG bell curve: gentle curve, colored fill underneath, marker at position
-    const bellW = 280, bellH = 60, padX = 10;
+    // Bell curve visual — spans full card width with comfortable padding
+    // SVG uses viewBox so it scales responsively
+    const bellW = 400, bellH = 80, padX = 16;
     const curveW = bellW - padX * 2;
     // Generate bell curve points (shallow/gentle)
     const bellPts = [];
@@ -5350,8 +5354,8 @@ function renderCalculatorTab(r){
     const markerGauss = Math.exp(-Math.pow(markerT - 0.5, 2) / (2 * 0.22 * 0.22));
     const markerY = (bellH - 6 - markerGauss * (bellH - 16)).toFixed(1);
 
-    h += '<div style="margin-bottom:4px">';
-    h += '<svg viewBox="0 0 '+bellW+' '+bellH+'" style="width:100%;height:'+bellH+'px;display:block">';
+    h += '<div style="margin-bottom:4px;padding:0 4px">';
+    h += '<svg viewBox="0 0 '+bellW+' '+bellH+'" style="width:100%;display:block">';
     // Gradient definition: red → yellow → green
     const bellGradId = 'bellGrad_' + r.id;
     h += '<defs><linearGradient id="'+bellGradId+'" x1="0%" y1="0%" x2="100%" y2="0%">';
@@ -5371,7 +5375,7 @@ function renderCalculatorTab(r){
     h += '</div>';
 
     // Labels under bell curve
-    h += '<div style="display:flex;justify-content:space-between;font-size:.62rem;color:var(--text3);margin-bottom:12px;padding:0 '+padX+'px">';
+    h += '<div style="display:flex;justify-content:space-between;font-size:.62rem;color:var(--text3);margin-bottom:12px;padding:0 8px">';
     h += '<span>Loses to all</span><span>Neutral</span><span>Beats all</span>';
     h += '</div>';
 
@@ -5437,7 +5441,7 @@ function renderCalculatorTab(r){
     paybackColor = 'var(--num-danger)';
   }
 
-  h += '<div class="calc-section"><div class="calc-section-header">Payback Period</div><div class="calc-section-body" style="padding:8px 10px">';
+  h += '<div class="calc-section"><div class="calc-section-header" title="How long it takes for your cumulative projected cash flow to recover your total upfront investment (furnishing + setup costs). Based on the Projected column\'s annual cash flow." style="cursor:help">Payback Period</div><div class="calc-section-body" style="padding:8px 10px">';
   if(insufficientComps){
     h += '<div style="text-align:center;padding:20px 8px">';
     h += '<div style="font-size:1.1rem;font-weight:800;color:var(--text3)">Not Enough Data</div>';
@@ -5515,7 +5519,7 @@ function renderCalculatorTab(r){
     col.monthlyNet = col.hasData ? Math.round(col.net / 12) : 0;
   });
 
-  h += '<div class="calc-section"><div class="calc-section-header">Projected Yearly Net</div>';
+  h += '<div class="calc-section"><div class="calc-section-header" title="Projected annual profit across three scenarios. Each column uses different directional multipliers applied to your comp data, then discounted by your competitive position." style="cursor:help">Projected Yearly Net</div>';
 
   // Non-clickable column headers
   h += '<div class="pyn-col-headers">';
@@ -5534,8 +5538,9 @@ function renderCalculatorTab(r){
 
   function pynRow(label, getVal, opts){
     const isTotal = opts && opts.total;
+    const tip = opts && opts.tip ? ' title="'+opts.tip+'"' : '';
     h += '<div class="calc-row'+(isTotal?' total-row':'')+'">';
-    h += '<div class="calc-label">'+label+'</div>';
+    h += '<div class="calc-label"'+tip+' style="'+(tip?'cursor:help':'')+'">'+label+'</div>';
     cols.forEach(col => {
       const isProjected = col.key === 'projected';
       h += '<div class="calc-val pyn-val'+(isProjected?' pyn-val-active':'')+'">';
@@ -5548,22 +5553,22 @@ function renderCalculatorTab(r){
   pynRow('Annual Revenue', col => {
     if(!col.hasData) return noDataHtml;
     return '<span class="calc-display computed">'+fmtAcct(col.rev)+'</span>';
-  });
-  pynRow('Annual Operating Expenses', col => {
+  }, {tip:'Projected annual revenue based on comp nightly rates, occupancy, and days available — adjusted by directional multipliers for each column'});
+  pynRow('Annual Expenses', col => {
     if(!col.hasData) return noDataHtml;
     return '<span class="calc-display computed">-'+fmtMoney(col.exp)+'</span>';
-  });
+  }, {tip:'Projected annual operating expenses (co-host fees, Airbnb fees, cleaning, utilities, etc.) — scales with revenue'});
   pynRow('Annual Rent', col => {
     return '<span class="calc-display computed">-'+fmtMoney(projAnnualRent)+'</span>';
-  });
+  }, {tip:'Your monthly rent × 12 — entered in the Expenses tab'});
   pynRow('Projected Yearly Net', col => {
     if(!col.hasData) return noDataHtml;
     return fmtNet(col.net, '/yr');
-  }, {total:true});
+  }, {total:true, tip:'Annual Revenue minus Annual Expenses minus Annual Rent'});
   pynRow('Monthly Net', col => {
     if(!col.hasData) return noDataHtml;
     return fmtNetLight(col.monthlyNet, '/mo');
-  });
+  }, {tip:'Projected Yearly Net divided by 12'});
 
   // Competitive Position Adjustment row + Adjusted Monthly Net row
   // Confidence applies to Optimistic, Projected, Pessimistic but not Comp Avg
@@ -5573,38 +5578,32 @@ function renderCalculatorTab(r){
 
   // Store adjusted values on each col for use in deal temp later
   cols.forEach(col => {
-    if(col.key === 'avg'){
-      col.adjustedMonthlyNet = null; // not applicable
-    } else {
-      col.adjustedMonthlyNet = col.hasData ? Math.round(col.monthlyNet * confidence) : 0;
-    }
+    col.adjustedMonthlyNet = col.hasData ? Math.round(col.monthlyNet * confidence) : 0;
   });
 
   pynRow('Position Adjustment', col => {
-    if(col.key === 'avg') return '<span style="color:var(--text3);font-size:.7rem">—</span>';
     if(!col.hasData) return noDataHtml;
     return '<span style="font-weight:700;color:'+cpColor+'">'+confidencePct+'%</span>';
-  });
+  }, {tip:'Confidence factor based on competitive position score ('+v.positionScore.toFixed(2)+'). Ranges from 55% (loses to all comps) to 100% (beats all comps). Discounts the monthly net to reflect how likely you are to achieve the projected revenue given your competitive landscape.'});
   pynRow('Adjusted Monthly Net', col => {
-    if(col.key === 'avg') return '<span style="color:var(--text3);font-size:.7rem">—</span>';
     if(!col.hasData) return noDataHtml;
     const adj = col.adjustedMonthlyNet;
     if(adj >= 0) return '<span style="color:var(--num-success);font-weight:700">'+fmtMoney(adj)+'/mo</span>';
     return '<span style="color:var(--num-danger);font-weight:700">-$'+Math.abs(adj).toLocaleString()+'/mo</span>';
-  }, {total:true});
+  }, {total:true, tip:'Monthly Net × Position Adjustment percentage. This confidence-adjusted figure drives the Deal Temperature recommendation below.'});
 
   h += '</div></div>';
 
   // Deal Temperature — driven by adjusted projected cash flow
-  const rawMonthlyNet = hasProj ? cols[2].monthlyNet : 0;
-  const dealMonthlyNet = hasProj ? cols[2].adjustedMonthlyNet : 0;
+  const rawMonthlyNet = hasProj ? cols[1].monthlyNet : 0;
+  const dealMonthlyNet = hasProj ? cols[1].adjustedMonthlyNet : 0;
   const dealTemp = insufficientComps ? null : (dealMonthlyNet >= 1000 ? 'slam-dunk' : dealMonthlyNet >= 500 ? 'potential' : dealMonthlyNet > 0 ? 'risky' : 'no-go');
   const dealSource = insufficientComps ? 'Add at least 3 comps in Competitor Analysis' : confidencePct + '% confidence · ' + ordinal(v.marketPercentile) + ' percentile in market';
   const temps = [
-    { key:'no-go', label:'No-Go', icon:'🚫', color:'#ef4444', desc:'Negative or zero cash flow', hint:'Walk away from this one.' },
-    { key:'risky', label:'Risky', icon:'⚠️', color:'#f59e0b', desc:'Under $500/mo net', hint:'Thin margins — proceed with caution.' },
-    { key:'potential', label:'Potential', icon:'🔥', color:'#3b82f6', desc:'$500–$999/mo net', hint:'Solid opportunity worth exploring.' },
-    { key:'slam-dunk', label:'Slam-Dunk', icon:'🏆', color:'#10b981', desc:'$1,000+/mo net', hint:'Move fast — this is a winner.' }
+    { key:'no-go', label:'No-Go', icon:'🚫', color:'#ef4444', desc:'Negative or zero cash flow', hint:'Adjusted Monthly Net is $0 or less. This deal loses money after accounting for competitive position.' },
+    { key:'risky', label:'Risky', icon:'⚠️', color:'#f59e0b', desc:'Under $500/mo net', hint:'Adjusted Monthly Net is $1–$499/mo. Thin margins that leave little room for unexpected costs or vacancies.' },
+    { key:'potential', label:'Potential', icon:'🔥', color:'#3b82f6', desc:'$500–$999/mo net', hint:'Adjusted Monthly Net is $500–$999/mo. Solid returns with reasonable margin of safety.' },
+    { key:'slam-dunk', label:'Slam-Dunk', icon:'🏆', color:'#10b981', desc:'$1,000+/mo net', hint:'Adjusted Monthly Net is $1,000+/mo. Strong returns even after competitive position discount.' }
   ];
   h += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px">';
   temps.forEach(t => {
@@ -5676,19 +5675,19 @@ function renderCalculatorTab(r){
     h += '</div>';
 
     // Deal source summary
-    h += '<div style="text-align:center;font-size:.65rem;color:var(--text3);font-style:italic;margin-bottom:16px">Based on Projected adjusted monthly net ('+fmtMoney(dealMonthlyNet)+'/mo) · '+dealSource+'</div>';
+    h += '<div style="text-align:center;font-size:.65rem;color:var(--text3);font-style:italic;margin-bottom:16px">Projected Monthly Net '+fmtMoney(rawMonthlyNet)+' × '+confidencePct+'% Position Adjustment = <span style="font-weight:700;color:var(--text2)">'+fmtMoney(dealMonthlyNet)+'/mo</span></div>';
   } else {
     h += '<div style="text-align:right;font-size:.62rem;color:var(--text3);font-style:italic;margin-bottom:16px">'+dealSource+'</div>';
   }
 
   // Forecasted Revenue (driven by Analysis comps)
-  h += '<div class="calc-section"><div class="calc-section-header">Forecasted Revenue</div><div class="calc-section-body">';
+  h += '<div class="calc-section"><div class="calc-section-header" title="Simple averages from your Competitor Analysis comps. These are the raw comp averages before any directional multipliers or position adjustments." style="cursor:help">Forecasted Revenue</div><div class="calc-section-body">';
   const compHint = noComps ? 'add comps in Competitor Analysis tab' : 'avg from Competitor Analysis comps';
-  h += cRow('Average Daily Rate', cDisplay(noComps ? '$0' : fmtAcct2(v.avgDailyRate), {computed:!noComps}), {hint:compHint});
-  h += cRow('Avg Occupancy Rate', cDisplay(noComps ? '0%' : Math.round(v.estOccupancyRate)+'%', {computed:!noComps}), {hint:compHint});
-  h += cRow('Avg Days/Year Occupied', cDisplay(noComps ? '0' : fmtNum(v.daysOccupied), {computed:!noComps}));
-  h += cRow('Annual Revenue', cDisplay(noComps ? '$0' : fmtAcct(Math.round(v.annualRevenue)), {computed:!noComps}));
-  h += cRow('Monthly Revenue', cDisplay(noComps ? '$0' : fmtAcct(Math.round(v.monthlyRevenue)), {computed:!noComps}), {total:true});
+  h += cRow('Average Daily Rate', cDisplay(noComps ? '$0' : fmtAcct2(v.avgDailyRate), {computed:!noComps}), {hint:compHint, tip:'Simple average of the nightly rate across all comps that have rate data entered.'});
+  h += cRow('Avg Occupancy Rate', cDisplay(noComps ? '0%' : Math.round(v.estOccupancyRate)+'%', {computed:!noComps}), {hint:compHint, tip:'Simple average of the occupancy percentage across all comps that have occupancy data entered.'});
+  h += cRow('Avg Days/Year Occupied', cDisplay(noComps ? '0' : fmtNum(v.daysOccupied), {computed:!noComps}), {tip:'Average days available per year × average occupancy rate. Represents how many days the property is expected to be booked.'});
+  h += cRow('Annual Revenue', cDisplay(noComps ? '$0' : fmtAcct(Math.round(v.annualRevenue)), {computed:!noComps}), {tip:'Simple average annual revenue across all comps. Calculated from each comp\'s nightly rate × days available × occupancy, or their reported annual revenue.'});
+  h += cRow('Monthly Revenue', cDisplay(noComps ? '$0' : fmtAcct(Math.round(v.monthlyRevenue)), {computed:!noComps}), {total:true, tip:'Annual Revenue divided by 12.'});
   h += '</div></div>';
 
   h += '</div>'; // end right panel
@@ -5915,7 +5914,7 @@ function renderAnalysisTab(r){
   h += '<div class="an-top-grid">';
 
   // Left: Required Revenue
-  h += '<div class="an-section"><div class="an-section-hdr">Required Revenue</div><div class="an-section-body" style="padding:0">';
+  h += '<div class="an-section"><div class="an-section-hdr" title="The minimum annual/monthly revenue needed to cover rent, operating expenses, and your desired profit requirement." style="cursor:help">Required Revenue</div><div class="an-section-body" style="padding:0">';
   h += '<div class="an-req-bar" style="border:none;border-radius:0;margin:0">';
   h += '<div class="an-req-item"><div class="req-label">Rent</div><div class="req-val">'+fmtMoney(v.monthlyRent*12)+'<span class="req-period">/yr</span></div><div class="req-annual">'+fmtMoney(v.monthlyRent)+'/mo</div></div>';
   h += '<div class="an-req-item" onclick="showAppAlert(\'Expenses are calculated from your Monthly Operating Expenses in the Pro Forma tab. Edit individual amounts there.\', {title: \'About Expenses\', icon: \'ℹ️\'})" style="cursor:help" title="Edit in Pro Forma → Monthly Operating Expenses"><div class="req-label">Expenses</div><div class="req-val">'+fmtMoney(Math.round(expenses*12))+'<span class="req-period">/yr</span></div><div class="req-annual">'+fmtMoney(Math.round(expenses))+'/mo</div></div>';
@@ -5944,7 +5943,7 @@ function renderAnalysisTab(r){
   });
 
   // Right: Revenue Projection panel
-  h += '<div class="an-section"><div class="an-section-hdr">Revenue Projection</div><div class="an-section-body" style="padding:0">';
+  h += '<div class="an-section"><div class="an-section-hdr" title="Revenue projections using directional multipliers. Optimistic uses higher multipliers (best-case), Projected uses base multipliers (weighted estimate), Pessimistic uses lower multipliers (conservative). Multipliers adjust comp revenue based on whether you Lose To, Compete With, or Beat each comp." style="cursor:help">Revenue Projection</div><div class="an-section-body" style="padding:0">';
   h += '<div class="an-req-bar" style="border:none;border-radius:0;margin:0">';
   if(insuffComps){
     h += '<div class="an-req-item" style="text-align:center;padding:18px 14px"><div class="req-label" style="color:var(--text3);font-size:.82rem">Add at least 3 comps to see projections</div></div>';
