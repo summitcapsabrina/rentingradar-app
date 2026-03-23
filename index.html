@@ -1046,6 +1046,13 @@ h1 .hero-edit-input{font-size:1.35rem}
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
+<!-- Loading overlay — shown until Firestore data is ready -->
+<div id="appLoadingOverlay" style="position:fixed;top:0;left:0;right:0;bottom:0;background:var(--bg, #0f172a);z-index:99999;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;transition:opacity .35s ease">
+  <svg viewBox="0 0 24 24" style="width:48px;height:48px;fill:var(--primary, #6381fa)"><path d="M12 2L2 7v10l10 5 10-5V7L12 2zm0 2.18L19.27 7.5 12 10.82 4.73 7.5 12 4.18zM4 8.99l7 3.5v7.03l-7-3.5V8.99zm9 10.53V12.49l7-3.5v7.03l-7 3.5z"/></svg>
+  <div style="font-size:1.4rem;font-weight:800;letter-spacing:-.02em;color:var(--text, #e2e8f0)">RentingRadar</div>
+  <div style="width:28px;height:28px;border:3px solid rgba(99,129,250,.2);border-top-color:var(--primary, #6381fa);border-radius:50%;animation:appSpin .7s linear infinite;margin-top:4px"></div>
+</div>
+<style>@keyframes appSpin{to{transform:rotate(360deg)}}</style>
 <div class="app">
   <!-- SIDEBAR -->
   <aside class="sidebar">
@@ -1189,9 +1196,14 @@ function loadData(){
   records = [];
 }
 
+function hideLoadingOverlay(){
+  const ol = document.getElementById('appLoadingOverlay');
+  if(ol){ ol.style.opacity = '0'; setTimeout(() => ol.remove(), 350); }
+}
+
 async function loadDataFromFirestore(userUid){
   _currentUid = userUid;
-  if(!userUid || typeof db === 'undefined') { records = []; render(); return; }
+  if(!userUid || typeof db === 'undefined') { records = []; render(); hideLoadingOverlay(); return; }
   try {
     // Clear any leftover localStorage data
     window.localStorage.removeItem('arbflow_records');
@@ -1210,6 +1222,7 @@ async function loadDataFromFirestore(userUid){
     records = [];
   }
   render();
+  hideLoadingOverlay();
 }
 
 function saveData(){
@@ -2009,7 +2022,7 @@ function renderProfile(){
 }
 function _renderProfileInner(){
   const r = records.find(x => x.id === currentProfileId);
-  if(!r) return '<div>Record not found</div>';
+  if(!r) return '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;color:var(--text3);gap:12px"><svg viewBox="0 0 24 24" style="width:48px;height:48px;fill:none;stroke:var(--text3);stroke-width:1.5"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg><div style="font-size:1.1rem;font-weight:600">Property not found</div><div style="font-size:.85rem">It may have been deleted or the link is outdated.</div><button class="btn btn-primary" onclick="switchView(\'dashboard\')" style="margin-top:8px">Go to Dashboard</button></div>';
   const d = r.propertyDetails || {};
   const plat = detectPlatform(r.link);
   const hasDetails = Object.keys(d).some(k => d[k] && (Array.isArray(d[k]) ? d[k].length > 0 : true));
@@ -4549,6 +4562,7 @@ firebase.auth().onAuthStateChanged(async (user) => {
     _authDataLoaded = false;
     records = [];
     render();
+    hideLoadingOverlay();
   }
 });
 let currentUser = null;
@@ -8250,6 +8264,8 @@ loadSettingsPrefs();
 loadData();
 initNotifications();
 restoreViewState();
+// Safety timeout: if auth/Firestore takes too long, hide overlay anyway
+setTimeout(hideLoadingOverlay, 6000);
 // Apply the restored view's UI state
 if(currentView === 'profile' && currentProfileId){
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
