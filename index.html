@@ -2047,7 +2047,7 @@ function _renderProfileInner(){
           <div class="profile-tab ${activeTab==='details'?'active':''}" data-tab="details" onclick="setProfileTab('details')">🏠 Property Details</div>
           <div class="profile-tab ${activeTab==='expenses'?'active':''}" data-tab="expenses" onclick="setProfileTab('expenses')">💸 Expenses</div>
           <div class="profile-tab ${activeTab==='analysis'?'active':''}" data-tab="analysis" onclick="setProfileTab('analysis')">📊 Competitor Analysis ${!proOk?'<span class=\\"tab-lock\\">🔒</span>':''}</div>
-          <div class="profile-tab ${activeTab==='calculator'?'active':''}" data-tab="calculator" onclick="setProfileTab('calculator')">💰 Projected Returns ${!calcOk?'<span class=\\"tab-lock\\">🔒</span>':''}</div>
+          <div class="profile-tab ${activeTab==='calculator'?'active':''}" data-tab="calculator" onclick="setProfileTab('calculator')">💰 Projected ROI ${!calcOk?'<span class=\\"tab-lock\\">🔒</span>':''}</div>
         </div>
       </div>
     </div>
@@ -2206,7 +2206,7 @@ function _renderProfileInner(){
   }
   html += `</div>`;
 
-  // ── TAB: Projected Returns ──
+  // ── TAB: Projected ROI ──
   html += `<div class="tab-content ${activeTab==='calculator'?'active':''}" data-tab="calculator">`;
   if(calcOk){
     html += renderCalculatorTab(r);
@@ -2215,7 +2215,7 @@ function _renderProfileInner(){
       <div class="profile-card-body">
         <div class="tab-locked-overlay">
           <div class="tlo-icon">🔒</div>
-          <div class="tlo-title">Projected Returns</div>
+          <div class="tlo-title">Projected ROI</div>
           <div class="tlo-desc">View projected revenue, cash flow, return on investment, and deal temperature for this property. Available on the Basic plan.</div>
           <button class="btn btn-primary" onclick="switchView('pricing')">Upgrade to Basic — $7.50/mo</button>
         </div>
@@ -3946,7 +3946,7 @@ function showAutocomplete(){
 }
 function showRecentlyAccessed(){
   const box = document.getElementById('searchAutocomplete');
-  const recents = records.filter(r => r.lastAccessed).sort((a,b) => new Date(b.lastAccessed) - new Date(a.lastAccessed)).slice(0,10);
+  const recents = records.filter(r => r.lastAccessed && r.id !== currentProfileId).sort((a,b) => new Date(b.lastAccessed) - new Date(a.lastAccessed)).slice(0,10);
   if(!recents.length){
     box.innerHTML = '<div style="padding:16px 14px;color:var(--text3);font-size:.85rem;text-align:center">No recently viewed properties</div>';
     box.classList.add('visible'); acIndex = -1; return;
@@ -5508,7 +5508,7 @@ function onCalcChange(field, value){
   r.details.calculator[field] = parseFloat(value) || 0;
   if(field === 'cleaning') r.details.calculator._cleaningManual = true;
   saveData();
-  // Re-render Projected Returns tab since expenses affect projections
+  // Re-render Projected ROI tab since expenses affect projections
   const calcEl = document.querySelector('.tab-content[data-tab="calculator"]');
   if(calcEl){ calcEl.innerHTML = renderCalculatorTab(r); }
 }
@@ -5519,7 +5519,7 @@ function _rerenderCalcTab(){
   // Re-render Expenses tab if present
   const expEl = document.querySelector('.tab-content[data-tab="expenses"]');
   if(expEl){ expEl.innerHTML = renderExpensesTab(r); }
-  // Re-render Projected Returns tab if present
+  // Re-render Projected ROI tab if present
   const tabEl = document.querySelector('.tab-content[data-tab="calculator"]');
   if(tabEl){ tabEl.innerHTML = renderCalculatorTab(r); }
 }
@@ -5896,7 +5896,7 @@ function updateCompField(recId, idx, field, value){
     comps[idx][field] = value;
   }
   saveData();
-  // Re-render Projected Returns if revenue-related fields change (they drive Forecasted Revenue)
+  // Re-render Projected ROI if revenue-related fields change (they drive Forecasted Revenue)
   if(['annualRevenue','occupancy','nightlyRate','daysAvailable','rating'].includes(field)){
     const calcEl = document.querySelector('.tab-content[data-tab="calculator"]');
     if(calcEl){ calcEl.innerHTML = renderCalculatorTab(r); }
@@ -7925,7 +7925,7 @@ function renderHelp(){
         ${renderHelpAccordion('What are the different pipeline categories?',
           '<strong>New Leads</strong> — Properties you\'re tracking but haven\'t contacted yet (New, No Contact).<br><strong>In Outreach</strong> — Active communication (Messaged, Left Voicemail, Follow Up).<br><strong>Qualified</strong> — Promising prospects (Interested, Meeting).<br><strong>Closed/Lost</strong> — No longer pursuing (HOA Issues, Not Good Fit, Not Interested, Un-Listed).')}
         ${renderHelpAccordion('How does the ROI calculator work?',
-          'Open any property profile and go to the <strong>Projected Returns</strong> tab. Enter the monthly rent, furnishing costs, and expected nightly rate. The calculator projects annual revenue, expenses, net operating income, and cash-on-cash return. Add comps in the <strong>Analysis</strong> tab to get Likely, Best, and Worst case projections.')}
+          'Open any property profile and go to the <strong>Projected ROI</strong> tab. Enter the monthly rent, furnishing costs, and expected nightly rate. The calculator projects annual revenue, expenses, net operating income, and cash-on-cash return. Add comps in the <strong>Analysis</strong> tab to get Likely, Best, and Worst case projections.')}
         ${renderHelpAccordion('Can I import properties from a spreadsheet?',
           'Yes! Go to <strong>Settings → Data Management → Import CSV</strong> or use the import button on the dashboard. Your CSV should have columns for address, contact name, phone, email, and status. The importer will map your columns automatically.')}
         ${renderHelpAccordion('What\'s the difference between the plans?',
