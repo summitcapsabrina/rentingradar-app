@@ -817,6 +817,21 @@ h1 .hero-edit-input{font-size:1.35rem}
 .an-readonly-summary{font-size:.88rem;color:var(--text2);line-height:1.5;padding:4px 0}
 .an-req-editable{cursor:pointer;transition:background .15s}
 .an-req-editable:hover{background:rgba(99,129,250,.06)}
+/* Comp Section Themes */
+.comp-section{border-radius:var(--radius);overflow:hidden;margin-bottom:16px;border:1px solid var(--border)}
+.comp-section-hdr{font-size:.84rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.comp-section-hdr .comp-section-count{font-size:.72rem;font-weight:500;opacity:.7;text-transform:none;letter-spacing:0}
+.comp-section.loses-to .comp-section-hdr{background:rgba(239,68,68,.08);color:#ef4444;border-bottom:1px solid rgba(239,68,68,.2)}
+.comp-section.competes-with .comp-section-hdr{background:rgba(99,129,250,.08);color:var(--primary);border-bottom:1px solid rgba(99,129,250,.2)}
+.comp-section.beats .comp-section-hdr{background:rgba(16,185,129,.08);color:#10b981;border-bottom:1px solid rgba(16,185,129,.2)}
+.comp-section-body{padding:10px 14px}
+.comp-rating-badge{display:inline-block;font-size:.72rem;font-weight:600;padding:2px 10px;border-radius:10px;text-transform:uppercase;letter-spacing:.3px}
+.comp-rating-badge.loses{background:rgba(239,68,68,.12);color:#ef4444}
+.comp-rating-badge.competes{background:rgba(99,129,250,.12);color:var(--primary)}
+.comp-rating-badge.beats{background:rgba(16,185,129,.12);color:#10b981}
+.comp-section .comp-table{margin-bottom:0}
+.comp-section .comp-add-row{margin:10px 14px 10px}
+.comp-section-empty{text-align:center;padding:20px 16px;color:var(--text3);font-size:.85rem}
 .req-edit-hint{font-size:.55rem;color:var(--text3);opacity:0;transition:opacity .15s}
 .an-req-editable:hover .req-edit-hint{opacity:1}
 .comp-inline-input{width:100%;padding:0 4px;border:1px solid transparent;border-radius:3px;font-size:.82rem;background:transparent;color:var(--text);text-align:center;font-family:inherit;transition:border-color .15s;box-sizing:border-box;-moz-appearance:textfield;height:26px;line-height:26px}
@@ -3293,8 +3308,9 @@ function handleExtensionComp(compData) {
   }
 
   const comps = getComps(r);
-  if (comps.length >= 20) {
-    showToast('Maximum 20 comps reached for this property.', 'warning');
+  const sectionCount = comps.filter(c => c.rating === (compData.rating || 'competes')).length;
+  if (sectionCount >= 10) {
+    showToast('Maximum 10 comps reached for the ' + (compData.rating || 'competes') + ' section.', 'warning');
     return;
   }
 
@@ -3330,7 +3346,7 @@ function handleExtensionComp(compData) {
 
   saveData();
   render();
-  showToast('Comp imported from AirDNA! (' + comps.length + '/20)', 'success');
+  showToast('Comp imported from AirDNA! (' + sectionCount + '/10)', 'success');
 }
 
 /**
@@ -5106,26 +5122,21 @@ function calcComputeAll(r){
   const monthlyCF = monthlyNOI - monthlyRent;
   const annualCF = monthlyCF * 12;
   const cocReturn = totalInvested > 0 ? (annualCF / totalInvested * 100) : 0;
-  // Compute Likely Revenue from rated comps (same logic as Analysis tab)
+  // Compute projections from sections (section averages instead of multipliers)
   let likelyRevenue = 0, bestRevenue = 0, worstRevenue = 0;
   let hasRatedData = false;
-  const ratedCompsWithRev = comps.filter(cx => {
-    const rating = cx.rating || '';
-    if(!rating) return false;
-    const rev = parseFloat(cx.annualRevenue) || 0;
-    if(rev > 0) return true;
-    const rr = parseFloat(cx.nightlyRate) || 0;
-    const oo = parseFloat(cx.occupancy) || 0;
-    return rr > 0 && oo > 0;
-  });
-  if(ratedCompsWithRev.length > 0){
-    const MULT = {
-      likely: { beats: 1.15, competes: 1.00, loses: 0.85 },
-      best:   { beats: 1.20, competes: 1.05, loses: 0.95 },
-      worst:  { beats: 1.05, competes: 0.95, loses: 0.80 }
-    };
-    let sumL = 0, sumB = 0, sumW = 0;
-    ratedCompsWithRev.forEach(cx => {
+
+  function _sectionAvgRev(compsArr, cat){
+    const sectionComps = compsArr.filter(c => c.rating === cat);
+    const withRev = sectionComps.filter(cx => {
+      const rev = parseFloat(cx.annualRevenue) || 0;
+      if(rev > 0) return true;
+      const rr = parseFloat(cx.nightlyRate) || 0;
+      const oo = parseFloat(cx.occupancy) || 0;
+      return rr > 0 && oo > 0;
+    });
+    if(withRev.length === 0) return 0;
+    return Math.round(withRev.reduce((s, cx) => {
       let rev = parseFloat(cx.annualRevenue) || 0;
       if(rev === 0){
         const rr = parseFloat(cx.nightlyRate) || 0;
@@ -5133,15 +5144,19 @@ function calcComputeAll(r){
         const dd = parseFloat(cx.daysAvailable) || 365;
         rev = rr * dd * (oo / 100);
       }
-      const rating = cx.rating;
-      sumL += rev * (MULT.likely[rating] || 1);
-      sumB += rev * (MULT.best[rating] || 1);
-      sumW += rev * (MULT.worst[rating] || 1);
-    });
-    likelyRevenue = Math.round(sumL / ratedCompsWithRev.length);
-    bestRevenue = Math.round(sumB / ratedCompsWithRev.length);
-    worstRevenue = Math.round(sumW / ratedCompsWithRev.length);
-    hasRatedData = true;
+      return s + rev;
+    }, 0) / withRev.length);
+  }
+
+  const hasLoses = comps.some(c => c.rating === 'loses');
+  const hasCompetes = comps.some(c => c.rating === 'competes');
+  const hasBeats = comps.some(c => c.rating === 'beats');
+
+  if(hasLoses && hasCompetes && hasBeats){
+    bestRevenue = _sectionAvgRev(comps, 'loses');
+    likelyRevenue = _sectionAvgRev(comps, 'competes');
+    worstRevenue = _sectionAvgRev(comps, 'beats');
+    hasRatedData = (bestRevenue > 0 || likelyRevenue > 0 || worstRevenue > 0);
   }
   // Helper: compute derived values for a given annual revenue
   const fixedExp = c.insurance + c.strFee + c.water + c.gas + c.electric + c.wifiTv + c.futureRepairs + c.incidentals + c.parking + cleaning + c.garbageRecycling + c.channelManager + c.cityPermit;
@@ -5158,7 +5173,7 @@ function calcComputeAll(r){
   const likelyD = hasRatedData ? deriveFromRev(likelyRevenue) : deriveFromRev(annualRevenue);
   const bestD = hasRatedData ? deriveFromRev(bestRevenue) : null;
   const worstD = hasRatedData ? deriveFromRev(worstRevenue) : null;
-  return { c, br, monthlyRent, furnishCost, totalInvested, avgDailyRate, estOccupancyRate, daysOccupied, annualRevenue, monthlyRevenue, cleaning, coHostFee, airbnbFee, totalMonthlyExp, annualExp, monthlyNOI, annualNOI, monthlyCF, annualCF, cocReturn, compsCount: comps.length, likelyRevenue, bestRevenue, worstRevenue, hasRatedData, likelyD, bestD, worstD };
+  return { c, br, monthlyRent, furnishCost, totalInvested, avgDailyRate, estOccupancyRate, daysOccupied, annualRevenue, monthlyRevenue, cleaning, coHostFee, airbnbFee, totalMonthlyExp, annualExp, monthlyNOI, annualNOI, monthlyCF, annualCF, cocReturn, compsCount: comps.length, likelyRevenue, bestRevenue, worstRevenue, hasRatedData, likelyD, bestD, worstD, hasAllSections: hasLoses && hasCompetes && hasBeats };
 }
 
 function renderExpensesTab(r){
@@ -5260,9 +5275,9 @@ function renderCalculatorTab(r){
   const cocClass = kpiCoC >= 0 ? 'positive' : 'negative';
   const kpiTagColor = projColors[v.hasRatedData?pm:'avg'];
   const kpiTagHtml = '<div class="kpi-proj-tag" style="color:'+kpiTagColor+';border-color:'+kpiTagColor+'">'+activeProjLabel+'</div>';
-  const insufficientComps = v.compsCount < 3;
+  const insufficientComps = !v.hasAllSections;
   const nedHtml = '<span style="color:var(--text3);font-size:.78rem;font-style:italic">Not Enough Data</span>';
-  const nedSubHtml = '<span style="color:var(--text3);font-size:.7rem;font-style:italic">Add at least 3 comps in Competitor Analysis</span>';
+  const nedSubHtml = '<span style="color:var(--text3);font-size:.7rem;font-style:italic">Add at least 1 comp per section in Competitor Analysis</span>';
   h += '<div class="calc-kpi-grid calc-kpi-grid-left">';
   h += '<div class="calc-kpi"><div class="kpi-label">Net Operating Income'+kpiTagHtml+'</div><div class="kpi-monthly">'+(insufficientComps ? nedHtml : fmtMoney(Math.round(kpiNOI))+'<span class="kpi-per">/mo</span>')+'</div><div class="kpi-annual">'+(insufficientComps ? nedSubHtml : fmtMoney(Math.round(kpiAnnualNOI))+'/yr')+'</div></div>';
   h += '<div class="calc-kpi"><div class="kpi-label">Monthly Rent<div class="kpi-proj-tag" style="color:#eab308;border-color:#eab308">Fixed</div></div><div class="kpi-monthly">'+(v.monthlyRent ? fmtMoney(v.monthlyRent) : '<span style="color:var(--text3);font-style:italic">Set in Property Details</span>')+'<span class="kpi-per">/mo</span></div><div class="kpi-annual">'+fmtMoney(v.monthlyRent*12)+'/yr</div></div>';
@@ -5313,7 +5328,7 @@ function renderCalculatorTab(r){
   if(insufficientComps){
     h += '<div style="text-align:center;padding:20px 8px">';
     h += '<div style="font-size:1.1rem;font-weight:800;color:var(--text3)">Not Enough Data</div>';
-    h += '<div style="font-size:.7rem;color:var(--text3);margin-top:4px">Add at least 3 comps in Competitor Analysis</div>';
+    h += '<div style="font-size:.7rem;color:var(--text3);margin-top:4px">Add at least 1 comp per section in Competitor Analysis</div>';
     h += '</div>';
   } else {
     h += '<div style="text-align:center;margin-bottom:10px">';
@@ -5464,10 +5479,10 @@ function renderCalculatorTab(r){
   const dealTemp = insufficientComps ? null : (dealMonthlyNet >= 1000 ? 'slam-dunk' : dealMonthlyNet >= 500 ? 'potential' : dealMonthlyNet > 0 ? 'risky' : 'no-go');
   const dealSource = insufficientComps ? 'Add at least 3 comps in Competitor Analysis' : 'Based on ' + (dealCol.label) + ' projection';
   const temps = [
-    { key:'no-go', label:'No-Go', icon:'🚫', color:'#ef4444', desc:'Negative or zero cash flow' },
-    { key:'risky', label:'Risky', icon:'⚠️', color:'#f59e0b', desc:'Under $500/mo net' },
-    { key:'potential', label:'Potential', icon:'🔥', color:'#3b82f6', desc:'$500–$999/mo net' },
-    { key:'slam-dunk', label:'Slam-Dunk', icon:'🏆', color:'#10b981', desc:'$1,000+/mo net' }
+    { key:'no-go', label:'No-Go', icon:'🚫', color:'#ef4444', desc:'Negative or zero cash flow', hint:'Walk away from this one.' },
+    { key:'risky', label:'Risky', icon:'⚠️', color:'#f59e0b', desc:'Under $500/mo net', hint:'Thin margins — proceed with caution.' },
+    { key:'potential', label:'Potential', icon:'🔥', color:'#3b82f6', desc:'$500–$999/mo net', hint:'Solid opportunity worth exploring.' },
+    { key:'slam-dunk', label:'Slam-Dunk', icon:'🏆', color:'#10b981', desc:'$1,000+/mo net', hint:'Move fast — this is a winner.' }
   ];
   h += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:6px">';
   temps.forEach(t => {
@@ -5476,7 +5491,7 @@ function renderCalculatorTab(r){
     const border = active ? t.color : 'var(--border)';
     const textColor = active ? '#fff' : 'var(--text3)';
     const opacity = active ? '1' : '0.5';
-    h += '<div style="background:'+bg+';border:2px solid '+border+';border-radius:var(--radius);padding:12px 8px;text-align:center;opacity:'+opacity+';transition:all .2s">';
+    h += '<div title="'+t.hint+'" style="background:'+bg+';border:2px solid '+border+';border-radius:var(--radius);padding:12px 8px;text-align:center;opacity:'+opacity+';transition:all .2s;cursor:default">';
     h += '<div style="font-size:1.3rem;margin-bottom:4px">'+t.icon+'</div>';
     h += '<div style="font-size:.82rem;font-weight:700;color:'+textColor+'">'+t.label+'</div>';
     h += '<div style="font-size:.65rem;color:'+textColor+';opacity:.8;margin-top:2px">'+t.desc+'</div>';
@@ -5687,7 +5702,22 @@ function getAnalysis(r){
   return r.details.analysis;
 }
 
+function migrateCompRatings(r){
+  const comps = getComps(r);
+  let changed = false;
+  comps.forEach(c => {
+    if(!c.rating || (c.rating !== 'beats' && c.rating !== 'competes' && c.rating !== 'loses')){
+      c.rating = 'competes';
+      changed = true;
+    }
+  });
+  if(changed) saveData();
+}
+
 function renderAnalysisTab(r){
+  // Migrate any unrated comps to 'competes' category
+  migrateCompRatings(r);
+
   const pd = r.propertyDetails || {};
   const an = getAnalysis(r);
   const comps = getComps(r);
@@ -5696,7 +5726,6 @@ function renderAnalysisTab(r){
   const isProUser = requireTier('pro','Pro Analysis Features');
   const br = parseInt(pd.bedrooms) || 0;
   const profitReq = parseFloat(an.profitRequirement) || 1000;
-  // Expenses = total Monthly Operating Expenses from Pro Forma (includes all utilities + cleaning)
   const expenses = v.totalMonthlyExp;
 
   let h = '';
@@ -5708,57 +5737,53 @@ function renderAnalysisTab(r){
   h += '<div class="an-section"><div class="an-section-hdr">Required Revenue</div><div class="an-section-body" style="padding:0">';
   h += '<div class="an-req-bar" style="border:none;border-radius:0;margin:0">';
   h += '<div class="an-req-item"><div class="req-label">Rent</div><div class="req-val">'+fmtMoney(v.monthlyRent*12)+'<span class="req-period">/yr</span></div><div class="req-annual">'+fmtMoney(v.monthlyRent)+'/mo</div></div>';
-  // Expenses — not editable, total from Pro Forma (includes utilities + cleaning)
   h += '<div class="an-req-item" onclick="showAppAlert(\'Expenses are calculated from your Monthly Operating Expenses in the Pro Forma tab. Edit individual amounts there.\', {title: \'About Expenses\', icon: \'ℹ️\'})" style="cursor:help" title="Edit in Pro Forma → Monthly Operating Expenses"><div class="req-label">Expenses</div><div class="req-val">'+fmtMoney(Math.round(expenses*12))+'<span class="req-period">/yr</span></div><div class="req-annual">'+fmtMoney(Math.round(expenses))+'/mo</div></div>';
-  // Profit Requirement — editable with warning under $1000
   h += '<div class="an-req-item an-req-editable" onclick="editAnalysisProfitReq(\''+r.id+'\')"><div class="req-label">Profit Req <span class="req-edit-hint">✎</span></div><div class="req-val">'+fmtMoney(profitReq*12)+'<span class="req-period">/yr</span></div><div class="req-annual">'+fmtMoney(profitReq)+'/mo</div></div>';
   const monthlyReqRev = v.monthlyRent + expenses + profitReq;
   h += '<div class="an-req-item total"><div class="req-label">Required Rev</div><div class="req-val" style="color:var(--num-computed)">'+fmtMoney(Math.round(monthlyReqRev*12))+'<span class="req-period">/yr</span></div><div class="req-annual">'+fmtMoney(Math.round(monthlyReqRev))+'/mo</div></div>';
   h += '</div>';
   h += '</div></div>';
 
-  // ── Revenue Projections (right side of top grid) ──
-  // Rating-weighted projection logic:
-  //   Each comp's annual revenue is adjusted by how our property compares:
-  //   Beats  → we earn MORE   (Likely ×1.15, Best ×1.20, Worst ×1.05)
-  //   Competes → similar       (Likely ×1.00, Best ×1.05, Worst ×0.95)
-  //   Loses  → we earn LESS   (Likely ×0.85, Best ×0.95, Worst ×0.80)
-  // Only comps with revenue data AND a rating set (not blank) contribute to projections
-  let projLikely = 0, projBest = 0, projWorst = 0;
-  const compsWithRev = comps.filter(c => {
-    const rating = c.rating || '';
-    if(!rating) return false; // skip unrated comps
-    const rev = parseFloat(c.annualRevenue) || 0;
-    if(rev > 0) return true;
-    const rate = parseFloat(c.nightlyRate) || 0;
-    const occ = parseFloat(c.occupancy) || 0;
-    return rate > 0 && occ > 0;
-  });
-
-  if(compsWithRev.length > 0){
-    const MULT = {
-      likely: { beats: 1.15, competes: 1.00, loses: 0.85 },
-      best:   { beats: 1.20, competes: 1.05, loses: 0.95 },
-      worst:  { beats: 1.05, competes: 0.95, loses: 0.80 }
-    };
-    let sumLikely = 0, sumBest = 0, sumWorst = 0;
-    compsWithRev.forEach(c => {
-      let rev = parseFloat(c.annualRevenue) || 0;
-      if(rev === 0){
-        const rate = parseFloat(c.nightlyRate) || 0;
-        const occ = parseFloat(c.occupancy) || 0;
-        const days = parseFloat(c.daysAvailable) || 365;
+  // ── Revenue Projections (section averages, not multipliers) ──
+  // Best Case = avg of "Loses To" comps (ceiling — these are better)
+  // Likely = avg of "Competes With" comps
+  // Worst Case = avg of "Beats" comps (floor — we're better than these)
+  function sectionAvgRevenue(entries) {
+    const withRev = entries.filter(e => {
+      const c = e.comp;
+      const rev = parseFloat(c.annualRevenue) || 0;
+      if(rev > 0) return true;
+      const rate = parseFloat(c.nightlyRate) || 0;
+      const occ = parseFloat(c.occupancy) || 0;
+      return rate > 0 && occ > 0;
+    });
+    if(withRev.length === 0) return 0;
+    return Math.round(withRev.reduce((s, e) => {
+      let rev = parseFloat(e.comp.annualRevenue) || 0;
+      if(rev === 0) {
+        const rate = parseFloat(e.comp.nightlyRate) || 0;
+        const occ = parseFloat(e.comp.occupancy) || 0;
+        const days = parseFloat(e.comp.daysAvailable) || 365;
         rev = rate * days * (occ / 100);
       }
-      const rating = c.rating;
-      sumLikely += rev * (MULT.likely[rating] || 1);
-      sumBest += rev * (MULT.best[rating] || 1);
-      sumWorst += rev * (MULT.worst[rating] || 1);
-    });
-    projLikely = Math.round(sumLikely / compsWithRev.length);
-    projBest = Math.round(sumBest / compsWithRev.length);
-    projWorst = Math.round(sumWorst / compsWithRev.length);
+      return s + rev;
+    }, 0) / withRev.length);
   }
+
+  // Filter comps by rating, maintaining flat array index for later use
+  const losesComps = [];
+  const competesComps = [];
+  const beatsComps = [];
+  comps.forEach((c, i) => {
+    const entry = { comp: c, flatIdx: i };
+    if(c.rating === 'loses') losesComps.push(entry);
+    else if(c.rating === 'beats') beatsComps.push(entry);
+    else competesComps.push(entry); // default
+  });
+
+  const projBest = sectionAvgRevenue(losesComps);
+  const projLikely = sectionAvgRevenue(competesComps);
+  const projWorst = sectionAvgRevenue(beatsComps);
 
   // Right: Revenue Projections (Best, Likely, Worst Case)
   h += '<div class="an-section"><div class="an-section-hdr">Revenue Projections</div><div class="an-section-body" style="padding:0">';
@@ -5788,80 +5813,93 @@ function renderAnalysisTab(r){
     h += '</div>';
   }
 
-  // ── Comparable Airbnb Analysis ──
-  h += '<div class="an-section"><div class="an-section-hdr">Comparable Airbnb Analysis <span style="font-size:.68rem;color:var(--text3);font-weight:400;text-transform:none;letter-spacing:0">('+comps.length+'/20)</span></div>';
-  h += '<div class="an-section-body">';
+  // ── Three Color-Coded Sections ──
+  // Helper to render a comp section
+  function renderCompSection(recId, entries, sectionClass, label, icon, color, category) {
+    const count = entries.length;
+    let html = '<div class="comp-section '+sectionClass+'">';
+    html += '<div class="comp-section-hdr" style="color:'+color+'">';
+    html += '<span>'+icon+' '+label+'</span>';
+    html += '<span class="comp-section-count">'+count+'/10</span>';
+    html += '</div>';
+    html += '<div class="comp-section-body">';
 
-  // Always show table with columns (even if empty, show headers so Basic users know what to fill)
-  h += '<div class="comp-table-wrap"><table class="comp-table">';
-  h += '<thead><tr><th>#</th><th>Revenue</th><th>Days</th><th>Occupancy</th><th>Rate</th><th style="min-width:52px">Guests</th><th style="min-width:68px">Bedrooms</th><th style="min-width:46px">Beds</th><th style="min-width:50px">Baths</th><th>Host</th><th>Rating</th><th class="comp-notes-cell">Notes</th><th>Link</th><th></th></tr></thead>';
-  h += '<tbody>';
-  if(comps.length > 0){
-    comps.forEach((comp, i) => {
-      const rating = comp.rating !== undefined ? comp.rating : '';
-      const linkIcon = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>';
-      h += '<tr>';
-      h += '<td style="color:var(--text3)">'+(i+1)+'</td>';
-      const revRaw = comp.annualRevenue || 0;
-      const rateRaw = comp.nightlyRate || 0;
-      const occRaw = comp.occupancy || 0;
-      const daysRaw = comp.daysAvailable || 0;
-      h += '<td><div class="comp-editable" onclick="compEditCell(this)" data-field="annualRevenue" data-rec="'+r.id+'" data-idx="'+i+'" data-raw="'+revRaw+'">'+(revRaw ? fmtMoney(Math.round(revRaw)) : '<span class="comp-placeholder">—</span>')+'</div></td>';
-      h += '<td><div class="comp-editable" onclick="compEditCell(this)" data-field="daysAvailable" data-rec="'+r.id+'" data-idx="'+i+'" data-raw="'+daysRaw+'">'+(daysRaw ? daysRaw : '<span class="comp-placeholder">—</span>')+'</div></td>';
-      h += '<td><div class="comp-editable" onclick="compEditCell(this)" data-field="occupancy" data-rec="'+r.id+'" data-idx="'+i+'" data-raw="'+occRaw+'">'+(occRaw ? '<span class="comp-occ-wrap">'+Math.round(parseFloat(occRaw))+'<span class="comp-occ-pct">%</span></span>' : '<span class="comp-placeholder">—</span>')+'</div></td>';
-      h += '<td><div class="comp-editable" onclick="compEditCell(this)" data-field="nightlyRate" data-rec="'+r.id+'" data-idx="'+i+'" data-raw="'+rateRaw+'">'+(rateRaw ? '$'+parseFloat(rateRaw).toFixed(2) : '<span class="comp-placeholder">—</span>')+'</div></td>';
-      h += '<td><div class="comp-editable" onclick="compEditCell(this)" data-field="guests" data-rec="'+r.id+'" data-idx="'+i+'" data-raw="'+(comp.guests||0)+'">'+(comp.guests ? comp.guests : '<span class="comp-placeholder">—</span>')+'</div></td>';
-      h += '<td><div class="comp-editable" onclick="compEditCell(this)" data-field="bedrooms" data-rec="'+r.id+'" data-idx="'+i+'" data-raw="'+(comp.bedrooms||0)+'">'+(comp.bedrooms ? comp.bedrooms : '<span class="comp-placeholder">—</span>')+'</div></td>';
-      h += '<td><div class="comp-editable" onclick="compEditCell(this)" data-field="beds" data-rec="'+r.id+'" data-idx="'+i+'" data-raw="'+(comp.beds||0)+'">'+(comp.beds ? comp.beds : '<span class="comp-placeholder">—</span>')+'</div></td>';
-      h += '<td><div class="comp-editable" onclick="compEditCell(this)" data-field="bathrooms" data-rec="'+r.id+'" data-idx="'+i+'" data-raw="'+(comp.bathrooms||0)+'">'+(comp.bathrooms ? comp.bathrooms : '<span class="comp-placeholder">—</span>')+'</div></td>';
-      h += '<td><div class="comp-editable" onclick="compEditCell(this)" data-field="host" data-rec="'+r.id+'" data-idx="'+i+'" data-raw="'+esc(comp.host||'')+'" data-type="text">'+(comp.host ? esc(comp.host) : '<span class="comp-placeholder">—</span>')+'</div></td>';
-      h += '<td><select class="comp-rating" onchange="updateCompField(\''+r.id+'\','+i+',\'rating\',this.value)">';
-      h += '<option value="" '+(rating===''?'selected':'')+'>—</option>';
-      h += '<option value="beats" '+(rating==='beats'?'selected':'')+'>Beats</option>';
-      h += '<option value="competes" '+(rating==='competes'?'selected':'')+'>Competes</option>';
-      h += '<option value="loses" '+(rating==='loses'?'selected':'')+'>Loses</option>';
-      h += '</select></td>';
-      const notePreview = comp.notes ? (comp.notes.replace(/<[^>]+>/g,' ').substring(0,30) + (comp.notes.length > 30 ? '...' : '')) : '';
-      h += '<td class="comp-notes-cell"><div class="comp-notes-preview" onclick="openCompNoteEditor(\''+r.id+'\','+i+')" title="Click to edit notes">'+(notePreview || '<span style="color:var(--text3)">+ Note</span>')+'</div></td>';
-      h += '<td class="comp-link-cell">'+(comp.link ? '<a href="'+esc(comp.link)+'" target="_blank" title="'+esc(comp.link)+'">'+linkIcon+'</a>' : '')+'</td>';
-      h += '<td><button class="comp-remove" onclick="confirmRemoveComp(\''+r.id+'\','+i+')" title="Remove">✕</button></td>';
-      h += '</tr>';
-    });
-  } else {
-    h += '<tr><td colspan="14" style="text-align:center;padding:24px 16px;color:var(--text3);font-size:.88rem">';
-    h += 'No comparables added yet. Paste an Airbnb link below to start your analysis.';
-    h += '</td></tr>';
+    if(entries.length === 0){
+      html += '<div class="comp-section-empty">No comparables in this category yet.</div>';
+    } else {
+      html += '<div class="comp-table-wrap"><table class="comp-table">';
+      html += '<thead><tr><th>#</th><th>Revenue</th><th>Days</th><th>Occupancy</th><th>Rate</th><th style="min-width:52px">Guests</th><th style="min-width:68px">Bedrooms</th><th style="min-width:46px">Beds</th><th style="min-width:50px">Baths</th><th>Host</th><th>Rating</th><th class="comp-notes-cell">Notes</th><th>Link</th><th></th></tr></thead>';
+      html += '<tbody>';
+
+      entries.forEach((entry, displayIdx) => {
+        const comp = entry.comp;
+        const i = entry.flatIdx; // Use the flat array index for all handlers
+        const linkIcon = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>';
+
+        html += '<tr>';
+        html += '<td style="color:var(--text3)">'+(displayIdx+1)+'</td>';
+        const revRaw = comp.annualRevenue || 0;
+        const rateRaw = comp.nightlyRate || 0;
+        const occRaw = comp.occupancy || 0;
+        const daysRaw = comp.daysAvailable || 0;
+        html += '<td><div class="comp-editable" onclick="compEditCell(this)" data-field="annualRevenue" data-rec="'+recId+'" data-idx="'+i+'" data-raw="'+revRaw+'">'+(revRaw ? fmtMoney(Math.round(revRaw)) : '<span class="comp-placeholder">—</span>')+'</div></td>';
+        html += '<td><div class="comp-editable" onclick="compEditCell(this)" data-field="daysAvailable" data-rec="'+recId+'" data-idx="'+i+'" data-raw="'+daysRaw+'">'+(daysRaw ? daysRaw : '<span class="comp-placeholder">—</span>')+'</div></td>';
+        html += '<td><div class="comp-editable" onclick="compEditCell(this)" data-field="occupancy" data-rec="'+recId+'" data-idx="'+i+'" data-raw="'+occRaw+'">'+(occRaw ? '<span class="comp-occ-wrap">'+Math.round(parseFloat(occRaw))+'<span class="comp-occ-pct">%</span></span>' : '<span class="comp-placeholder">—</span>')+'</div></td>';
+        html += '<td><div class="comp-editable" onclick="compEditCell(this)" data-field="nightlyRate" data-rec="'+recId+'" data-idx="'+i+'" data-raw="'+rateRaw+'">'+(rateRaw ? '$'+parseFloat(rateRaw).toFixed(2) : '<span class="comp-placeholder">—</span>')+'</div></td>';
+        html += '<td><div class="comp-editable" onclick="compEditCell(this)" data-field="guests" data-rec="'+recId+'" data-idx="'+i+'" data-raw="'+(comp.guests||0)+'">'+(comp.guests ? comp.guests : '<span class="comp-placeholder">—</span>')+'</div></td>';
+        html += '<td><div class="comp-editable" onclick="compEditCell(this)" data-field="bedrooms" data-rec="'+recId+'" data-idx="'+i+'" data-raw="'+(comp.bedrooms||0)+'">'+(comp.bedrooms ? comp.bedrooms : '<span class="comp-placeholder">—</span>')+'</div></td>';
+        html += '<td><div class="comp-editable" onclick="compEditCell(this)" data-field="beds" data-rec="'+recId+'" data-idx="'+i+'" data-raw="'+(comp.beds||0)+'">'+(comp.beds ? comp.beds : '<span class="comp-placeholder">—</span>')+'</div></td>';
+        html += '<td><div class="comp-editable" onclick="compEditCell(this)" data-field="bathrooms" data-rec="'+recId+'" data-idx="'+i+'" data-raw="'+(comp.bathrooms||0)+'">'+(comp.bathrooms ? comp.bathrooms : '<span class="comp-placeholder">—</span>')+'</div></td>';
+        html += '<td><div class="comp-editable" onclick="compEditCell(this)" data-field="host" data-rec="'+recId+'" data-idx="'+i+'" data-raw="'+esc(comp.host||'')+'" data-type="text">'+(comp.host ? esc(comp.host) : '<span class="comp-placeholder">—</span>')+'</div></td>';
+        // Rating is now a non-editable badge
+        const badgeClass = 'comp-rating-badge '+category;
+        const badgeLabel = category === 'loses' ? 'Loses' : category === 'beats' ? 'Beats' : 'Competes';
+        html += '<td><span class="'+badgeClass+'">'+badgeLabel+'</span></td>';
+        const notePreview = comp.notes ? (comp.notes.replace(/<[^>]+>/g,' ').substring(0,30) + (comp.notes.length > 30 ? '...' : '')) : '';
+        html += '<td class="comp-notes-cell"><div class="comp-notes-preview" onclick="openCompNoteEditor(\''+recId+'\','+i+')" title="Click to edit notes">'+(notePreview || '<span style="color:var(--text3)">+ Note</span>')+'</div></td>';
+        html += '<td class="comp-link-cell">'+(comp.link ? '<a href="'+esc(comp.link)+'" target="_blank" title="'+esc(comp.link)+'">'+linkIcon+'</a>' : '')+'</td>';
+        html += '<td><button class="comp-remove" onclick="confirmRemoveComp(\''+recId+'\','+i+')" title="Remove">✕</button></td>';
+        html += '</tr>';
+      });
+
+      html += '</tbody></table></div>';
+    }
+
+    // Add comp input (if section has < 10 comps)
+    if(count < 10){
+      html += '<div class="comp-add-row">';
+      html += '<input type="text" id="compLinkInput_'+category+'" placeholder="Paste Airbnb link here..." onkeydown="if(event.key===\'Enter\'){event.preventDefault();addComp(\''+recId+'\', \''+category+'\')}" />';
+      html += '<button onclick="addComp(\''+recId+'\', \''+category+'\')">+ Add Comp</button>';
+      html += '</div>';
+      html += '<div style="text-align:right;font-size:.68rem;color:var(--text3);margin-top:4px">Enter to add</div>';
+    }
+
+    html += '</div></div>'; // end section
+    return html;
   }
-  h += '</tbody></table></div>';
 
-  // Add comp row — at the bottom
-  if(comps.length < 20){
-    h += '<div class="comp-add-row">';
-    h += '<input type="text" id="compLinkInput" placeholder="Paste Airbnb link here..." onkeydown="if(event.key===\'Enter\'){event.preventDefault();addComp(\''+r.id+'\')}" />';
-    h += '<button onclick="addComp(\''+r.id+'\')">+ Add Comp</button>';
-    h += '</div>';
-    h += '<div style="text-align:right;font-size:.68rem;color:var(--text3);margin-top:4px">Enter to add</div>';
-  }
-
-  h += '</div></div>';
+  h += renderCompSection(r.id, losesComps, 'loses-to', 'Loses To', '⬇️', '#ef4444', 'loses');
+  h += renderCompSection(r.id, competesComps, 'competes-with', 'Competes With', '⚔️', 'var(--primary)', 'competes');
+  h += renderCompSection(r.id, beatsComps, 'beats', 'Beats', '⬆️', '#10b981', 'beats');
 
   return h;
 }
 
-function addComp(recId){
+function addComp(recId, category){
   const r = records.find(x => x.id === recId);
   if(!r) return;
-  const input = document.getElementById('compLinkInput');
+  const input = document.getElementById('compLinkInput_' + category);
   const link = input?.value?.trim();
   if(!link){ showAppAlert('Please paste an Airbnb link', {title: 'Validation', icon: '⚠️'}); return }
   const comps = getComps(r);
-  if(comps.length >= 20){ showAppAlert('Maximum 20 comparables reached', {title: 'Limit Reached', icon: '📊'}); return }
+  const sectionCount = comps.filter(c => c.rating === category).length;
+  if(sectionCount >= 10){ showAppAlert('Maximum 10 comparables per section', {title: 'Limit Reached', icon: '📊'}); return }
   const shortLink = link.replace(/\?.*$/,'').replace(/https?:\/\/(www\.)?airbnb\.com\/rooms\//,'').substring(0,18)+'...';
   comps.push({
     link: link, linkShort: shortLink,
     annualRevenue:0, daysAvailable:0, occupancy:0, nightlyRate:0,
     guests:0, bedrooms:0, beds:0, bathrooms:0, host:'',
-    rating:'', notes:''
+    rating: category, notes:''
   });
   saveData();
   render();
@@ -6039,7 +6077,8 @@ function compEditCell(el, skipBlurSave){
       // Save current value
       _saveActiveCompEdit();
 
-      // Find all editable cells in the table
+      // Find all editable cells in the current section's table
+      const sectionEl = el.closest('.comp-section');
       const table = el.closest('table');
       if(!table) { _rerenderAnalysisTab(); return; }
       const allEditables = Array.from(table.querySelectorAll('.comp-editable'));
@@ -6050,9 +6089,18 @@ function compEditCell(el, skipBlurSave){
       if(nextIdx >= 0 && nextIdx < allEditables.length){
         // Re-render first so cells get fresh values, then open the next cell
         _rerenderAnalysisTab();
-        // After re-render, find the same cell by position and open it
+        // After re-render, find the same cell in the same section's table and open it
         requestAnimationFrame(() => {
-          const newTable = document.querySelector('.comp-table');
+          let newTable = null;
+          if(sectionEl){
+            const sectionClass = Array.from(sectionEl.classList).find(c => c.match(/loses-to|competes-with|beats/));
+            if(sectionClass){
+              const matchingSection = document.querySelector('.comp-section.' + sectionClass);
+              if(matchingSection) newTable = matchingSection.querySelector('.comp-table');
+            }
+          } else {
+            newTable = document.querySelector('.comp-table');
+          }
           if(!newTable) return;
           const newEditables = Array.from(newTable.querySelectorAll('.comp-editable'));
           if(newEditables[nextIdx]){
