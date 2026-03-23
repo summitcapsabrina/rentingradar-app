@@ -5173,20 +5173,27 @@ function calcComputeAll(r){
     marketPercentile = Math.round((beatsCount + 0.5 * competesCount) / totalSectionComps * 100);
   }
 
-  // Compute single projected revenue — weighted by count AND adjusted by direction
-  let projectedRevenue = 0;
+  // Compute projected revenue — weighted by count AND adjusted by direction
+  // Plus optimistic/pessimistic ranges using shifted multipliers
+  const OPTIMISTIC_MULT  = { loses: 0.95, competes: 1.10, beats: 1.25 };
+  const PESSIMISTIC_MULT = { loses: 0.75, competes: 0.90, beats: 1.05 };
+
+  let projectedRevenue = 0, optimisticRevenue = 0, pessimisticRevenue = 0;
   let hasProjectionData = false;
 
   if(hasEnoughComps){
-    let weightedSum = 0;
-    let totalWeight = 0;
+    let wSum = 0, oSum = 0, pSum = 0, totalWeight = 0;
     compsWithRevData.forEach(cx => {
       const rev = _compRevenue(cx);
-      const mult = DIRECTION_MULT[cx.rating] || 1.0;
-      weightedSum += rev * mult;
+      const rating = cx.rating || 'competes';
+      wSum += rev * (DIRECTION_MULT[rating] || 1.0);
+      oSum += rev * (OPTIMISTIC_MULT[rating] || 1.0);
+      pSum += rev * (PESSIMISTIC_MULT[rating] || 1.0);
       totalWeight += 1;
     });
-    projectedRevenue = totalWeight > 0 ? Math.round(weightedSum / totalWeight) : 0;
+    projectedRevenue = totalWeight > 0 ? Math.round(wSum / totalWeight) : 0;
+    optimisticRevenue = totalWeight > 0 ? Math.round(oSum / totalWeight) : 0;
+    pessimisticRevenue = totalWeight > 0 ? Math.round(pSum / totalWeight) : 0;
     hasProjectionData = projectedRevenue > 0;
   }
 
@@ -5203,7 +5210,9 @@ function calcComputeAll(r){
     return { monthlyRev: mRev, totalMonthlyExp: mExp, annualExp: aExp, monthlyNOI: mNOI, annualNOI: mNOI*12, monthlyCF: mCF, annualCF: aCF, cocReturn: coc };
   }
   const projectedD = hasProjectionData ? deriveFromRev(projectedRevenue) : deriveFromRev(annualRevenue);
-  return { c, br, monthlyRent, furnishCost, totalInvested, avgDailyRate, estOccupancyRate, daysOccupied, annualRevenue, monthlyRevenue, cleaning, coHostFee, airbnbFee, totalMonthlyExp, annualExp, monthlyNOI, annualNOI, monthlyCF, annualCF, cocReturn, compsCount: comps.length, projectedRevenue, hasProjectionData, projectedD, positionScore, marketPercentile, losesCount: losesCount || 0, competesCount: competesCount || 0, beatsCount: beatsCount || 0 };
+  const optimisticD = hasProjectionData ? deriveFromRev(optimisticRevenue) : null;
+  const pessimisticD = hasProjectionData ? deriveFromRev(pessimisticRevenue) : null;
+  return { c, br, monthlyRent, furnishCost, totalInvested, avgDailyRate, estOccupancyRate, daysOccupied, annualRevenue, monthlyRevenue, cleaning, coHostFee, airbnbFee, totalMonthlyExp, annualExp, monthlyNOI, annualNOI, monthlyCF, annualCF, cocReturn, compsCount: comps.length, projectedRevenue, optimisticRevenue, pessimisticRevenue, hasProjectionData, projectedD, optimisticD, pessimisticD, positionScore, marketPercentile, losesCount: losesCount || 0, competesCount: competesCount || 0, beatsCount: beatsCount || 0 };
 }
 
 function renderExpensesTab(r){
@@ -5460,12 +5469,14 @@ function renderCalculatorTab(r){
     return '<span style="color:var(--num-danger)">-$'+Math.abs(val).toLocaleString()+suffix+'</span>';
   }
 
-  // Two non-clickable columns: Comp Avg (simple average) and Projected (weighted+adjusted)
+  // Three non-clickable columns: Pessimistic, Projected, Optimistic
   const cols = [
-    { key:'avg', label:'Comp Avg', color:'var(--text2)',
-      rev: insufficientComps ? 0 : Math.round(v.annualRevenue), exp: insufficientComps ? 0 : Math.round(v.annualExp), hasData: !insufficientComps },
+    { key:'pessimistic', label:'Pessimistic', color:'var(--num-danger)',
+      rev: hasProj ? Math.round(v.pessimisticRevenue) : 0, exp: hasProj ? Math.round(v.pessimisticD.annualExp) : 0, hasData: hasProj },
     { key:'projected', label:'Projected', color:'var(--num-computed)',
-      rev: hasProj ? Math.round(v.projectedRevenue) : 0, exp: hasProj ? Math.round(v.projectedD.annualExp) : 0, hasData: hasProj }
+      rev: hasProj ? Math.round(v.projectedRevenue) : 0, exp: hasProj ? Math.round(v.projectedD.annualExp) : 0, hasData: hasProj },
+    { key:'optimistic', label:'Optimistic', color:'var(--num-success)',
+      rev: hasProj ? Math.round(v.optimisticRevenue) : 0, exp: hasProj ? Math.round(v.optimisticD.annualExp) : 0, hasData: hasProj }
   ];
   cols.forEach(col => {
     col.net = col.hasData ? (col.rev - col.exp - projAnnualRent) : 0;
@@ -5477,9 +5488,10 @@ function renderCalculatorTab(r){
   // Non-clickable column headers
   h += '<div class="pyn-col-headers">';
   h += '<div class="pyn-label-spacer"></div>';
+  const colTitles = { pessimistic: 'Conservative estimate — lower multipliers on comp revenue', projected: 'Weighted by comp distribution and competitive position', optimistic: 'Best-case estimate — higher multipliers on comp revenue' };
   cols.forEach(col => {
     const isProjected = col.key === 'projected';
-    h += '<div class="pyn-col-header'+(isProjected?' pyn-col-active':'')+'" style="--col-color:'+col.color+';cursor:default" title="'+(isProjected ? 'Weighted by comp distribution and competitive position' : 'Simple average across all comps')+'">';
+    h += '<div class="pyn-col-header'+(isProjected?' pyn-col-active':'')+'" style="--col-color:'+col.color+';cursor:default" title="'+(colTitles[col.key] || '')+'">';
     h += '<span class="pyn-col-label">'+col.label+'</span>';
     if(isProjected) h += '<div class="pyn-col-indicator"></div>';
     h += '</div>';
@@ -5523,15 +5535,21 @@ function renderCalculatorTab(r){
 
   h += '</div></div>';
 
-  // Deal Temperature — driven by single projected cash flow (no user selection)
-  const dealMonthlyNet = hasProj ? cols[1].monthlyNet : (insufficientComps ? 0 : cols[0].monthlyNet);
+  // Deal Temperature — confidence-discounted by competitive position
+  // Position score: -1.0 (loses to all) → +1.0 (beats all)
+  // Confidence: 55% (weakest) → 100% (strongest)
+  // Adjusted cash flow = projected × confidence → drives deal temp
+  const rawMonthlyNet = hasProj ? cols[1].monthlyNet : 0;
+  const confidence = 0.55 + 0.45 * ((v.positionScore + 1) / 2);
+  const dealMonthlyNet = Math.round(rawMonthlyNet * confidence);
   const dealTemp = insufficientComps ? null : (dealMonthlyNet >= 1000 ? 'slam-dunk' : dealMonthlyNet >= 500 ? 'potential' : dealMonthlyNet > 0 ? 'risky' : 'no-go');
-  const dealSource = insufficientComps ? 'Add at least 3 comps in Competitor Analysis' : 'Weighted projection' + (v.marketPercentile !== undefined ? ' · ' + ordinal(v.marketPercentile) + ' percentile in market' : '');
+  const confidencePct = Math.round(confidence * 100);
+  const dealSource = insufficientComps ? 'Add at least 3 comps in Competitor Analysis' : confidencePct + '% confidence · ' + ordinal(v.marketPercentile) + ' percentile in market';
   const temps = [
-    { key:'no-go', label:'No-Go', icon:'🚫', color:'#ef4444', desc:'Negative or zero cash flow', hint:'Walk away from this one.' },
-    { key:'risky', label:'Risky', icon:'⚠️', color:'#f59e0b', desc:'Under $500/mo net', hint:'Thin margins — proceed with caution.' },
-    { key:'potential', label:'Potential', icon:'🔥', color:'#3b82f6', desc:'$500–$999/mo net', hint:'Solid opportunity worth exploring.' },
-    { key:'slam-dunk', label:'Slam-Dunk', icon:'🏆', color:'#10b981', desc:'$1,000+/mo net', hint:'Move fast — this is a winner.' }
+    { key:'no-go', label:'No-Go', icon:'🚫', color:'#ef4444', desc:'Negative or zero adjusted CF', hint:'Walk away from this one.' },
+    { key:'risky', label:'Risky', icon:'⚠️', color:'#f59e0b', desc:'Under $500/mo adjusted', hint:'Thin margins — proceed with caution.' },
+    { key:'potential', label:'Potential', icon:'🔥', color:'#3b82f6', desc:'$500–$999/mo adjusted', hint:'Solid opportunity worth exploring.' },
+    { key:'slam-dunk', label:'Slam-Dunk', icon:'🏆', color:'#10b981', desc:'$1,000+/mo adjusted', hint:'Move fast — this is a winner.' }
   ];
   h += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:6px">';
   temps.forEach(t => {
@@ -5547,7 +5565,17 @@ function renderCalculatorTab(r){
     h += '</div>';
   });
   h += '</div>';
-  h += '<div style="text-align:right;font-size:.62rem;color:var(--text3);font-style:italic;margin-bottom:16px">'+dealSource+'</div>';
+  // Show confidence breakdown below deal temp
+  if(!insufficientComps){
+    const confColor = confidencePct >= 80 ? 'var(--num-success)' : confidencePct >= 65 ? 'var(--num-warning)' : 'var(--num-danger)';
+    h += '<div style="display:flex;align-items:center;justify-content:space-between;font-size:.65rem;color:var(--text3);margin-bottom:16px;gap:8px">';
+    h += '<div style="display:flex;align-items:center;gap:6px"><span>Confidence:</span><span style="font-weight:700;color:'+confColor+'">'+confidencePct+'%</span>';
+    h += '<span style="color:var(--text3);opacity:.7">('+fmtMoney(rawMonthlyNet)+'/mo × '+confidencePct+'% = '+fmtMoney(dealMonthlyNet)+'/mo)</span></div>';
+    h += '<div style="font-style:italic">'+dealSource+'</div>';
+    h += '</div>';
+  } else {
+    h += '<div style="text-align:right;font-size:.62rem;color:var(--text3);font-style:italic;margin-bottom:16px">'+dealSource+'</div>';
+  }
 
   // Forecasted Revenue (driven by Analysis comps)
   h += '<div class="calc-section"><div class="calc-section-header">Forecasted Revenue</div><div class="calc-section-body">';
@@ -5793,9 +5821,10 @@ function renderAnalysisTab(r){
   h += '</div>';
   h += '</div></div>';
 
-  // ── Revenue Projection (single weighted projection from calcComputeAll) ──
-  // Uses directional multipliers: Loses To ×0.85, Competes With ×1.0, Beats ×1.15
+  // ── Revenue Projection (weighted projection + optimistic/pessimistic range) ──
   const projRev = v.projectedRevenue || 0;
+  const optRev = v.optimisticRevenue || 0;
+  const pessRev = v.pessimisticRevenue || 0;
   const hasProj = v.hasProjectionData;
   const insuffComps = v.compsCount < 3;
 
@@ -5810,26 +5839,15 @@ function renderAnalysisTab(r){
     else competesComps.push(entry); // default
   });
 
-  // Simple comp average (unweighted) for reference
-  const compAvgRev = (function(){
-    const withRev = comps.filter(cx => { let rv = parseFloat(cx.annualRevenue)||0; if(rv>0) return true; return (parseFloat(cx.nightlyRate)||0)>0 && (parseFloat(cx.occupancy)||0)>0; });
-    if(withRev.length === 0) return 0;
-    return Math.round(withRev.reduce((s, cx) => { let rv = parseFloat(cx.annualRevenue)||0; if(rv===0){ rv = (parseFloat(cx.nightlyRate)||0) * (parseFloat(cx.daysAvailable)||365) * ((parseFloat(cx.occupancy)||0)/100); } return s+rv; }, 0) / withRev.length);
-  })();
-
   // Right: Revenue Projection panel
   h += '<div class="an-section"><div class="an-section-hdr">Revenue Projection</div><div class="an-section-body" style="padding:0">';
   h += '<div class="an-req-bar" style="border:none;border-radius:0;margin:0">';
   if(insuffComps){
     h += '<div class="an-req-item" style="text-align:center;padding:18px 14px"><div class="req-label" style="color:var(--text3);font-size:.82rem">Add at least 3 comps to see projections</div></div>';
   } else {
-    h += '<div class="an-req-item"><div class="req-label" style="color:var(--text2)">Comp Average</div><div class="req-val" style="color:var(--text2)">'+(compAvgRev ? fmtMoney(compAvgRev) : '$0')+'<span class="req-period">/yr</span></div><div class="req-annual">'+(compAvgRev ? fmtMoney(Math.round(compAvgRev/12)) : '$0')+'/mo</div></div>';
-    h += '<div class="an-req-item" style="background:rgba(99,129,250,.06)"><div class="req-label" style="color:var(--num-computed)">Weighted Projection</div><div class="req-val" style="color:var(--num-computed)">'+(projRev ? fmtMoney(projRev) : '$0')+'<span class="req-period">/yr</span></div><div class="req-annual">'+(projRev ? fmtMoney(Math.round(projRev/12)) : '$0')+'/mo</div></div>';
-    h += '<div class="an-req-item"><div class="req-label" style="color:var(--text3)">Required Revenue</div><div class="req-val" style="color:var(--text3)">'+fmtMoney(Math.round(monthlyReqRev*12))+'<span class="req-period">/yr</span></div><div class="req-annual">'+fmtMoney(Math.round(monthlyReqRev))+'/mo</div></div>';
-    const diff = projRev - Math.round(monthlyReqRev * 12);
-    const diffColor = diff >= 0 ? 'var(--num-success)' : 'var(--num-danger)';
-    const diffSign = diff >= 0 ? '+' : '';
-    h += '<div class="an-req-item total"><div class="req-label" style="color:'+diffColor+'">Projected vs Required</div><div class="req-val" style="color:'+diffColor+'">'+diffSign+fmtMoney(diff)+'<span class="req-period">/yr</span></div><div class="req-annual">'+diffSign+fmtMoney(Math.round(diff/12))+'/mo</div></div>';
+    h += '<div class="an-req-item"><div class="req-label" style="color:var(--num-success)">Optimistic</div><div class="req-val" style="color:var(--num-success)">'+(optRev ? fmtMoney(optRev) : '$0')+'<span class="req-period">/yr</span></div><div class="req-annual">'+(optRev ? fmtMoney(Math.round(optRev/12)) : '$0')+'/mo</div></div>';
+    h += '<div class="an-req-item" style="background:rgba(99,129,250,.06)"><div class="req-label" style="color:var(--num-computed)">Projected</div><div class="req-val" style="color:var(--num-computed)">'+(projRev ? fmtMoney(projRev) : '$0')+'<span class="req-period">/yr</span></div><div class="req-annual">'+(projRev ? fmtMoney(Math.round(projRev/12)) : '$0')+'/mo</div></div>';
+    h += '<div class="an-req-item"><div class="req-label" style="color:var(--num-danger)">Pessimistic</div><div class="req-val" style="color:var(--num-danger)">'+(pessRev ? fmtMoney(pessRev) : '$0')+'<span class="req-period">/yr</span></div><div class="req-annual">'+(pessRev ? fmtMoney(Math.round(pessRev/12)) : '$0')+'/mo</div></div>';
   }
   h += '</div>';
   h += '</div></div>';
