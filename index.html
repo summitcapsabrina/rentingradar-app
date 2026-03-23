@@ -5009,7 +5009,6 @@ function activateHeroInput(recId, field, containerId, currentVal){
 
 /* ===== PROFILE TABS ===== */
 let profileActiveTab = 'details';
-let calcProjMode = 'realistic'; // 'avg','optimistic','realistic','pessimistic'
 const tabScrollPositions = {};
 
 function setProfileTab(tab){
@@ -5028,11 +5027,6 @@ function setProfileTab(tab){
   } else if(scrollContainer){
     requestAnimationFrame(() => { scrollContainer.scrollTop = 0; });
   }
-}
-
-function setCalcProjMode(mode){
-  calcProjMode = mode;
-  render();
 }
 
 /* ===== CALCULATOR TAB ===== */
@@ -5143,75 +5137,57 @@ function calcComputeAll(r){
   const monthlyCF = monthlyNOI - monthlyRent;
   const annualCF = monthlyCF * 12;
   const cocReturn = totalInvested > 0 ? (annualCF / totalInvested * 100) : 0;
-  // Compute projections from sections (section averages instead of multipliers)
-  let likelyRevenue = 0, bestRevenue = 0, worstRevenue = 0;
-  let hasRatedData = false;
+  // === Single Weighted Projection with Directional Multipliers ===
+  // Loses To comps earn MORE than us → discount their revenue (×0.85)
+  // Competes With comps earn SIMILAR → use as-is (×1.0)
+  // Beats comps earn LESS than us → boost their revenue (×1.15)
+  const DIRECTION_MULT = { loses: 0.85, competes: 1.0, beats: 1.15 };
 
-  function _sectionAvgRev(compsArr, cat){
-    const sectionComps = compsArr.filter(c => c.rating === cat);
-    const withRev = sectionComps.filter(cx => {
-      const rev = parseFloat(cx.annualRevenue) || 0;
-      if(rev > 0) return true;
+  // Get each comp's revenue (from annualRevenue or rate×occ×days)
+  function _compRevenue(cx){
+    let rev = parseFloat(cx.annualRevenue) || 0;
+    if(rev === 0){
       const rr = parseFloat(cx.nightlyRate) || 0;
       const oo = parseFloat(cx.occupancy) || 0;
-      return rr > 0 && oo > 0;
-    });
-    if(withRev.length === 0) return 0;
-    return Math.round(withRev.reduce((s, cx) => {
-      let rev = parseFloat(cx.annualRevenue) || 0;
-      if(rev === 0){
-        const rr = parseFloat(cx.nightlyRate) || 0;
-        const oo = parseFloat(cx.occupancy) || 0;
-        const dd = parseFloat(cx.daysAvailable) || 365;
-        rev = rr * dd * (oo / 100);
-      }
-      return s + rev;
-    }, 0) / withRev.length);
+      const dd = parseFloat(cx.daysAvailable) || 365;
+      rev = rr * dd * (oo / 100);
+    }
+    return rev;
   }
 
-  const hasLoses = comps.some(c => c.rating === 'loses');
-  const hasCompetes = comps.some(c => c.rating === 'competes');
-  const hasBeats = comps.some(c => c.rating === 'beats');
+  // Filter comps that have revenue data
+  const compsWithRevData = comps.filter(cx => _compRevenue(cx) > 0);
+  const hasEnoughComps = compsWithRevData.length >= 3;
 
-  if(hasLoses && hasCompetes && hasBeats){
-    bestRevenue = _sectionAvgRev(comps, 'loses');
-    likelyRevenue = _sectionAvgRev(comps, 'competes');
-    worstRevenue = _sectionAvgRev(comps, 'beats');
-    hasRatedData = (bestRevenue > 0 || likelyRevenue > 0 || worstRevenue > 0);
-  }
-
-  // === Competitive Position & Weighted Projections ===
+  // Section counts (for position scoring)
   const losesCount = comps.filter(c => c.rating === 'loses').length;
   const competesCount = comps.filter(c => c.rating === 'competes').length;
   const beatsCount = comps.filter(c => c.rating === 'beats').length;
   const totalSectionComps = losesCount + competesCount + beatsCount;
 
-  let positionScore = 0; // -1 (all losses) to +1 (all beats)
+  // Position score & percentile
+  let positionScore = 0;
   let marketPercentile = 50;
-  let realisticRevenue = 0, optimisticRevenue = 0, pessimisticRevenue = 0;
-
-  if(totalSectionComps > 0 && hasLoses && hasCompetes && hasBeats){
+  if(totalSectionComps > 0){
     positionScore = (-1 * losesCount + 0 * competesCount + 1 * beatsCount) / totalSectionComps;
     marketPercentile = Math.round((beatsCount + 0.5 * competesCount) / totalSectionComps * 100);
+  }
 
-    // Weighted blended revenue = realistic baseline
-    // Each section's avg weighted by how many comps are in it
-    const losesAvg = bestRevenue || 0;   // bestRevenue = _sectionAvgRev(comps, 'loses')
-    const competesAvg = likelyRevenue || 0; // likelyRevenue = _sectionAvgRev(comps, 'competes')
-    const beatsAvg = worstRevenue || 0;  // worstRevenue = _sectionAvgRev(comps, 'beats')
+  // Compute single projected revenue — weighted by count AND adjusted by direction
+  let projectedRevenue = 0;
+  let hasProjectionData = false;
 
-    realisticRevenue = Math.round(
-      (losesAvg * losesCount + competesAvg * competesCount + beatsAvg * beatsCount) / totalSectionComps
-    );
-
-    // Tempered optimistic/pessimistic — NOT raw extremes
-    // Position-aware: bad position = less upside, more downside
-    const normPos = (positionScore + 1) / 2; // 0 to 1 (0=all losses, 1=all beats)
-    const optFactor = 0.15 + 0.15 * normPos;   // 0.15 (bad pos) to 0.30 (good pos)
-    const pessFactor = 0.30 - 0.15 * normPos;  // 0.30 (bad pos) to 0.15 (good pos)
-
-    optimisticRevenue = Math.round(realisticRevenue + (losesAvg - realisticRevenue) * optFactor);
-    pessimisticRevenue = Math.round(realisticRevenue - (realisticRevenue - beatsAvg) * pessFactor);
+  if(hasEnoughComps){
+    let weightedSum = 0;
+    let totalWeight = 0;
+    compsWithRevData.forEach(cx => {
+      const rev = _compRevenue(cx);
+      const mult = DIRECTION_MULT[cx.rating] || 1.0;
+      weightedSum += rev * mult;
+      totalWeight += 1;
+    });
+    projectedRevenue = totalWeight > 0 ? Math.round(weightedSum / totalWeight) : 0;
+    hasProjectionData = projectedRevenue > 0;
   }
 
   // Helper: compute derived values for a given annual revenue
@@ -5226,14 +5202,8 @@ function calcComputeAll(r){
     const coc = totalInvested > 0 ? (aCF / totalInvested * 100) : 0;
     return { monthlyRev: mRev, totalMonthlyExp: mExp, annualExp: aExp, monthlyNOI: mNOI, annualNOI: mNOI*12, monthlyCF: mCF, annualCF: aCF, cocReturn: coc };
   }
-  const realisticD = hasRatedData ? deriveFromRev(realisticRevenue) : deriveFromRev(annualRevenue);
-  const optimisticD = hasRatedData ? deriveFromRev(optimisticRevenue) : null;
-  const pessimisticD = hasRatedData ? deriveFromRev(pessimisticRevenue) : null;
-  // Keep legacy names for backward compat but also add new ones
-  const likelyD = realisticD;
-  const bestD = optimisticD;
-  const worstD = pessimisticD;
-  return { c, br, monthlyRent, furnishCost, totalInvested, avgDailyRate, estOccupancyRate, daysOccupied, annualRevenue, monthlyRevenue, cleaning, coHostFee, airbnbFee, totalMonthlyExp, annualExp, monthlyNOI, annualNOI, monthlyCF, annualCF, cocReturn, compsCount: comps.length, likelyRevenue, bestRevenue, worstRevenue, realisticRevenue, optimisticRevenue, pessimisticRevenue, hasRatedData, likelyD, bestD, worstD, realisticD, optimisticD, pessimisticD, positionScore, marketPercentile, hasAllSections: hasLoses && hasCompetes && hasBeats, losesCount: losesCount || 0, competesCount: competesCount || 0, beatsCount: beatsCount || 0 };
+  const projectedD = hasProjectionData ? deriveFromRev(projectedRevenue) : deriveFromRev(annualRevenue);
+  return { c, br, monthlyRent, furnishCost, totalInvested, avgDailyRate, estOccupancyRate, daysOccupied, annualRevenue, monthlyRevenue, cleaning, coHostFee, airbnbFee, totalMonthlyExp, annualExp, monthlyNOI, annualNOI, monthlyCF, annualCF, cocReturn, compsCount: comps.length, projectedRevenue, hasProjectionData, projectedD, positionScore, marketPercentile, losesCount: losesCount || 0, competesCount: competesCount || 0, beatsCount: beatsCount || 0 };
 }
 
 function renderExpensesTab(r){
@@ -5311,23 +5281,8 @@ function renderCalculatorTab(r){
   // ══════ LEFT PANEL: KPIs + PAYBACK ══════
   h += '<div class="calc-panel">';
 
-  // Resolve active projection data based on selected mode
-  const pm = calcProjMode; // 'avg','optimistic','realistic','pessimistic'
-  const projLabels = { avg:'Comp Avg', optimistic:'Optimistic', realistic:'Realistic', pessimistic:'Pessimistic' };
-  const projColors = { avg:'var(--text3)', optimistic:'var(--num-success)', realistic:'var(--num-computed)', pessimistic:'var(--num-danger)' };
-  let activeD; // derived data for selected projection
-  if(pm === 'avg' || !v.hasRatedData){
-    activeD = { monthlyNOI: v.monthlyNOI, annualNOI: v.annualNOI, monthlyCF: v.monthlyCF, annualCF: v.annualCF, cocReturn: v.cocReturn };
-  } else if(pm === 'optimistic' && v.optimisticD){
-    activeD = v.optimisticD;
-  } else if(pm === 'pessimistic' && v.pessimisticD){
-    activeD = v.pessimisticD;
-  } else {
-    activeD = v.realisticD;
-  }
-  const activeProjLabel = v.hasRatedData ? projLabels[pm] : 'Comp Avg';
-
-  // KPI Cards (top of left panel) — driven by selected projection
+  // Single projection drives all KPIs, Deal Temp, Payback — no user selection
+  const activeD = v.hasProjectionData ? v.projectedD : { monthlyNOI: v.monthlyNOI, annualNOI: v.annualNOI, monthlyCF: v.monthlyCF, annualCF: v.annualCF, cocReturn: v.cocReturn };
   const kpiNOI = activeD.monthlyNOI;
   const kpiAnnualNOI = activeD.annualNOI;
   const kpiMonthlyCF = activeD.monthlyCF;
@@ -5335,20 +5290,19 @@ function renderCalculatorTab(r){
   const kpiCoC = activeD.cocReturn;
   const cfClass = kpiMonthlyCF >= 0 ? 'positive' : 'negative';
   const cocClass = kpiCoC >= 0 ? 'positive' : 'negative';
-  const kpiTagColor = projColors[v.hasRatedData?pm:'avg'];
-  const kpiTagHtml = '<div class="kpi-proj-tag" style="color:'+kpiTagColor+';border-color:'+kpiTagColor+'">'+activeProjLabel+'</div>';
-  const insufficientComps = !v.hasAllSections;
+  const projTagHtml = '<div class="kpi-proj-tag" style="color:var(--num-computed);border-color:var(--num-computed)">Projected</div>';
+  const insufficientComps = v.compsCount < 3;
   const nedHtml = '<span style="color:var(--text3);font-size:.78rem;font-style:italic">Not Enough Data</span>';
-  const nedSubHtml = '<span style="color:var(--text3);font-size:.7rem;font-style:italic">Add at least 1 comp per section in Competitor Analysis</span>';
+  const nedSubHtml = '<span style="color:var(--text3);font-size:.7rem;font-style:italic">Add at least 3 comps in Competitor Analysis</span>';
   h += '<div class="calc-kpi-grid calc-kpi-grid-left">';
-  h += '<div class="calc-kpi"><div class="kpi-label">Net Operating Income'+kpiTagHtml+'</div><div class="kpi-monthly">'+(insufficientComps ? nedHtml : fmtMoney(Math.round(kpiNOI))+'<span class="kpi-per">/mo</span>')+'</div><div class="kpi-annual">'+(insufficientComps ? nedSubHtml : fmtMoney(Math.round(kpiAnnualNOI))+'/yr')+'</div></div>';
+  h += '<div class="calc-kpi"><div class="kpi-label">Net Operating Income'+projTagHtml+'</div><div class="kpi-monthly">'+(insufficientComps ? nedHtml : fmtMoney(Math.round(kpiNOI))+'<span class="kpi-per">/mo</span>')+'</div><div class="kpi-annual">'+(insufficientComps ? nedSubHtml : fmtMoney(Math.round(kpiAnnualNOI))+'/yr')+'</div></div>';
   h += '<div class="calc-kpi"><div class="kpi-label">Monthly Rent<div class="kpi-proj-tag" style="color:#eab308;border-color:#eab308">Fixed</div></div><div class="kpi-monthly">'+(v.monthlyRent ? fmtMoney(v.monthlyRent) : '<span style="color:var(--text3);font-style:italic">Set in Property Details</span>')+'<span class="kpi-per">/mo</span></div><div class="kpi-annual">'+fmtMoney(v.monthlyRent*12)+'/yr</div></div>';
-  h += '<div class="calc-kpi '+(insufficientComps?'':cfClass)+'"><div class="kpi-label">Cash Flow'+kpiTagHtml+'</div><div class="kpi-monthly">'+(insufficientComps ? nedHtml : fmtMoney(Math.round(kpiMonthlyCF))+'<span class="kpi-per">/mo</span>')+'</div><div class="kpi-annual">'+(insufficientComps ? nedSubHtml : fmtMoney(Math.round(kpiAnnualCF))+'/yr')+'</div></div>';
-  h += '<div class="calc-kpi '+(insufficientComps?'':cocClass)+'"><div class="kpi-label">Cash on Cash Return'+kpiTagHtml+'</div><div class="kpi-monthly">'+(insufficientComps ? nedHtml : kpiCoC.toFixed(1)+'%')+'</div><div class="kpi-annual">'+(insufficientComps ? nedSubHtml : fmtMoney(Math.round(v.totalInvested))+' invested')+'</div></div>';
+  h += '<div class="calc-kpi '+(insufficientComps?'':cfClass)+'"><div class="kpi-label">Cash Flow'+projTagHtml+'</div><div class="kpi-monthly">'+(insufficientComps ? nedHtml : fmtMoney(Math.round(kpiMonthlyCF))+'<span class="kpi-per">/mo</span>')+'</div><div class="kpi-annual">'+(insufficientComps ? nedSubHtml : fmtMoney(Math.round(kpiAnnualCF))+'/yr')+'</div></div>';
+  h += '<div class="calc-kpi '+(insufficientComps?'':cocClass)+'"><div class="kpi-label">Cash on Cash Return'+projTagHtml+'</div><div class="kpi-monthly">'+(insufficientComps ? nedHtml : kpiCoC.toFixed(1)+'%')+'</div><div class="kpi-annual">'+(insufficientComps ? nedSubHtml : fmtMoney(Math.round(v.totalInvested))+' invested')+'</div></div>';
   h += '</div>';
 
   // Competitive Position Gauge
-  if(v.hasAllSections && !insufficientComps){
+  if(!insufficientComps && v.compsCount >= 3){
     const ps = v.positionScore;
     const mp = v.marketPercentile;
     const psPct = ((ps + 1) / 2 * 100).toFixed(1); // convert -1..+1 to 0..100%
@@ -5446,7 +5400,7 @@ function renderCalculatorTab(r){
   if(insufficientComps){
     h += '<div style="text-align:center;padding:20px 8px">';
     h += '<div style="font-size:1.1rem;font-weight:800;color:var(--text3)">Not Enough Data</div>';
-    h += '<div style="font-size:.7rem;color:var(--text3);margin-top:4px">Add at least 1 comp per section in Competitor Analysis</div>';
+    h += '<div style="font-size:.7rem;color:var(--text3);margin-top:4px">Add at least 3 comps in Competitor Analysis</div>';
     h += '</div>';
   } else {
     h += '<div style="text-align:center;margin-bottom:10px">';
@@ -5492,12 +5446,11 @@ function renderCalculatorTab(r){
   // ══════ RIGHT PANEL: NET INCOME + DEAL TEMP + REVENUE + PAYBACK ══════
   h += '<div class="calc-panel">';
 
-  // Projected Yearly Net (top of right panel) — selectable columns
+  // Projected Yearly Net — two columns: Comp Avg (reference) + Projected (drives everything)
   const noComps = v.compsCount === 0;
-  const hasRated = v.hasRatedData;
+  const hasProj = v.hasProjectionData;
   const projAnnualRent = Math.round(v.monthlyRent * 12);
   const noDataHtml = '<span style="color:var(--text3);font-size:.7rem;font-style:italic">No data</span>';
-  // Helper: format net value — negative shows red with -($X)/yr, positive shows green
   function fmtNet(val, suffix){
     if(val >= 0) return '<span style="color:var(--num-success);font-weight:700">'+fmtMoney(val)+suffix+'</span>';
     return '<span style="color:var(--num-danger);font-weight:700">-$'+Math.abs(val).toLocaleString()+suffix+'</span>';
@@ -5507,83 +5460,62 @@ function renderCalculatorTab(r){
     return '<span style="color:var(--num-danger)">-$'+Math.abs(val).toLocaleString()+suffix+'</span>';
   }
 
-  // Column definitions: order is Comp Avg, Optimistic, Realistic, Pessimistic
+  // Two non-clickable columns: Comp Avg (simple average) and Projected (weighted+adjusted)
   const cols = [
-    { key:'avg', label:'Comp Avg', color:'var(--text2)', tooltip:'Simple average across all comps',
+    { key:'avg', label:'Comp Avg', color:'var(--text2)',
       rev: insufficientComps ? 0 : Math.round(v.annualRevenue), exp: insufficientComps ? 0 : Math.round(v.annualExp), hasData: !insufficientComps },
-    { key:'optimistic', label:'Optimistic', color:'var(--num-success)', tooltip:'Tempered upside — weighted by competitive position',
-      rev: hasRated ? Math.round(v.optimisticRevenue) : 0, exp: hasRated ? Math.round(v.optimisticD.annualExp) : 0, hasData: hasRated },
-    { key:'realistic', label:'Realistic', color:'var(--num-computed)', tooltip:'Weighted projection based on comp distribution',
-      rev: hasRated ? Math.round(v.realisticRevenue) : 0, exp: hasRated ? Math.round(v.realisticD.annualExp) : 0, hasData: hasRated },
-    { key:'pessimistic', label:'Pessimistic', color:'var(--num-danger)', tooltip:'Tempered downside — weighted by competitive position',
-      rev: hasRated ? Math.round(v.pessimisticRevenue) : 0, exp: hasRated ? Math.round(v.pessimisticD.annualExp) : 0, hasData: hasRated }
+    { key:'projected', label:'Projected', color:'var(--num-computed)',
+      rev: hasProj ? Math.round(v.projectedRevenue) : 0, exp: hasProj ? Math.round(v.projectedD.annualExp) : 0, hasData: hasProj }
   ];
   cols.forEach(col => {
     col.net = col.hasData ? (col.rev - col.exp - projAnnualRent) : 0;
     col.monthlyNet = col.hasData ? Math.round(col.net / 12) : 0;
   });
 
-  // Determine effective active mode (fall back to avg if rated data not available)
-  const effMode = (hasRated || pm === 'avg') ? pm : 'avg';
-
   h += '<div class="calc-section"><div class="calc-section-header">Projected Yearly Net</div>';
 
-  // Clickable column headers
+  // Non-clickable column headers
   h += '<div class="pyn-col-headers">';
   h += '<div class="pyn-label-spacer"></div>';
   cols.forEach(col => {
-    const isActive = col.key === effMode;
-    const canClick = col.hasData;
-    h += '<div class="pyn-col-header'+(isActive?' pyn-col-active':'')+(!canClick?' pyn-col-disabled':'')+'" ';
-    h += 'style="--col-color:'+col.color+'" ';
-    if(canClick) h += 'onclick="setCalcProjMode(\''+col.key+'\')" ';
-    h += 'title="'+(canClick ? col.tooltip + (isActive ? ' (active)' : ' — click to select') : 'Rate comps in Competitor Analysis to enable')+'">';
+    const isProjected = col.key === 'projected';
+    h += '<div class="pyn-col-header'+(isProjected?' pyn-col-active':'')+'" style="--col-color:'+col.color+';cursor:default" title="'+(isProjected ? 'Weighted by comp distribution and competitive position' : 'Simple average across all comps')+'">';
     h += '<span class="pyn-col-label">'+col.label+'</span>';
-    if(isActive) h += '<div class="pyn-col-indicator"></div>';
+    if(isProjected) h += '<div class="pyn-col-indicator"></div>';
     h += '</div>';
   });
   h += '</div>';
 
   h += '<div class="calc-section-body pyn-body">';
 
-  // Data rows — helper to build a row
   function pynRow(label, getVal, opts){
     const isTotal = opts && opts.total;
     h += '<div class="calc-row'+(isTotal?' total-row':'')+'">';
     h += '<div class="calc-label">'+label+'</div>';
     cols.forEach(col => {
-      const isActive = col.key === effMode;
-      h += '<div class="calc-val pyn-val'+(isActive?' pyn-val-active':'')+'">';
+      const isProjected = col.key === 'projected';
+      h += '<div class="calc-val pyn-val'+(isProjected?' pyn-val-active':'')+'">';
       h += getVal(col);
       h += '</div>';
     });
     h += '</div>';
   }
 
-  // Annual Revenue
   pynRow('Annual Revenue', col => {
     if(!col.hasData) return noDataHtml;
     return '<span class="calc-display computed">'+fmtAcct(col.rev)+'</span>';
   });
-
-  // Annual Operating Expenses — subtraction sign, same style
   pynRow('Annual Operating Expenses', col => {
     if(!col.hasData) return noDataHtml;
     return '<span class="calc-display computed">-'+fmtMoney(col.exp)+'</span>';
   });
-
-  // Annual Rent — same across all
   pynRow('Annual Rent', col => {
     return '<span class="calc-display computed">-'+fmtMoney(projAnnualRent)+'</span>';
   });
-
-  // Projected Yearly Net
   pynRow('Projected Yearly Net', col => {
     if(!col.hasData) return noDataHtml;
     return fmtNet(col.net, '/yr');
   }, {total:true});
-
-  // Monthly Net
   pynRow('Monthly Net', col => {
     if(!col.hasData) return noDataHtml;
     return fmtNetLight(col.monthlyNet, '/mo');
@@ -5591,11 +5523,10 @@ function renderCalculatorTab(r){
 
   h += '</div></div>';
 
-  // Deal Temperature — driven by selected projection
-  const dealCol = cols.find(c2 => c2.key === effMode) || cols[0];
-  const dealMonthlyNet = dealCol.monthlyNet;
+  // Deal Temperature — driven by single projected cash flow (no user selection)
+  const dealMonthlyNet = hasProj ? cols[1].monthlyNet : (insufficientComps ? 0 : cols[0].monthlyNet);
   const dealTemp = insufficientComps ? null : (dealMonthlyNet >= 1000 ? 'slam-dunk' : dealMonthlyNet >= 500 ? 'potential' : dealMonthlyNet > 0 ? 'risky' : 'no-go');
-  const dealSource = insufficientComps ? 'Add at least 1 comp per section in Competitor Analysis' : 'Based on ' + (dealCol.label) + ' projection' + (v.hasRatedData && v.marketPercentile !== undefined ? ' · ' + ordinal(v.marketPercentile) + ' percentile in market' : '');
+  const dealSource = insufficientComps ? 'Add at least 3 comps in Competitor Analysis' : 'Weighted projection' + (v.marketPercentile !== undefined ? ' · ' + ordinal(v.marketPercentile) + ' percentile in market' : '');
   const temps = [
     { key:'no-go', label:'No-Go', icon:'🚫', color:'#ef4444', desc:'Negative or zero cash flow', hint:'Walk away from this one.' },
     { key:'risky', label:'Risky', icon:'⚠️', color:'#f59e0b', desc:'Under $500/mo net', hint:'Thin margins — proceed with caution.' },
@@ -5862,33 +5793,13 @@ function renderAnalysisTab(r){
   h += '</div>';
   h += '</div></div>';
 
-  // ── Revenue Projections (section averages, not multipliers) ──
-  // Best Case = avg of "Loses To" comps (ceiling — these are better)
-  // Likely = avg of "Competes With" comps
-  // Worst Case = avg of "Beats" comps (floor — we're better than these)
-  function sectionAvgRevenue(entries) {
-    const withRev = entries.filter(e => {
-      const c = e.comp;
-      const rev = parseFloat(c.annualRevenue) || 0;
-      if(rev > 0) return true;
-      const rate = parseFloat(c.nightlyRate) || 0;
-      const occ = parseFloat(c.occupancy) || 0;
-      return rate > 0 && occ > 0;
-    });
-    if(withRev.length === 0) return 0;
-    return Math.round(withRev.reduce((s, e) => {
-      let rev = parseFloat(e.comp.annualRevenue) || 0;
-      if(rev === 0) {
-        const rate = parseFloat(e.comp.nightlyRate) || 0;
-        const occ = parseFloat(e.comp.occupancy) || 0;
-        const days = parseFloat(e.comp.daysAvailable) || 365;
-        rev = rate * days * (occ / 100);
-      }
-      return s + rev;
-    }, 0) / withRev.length);
-  }
+  // ── Revenue Projection (single weighted projection from calcComputeAll) ──
+  // Uses directional multipliers: Loses To ×0.85, Competes With ×1.0, Beats ×1.15
+  const projRev = v.projectedRevenue || 0;
+  const hasProj = v.hasProjectionData;
+  const insuffComps = v.compsCount < 3;
 
-  // Filter comps by rating, maintaining flat array index for later use
+  // Filter comps by rating for section tables below
   const losesComps = [];
   const competesComps = [];
   const beatsComps = [];
@@ -5899,32 +5810,27 @@ function renderAnalysisTab(r){
     else competesComps.push(entry); // default
   });
 
-  const projBest = sectionAvgRevenue(losesComps);
-  const projLikely = sectionAvgRevenue(competesComps);
-  const projWorst = sectionAvgRevenue(beatsComps);
+  // Simple comp average (unweighted) for reference
+  const compAvgRev = (function(){
+    const withRev = comps.filter(cx => { let rv = parseFloat(cx.annualRevenue)||0; if(rv>0) return true; return (parseFloat(cx.nightlyRate)||0)>0 && (parseFloat(cx.occupancy)||0)>0; });
+    if(withRev.length === 0) return 0;
+    return Math.round(withRev.reduce((s, cx) => { let rv = parseFloat(cx.annualRevenue)||0; if(rv===0){ rv = (parseFloat(cx.nightlyRate)||0) * (parseFloat(cx.daysAvailable)||365) * ((parseFloat(cx.occupancy)||0)/100); } return s+rv; }, 0) / withRev.length);
+  })();
 
-  // Right: Revenue Projections — driven by weighted position
-  const hasAllSections = losesComps.length > 0 && competesComps.length > 0 && beatsComps.length > 0;
-  let anRealistic = 0, anOptimistic = 0, anPessimistic = 0;
-  if(hasAllSections){
-    const totalSC = losesComps.length + competesComps.length + beatsComps.length;
-    const losesAvg = projBest || 0;
-    const competesAvg = projLikely || 0;
-    const beatsAvg = projWorst || 0;
-    anRealistic = Math.round((losesAvg * losesComps.length + competesAvg * competesComps.length + beatsAvg * beatsComps.length) / totalSC);
-    const ps = (-1 * losesComps.length + 0 * competesComps.length + 1 * beatsComps.length) / totalSC;
-    const normP = (ps + 1) / 2;
-    const oF = 0.15 + 0.15 * normP;
-    const pF = 0.30 - 0.15 * normP;
-    anOptimistic = Math.round(anRealistic + (losesAvg - anRealistic) * oF);
-    anPessimistic = Math.round(anRealistic - (anRealistic - beatsAvg) * pF);
-  }
-
-  h += '<div class="an-section"><div class="an-section-hdr">Revenue Projections</div><div class="an-section-body" style="padding:0">';
+  // Right: Revenue Projection panel
+  h += '<div class="an-section"><div class="an-section-hdr">Revenue Projection</div><div class="an-section-body" style="padding:0">';
   h += '<div class="an-req-bar" style="border:none;border-radius:0;margin:0">';
-  h += '<div class="an-req-item"><div class="req-label" style="color:var(--num-success)">Optimistic</div><div class="req-val" style="color:var(--num-success)">'+(anOptimistic ? fmtMoney(anOptimistic) : '$0')+'<span class="req-period">/yr</span></div><div class="req-annual">'+(anOptimistic ? fmtMoney(Math.round(anOptimistic/12)) : '$0')+'/mo</div></div>';
-  h += '<div class="an-req-item" style="background:rgba(99,129,250,.06)"><div class="req-label" style="color:var(--num-computed)">Realistic</div><div class="req-val" style="color:var(--num-computed)">'+(anRealistic ? fmtMoney(anRealistic) : '$0')+'<span class="req-period">/yr</span></div><div class="req-annual">'+(anRealistic ? fmtMoney(Math.round(anRealistic/12)) : '$0')+'/mo</div></div>';
-  h += '<div class="an-req-item"><div class="req-label" style="color:var(--num-danger)">Pessimistic</div><div class="req-val" style="color:var(--num-danger)">'+(anPessimistic ? fmtMoney(anPessimistic) : '$0')+'<span class="req-period">/yr</span></div><div class="req-annual">'+(anPessimistic ? fmtMoney(Math.round(anPessimistic/12)) : '$0')+'/mo</div></div>';
+  if(insuffComps){
+    h += '<div class="an-req-item" style="text-align:center;padding:18px 14px"><div class="req-label" style="color:var(--text3);font-size:.82rem">Add at least 3 comps to see projections</div></div>';
+  } else {
+    h += '<div class="an-req-item"><div class="req-label" style="color:var(--text2)">Comp Average</div><div class="req-val" style="color:var(--text2)">'+(compAvgRev ? fmtMoney(compAvgRev) : '$0')+'<span class="req-period">/yr</span></div><div class="req-annual">'+(compAvgRev ? fmtMoney(Math.round(compAvgRev/12)) : '$0')+'/mo</div></div>';
+    h += '<div class="an-req-item" style="background:rgba(99,129,250,.06)"><div class="req-label" style="color:var(--num-computed)">Weighted Projection</div><div class="req-val" style="color:var(--num-computed)">'+(projRev ? fmtMoney(projRev) : '$0')+'<span class="req-period">/yr</span></div><div class="req-annual">'+(projRev ? fmtMoney(Math.round(projRev/12)) : '$0')+'/mo</div></div>';
+    h += '<div class="an-req-item"><div class="req-label" style="color:var(--text3)">Required Revenue</div><div class="req-val" style="color:var(--text3)">'+fmtMoney(Math.round(monthlyReqRev*12))+'<span class="req-period">/yr</span></div><div class="req-annual">'+fmtMoney(Math.round(monthlyReqRev))+'/mo</div></div>';
+    const diff = projRev - Math.round(monthlyReqRev * 12);
+    const diffColor = diff >= 0 ? 'var(--num-success)' : 'var(--num-danger)';
+    const diffSign = diff >= 0 ? '+' : '';
+    h += '<div class="an-req-item total"><div class="req-label" style="color:'+diffColor+'">Projected vs Required</div><div class="req-val" style="color:'+diffColor+'">'+diffSign+fmtMoney(diff)+'<span class="req-period">/yr</span></div><div class="req-annual">'+diffSign+fmtMoney(Math.round(diff/12))+'/mo</div></div>';
+  }
   h += '</div>';
   h += '</div></div>';
 
@@ -5945,31 +5851,6 @@ function renderAnalysisTab(r){
     const estRevenue = (rateComps.length > 0 && daysComps.length > 0) ? Math.round(avgRate * avgDays) : 0;
     h += '<div class="comp-avg-item"><div class="avg-label">Average Revenue</div><div class="avg-value">'+(estRevenue > 0 ? fmtMoney(estRevenue) : '—')+'</div></div>';
     h += '</div>';
-  }
-
-  // Competitive Position summary (compact for Analysis tab)
-  if(losesComps.length > 0 && competesComps.length > 0 && beatsComps.length > 0){
-    const totalSC2 = losesComps.length + competesComps.length + beatsComps.length;
-    const ps2 = (-1 * losesComps.length + 0 * competesComps.length + 1 * beatsComps.length) / totalSC2;
-    const mp2 = Math.round((beatsComps.length + 0.5 * competesComps.length) / totalSC2 * 100);
-    const psPct2 = ((ps2 + 1) / 2 * 100).toFixed(1);
-    const psColor2 = ps2 >= 0.3 ? 'var(--num-success)' : ps2 >= -0.3 ? 'var(--num-warning)' : 'var(--num-danger)';
-    const psLabel2 = ps2 >= 0.5 ? 'Strong' : ps2 >= 0.15 ? 'Favorable' : ps2 >= -0.15 ? 'Neutral' : ps2 >= -0.5 ? 'Challenging' : 'Weak';
-
-    h += '<div class="an-section" style="margin-bottom:14px"><div class="an-section-hdr">Competitive Position</div><div class="an-section-body" style="padding:10px 14px">';
-    h += '<div style="display:flex;align-items:center;gap:16px">';
-    // Left: label + score
-    h += '<div style="flex-shrink:0"><div style="font-size:.92rem;font-weight:700;color:'+psColor2+'">'+psLabel2+'</div>';
-    h += '<div style="font-size:.68rem;color:var(--text3)">'+ordinal(mp2)+' percentile</div></div>';
-    // Right: gauge bar
-    h += '<div style="flex:1;position:relative;height:20px">';
-    h += '<div style="position:absolute;top:4px;left:0;right:0;height:12px;border-radius:6px;background:linear-gradient(to right, #ef4444, #f59e0b 50%, #10b981);opacity:.2"></div>';
-    h += '<div style="position:absolute;top:0;left:calc('+psPct2+'% - 10px);width:20px;height:20px;border-radius:50%;background:'+psColor2+';border:2px solid var(--surface);box-shadow:0 1px 4px rgba(0,0,0,.25)"></div>';
-    h += '</div>';
-    // Far right: score number
-    h += '<div style="flex-shrink:0;text-align:right"><div style="font-size:.95rem;font-weight:700;color:'+psColor2+'">'+(ps2>=0?'+':'')+ps2.toFixed(2)+'</div></div>';
-    h += '</div>';
-    h += '</div></div>';
   }
 
   // ── Three Color-Coded Sections ──
@@ -8132,7 +8013,7 @@ function renderHelp(){
         ${renderHelpAccordion('What are the different pipeline categories?',
           '<strong>New Leads</strong> — Properties you\'re tracking but haven\'t contacted yet (New, No Contact).<br><strong>In Outreach</strong> — Active communication (Messaged, Left Voicemail, Follow Up).<br><strong>Qualified</strong> — Promising prospects (Interested, Meeting).<br><strong>Closed/Lost</strong> — No longer pursuing (HOA Issues, Not Good Fit, Not Interested, Un-Listed).')}
         ${renderHelpAccordion('How does the ROI calculator work?',
-          'Open any property profile and go to the <strong>Projected ROI</strong> tab. Enter the monthly rent, furnishing costs, and expected nightly rate. The calculator projects annual revenue, expenses, net operating income, and cash-on-cash return. Add comps in the <strong>Analysis</strong> tab to get Likely, Best, and Worst case projections.')}
+          'Open any property profile and go to the <strong>Projected ROI</strong> tab. Enter the monthly rent, furnishing costs, and expected nightly rate. The calculator projects annual revenue, expenses, net operating income, and cash-on-cash return. Add at least 3 comps in the <strong>Analysis</strong> tab — categorized as Loses To, Competes With, or Beats — to get a weighted revenue projection and deal temperature recommendation.')}
         ${renderHelpAccordion('Can I import properties from a spreadsheet?',
           'Yes! Go to <strong>Settings → Data Management → Import CSV</strong> or use the import button on the dashboard. Your CSV should have columns for address, contact name, phone, email, and status. The importer will map your columns automatically.')}
         ${renderHelpAccordion('What\'s the difference between the plans?',
