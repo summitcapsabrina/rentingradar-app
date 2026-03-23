@@ -738,6 +738,23 @@ h1 .hero-edit-input{font-size:1.35rem}
 .payback-chart-compact .payback-yr-label{white-space:nowrap;width:26px;font-size:.62rem}
 .payback-chart-compact .payback-val{width:auto;min-width:0;font-size:.65rem;white-space:nowrap}
 .payback-chart-compact{gap:2px}
+/* Tip popup (click-to-open tooltips) */
+.tip-overlay{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:300;display:flex;align-items:center;justify-content:center;animation:tipFadeIn .15s ease}
+@keyframes tipFadeIn{from{opacity:0}to{opacity:1}}
+.tip-popup{background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.25);max-width:400px;width:90vw;padding:20px 22px 16px;animation:tipSlideUp .2s ease}
+@keyframes tipSlideUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+.tip-popup-title{font-size:.88rem;font-weight:700;color:var(--text);margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.tip-popup-title svg{flex-shrink:0;color:var(--primary)}
+.tip-popup-body{font-size:.8rem;line-height:1.55;color:var(--text2);margin-bottom:16px}
+.tip-popup-actions{display:flex;justify-content:flex-end;gap:8px}
+.tip-btn{padding:6px 14px;border-radius:var(--radius);font-size:.78rem;font-weight:600;cursor:pointer;border:none;transition:background .15s,color .15s}
+.tip-btn-ok{background:var(--primary);color:#fff}
+.tip-btn-ok:hover{filter:brightness(1.1)}
+.tip-btn-disable{background:transparent;color:var(--text3);border:1px solid var(--border)}
+.tip-btn-disable:hover{background:var(--bg);color:var(--text2)}
+/* Tip question mark icon */
+.tip-trigger{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:rgba(148,163,184,.15);color:var(--text3);font-size:.62rem;font-weight:700;cursor:pointer;margin-left:5px;transition:background .15s,color .15s;vertical-align:middle;flex-shrink:0;line-height:1}
+.tip-trigger:hover{background:var(--primary);color:#fff}
 /* AI button */
 .calc-ai-btn{display:inline-flex;align-items:center;gap:4px;font-size:.68rem;padding:2px 8px;border-radius:12px;border:1px solid rgba(16,185,129,.3);background:rgba(16,185,129,.08);color:#10b981;cursor:pointer;font-weight:600;transition:all .15s;margin-left:auto}
 .calc-ai-btn:hover{background:rgba(16,185,129,.15);border-color:#10b981}
@@ -5092,8 +5109,8 @@ function fmtMoney(n){
 function cRow(label, valHtml, opts={}){
   const cls = opts.total ? ' total-row' : '';
   const hint = opts.hint ? '<span class="calc-label-hint">'+opts.hint+'</span>' : '';
-  const tip = opts.tip ? ' title="'+opts.tip+'" style="cursor:help"' : '';
-  return '<div class="calc-row'+cls+'"><div class="calc-label"'+tip+'>'+label+hint+'</div>'+valHtml+'</div>';
+  const tip = opts.tip ? tipIcon(label.replace(/<[^>]*>/g,''), opts.tip) : '';
+  return '<div class="calc-row'+cls+'"><div class="calc-label">'+label+hint+tip+'</div>'+valHtml+'</div>';
 }
 function cInput(id, value, opts={}){
   const cls = opts.pct ? ' calc-pct' : '';
@@ -5332,13 +5349,13 @@ function renderCalculatorTab(r){
     const psColor = ps >= 0.3 ? 'var(--num-success)' : ps >= -0.3 ? 'var(--num-warning)' : 'var(--num-danger)';
     const psLabel = ps >= 0.5 ? 'Strong' : ps >= 0.15 ? 'Favorable' : ps >= -0.15 ? 'Neutral' : ps >= -0.5 ? 'Challenging' : 'Weak';
 
-    h += '<div class="calc-section"><div class="calc-section-header" title="How your property compares to the competitive landscape based on the comps you\'ve categorized as Loses To, Competes With, and Beats. This directly affects the Position Adjustment percentage applied to your projections." style="cursor:help">Competitive Position</div><div class="calc-section-body" style="padding:12px 14px">';
+    h += '<div class="calc-section"><div class="calc-section-header">Competitive Position'+tipIcon('Competitive Position','How your property compares to the competitive landscape based on the comps you\\x27ve categorized as Loses To, Competes With, and Beats. This directly affects the Position Adjustment percentage applied to your projections.')+'</div><div class="calc-section-body" style="padding:12px 14px">';
 
     // Position summary
     h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">';
-    h += '<div title="Based on how your property compares to comps. Strong (+0.5 to +1.0), Favorable (+0.15 to +0.5), Neutral (-0.15 to +0.15), Challenging (-0.5 to -0.15), Weak (-1.0 to -0.5)." style="cursor:help"><div style="font-size:1rem;font-weight:800;color:'+psColor+'">'+psLabel+'</div>';
-    h += '<div style="font-size:.72rem;color:var(--text3);margin-top:2px" title="Percentage of the market your property is estimated to outperform. Calculated as (beats + 0.5 × competes) ÷ total comps × 100.">'+ordinal(mp)+' percentile in market</div></div>';
-    h += '<div style="text-align:right;cursor:help" title="Score from -1.0 (loses to all) to +1.0 (beats all). Formula: (-1 × loses + 0 × competes + 1 × beats) ÷ total comps."><div style="font-size:.68rem;color:var(--text3);text-transform:uppercase;letter-spacing:.3px">Position Score</div>';
+    h += '<div><div style="font-size:1rem;font-weight:800;color:'+psColor+'">'+psLabel+tipIcon('Position Rating','Based on how your property compares to comps. Strong (+0.5 to +1.0), Favorable (+0.15 to +0.5), Neutral (-0.15 to +0.15), Challenging (-0.5 to -0.15), Weak (-1.0 to -0.5).')+'</div>';
+    h += '<div style="font-size:.72rem;color:var(--text3);margin-top:2px">'+ordinal(mp)+' percentile in market'+tipIcon('Market Percentile','Percentage of the market your property is estimated to outperform. Calculated as (beats + 0.5 × competes) ÷ total comps × 100.')+'</div></div>';
+    h += '<div style="text-align:right"><div style="font-size:.68rem;color:var(--text3);text-transform:uppercase;letter-spacing:.3px">Position Score'+tipIcon('Position Score','Score from -1.0 (loses to all) to +1.0 (beats all). Formula: (-1 × loses + 0 × competes + 1 × beats) ÷ total comps.')+'</div>';
     h += '<div style="font-size:1.1rem;font-weight:700;color:'+psColor+'">'+(ps >= 0 ? '+' : '')+ps.toFixed(2)+'</div></div>';
     h += '</div>';
 
@@ -5414,10 +5431,10 @@ function renderCalculatorTab(r){
 
   // KPI Cards — underneath Competitive Position
   h += '<div class="calc-kpi-grid calc-kpi-grid-left">';
-  h += '<div class="calc-kpi" title="Projected revenue minus all operating expenses (co-host, Airbnb fees, cleaning, utilities, etc.). Does not include rent."><div class="kpi-label">Net Operating Income'+projTagHtml+'</div><div class="kpi-monthly">'+(insufficientComps ? nedHtml : fmtMoney(Math.round(kpiNOI))+'<span class="kpi-per">/mo</span>')+'</div><div class="kpi-annual">'+(insufficientComps ? nedSubHtml : fmtMoney(Math.round(kpiAnnualNOI))+'/yr')+'</div></div>';
-  h += '<div class="calc-kpi" title="Your monthly lease payment for this property — entered in the Expenses tab."><div class="kpi-label">Monthly Rent<div class="kpi-proj-tag" style="color:#eab308;border-color:#eab308">Fixed</div></div><div class="kpi-monthly">'+(v.monthlyRent ? fmtMoney(v.monthlyRent) : '<span style="color:var(--text3);font-style:italic">Set in Property Details</span>')+'<span class="kpi-per">/mo</span></div><div class="kpi-annual">'+fmtMoney(v.monthlyRent*12)+'/yr</div></div>';
-  h += '<div class="calc-kpi '+(insufficientComps?'':cfClass)+'" title="NOI minus rent, adjusted by Position Adjustment ('+confidencePct+'%). This is your confidence-discounted take-home profit after all expenses and rent."><div class="kpi-label">Cash Flow'+projTagHtml+'</div><div class="kpi-monthly">'+(insufficientComps ? nedHtml : fmtMoney(Math.round(kpiMonthlyCF))+'<span class="kpi-per">/mo</span>')+'</div><div class="kpi-annual">'+(insufficientComps ? nedSubHtml : fmtMoney(Math.round(kpiAnnualCF))+'/yr')+'</div></div>';
-  h += '<div class="calc-kpi '+(insufficientComps?'':cocClass)+'" title="Adjusted annual cash flow divided by total investment. Uses the confidence-discounted cash flow ('+confidencePct+'% Position Adjustment) to measure how quickly your investment pays for itself."><div class="kpi-label">Cash on Cash Return'+projTagHtml+'</div><div class="kpi-monthly">'+(insufficientComps ? nedHtml : kpiCoC.toFixed(1)+'%')+'</div><div class="kpi-annual">'+(insufficientComps ? nedSubHtml : fmtMoney(Math.round(v.totalInvested))+' invested')+'</div></div>';
+  h += '<div class="calc-kpi"><div class="kpi-label">Net Operating Income'+projTagHtml+tipIcon('Net Operating Income','Projected revenue minus all operating expenses (co-host, Airbnb fees, cleaning, utilities, etc.). Does not include rent.')+'</div><div class="kpi-monthly">'+(insufficientComps ? nedHtml : fmtMoney(Math.round(kpiNOI))+'<span class="kpi-per">/mo</span>')+'</div><div class="kpi-annual">'+(insufficientComps ? nedSubHtml : fmtMoney(Math.round(kpiAnnualNOI))+'/yr')+'</div></div>';
+  h += '<div class="calc-kpi"><div class="kpi-label">Monthly Rent<div class="kpi-proj-tag" style="color:#eab308;border-color:#eab308">Fixed</div>'+tipIcon('Monthly Rent','Your monthly lease payment for this property — entered in the Expenses tab.')+'</div><div class="kpi-monthly">'+(v.monthlyRent ? fmtMoney(v.monthlyRent) : '<span style="color:var(--text3);font-style:italic">Set in Property Details</span>')+'<span class="kpi-per">/mo</span></div><div class="kpi-annual">'+fmtMoney(v.monthlyRent*12)+'/yr</div></div>';
+  h += '<div class="calc-kpi '+(insufficientComps?'':cfClass)+'"><div class="kpi-label">Cash Flow'+projTagHtml+tipIcon('Cash Flow','NOI minus rent, adjusted by Position Adjustment ('+confidencePct+'%). This is your confidence-discounted take-home profit after all expenses and rent.')+'</div><div class="kpi-monthly">'+(insufficientComps ? nedHtml : fmtMoney(Math.round(kpiMonthlyCF))+'<span class="kpi-per">/mo</span>')+'</div><div class="kpi-annual">'+(insufficientComps ? nedSubHtml : fmtMoney(Math.round(kpiAnnualCF))+'/yr')+'</div></div>';
+  h += '<div class="calc-kpi '+(insufficientComps?'':cocClass)+'"><div class="kpi-label">Cash on Cash Return'+projTagHtml+tipIcon('Cash on Cash Return','Adjusted annual cash flow divided by total investment. Uses the confidence-discounted cash flow ('+confidencePct+'% Position Adjustment) to measure how quickly your investment pays for itself.')+'</div><div class="kpi-monthly">'+(insufficientComps ? nedHtml : kpiCoC.toFixed(1)+'%')+'</div><div class="kpi-annual">'+(insufficientComps ? nedSubHtml : fmtMoney(Math.round(v.totalInvested))+' invested')+'</div></div>';
   h += '</div>';
 
   // Payback Period Visual — driven by selected projection × position adjustment
@@ -5459,7 +5476,7 @@ function renderCalculatorTab(r){
     paybackColor = 'var(--num-danger)';
   }
 
-  h += '<div class="calc-section"><div class="calc-section-header" title="How long it takes for your cumulative cash flow to recover your total upfront investment. Uses the selected column\'s annual cash flow discounted by the Position Adjustment ('+confidencePct+'%)." style="cursor:help">Payback Period</div><div class="calc-section-body" style="padding:8px 10px">';
+  h += '<div class="calc-section"><div class="calc-section-header">Payback Period'+tipIcon('Payback Period','How long it takes for your cumulative cash flow to recover your total upfront investment. Uses the selected projection mode\\x27s annual cash flow, discounted by the Position Adjustment ('+confidencePct+'%).')+'</div><div class="calc-section-body" style="padding:8px 10px">';
   if(insufficientComps){
     h += '<div style="text-align:center;padding:20px 8px">';
     h += '<div style="font-size:1.1rem;font-weight:800;color:var(--text3)">Not Enough Data</div>';
@@ -5477,29 +5494,82 @@ function renderCalculatorTab(r){
     h += '<div style="text-align:center"><div style="font-size:.6rem;color:var(--text3);text-transform:uppercase;letter-spacing:.4px">Yr 10 Balance</div><div style="font-size:.78rem;font-weight:700;color:'+(cumVals[10]>=0?'var(--num-success)':'var(--num-danger)')+'">'+fmtMoney(Math.round(cumVals[10]))+'</div></div>';
     h += '</div>';
 
-    h += '<div class="payback-chart payback-chart-compact">';
-    for(let y=0; y<=10; y++){
-      const val = cumVals[y];
-      const isNeg = val < 0;
-      const pct = isNeg ? (Math.abs(val)/maxNeg)*48 : (val/maxPos)*48;
-      const barColor = isNeg ? 'var(--num-danger)' : 'var(--num-success)';
-      const isBreakEven = breakEvenYear !== null && y === Math.ceil(breakEvenYear);
-      h += '<div class="payback-row">';
-      h += '<div class="payback-yr-label">Yr '+y+'</div>';
-      h += '<div class="payback-bar-track">';
-      h += '<div class="payback-zero-line"></div>';
-      if(isNeg){
-        h += '<div class="payback-bar payback-bar-neg" style="width:'+pct.toFixed(1)+'%;background:'+barColor+';opacity:'+(y===0?'1':'.75')+'"></div>';
-      } else {
-        h += '<div class="payback-bar payback-bar-pos" style="width:'+(val===0?'0':pct.toFixed(1))+'%;background:'+barColor+';opacity:.85"></div>';
-      }
-      if(isBreakEven){
-        h += '<div class="payback-break-marker" title="Break-even point">&#9733;</div>';
-      }
-      h += '</div>';
-      h += '<div class="payback-val" style="color:'+(isNeg?'var(--num-danger)':'var(--num-success)')+'">'+fmtMoney(Math.round(val))+'</div>';
-      h += '</div>';
+    // SVG Break-Even Chart
+    const svgW = 400, svgH = 160, padL = 48, padR = 12, padT = 12, padB = 28;
+    const chartW = svgW - padL - padR, chartH = svgH - padT - padB;
+    const allVals = cumVals.slice(0, 11);
+    const minVal = Math.min(...allVals);
+    const maxVal = Math.max(...allVals);
+    const range = Math.max(Math.abs(minVal), Math.abs(maxVal), 1);
+    // Y maps value to pixel: 0 is center-ish, negative below, positive above
+    function beY(val){ return padT + chartH * (1 - (val + range) / (2 * range)); }
+    function beX(yr){ return padL + (yr / 10) * chartW; }
+    const zeroY = beY(0);
+    h += '<div style="padding:0 4px">';
+    h += '<svg viewBox="0 0 '+svgW+' '+svgH+'" style="width:100%;display:block">';
+    // Gradient defs for area fill
+    const beGradId = 'beGrad_'+r.id;
+    h += '<defs>';
+    h += '<linearGradient id="'+beGradId+'_pos" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#10b981" stop-opacity=".25"/><stop offset="100%" stop-color="#10b981" stop-opacity=".03"/></linearGradient>';
+    h += '<linearGradient id="'+beGradId+'_neg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ef4444" stop-opacity=".03"/><stop offset="100%" stop-color="#ef4444" stop-opacity=".25"/></linearGradient>';
+    h += '</defs>';
+    // Grid lines (light horizontal)
+    const gridSteps = 4;
+    for(let g = 0; g <= gridSteps; g++){
+      const gy = padT + (g / gridSteps) * chartH;
+      h += '<line x1="'+padL+'" y1="'+gy.toFixed(1)+'" x2="'+(svgW-padR)+'" y2="'+gy.toFixed(1)+'" stroke="rgba(148,163,184,.08)" stroke-width="1"/>';
     }
+    // Zero / x-axis line (prominent)
+    h += '<line x1="'+padL+'" y1="'+zeroY.toFixed(1)+'" x2="'+(svgW-padR)+'" y2="'+zeroY.toFixed(1)+'" stroke="rgba(148,163,184,.35)" stroke-width="1.5" stroke-dasharray="4,3"/>';
+    h += '<text x="'+(padL-4)+'" y="'+(zeroY+3).toFixed(1)+'" text-anchor="end" fill="rgba(148,163,184,.5)" font-size="9" font-weight="600">$0</text>';
+    // Positive area fill (above zero line)
+    let posAreaPath = 'M'+beX(0).toFixed(1)+','+zeroY.toFixed(1);
+    for(let y=0;y<=10;y++){
+      const py = Math.min(beY(allVals[y]), zeroY);
+      posAreaPath += ' L'+beX(y).toFixed(1)+','+py.toFixed(1);
+    }
+    posAreaPath += ' L'+beX(10).toFixed(1)+','+zeroY.toFixed(1)+' Z';
+    h += '<path d="'+posAreaPath+'" fill="url(#'+beGradId+'_pos)"/>';
+    // Negative area fill (below zero line)
+    let negAreaPath = 'M'+beX(0).toFixed(1)+','+zeroY.toFixed(1);
+    for(let y=0;y<=10;y++){
+      const py = Math.max(beY(allVals[y]), zeroY);
+      negAreaPath += ' L'+beX(y).toFixed(1)+','+py.toFixed(1);
+    }
+    negAreaPath += ' L'+beX(10).toFixed(1)+','+zeroY.toFixed(1)+' Z';
+    h += '<path d="'+negAreaPath+'" fill="url(#'+beGradId+'_neg)"/>';
+    // Main line path with color segments
+    for(let y=0;y<10;y++){
+      const x1 = beX(y), y1 = beY(allVals[y]);
+      const x2 = beX(y+1), y2 = beY(allVals[y+1]);
+      const segColor = (allVals[y] < 0 && allVals[y+1] < 0) ? '#ef4444' : (allVals[y] >= 0 && allVals[y+1] >= 0) ? '#10b981' : '#f59e0b';
+      h += '<line x1="'+x1.toFixed(1)+'" y1="'+y1.toFixed(1)+'" x2="'+x2.toFixed(1)+'" y2="'+y2.toFixed(1)+'" stroke="'+segColor+'" stroke-width="2.5" stroke-linecap="round"/>';
+    }
+    // Data point dots
+    for(let y=0;y<=10;y++){
+      const cx = beX(y), cy = beY(allVals[y]);
+      const dotColor = allVals[y] < 0 ? '#ef4444' : '#10b981';
+      h += '<circle cx="'+cx.toFixed(1)+'" cy="'+cy.toFixed(1)+'" r="'+(y===0||y===10||(breakEvenYear!==null&&y===Math.ceil(breakEvenYear))?'4':'2.5')+'" fill="'+dotColor+'" stroke="var(--surface)" stroke-width="1.5"/>';
+    }
+    // Break-even marker (vertical dashed line + label)
+    if(breakEvenYear !== null){
+      const bx = beX(breakEvenYear);
+      h += '<line x1="'+bx.toFixed(1)+'" y1="'+padT+'" x2="'+bx.toFixed(1)+'" y2="'+(svgH-padB)+'" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="4,3" opacity=".6"/>';
+      h += '<circle cx="'+bx.toFixed(1)+'" cy="'+zeroY.toFixed(1)+'" r="5" fill="#f59e0b" stroke="var(--surface)" stroke-width="2" filter="drop-shadow(0 1px 3px rgba(0,0,0,.3))"/>';
+      const beLabel = Math.floor(breakEvenYear)+'y '+Math.round((breakEvenYear-Math.floor(breakEvenYear))*12)+'m';
+      const labelX = bx + (bx > svgW/2 ? -8 : 8);
+      const labelAnchor = bx > svgW/2 ? 'end' : 'start';
+      h += '<text x="'+labelX.toFixed(1)+'" y="'+(padT+10)+'" text-anchor="'+labelAnchor+'" fill="#f59e0b" font-size="9" font-weight="700">Break-even</text>';
+      h += '<text x="'+labelX.toFixed(1)+'" y="'+(padT+20)+'" text-anchor="'+labelAnchor+'" fill="#f59e0b" font-size="8" font-weight="600">'+beLabel+'</text>';
+    }
+    // X-axis year labels
+    for(let y=0;y<=10;y+=2){
+      h += '<text x="'+beX(y).toFixed(1)+'" y="'+(svgH-6)+'" text-anchor="middle" fill="rgba(148,163,184,.5)" font-size="8" font-weight="500">Yr '+y+'</text>';
+    }
+    // Y-axis labels (min and max)
+    h += '<text x="'+(padL-4)+'" y="'+(beY(maxVal)+3).toFixed(1)+'" text-anchor="end" fill="rgba(148,163,184,.4)" font-size="8">'+fmtMoney(Math.round(maxVal))+'</text>';
+    h += '<text x="'+(padL-4)+'" y="'+(beY(minVal)+3).toFixed(1)+'" text-anchor="end" fill="rgba(148,163,184,.4)" font-size="8">'+fmtMoney(Math.round(minVal))+'</text>';
+    h += '</svg>';
     h += '</div>';
   }
   h += '</div></div>';
@@ -5537,7 +5607,7 @@ function renderCalculatorTab(r){
     col.monthlyNet = col.hasData ? Math.round(col.net / 12) : 0;
   });
 
-  h += '<div class="calc-section"><div class="calc-section-header" title="Projected annual profit across three scenarios. Each column uses different directional multipliers applied to your comp data, then discounted by your competitive position." style="cursor:help">Projected Yearly Net</div>';
+  h += '<div class="calc-section"><div class="calc-section-header">Projected Yearly Net'+tipIcon('Projected Yearly Net','Projected annual profit across three scenarios. Each column uses different directional multipliers applied to your comp data, then discounted by your competitive position. Select a column to drive the KPIs, Deal Temperature, and Payback Period.')+'</div>';
 
   // Clickable column headers — selecting a column drives KPIs, Deal Temp, and Payback
   h += '<div class="pyn-col-headers">';
@@ -5545,7 +5615,7 @@ function renderCalculatorTab(r){
   const colTitles = { optimistic: 'Best-case: Loses To ×0.95, Competes ×1.10, Beats ×1.25 applied to comp revenue. Click to use for KPIs and Deal Temperature.', realistic: 'Weighted estimate: Loses To ×0.85, Competes ×1.00, Beats ×1.15 applied to comp revenue. Click to use for KPIs and Deal Temperature.', pessimistic: 'Conservative: Loses To ×0.75, Competes ×0.90, Beats ×1.05 applied to comp revenue. Click to use for KPIs and Deal Temperature.' };
   cols.forEach(col => {
     const isActive = col.key === calcProjMode;
-    h += '<div class="pyn-col-header'+(isActive?' pyn-col-active':'')+'" style="--col-color:'+col.color+';cursor:pointer" title="'+(colTitles[col.key] || '')+'" onclick="setCalcProjMode(\''+col.key+'\')">';
+    h += '<div class="pyn-col-header'+(isActive?' pyn-col-active':'')+'" style="--col-color:'+col.color+';cursor:pointer" onclick="setCalcProjMode(\''+col.key+'\')">';
     h += '<span class="pyn-col-label">'+col.label+'</span>';
     if(isActive) h += '<div class="pyn-col-indicator"></div>';
     h += '</div>';
@@ -5556,9 +5626,9 @@ function renderCalculatorTab(r){
 
   function pynRow(label, getVal, opts){
     const isTotal = opts && opts.total;
-    const tip = opts && opts.tip ? ' title="'+opts.tip+'"' : '';
+    const tip = opts && opts.tip ? tipIcon(label, opts.tip) : '';
     h += '<div class="calc-row'+(isTotal?' total-row':'')+'">';
-    h += '<div class="calc-label"'+tip+' style="'+(tip?'cursor:help':'')+'">'+label+'</div>';
+    h += '<div class="calc-label">'+label+tip+'</div>';
     cols.forEach(col => {
       const isActive = col.key === calcProjMode;
       h += '<div class="calc-val pyn-val'+(isActive?' pyn-val-active':'')+'">';
@@ -5626,7 +5696,7 @@ function renderCalculatorTab(r){
     const border = active ? t.color : 'var(--border)';
     const textColor = active ? '#fff' : 'var(--text3)';
     const opacity = active ? '1' : '0.5';
-    h += '<div title="'+t.hint+'" style="background:'+bg+';border:2px solid '+border+';border-radius:var(--radius);padding:12px 8px;text-align:center;opacity:'+opacity+';transition:all .2s;cursor:default">';
+    h += '<div onclick="showTip(\''+t.label+'\',\''+t.hint.replace(/'/g,'\\x27')+'\')" style="background:'+bg+';border:2px solid '+border+';border-radius:var(--radius);padding:12px 8px;text-align:center;opacity:'+opacity+';transition:all .2s;cursor:pointer">';
     h += '<div style="font-size:1.3rem;margin-bottom:4px">'+t.icon+'</div>';
     h += '<div style="font-size:.82rem;font-weight:700;color:'+textColor+'">'+t.label+'</div>';
     h += '<div style="font-size:.65rem;color:'+textColor+';opacity:.8;margin-top:2px">'+t.desc+'</div>';
@@ -5695,7 +5765,7 @@ function renderCalculatorTab(r){
   }
 
   // Forecasted Revenue (driven by Analysis comps)
-  h += '<div class="calc-section"><div class="calc-section-header" title="Simple averages from your Competitor Analysis comps. These are the raw comp averages before any directional multipliers or position adjustments." style="cursor:help">Forecasted Revenue</div><div class="calc-section-body">';
+  h += '<div class="calc-section"><div class="calc-section-header">Forecasted Revenue'+tipIcon('Forecasted Revenue','Simple averages from your Competitor Analysis comps. These are the raw comp averages before any directional multipliers or position adjustments.')+'</div><div class="calc-section-body">';
   const compHint = noComps ? 'add comps in Competitor Analysis tab' : 'avg from Competitor Analysis comps';
   h += cRow('Average Daily Rate', cDisplay(noComps ? '$0' : fmtAcct2(v.avgDailyRate), {computed:!noComps}), {hint:compHint, tip:'Simple average of the nightly rate across all comps that have rate data entered.'});
   h += cRow('Avg Occupancy Rate', cDisplay(noComps ? '0%' : Math.round(v.estOccupancyRate)+'%', {computed:!noComps}), {hint:compHint, tip:'Simple average of the occupancy percentage across all comps that have occupancy data entered.'});
@@ -5928,7 +5998,7 @@ function renderAnalysisTab(r){
   h += '<div class="an-top-grid">';
 
   // Left: Required Revenue
-  h += '<div class="an-section"><div class="an-section-hdr" title="The minimum annual/monthly revenue needed to cover rent, operating expenses, and your desired profit requirement." style="cursor:help">Required Revenue</div><div class="an-section-body" style="padding:0">';
+  h += '<div class="an-section"><div class="an-section-hdr">Required Revenue'+tipIcon('Required Revenue','The minimum annual/monthly revenue needed to cover rent, operating expenses, and your desired profit requirement.')+'</div><div class="an-section-body" style="padding:0">';
   h += '<div class="an-req-bar" style="border:none;border-radius:0;margin:0">';
   h += '<div class="an-req-item"><div class="req-label">Rent</div><div class="req-val">'+fmtMoney(v.monthlyRent*12)+'<span class="req-period">/yr</span></div><div class="req-annual">'+fmtMoney(v.monthlyRent)+'/mo</div></div>';
   h += '<div class="an-req-item" onclick="showAppAlert(\'Expenses are calculated from your Monthly Operating Expenses in the Pro Forma tab. Edit individual amounts there.\', {title: \'About Expenses\', icon: \'ℹ️\'})" style="cursor:help" title="Edit in Pro Forma → Monthly Operating Expenses"><div class="req-label">Expenses</div><div class="req-val">'+fmtMoney(Math.round(expenses*12))+'<span class="req-period">/yr</span></div><div class="req-annual">'+fmtMoney(Math.round(expenses))+'/mo</div></div>';
@@ -5957,7 +6027,7 @@ function renderAnalysisTab(r){
   });
 
   // Right: Revenue Projection panel
-  h += '<div class="an-section"><div class="an-section-hdr" title="Revenue projections using directional multipliers. Optimistic uses higher multipliers (best-case), Realistic uses base multipliers (weighted estimate), Pessimistic uses lower multipliers (conservative). Multipliers adjust comp revenue based on whether you Lose To, Compete With, or Beat each comp." style="cursor:help">Revenue Projection</div><div class="an-section-body" style="padding:0">';
+  h += '<div class="an-section"><div class="an-section-hdr">Revenue Projection'+tipIcon('Revenue Projection','Revenue projections using directional multipliers. Optimistic uses higher multipliers (best-case), Realistic uses base multipliers (weighted estimate), Pessimistic uses lower multipliers (conservative). Multipliers adjust comp revenue based on whether you Lose To, Compete With, or Beat each comp.')+'</div><div class="an-section-body" style="padding:0">';
   h += '<div class="an-req-bar" style="border:none;border-radius:0;margin:0">';
   if(insuffComps){
     h += '<div class="an-req-item" style="text-align:center;padding:18px 14px"><div class="req-label" style="color:var(--text3);font-size:.82rem">Add at least 3 comps to see projections</div></div>';
@@ -7892,6 +7962,46 @@ function resetMeetingReminders(){
   showToast('Reminder intervals reset to defaults.', 'success');
 }
 
+/* ===== TIP POPUP SYSTEM ===== */
+function tipsEnabled(){
+  loadSettingsPrefs();
+  return settingsPrefs.tipsEnabled !== false; // default on
+}
+function showTip(title, body){
+  if(!tipsEnabled()) return;
+  const existing = document.getElementById('tipOverlay');
+  if(existing) existing.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'tipOverlay';
+  overlay.className = 'tip-overlay';
+  overlay.innerHTML = '<div class="tip-popup"><div class="tip-popup-title"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>'+title+'</div><div class="tip-popup-body">'+body+'</div><div class="tip-popup-actions"><button class="tip-btn tip-btn-disable" onclick="confirmDisableTips()">Disable Tips</button><button class="tip-btn tip-btn-ok" onclick="closeTip()">Ok</button></div></div>';
+  overlay.addEventListener('click', function(e){ if(e.target === overlay) closeTip(); });
+  document.body.appendChild(overlay);
+}
+function closeTip(){
+  const overlay = document.getElementById('tipOverlay');
+  if(overlay) overlay.remove();
+}
+function confirmDisableTips(){
+  const overlay = document.getElementById('tipOverlay');
+  if(overlay){
+    overlay.querySelector('.tip-popup').innerHTML = '<div class="tip-popup-title"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>Disable Tips?</div><div class="tip-popup-body">Are you sure you want to disable calculation tips? You can re-enable them anytime in <strong>Settings → Appearance → Calculation Tips</strong>.</div><div class="tip-popup-actions"><button class="tip-btn tip-btn-disable" onclick="closeTip()">Cancel</button><button class="tip-btn tip-btn-ok" onclick="doDisableTips()">Disable</button></div>';
+  }
+}
+function doDisableTips(){
+  loadSettingsPrefs();
+  settingsPrefs.tipsEnabled = false;
+  saveSettingsPrefs();
+  closeTip();
+  showToast('Calculation tips disabled. Re-enable in Settings → Appearance.', 'info');
+}
+function tipIcon(title, body){
+  if(!tipsEnabled()) return '';
+  const safeTitle = title.replace(/'/g, '\\x27').replace(/"/g, '&quot;');
+  const safeBody = body.replace(/'/g, '\\x27').replace(/"/g, '&quot;');
+  return '<span class="tip-trigger" onclick="event.stopPropagation();showTip(\''+safeTitle+'\',\''+safeBody+'\')">?</span>';
+}
+
 /* ===== SETTINGS PAGE ===== */
 let settingsPrefs = {};
 function loadSettingsPrefs(){
@@ -8030,6 +8140,10 @@ function renderSettings(){
         <div class="settings-row">
           <div class="settings-row-left"><div class="sr-label">Compact Mode</div><div class="sr-desc">Reduce spacing for denser information display</div></div>
           <div class="settings-row-right"><div class="settings-toggle ${settingsPrefs.compact===true?'on':''}" onclick="toggleSettingsPref('compact',this)"></div></div>
+        </div>
+        <div class="settings-row">
+          <div class="settings-row-left"><div class="sr-label">Calculation Tips</div><div class="sr-desc">Show clickable help icons next to calculated values explaining how they're derived</div></div>
+          <div class="settings-row-right"><div class="settings-toggle ${settingsPrefs.tipsEnabled!==false?'on':''}" onclick="toggleSettingsPref('tipsEnabled',this)"></div></div>
         </div>
       </div>
     </div>
