@@ -5528,11 +5528,11 @@ function renderCalculatorTab(r){
     const svgW = 800, svgH = 120, padL = 48, padR = 16, padT = 10, padB = 24;
     const chartW = svgW - padL - padR, chartH = svgH - padT - padB;
     const allVals = cumVals.slice(0, 11);
-    const minVal = Math.min(...allVals);
-    const maxVal = Math.max(...allVals);
-    const range = Math.max(Math.abs(minVal), Math.abs(maxVal), 1);
-    // Y maps value to pixel: 0 is center-ish, negative below, positive above
-    function beY(val){ return padT + chartH * (1 - (val + range) / (2 * range)); }
+    const yMin = allVals[0];   // Yr 0 value (lowest — initial investment)
+    const yMax = allVals[10];  // Yr 10 value (highest)
+    const yRange = yMax - yMin || 1;
+    // Y maps value to pixel: yMax at top, yMin at bottom
+    function beY(val){ return padT + chartH * (1 - (val - yMin) / yRange); }
     function beX(yr){ return padL + (yr / 10) * chartW; }
     const zeroY = beY(0);
     paybackHtml += '<div style="padding:0 4px">';
@@ -5596,9 +5596,9 @@ function renderCalculatorTab(r){
     for(let y=0;y<=10;y+=2){
       paybackHtml += '<text x="'+beX(y).toFixed(1)+'" y="'+(svgH-6)+'" text-anchor="middle" fill="rgba(148,163,184,.5)" font-size="8" font-weight="500">Yr '+y+'</text>';
     }
-    // Y-axis labels (min and max)
-    paybackHtml += '<text x="'+(padL-4)+'" y="'+(beY(maxVal)+3).toFixed(1)+'" text-anchor="end" fill="rgba(148,163,184,.4)" font-size="8">'+fmtMoney(Math.round(maxVal))+'</text>';
-    paybackHtml += '<text x="'+(padL-4)+'" y="'+(beY(minVal)+3).toFixed(1)+'" text-anchor="end" fill="rgba(148,163,184,.4)" font-size="8">'+fmtMoney(Math.round(minVal))+'</text>';
+    // Y-axis labels (Yr 10 at top, Yr 0 at bottom)
+    paybackHtml += '<text x="'+(padL-4)+'" y="'+(beY(yMax)+3).toFixed(1)+'" text-anchor="end" fill="rgba(148,163,184,.4)" font-size="8">'+fmtMoney(Math.round(yMax))+'</text>';
+    paybackHtml += '<text x="'+(padL-4)+'" y="'+(beY(yMin)+3).toFixed(1)+'" text-anchor="end" fill="rgba(148,163,184,.4)" font-size="8">'+fmtMoney(Math.round(yMin))+'</text>';
     paybackHtml += '</svg>';
     paybackHtml += '</div>';
   }
