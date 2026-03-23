@@ -5372,10 +5372,10 @@ function renderCalculatorTab(r){
     const psColor = ps >= 0.3 ? 'var(--num-success)' : ps >= -0.3 ? 'var(--num-warning)' : 'var(--num-danger)';
     const psLabel = ps >= 0.5 ? 'Strong' : ps >= 0.15 ? 'Favorable' : ps >= -0.15 ? 'Neutral' : ps >= -0.5 ? 'Challenging' : 'Weak';
 
-    cpHtml += '<div class="calc-section"><div class="calc-section-header"'+tipAttrs('Competitive Position','How your property compares to the competitive landscape based on the comps you\\x27ve categorized as Loses To, Competes With, and Beats. This directly affects the Position Adjustment percentage applied to your projections.')+'>Competitive Position</div><div class="calc-section-body" style="padding:12px 14px">';
+    cpHtml += '<div class="calc-section"><div class="calc-section-header"'+tipAttrs('Competitive Position','How your property compares to the competitive landscape based on the comps you\\x27ve categorized as Loses To, Competes With, and Beats. This directly affects the Position Adjustment percentage applied to your projections.')+'>Competitive Position</div><div class="calc-section-body" style="padding:10px 14px">';
 
     // Position summary
-    cpHtml += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">';
+    cpHtml += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">';
     cpHtml += '<div><div style="font-size:1rem;font-weight:800;color:'+psColor+';cursor:help"'+tipAttrs('Position Rating','Based on how your property compares to comps. Strong (+0.5 to +1.0), Favorable (+0.15 to +0.5), Neutral (-0.15 to +0.15), Challenging (-0.5 to -0.15), Weak (-1.0 to -0.5).',true)+'>'+psLabel+'</div>';
     cpHtml += '<div style="font-size:.72rem;color:var(--text3);margin-top:2px;cursor:help"'+tipAttrs('Market Percentile','Percentage of the market your property is estimated to outperform. Calculated as (beats + 0.5 × competes) ÷ total comps × 100.',true)+'>'+ordinal(mp)+' percentile in market</div></div>';
     cpHtml += '<div style="text-align:right"><div style="font-size:.68rem;color:var(--text3);text-transform:uppercase;letter-spacing:.3px;cursor:help"'+tipAttrs('Position Score','Score from -1.0 (loses to all) to +1.0 (beats all). Formula: (-1 × loses + 0 × competes + 1 × beats) ÷ total comps.',true)+'>Position Score</div>';
@@ -5384,7 +5384,7 @@ function renderCalculatorTab(r){
 
     // Bell curve visual — spans full card width with comfortable padding
     // SVG uses viewBox so it scales responsively
-    const bellW = 400, bellH = 80, padX = 16;
+    const bellW = 400, bellH = 58, padX = 16;
     const curveW = bellW - padX * 2;
     // Generate bell curve points (shallow/gentle)
     const bellPts = [];
@@ -5404,7 +5404,7 @@ function renderCalculatorTab(r){
     const markerGauss = Math.exp(-Math.pow(markerT - 0.5, 2) / (2 * 0.22 * 0.22));
     const markerY = (bellH - 6 - markerGauss * (bellH - 16)).toFixed(1);
 
-    cpHtml += '<div style="margin-bottom:4px;padding:0 4px">';
+    cpHtml += '<div style="margin-bottom:2px;padding:0 4px">';
     cpHtml += '<svg viewBox="0 0 '+bellW+' '+bellH+'" style="width:100%;display:block">';
     // Gradient definition: red → yellow → green
     const bellGradId = 'bellGrad_' + r.id;
@@ -5425,27 +5425,27 @@ function renderCalculatorTab(r){
     cpHtml += '</div>';
 
     // Labels under bell curve
-    cpHtml += '<div style="display:flex;justify-content:space-between;font-size:.62rem;color:var(--text3);margin-bottom:12px;padding:0 8px">';
+    cpHtml += '<div style="display:flex;justify-content:space-between;font-size:.62rem;color:var(--text3);margin-bottom:8px;padding:0 8px">';
     cpHtml += '<span>Loses to all</span><span>Competes</span><span>Beats all</span>';
     cpHtml += '</div>';
 
     // Comp distribution breakdown
     cpHtml += '<div style="display:flex;gap:0;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">';
     const total = v.losesCount + v.competesCount + v.beatsCount;
-    cpHtml += '<div style="flex:1;text-align:center;padding:8px 6px;border-right:1px solid var(--border)">';
-    cpHtml += '<div style="font-size:.62rem;color:#ef4444;font-weight:600;text-transform:uppercase;letter-spacing:.3px">Loses To</div>';
-    cpHtml += '<div style="font-size:1rem;font-weight:700;color:#ef4444">'+v.losesCount+'</div>';
-    cpHtml += '<div style="font-size:.6rem;color:var(--text3)">'+Math.round(v.losesCount/total*100)+'%</div>';
+    cpHtml += '<div style="flex:1;text-align:center;padding:6px 6px;border-right:1px solid var(--border)">';
+    cpHtml += '<div style="font-size:.6rem;color:#ef4444;font-weight:600;text-transform:uppercase;letter-spacing:.3px">Loses To</div>';
+    cpHtml += '<div style="font-size:.9rem;font-weight:700;color:#ef4444">'+v.losesCount+'</div>';
+    cpHtml += '<div style="font-size:.58rem;color:var(--text3)">'+Math.round(v.losesCount/total*100)+'%</div>';
     cpHtml += '</div>';
-    cpHtml += '<div style="flex:1;text-align:center;padding:8px 6px;border-right:1px solid var(--border)">';
-    cpHtml += '<div style="font-size:.62rem;color:var(--primary);font-weight:600;text-transform:uppercase;letter-spacing:.3px">Competes</div>';
-    cpHtml += '<div style="font-size:1rem;font-weight:700;color:var(--primary)">'+v.competesCount+'</div>';
-    cpHtml += '<div style="font-size:.6rem;color:var(--text3)">'+Math.round(v.competesCount/total*100)+'%</div>';
+    cpHtml += '<div style="flex:1;text-align:center;padding:6px 6px;border-right:1px solid var(--border)">';
+    cpHtml += '<div style="font-size:.6rem;color:var(--primary);font-weight:600;text-transform:uppercase;letter-spacing:.3px">Competes</div>';
+    cpHtml += '<div style="font-size:.9rem;font-weight:700;color:var(--primary)">'+v.competesCount+'</div>';
+    cpHtml += '<div style="font-size:.58rem;color:var(--text3)">'+Math.round(v.competesCount/total*100)+'%</div>';
     cpHtml += '</div>';
-    cpHtml += '<div style="flex:1;text-align:center;padding:8px 6px">';
-    cpHtml += '<div style="font-size:.62rem;color:#10b981;font-weight:600;text-transform:uppercase;letter-spacing:.3px">Beats</div>';
-    cpHtml += '<div style="font-size:1rem;font-weight:700;color:#10b981">'+v.beatsCount+'</div>';
-    cpHtml += '<div style="font-size:.6rem;color:var(--text3)">'+Math.round(v.beatsCount/total*100)+'%</div>';
+    cpHtml += '<div style="flex:1;text-align:center;padding:6px 6px">';
+    cpHtml += '<div style="font-size:.6rem;color:#10b981;font-weight:600;text-transform:uppercase;letter-spacing:.3px">Beats</div>';
+    cpHtml += '<div style="font-size:.9rem;font-weight:700;color:#10b981">'+v.beatsCount+'</div>';
+    cpHtml += '<div style="font-size:.58rem;color:var(--text3)">'+Math.round(v.beatsCount/total*100)+'%</div>';
     cpHtml += '</div>';
     cpHtml += '</div>';
 
