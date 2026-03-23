@@ -5640,14 +5640,14 @@ function renderCalculatorTab(r){
 
   pynRow('Annual Revenue', col => {
     if(!col.hasData) return noDataHtml;
-    return '<span class="calc-display computed">'+fmtAcct(col.rev)+'</span>';
+    return '<span class="calc-display" style="color:var(--text);font-weight:600">'+fmtAcct(col.rev)+'</span>';
   }, {tip:'Projected annual revenue based on comp nightly rates, occupancy, and days available — adjusted by directional multipliers for each column'});
   pynRow('Annual Expenses', col => {
     if(!col.hasData) return noDataHtml;
-    return '<span class="calc-display computed">-'+fmtMoney(col.exp)+'</span>';
+    return '<span class="calc-display" style="color:var(--text);font-weight:600">-'+fmtMoney(col.exp)+'</span>';
   }, {tip:'Projected annual operating expenses (co-host fees, Airbnb fees, cleaning, utilities, etc.) — scales with revenue'});
   pynRow('Annual Rent', col => {
-    return '<span class="calc-display computed">-'+fmtMoney(projAnnualRent)+'</span>';
+    return '<span class="calc-display" style="color:var(--text);font-weight:600">-'+fmtMoney(projAnnualRent)+'</span>';
   }, {tip:'Your monthly rent × 12 — entered in the Expenses tab'});
   pynRow('Projected Yearly Net', col => {
     if(!col.hasData) return noDataHtml;
@@ -5758,21 +5758,9 @@ function renderCalculatorTab(r){
     h += '</div>';
     h += '</div>';
 
-    // Deal source summary
-    h += '<div style="text-align:center;font-size:.65rem;color:var(--text3);font-style:italic;margin-bottom:16px"><span style="color:'+modeColor+'">'+modeLabel+'</span> Monthly Net '+fmtMoney(rawMonthlyNet)+' × '+confidencePct+'% Position Adjustment = <span style="font-weight:700;color:var(--text2)">'+fmtMoney(dealMonthlyNet)+'/mo</span></div>';
   } else {
     h += '<div style="text-align:right;font-size:.62rem;color:var(--text3);font-style:italic;margin-bottom:16px">'+dealSource+'</div>';
   }
-
-  // Forecasted Revenue (driven by Analysis comps)
-  h += '<div class="calc-section"><div class="calc-section-header">Forecasted Revenue'+tipIcon('Forecasted Revenue','Simple averages from your Competitor Analysis comps. These are the raw comp averages before any directional multipliers or position adjustments.')+'</div><div class="calc-section-body">';
-  const compHint = noComps ? 'add comps in Competitor Analysis tab' : 'avg from Competitor Analysis comps';
-  h += cRow('Average Daily Rate', cDisplay(noComps ? '$0' : fmtAcct2(v.avgDailyRate), {computed:!noComps}), {hint:compHint, tip:'Simple average of the nightly rate across all comps that have rate data entered.'});
-  h += cRow('Avg Occupancy Rate', cDisplay(noComps ? '0%' : Math.round(v.estOccupancyRate)+'%', {computed:!noComps}), {hint:compHint, tip:'Simple average of the occupancy percentage across all comps that have occupancy data entered.'});
-  h += cRow('Avg Days/Year Occupied', cDisplay(noComps ? '0' : fmtNum(v.daysOccupied), {computed:!noComps}), {tip:'Average days available per year × average occupancy rate. Represents how many days the property is expected to be booked.'});
-  h += cRow('Annual Revenue', cDisplay(noComps ? '$0' : fmtAcct(Math.round(v.annualRevenue)), {computed:!noComps}), {tip:'Simple average annual revenue across all comps. Calculated from each comp\'s nightly rate × days available × occupancy, or their reported annual revenue.'});
-  h += cRow('Monthly Revenue', cDisplay(noComps ? '$0' : fmtAcct(Math.round(v.monthlyRevenue)), {computed:!noComps}), {total:true, tip:'Annual Revenue divided by 12.'});
-  h += '</div></div>';
 
   h += '</div>'; // end right panel
   h += '</div>'; // end calc-layout
@@ -6053,7 +6041,7 @@ function renderAnalysisTab(r){
     h += '<div class="comp-avg-item"><div class="avg-label">Average Daily Rate</div><div class="avg-value">'+(rateComps.length > 0 ? '$'+avgRate.toFixed(2) : '—')+'</div></div>';
     h += '<div class="comp-avg-item"><div class="avg-label">Avg Occupancy Rate</div><div class="avg-value">'+(occComps.length > 0 ? Math.round(avgOcc)+'%' : '—')+'</div></div>';
     h += '<div class="comp-avg-item"><div class="avg-label">Avg Days/Year Occupied</div><div class="avg-value">'+(daysComps.length > 0 ? avgDays : '—')+'</div></div>';
-    const estRevenue = (rateComps.length > 0 && daysComps.length > 0) ? Math.round(avgRate * avgDays) : 0;
+    const estRevenue = (rateComps.length > 0 && daysComps.length > 0 && occComps.length > 0) ? Math.round(avgRate * avgDays * (avgOcc / 100)) : 0;
     h += '<div class="comp-avg-item"><div class="avg-label">Average Revenue</div><div class="avg-value">'+(estRevenue > 0 ? fmtMoney(estRevenue) : '—')+'</div></div>';
     h += '</div>';
   }
