@@ -3102,6 +3102,7 @@ function editNote(recId, noteId){
 
   overlay.addEventListener('keydown', function(e){
     if(e.key === 'Escape') overlay.remove();
+    if(e.shiftKey && e.key === 'Enter'){ e.preventDefault(); saveEditNote(recId, noteId); }
   });
 
   setTimeout(() => {
