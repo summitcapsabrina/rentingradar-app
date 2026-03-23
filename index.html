@@ -5328,16 +5328,50 @@ function renderCalculatorTab(r){
     h += '<div style="font-size:1.1rem;font-weight:700;color:'+psColor+'">'+(ps >= 0 ? '+' : '')+ps.toFixed(2)+'</div></div>';
     h += '</div>';
 
-    // Gauge bar
-    h += '<div style="position:relative;height:28px;margin-bottom:10px">';
-    // Full gradient track: red (left/weak) → yellow (middle/neutral) → green (right/strong)
-    h += '<div style="position:absolute;top:10px;left:0;right:0;height:8px;border-radius:4px;background:linear-gradient(to right, #ef4444 0%, #f59e0b 50%, #10b981 100%);opacity:.3"></div>';
-    // Marker circle — color matches position
-    h += '<div style="position:absolute;top:2px;left:calc('+psPct+'% - 12px);width:24px;height:24px;border-radius:50%;background:'+psColor+';border:3px solid var(--surface);box-shadow:0 2px 6px rgba(0,0,0,.3);transition:left .3s"></div>';
+    // Bell curve visual
+    // SVG bell curve: gentle curve, colored fill underneath, marker at position
+    const bellW = 280, bellH = 60, padX = 10;
+    const curveW = bellW - padX * 2;
+    // Generate bell curve points (shallow/gentle)
+    const bellPts = [];
+    for(let i = 0; i <= 50; i++){
+      const t = i / 50; // 0..1
+      const x = padX + t * curveW;
+      // Bell: y = height * e^(-((t-0.5)^2) / (2 * sigma^2)), sigma=0.22 for gentle curve
+      const gauss = Math.exp(-Math.pow(t - 0.5, 2) / (2 * 0.22 * 0.22));
+      const y = bellH - 6 - gauss * (bellH - 16); // flip Y, leave bottom margin
+      bellPts.push(x.toFixed(1)+','+y.toFixed(1));
+    }
+    const curvePath = 'M'+padX+','+( bellH - 6)+' L'+bellPts.join(' L')+' L'+(bellW - padX)+','+(bellH - 6)+' Z';
+    const curveLinePath = 'M'+bellPts.join(' L');
+    const markerX = (padX + parseFloat(psPct) / 100 * curveW).toFixed(1);
+    // Y position on curve at marker
+    const markerT = parseFloat(psPct) / 100;
+    const markerGauss = Math.exp(-Math.pow(markerT - 0.5, 2) / (2 * 0.22 * 0.22));
+    const markerY = (bellH - 6 - markerGauss * (bellH - 16)).toFixed(1);
+
+    h += '<div style="margin-bottom:4px">';
+    h += '<svg viewBox="0 0 '+bellW+' '+bellH+'" style="width:100%;height:'+bellH+'px;display:block">';
+    // Gradient definition: red → yellow → green
+    const bellGradId = 'bellGrad_' + r.id;
+    h += '<defs><linearGradient id="'+bellGradId+'" x1="0%" y1="0%" x2="100%" y2="0%">';
+    h += '<stop offset="0%" stop-color="#ef4444" stop-opacity="0.25"/>';
+    h += '<stop offset="50%" stop-color="#f59e0b" stop-opacity="0.25"/>';
+    h += '<stop offset="100%" stop-color="#10b981" stop-opacity="0.25"/>';
+    h += '</linearGradient></defs>';
+    // Filled area under curve
+    h += '<path d="'+curvePath+'" fill="url(#'+bellGradId+')"/>';
+    // Curve outline
+    h += '<path d="'+curveLinePath+'" fill="none" stroke="rgba(255,255,255,.15)" stroke-width="1.5"/>';
+    // Vertical marker line
+    h += '<line x1="'+markerX+'" y1="'+(bellH - 6)+'" x2="'+markerX+'" y2="'+markerY+'" stroke="'+psColor+'" stroke-width="2" stroke-dasharray="3,2" opacity=".7"/>';
+    // Marker dot
+    h += '<circle cx="'+markerX+'" cy="'+markerY+'" r="6" fill="'+psColor+'" stroke="var(--surface)" stroke-width="2.5" filter="drop-shadow(0 1px 3px rgba(0,0,0,.4))"/>';
+    h += '</svg>';
     h += '</div>';
 
-    // Labels under gauge
-    h += '<div style="display:flex;justify-content:space-between;font-size:.62rem;color:var(--text3);margin-bottom:12px">';
+    // Labels under bell curve
+    h += '<div style="display:flex;justify-content:space-between;font-size:.62rem;color:var(--text3);margin-bottom:12px;padding:0 '+padX+'px">';
     h += '<span>Loses to all</span><span>Neutral</span><span>Beats all</span>';
     h += '</div>';
 
@@ -5467,10 +5501,8 @@ function renderCalculatorTab(r){
     return '<span style="color:var(--num-danger)">-$'+Math.abs(val).toLocaleString()+suffix+'</span>';
   }
 
-  // Four non-clickable columns: Comp Avg, Optimistic, Projected, Pessimistic
+  // Three non-clickable columns: Optimistic, Projected, Pessimistic
   const cols = [
-    { key:'avg', label:'Comp Avg', color:'var(--text2)',
-      rev: !insufficientComps ? Math.round(v.annualRevenue) : 0, exp: !insufficientComps ? Math.round(v.annualExp) : 0, hasData: !insufficientComps },
     { key:'optimistic', label:'Optimistic', color:'var(--num-success)',
       rev: hasProj ? Math.round(v.optimisticRevenue) : 0, exp: hasProj ? Math.round(v.optimisticD.annualExp) : 0, hasData: hasProj },
     { key:'projected', label:'Projected', color:'var(--num-computed)',
@@ -5488,7 +5520,7 @@ function renderCalculatorTab(r){
   // Non-clickable column headers
   h += '<div class="pyn-col-headers">';
   h += '<div class="pyn-label-spacer"></div>';
-  const colTitles = { avg: 'Simple average across all comps', optimistic: 'Best-case estimate — higher multipliers on comp revenue', projected: 'Weighted by comp distribution and competitive position', pessimistic: 'Conservative estimate — lower multipliers on comp revenue' };
+  const colTitles = { optimistic: 'Best-case: Loses To ×0.95, Competes ×1.10, Beats ×1.25 applied to comp revenue', projected: 'Weighted projection: Loses To ×0.85, Competes ×1.00, Beats ×1.15 applied to comp revenue', pessimistic: 'Conservative: Loses To ×0.75, Competes ×0.90, Beats ×1.05 applied to comp revenue' };
   cols.forEach(col => {
     const isProjected = col.key === 'projected';
     h += '<div class="pyn-col-header'+(isProjected?' pyn-col-active':'')+'" style="--col-color:'+col.color+';cursor:default" title="'+(colTitles[col.key] || '')+'">';
@@ -5608,21 +5640,29 @@ function renderCalculatorTab(r){
     const markerColor = dealMonthlyNet >= 1000 ? '#10b981' : dealMonthlyNet >= 500 ? '#3b82f6' : dealMonthlyNet > 0 ? '#f59e0b' : '#ef4444';
 
     h += '<div style="margin-bottom:6px">';
-    // Gauge track with 4 colored zones
+    // Gauge track — 4 colored zone segments matching the deal temp card colors
     h += '<div style="position:relative;height:32px;margin-bottom:2px">';
     h += '<div style="position:absolute;top:10px;left:0;right:0;height:12px;border-radius:6px;overflow:hidden;display:flex">';
     let prevPct = 0;
     zoneBreaks.forEach(z => {
       const w = z.pct - prevPct;
-      h += '<div style="width:'+w+'%;height:100%;background:'+z.color+';opacity:.2"></div>';
+      h += '<div style="width:'+w+'%;height:100%;background:'+z.color+';opacity:.18"></div>';
       prevPct = z.pct;
     });
     h += '</div>';
-    // Active fill up to marker — single color matching the zone
-    h += '<div style="position:absolute;top:10px;left:0;width:'+gaugePct+'%;height:12px;border-radius:6px 0 0 6px;background:'+markerColor+';opacity:.45"></div>';
-    // Marker circle
-    h += '<div style="position:absolute;top:3px;left:calc('+gaugePct+'% - 13px);width:26px;height:26px;border-radius:50%;background:'+markerColor+';border:3px solid var(--surface);box-shadow:0 2px 8px rgba(0,0,0,.35);transition:left .3s;display:flex;align-items:center;justify-content:center">';
-    h += '</div>';
+    // Active fill — uses matching zone colors up to the marker position
+    // Clip the zone segments to only show up to gaugePct
+    h += '<div style="position:absolute;top:10px;left:0;width:'+gaugePct+'%;height:12px;border-radius:6px 0 0 6px;overflow:hidden">';
+    h += '<div style="display:flex;width:'+((100 / parseFloat(gaugePct)) * 100)+'%;height:100%">';
+    let prevPct2 = 0;
+    zoneBreaks.forEach(z => {
+      const w = z.pct - prevPct2;
+      h += '<div style="width:'+w+'%;height:100%;background:'+z.color+';opacity:.55"></div>';
+      prevPct2 = z.pct;
+    });
+    h += '</div></div>';
+    // Marker circle — color matches current zone
+    h += '<div style="position:absolute;top:3px;left:calc('+gaugePct+'% - 13px);width:26px;height:26px;border-radius:50%;background:'+markerColor+';border:3px solid var(--surface);box-shadow:0 2px 8px rgba(0,0,0,.35);transition:left .3s"></div>';
     h += '</div>';
 
     // Zone boundary labels
