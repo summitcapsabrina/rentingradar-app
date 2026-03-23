@@ -5309,9 +5309,10 @@ function renderCalculatorTab(r){
   const cpColor = confidencePct >= 80 ? '#10b981' : confidencePct >= 65 ? '#f59e0b' : '#ef4444';
   const kpiNOI = selectedD.monthlyNOI;
   const kpiAnnualNOI = selectedD.annualNOI;
-  const kpiMonthlyCF = selectedD.monthlyCF;
-  const kpiAnnualCF = selectedD.annualCF;
-  const kpiCoC = selectedD.cocReturn;
+  // Cash Flow and CoC use confidence-adjusted values (matching Adjusted Monthly Net in PYN)
+  const kpiMonthlyCF = Math.round(selectedD.monthlyCF * confidence);
+  const kpiAnnualCF = Math.round(selectedD.annualCF * confidence);
+  const kpiCoC = v.totalInvested > 0 ? (kpiAnnualCF / v.totalInvested * 100) : 0;
   const cfClass = kpiMonthlyCF >= 0 ? 'positive' : 'negative';
   const cocClass = kpiCoC >= 0 ? 'positive' : 'negative';
   const modeLabels = { optimistic: 'Optimistic', realistic: 'Realistic', pessimistic: 'Pessimistic' };
@@ -5415,8 +5416,8 @@ function renderCalculatorTab(r){
   h += '<div class="calc-kpi-grid calc-kpi-grid-left">';
   h += '<div class="calc-kpi" title="Projected revenue minus all operating expenses (co-host, Airbnb fees, cleaning, utilities, etc.). Does not include rent."><div class="kpi-label">Net Operating Income'+projTagHtml+'</div><div class="kpi-monthly">'+(insufficientComps ? nedHtml : fmtMoney(Math.round(kpiNOI))+'<span class="kpi-per">/mo</span>')+'</div><div class="kpi-annual">'+(insufficientComps ? nedSubHtml : fmtMoney(Math.round(kpiAnnualNOI))+'/yr')+'</div></div>';
   h += '<div class="calc-kpi" title="Your monthly lease payment for this property — entered in the Expenses tab."><div class="kpi-label">Monthly Rent<div class="kpi-proj-tag" style="color:#eab308;border-color:#eab308">Fixed</div></div><div class="kpi-monthly">'+(v.monthlyRent ? fmtMoney(v.monthlyRent) : '<span style="color:var(--text3);font-style:italic">Set in Property Details</span>')+'<span class="kpi-per">/mo</span></div><div class="kpi-annual">'+fmtMoney(v.monthlyRent*12)+'/yr</div></div>';
-  h += '<div class="calc-kpi '+(insufficientComps?'':cfClass)+'" title="Net Operating Income minus monthly rent. This is your actual take-home profit after all expenses and rent."><div class="kpi-label">Cash Flow'+projTagHtml+'</div><div class="kpi-monthly">'+(insufficientComps ? nedHtml : fmtMoney(Math.round(kpiMonthlyCF))+'<span class="kpi-per">/mo</span>')+'</div><div class="kpi-annual">'+(insufficientComps ? nedSubHtml : fmtMoney(Math.round(kpiAnnualCF))+'/yr')+'</div></div>';
-  h += '<div class="calc-kpi '+(insufficientComps?'':cocClass)+'" title="Annual cash flow divided by total investment (furnishing + setup costs). Measures how quickly your investment pays for itself as a percentage."><div class="kpi-label">Cash on Cash Return'+projTagHtml+'</div><div class="kpi-monthly">'+(insufficientComps ? nedHtml : kpiCoC.toFixed(1)+'%')+'</div><div class="kpi-annual">'+(insufficientComps ? nedSubHtml : fmtMoney(Math.round(v.totalInvested))+' invested')+'</div></div>';
+  h += '<div class="calc-kpi '+(insufficientComps?'':cfClass)+'" title="NOI minus rent, adjusted by Position Adjustment ('+confidencePct+'%). This is your confidence-discounted take-home profit after all expenses and rent."><div class="kpi-label">Cash Flow'+projTagHtml+'</div><div class="kpi-monthly">'+(insufficientComps ? nedHtml : fmtMoney(Math.round(kpiMonthlyCF))+'<span class="kpi-per">/mo</span>')+'</div><div class="kpi-annual">'+(insufficientComps ? nedSubHtml : fmtMoney(Math.round(kpiAnnualCF))+'/yr')+'</div></div>';
+  h += '<div class="calc-kpi '+(insufficientComps?'':cocClass)+'" title="Adjusted annual cash flow divided by total investment. Uses the confidence-discounted cash flow ('+confidencePct+'% Position Adjustment) to measure how quickly your investment pays for itself."><div class="kpi-label">Cash on Cash Return'+projTagHtml+'</div><div class="kpi-monthly">'+(insufficientComps ? nedHtml : kpiCoC.toFixed(1)+'%')+'</div><div class="kpi-annual">'+(insufficientComps ? nedSubHtml : fmtMoney(Math.round(v.totalInvested))+' invested')+'</div></div>';
   h += '</div>';
 
   // Payback Period Visual — driven by selected projection × position adjustment
