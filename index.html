@@ -4461,18 +4461,32 @@ function handleUpgrade(tier){
   const linkKey = tier + '_' + billingPeriod;
   const link = STRIPE_LINKS[linkKey];
   if(link && link.startsWith('http')){
-    window.open(link, '_blank');
-    setTimeout(() => {
-      showAppConfirm('Click OK to activate your '+TIERS[tier].name+' plan.', {
-        title: 'Payment Complete?',
-        icon: '💳',
-        confirmText: 'Activate Plan',
-        onConfirm: () => setTier(tier)
-      });
-    }, 2000);
+    // Redirect in same tab — Stripe will send them back after payment
+    window.location.href = link;
   } else {
     // Stripe not configured yet — activate directly for testing
     setTier(tier);
+  }
+}
+
+// On page load, check if Stripe redirected back after successful checkout
+// Stripe Payment Links should be configured to redirect to:
+//   https://app.rentingradar.com?checkout=success&plan=basic  (or plan=pro)
+function checkCheckoutReturn(){
+  const params = new URLSearchParams(window.location.search);
+  const checkoutStatus = params.get('checkout');
+  const plan = params.get('plan');
+  if(checkoutStatus === 'success' && plan && TIERS[plan]){
+    // Clean the URL so a page refresh doesn't re-trigger
+    const cleanUrl = window.location.origin + window.location.pathname;
+    window.history.replaceState({}, document.title, cleanUrl);
+    // Activate the plan
+    setTier(plan);
+    // Navigate to pricing page and show welcome message after a brief delay for render
+    switchView('pricing');
+    setTimeout(() => {
+      showToast('Welcome to ' + TIERS[plan].name + '! Your plan is now active.', 'success', 6000);
+    }, 300);
   }
 }
 
@@ -8515,6 +8529,7 @@ function performReset(){
 
 /* ===== INIT ===== */
 loadTier();
+checkCheckoutReturn();
 initTheme();
 initSidebar();
 loadUser();
