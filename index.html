@@ -5864,7 +5864,7 @@ function renderCalculatorTab(r){
     const psDisplay = insufficientComps ? '—' : (ps >= 0 ? '+' : '') + ps.toFixed(2);
     const mpDisplay = insufficientComps ? '—' : ordinal(mp) + ' percentile in market';
 
-    cpHtml += '<div class="calc-section"><div class="calc-section-header"'+tipAttrs('Competitive Position','How your property compares to the competitive landscape based on the comps you\\x27ve categorized as Loses To, Competes With, and Beats. This directly affects the Position Adjustment percentage applied to your projections.')+'>Competitive Position</div><div class="calc-section-body" style="padding:10px 14px'+(insufficientComps?';opacity:.5':'')+'">';
+    cpHtml += '<div class="calc-section"'+(insufficientComps?' style="opacity:.5"':'')+'><div class="calc-section-header"'+tipAttrs('Competitive Position','How your property compares to the competitive landscape based on the comps you\\x27ve categorized as Loses To, Competes With, and Beats. This directly affects the Position Adjustment percentage applied to your projections.')+'>Competitive Position</div><div class="calc-section-body" style="padding:10px 14px">';
 
     // Position summary
     cpHtml += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">';
@@ -6041,7 +6041,7 @@ function renderCalculatorTab(r){
     paybackColor = 'var(--num-danger)';
   }
 
-  paybackHtml += '<div class="calc-section"><div class="calc-section-header"'+tipAttrs('Payback Period','How long it takes for your cumulative cash flow to recover your total upfront investment. Uses the selected projection mode\\x27s annual cash flow, discounted by the Position Adjustment ('+confidencePct+'%).') +'>Payback Period</div><div class="calc-section-body" style="padding:8px 10px">';
+  paybackHtml += '<div class="calc-section"'+(insufficientComps?' style="opacity:.5"':'')+'><div class="calc-section-header"'+tipAttrs('Payback Period','How long it takes for your cumulative cash flow to recover your total upfront investment. Uses the selected projection mode\\x27s annual cash flow, discounted by the Position Adjustment ('+confidencePct+'%).') +'>Payback Period</div><div class="calc-section-body" style="padding:8px 10px">';
   if(insufficientComps){
     paybackHtml += '<div style="opacity:.5">';
     paybackHtml += '<div style="text-align:center;margin-bottom:10px">';
