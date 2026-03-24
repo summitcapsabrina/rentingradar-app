@@ -8897,6 +8897,130 @@ function resetMeetingReminders(){
   showToast('Reminder intervals reset to defaults.', 'success');
 }
 
+// Shared chip builder for meeting & follow-up reminders
+const REMINDER_PRESETS = [{l:'15 min',v:15},{l:'30 min',v:30},{l:'1 hour',v:60},{l:'2 hours',v:120},{l:'3 hours',v:180},{l:'6 hours',v:360},{l:'12 hours',v:720},{l:'1 day',v:1440},{l:'2 days',v:2880},{l:'3 days',v:4320},{l:'1 week',v:10080}];
+
+function _buildReminderChipsHtml(type){
+  const rems = type === 'meeting' ? getMeetingReminderSettings() : getFollowUpReminderSettings();
+  const updateFn = type === 'meeting' ? 'updateMeetingReminder' : 'updateFollowUpReminder';
+  const removeFn = type === 'meeting' ? 'removeMeetingReminder' : 'removeFollowUpReminder';
+  const addFn = type === 'meeting' ? 'addMeetingReminder' : 'addFollowUpReminder';
+  let html = '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">';
+  rems.forEach((rem, i) => {
+    html += '<div style="display:inline-flex;align-items:center;gap:4px;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:4px 8px 4px 10px;font-size:.82rem">';
+    html += '<select onchange="'+updateFn+'('+i+',this.value)" style="background:var(--bg);border:none;color:var(--text);font-size:.82rem;cursor:pointer;padding:0;-webkit-appearance:none;appearance:none;padding-right:14px;background-image:url(&quot;data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'10\' height=\'6\' viewBox=\'0 0 10 6\'%3E%3Cpath d=\'M1 1l4 4 4-4\' stroke=\'%2394a3b8\' fill=\'none\' stroke-width=\'1.5\'/%3E%3C/svg%3E&quot;);background-repeat:no-repeat;background-position:right 0 center">';
+    REMINDER_PRESETS.forEach(p => { html += '<option value="'+p.v+'" '+(rem.minutes===p.v?'selected':'')+' style="background:var(--surface);color:var(--text)">'+p.l+'</option>'; });
+    if(!REMINDER_PRESETS.some(p=>p.v===rem.minutes)) html += '<option value="'+rem.minutes+'" selected style="background:var(--surface);color:var(--text)">'+rem.minutes+' min</option>';
+    html += '</select>';
+    html += '<span style="color:var(--text3);font-size:.72rem">before</span>';
+    html += '<button onclick="'+removeFn+'('+i+')" style="background:none;border:none;color:var(--text3);cursor:pointer;padding:0 2px;font-size:.9rem;line-height:1" title="Remove">&times;</button>';
+    html += '</div>';
+  });
+  html += '<button onclick="'+addFn+'()" class="btn btn-secondary" style="font-size:.75rem;padding:4px 10px;border-radius:8px">+ Add</button>';
+  html += '</div>';
+  return html;
+}
+
+/* ===== FOLLOW-UP REMINDER SYSTEM ===== */
+const DEFAULT_FOLLOWUP_REMINDERS = [
+  { label:'1 day before', minutes: 1440 },
+  { label:'3 hours before', minutes: 180 }
+];
+
+function getFollowUpReminderSettings(){
+  loadSettingsPrefs();
+  if(Array.isArray(settingsPrefs.followUpReminders) && settingsPrefs.followUpReminders.length > 0){
+    return settingsPrefs.followUpReminders;
+  }
+  return DEFAULT_FOLLOWUP_REMINDERS.map(r => ({ ...r }));
+}
+
+function getFollowUpNotifyTime(){
+  loadSettingsPrefs();
+  return settingsPrefs.followUpNotifyTime || '09:00';
+}
+
+function updateFollowUpReminder(index, newMinutes){
+  loadSettingsPrefs();
+  const rems = getFollowUpReminderSettings();
+  const presetLabels = {15:'15 min before',30:'30 min before',60:'1 hour before',120:'2 hours before',180:'3 hours before',360:'6 hours before',720:'12 hours before',1440:'1 day before',2880:'2 days before',4320:'3 days before',10080:'1 week before'};
+  rems[index].minutes = parseInt(newMinutes);
+  rems[index].label = presetLabels[newMinutes] || newMinutes + ' min before';
+  settingsPrefs.followUpReminders = rems;
+  saveSettingsPrefs();
+}
+
+function removeFollowUpReminder(index){
+  loadSettingsPrefs();
+  const rems = getFollowUpReminderSettings();
+  if(rems.length <= 1){ showToast('You need at least one reminder.', 'warning'); return; }
+  rems.splice(index, 1);
+  settingsPrefs.followUpReminders = rems;
+  saveSettingsPrefs();
+  const area = document.getElementById('contentArea');
+  if(area && currentView === 'settings') area.innerHTML = renderSettings();
+}
+
+function addFollowUpReminder(){
+  loadSettingsPrefs();
+  const rems = getFollowUpReminderSettings();
+  if(rems.length >= 6){ showToast('Maximum 6 reminders allowed.', 'warning'); return; }
+  rems.push({ label:'1 day before', minutes: 1440 });
+  settingsPrefs.followUpReminders = rems;
+  saveSettingsPrefs();
+  const area = document.getElementById('contentArea');
+  if(area && currentView === 'settings') area.innerHTML = renderSettings();
+}
+
+function resetFollowUpReminders(){
+  settingsPrefs.followUpReminders = DEFAULT_FOLLOWUP_REMINDERS.map(r => ({ ...r }));
+  settingsPrefs.followUpNotifyTime = '09:00';
+  saveSettingsPrefs();
+  const area = document.getElementById('contentArea');
+  if(area && currentView === 'settings') area.innerHTML = renderSettings();
+  showToast('Follow-up reminders reset to defaults.', 'success');
+}
+
+function checkFollowUpNotifications(){
+  if(!('Notification' in window)) return;
+  if(Notification.permission !== 'granted') return;
+  loadSettingsPrefs();
+  if(settingsPrefs.followUpNotificationsEnabled === false) return;
+  const now = Date.now();
+  const reminders = getFollowUpReminderSettings();
+  const notifyTime = getFollowUpNotifyTime();
+  records.forEach(r => {
+    if(!r.followUpDate) return;
+    // Build the follow-up datetime: date + user-specified notify time
+    const fuISO = r.followUpDate + 'T' + notifyTime;
+    const fuMs = new Date(fuISO).getTime();
+    if(isNaN(fuMs)) return;
+    reminders.forEach(rem => {
+      const fireAt = fuMs - (rem.minutes * 60000);
+      const key = 'rr_fu_notif_' + r.id + '_' + rem.minutes;
+      if(now >= fireAt && now < fuMs && !localStorage.getItem(key)){
+        localStorage.setItem(key, '1');
+        const addr = r.property || 'Unknown property';
+        try {
+          new Notification('Follow-Up Reminder — ' + rem.label, {
+            body: addr + '\nDue: ' + fmtDate(r.followUpDate),
+            icon: 'https://app.rentingradar.com/favicon.ico',
+            tag: key
+          });
+        } catch(e){}
+        showToast('🔔 Follow-up ' + rem.label + ': ' + addr, 'info', 6000);
+      }
+    });
+  });
+}
+
+// Extend the notification loop to also check follow-ups
+const _origCheckMeetingNotifications = checkMeetingNotifications;
+checkMeetingNotifications = function(){
+  _origCheckMeetingNotifications();
+  checkFollowUpNotifications();
+};
+
 /* ===== TIP POPUP SYSTEM ===== */
 function tipsEnabled(){
   loadSettingsPrefs();
@@ -9030,31 +9154,30 @@ function renderSettings(){
           <div class="settings-row-right"><div class="settings-toggle ${settingsPrefs.meetingNotifications!==false?'on':''}" onclick="toggleSettingsPref('meetingNotifications',this);if(settingsPrefs.meetingNotifications){startNotificationLoop()}"></div></div>
         </div>
         <div class="settings-row" style="flex-wrap:wrap">
-          <div class="settings-row-left"><div class="sr-label">Meeting Reminder Intervals</div><div class="sr-desc">When to send reminders before a meeting. Click to edit or add new intervals.</div></div>
+          <div style="display:flex;align-items:center;justify-content:space-between;width:100%">
+            <div class="settings-row-left"><div class="sr-label">Meeting Reminder Intervals</div><div class="sr-desc">When to send reminders before a meeting</div></div>
+            <div class="settings-row-right"><button class="btn btn-secondary btn-sm" onclick="resetMeetingReminders();switchView('settings')" style="font-size:.72rem">Reset Defaults</button></div>
+          </div>
           <div style="width:100%;margin-top:8px" id="meetingRemindersList">
-            ${(function(){
-              const rems = getMeetingReminderSettings();
-              let html = '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">';
-              rems.forEach((rem, i) => {
-                html += '<div style="display:inline-flex;align-items:center;gap:4px;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:4px 8px 4px 10px;font-size:.82rem">';
-                html += '<select onchange="updateMeetingReminder('+i+',this.value)" style="background:transparent;border:none;color:var(--text);font-size:.82rem;cursor:pointer;padding:0">';
-                const presets = [{l:'15 min',v:15},{l:'30 min',v:30},{l:'1 hour',v:60},{l:'2 hours',v:120},{l:'3 hours',v:180},{l:'6 hours',v:360},{l:'12 hours',v:720},{l:'1 day',v:1440},{l:'2 days',v:2880},{l:'3 days',v:4320},{l:'1 week',v:10080}];
-                presets.forEach(p => { html += '<option value="'+p.v+'" '+(rem.minutes===p.v?'selected':'')+'>'+p.l+'</option>'; });
-                if(!presets.some(p=>p.v===rem.minutes)) html += '<option value="'+rem.minutes+'" selected>'+rem.minutes+' min</option>';
-                html += '</select>';
-                html += '<span style="color:var(--text3);font-size:.72rem">before</span>';
-                html += '<button onclick="removeMeetingReminder('+i+')" style="background:none;border:none;color:var(--text3);cursor:pointer;padding:0 2px;font-size:.9rem;line-height:1" title="Remove">&times;</button>';
-                html += '</div>';
-              });
-              html += '<button onclick="addMeetingReminder()" class="btn btn-secondary" style="font-size:.75rem;padding:4px 10px;border-radius:8px">+ Add</button>';
-              html += '</div>';
-              return html;
-            })()}
+            ${_buildReminderChipsHtml('meeting')}
           </div>
         </div>
         <div class="settings-row">
-          <div class="settings-row-left"><div class="sr-label">Follow-Up Reminders</div><div class="sr-desc">Show badge and notifications for overdue and upcoming follow-ups</div></div>
-          <div class="settings-row-right"><div class="settings-toggle ${settingsPrefs.followUpReminders!==false?'on':''}" onclick="toggleSettingsPref('followUpReminders',this)"></div></div>
+          <div class="settings-row-left"><div class="sr-label">Follow-Up Reminders</div><div class="sr-desc">Send browser push reminders before follow-up dates</div></div>
+          <div class="settings-row-right"><div class="settings-toggle ${settingsPrefs.followUpNotificationsEnabled!==false?'on':''}" onclick="toggleSettingsPref('followUpNotificationsEnabled',this);if(settingsPrefs.followUpNotificationsEnabled){startNotificationLoop()}"></div></div>
+        </div>
+        <div class="settings-row" style="flex-wrap:wrap">
+          <div style="display:flex;align-items:center;justify-content:space-between;width:100%">
+            <div class="settings-row-left"><div class="sr-label">Follow-Up Reminder Intervals</div><div class="sr-desc">When to send reminders before a follow-up is due</div></div>
+            <div class="settings-row-right"><button class="btn btn-secondary btn-sm" onclick="resetFollowUpReminders()" style="font-size:.72rem">Reset Defaults</button></div>
+          </div>
+          <div style="width:100%;margin-top:8px" id="followUpRemindersList">
+            ${_buildReminderChipsHtml('followup')}
+          </div>
+        </div>
+        <div class="settings-row">
+          <div class="settings-row-left"><div class="sr-label">Follow-Up Notification Time</div><div class="sr-desc">Time of day to send follow-up reminders (for date-only follow-ups)</div></div>
+          <div class="settings-row-right"><input type="time" value="${getFollowUpNotifyTime()}" onchange="loadSettingsPrefs();settingsPrefs.followUpNotifyTime=this.value;saveSettingsPrefs()" style="font-size:.82rem;padding:4px 8px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);color:var(--text);cursor:pointer"></div>
         </div>
         <div class="settings-row">
           <div class="settings-row-left"><div class="sr-label">Status Change Logging</div><div class="sr-desc">Automatically log a note when a property status changes</div></div>
