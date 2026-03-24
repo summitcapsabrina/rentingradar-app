@@ -235,17 +235,20 @@ textarea{resize:vertical;min-height:80px}
 .db-map-card .db-card-hdr h3{margin:0;font-size:.92rem}
 #dashboardMap{width:100%;height:320px}
 .map-popup{font-family:inherit}
-.map-popup .mapboxgl-popup-content{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:0;box-shadow:0 8px 24px rgba(0,0,0,.3);max-width:280px}
+.map-popup .mapboxgl-popup-content{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:0;box-shadow:0 12px 32px rgba(0,0,0,.25),0 2px 6px rgba(0,0,0,.1);max-width:290px;overflow:hidden}
 .map-popup .mapboxgl-popup-tip{border-top-color:var(--surface)}
-.map-popup .mapboxgl-popup-close-button{font-size:18px;color:var(--text3);padding:4px 8px;right:2px;top:2px}
-.map-popup .mapboxgl-popup-close-button:hover{color:var(--text);background:transparent}
-.map-popup-inner{padding:12px 14px}
-.map-popup-addr{font-size:.82rem;font-weight:700;color:var(--text);margin-bottom:6px;line-height:1.3}
-.map-popup-stats{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:6px;font-size:.72rem;color:var(--text2)}
-.map-popup-stats span{display:flex;align-items:center;gap:3px}
-.map-popup-contact{font-size:.72rem;color:var(--text3);margin-bottom:8px}
-.map-popup-btn{display:block;width:100%;padding:7px 0;text-align:center;font-size:.78rem;font-weight:600;color:#fff;background:var(--primary);border:none;border-radius:var(--radius);cursor:pointer;transition:opacity .15s}
-.map-popup-btn:hover{opacity:.85}
+.map-popup .mapboxgl-popup-close-button{display:none}
+.map-popup-close{position:absolute;top:10px;right:10px;width:26px;height:26px;border-radius:50%;background:var(--bg);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text3);font-size:14px;line-height:1;transition:all .15s;z-index:2;box-shadow:0 1px 4px rgba(0,0,0,.12)}
+.map-popup-close:hover{color:var(--text);background:var(--surface);border-color:var(--text3)}
+.map-popup-inner{padding:14px 16px;position:relative}
+.map-popup-addr{font-size:.84rem;font-weight:700;color:var(--text);margin-bottom:8px;line-height:1.35;padding-right:30px}
+.map-popup-divider{height:1px;background:var(--border);margin:0 -16px 10px;opacity:.7}
+.map-popup-stats{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px;font-size:.74rem;color:var(--text2)}
+.map-popup-stats span{display:flex;align-items:center;gap:3px;background:var(--bg);padding:3px 8px;border-radius:6px;border:1px solid var(--border)}
+.map-popup-rent{font-size:.92rem;font-weight:700;color:var(--num-success);margin-bottom:8px;letter-spacing:-.01em}
+.map-popup-contact{font-size:.74rem;color:var(--text3);margin-bottom:10px;display:flex;align-items:center;gap:4px}
+.map-popup-btn{display:block;width:100%;padding:9px 0;text-align:center;font-size:.78rem;font-weight:600;color:#fff;background:var(--primary);border:none;border-radius:8px;cursor:pointer;transition:all .15s;letter-spacing:.01em}
+.map-popup-btn:hover{opacity:.9;transform:translateY(-1px);box-shadow:0 2px 8px rgba(0,0,0,.15)}
 
 /* ===== TABLE ===== */
 .table-wrap{background:var(--surface);border-radius:var(--radius);border:1px solid var(--border);box-shadow:var(--shadow);overflow:hidden}
@@ -1741,23 +1744,30 @@ function initDashboardMap(){
       const rent = p.rent ? '$' + Number(p.rent).toLocaleString() + '/mo' : '—';
       const statusColor = getStatusColor(p.status);
 
+      const popupId = 'mp_' + Date.now();
       const html = '<div class="map-popup-inner">' +
+        '<div class="map-popup-close" onclick="document.getElementById(\'' + popupId + '\')._popup.remove()" title="Close">✕</div>' +
         '<div class="map-popup-addr">' + esc(addr) + '</div>' +
+        '<div class="map-popup-divider"></div>' +
         '<div class="map-popup-stats">' +
           '<span>🛏 ' + esc(String(p.beds)) + ' bd</span>' +
           '<span>🛁 ' + esc(String(p.baths)) + ' ba</span>' +
           (p.sqft && p.sqft !== '—' ? '<span>📐 ' + Number(p.sqft).toLocaleString() + ' sqft</span>' : '') +
-          '<span style="color:' + statusColor + '">● ' + esc(p.status || 'New') + '</span>' +
         '</div>' +
-        '<div style="font-size:.82rem;font-weight:700;color:var(--num-success);margin-bottom:6px">' + rent + '</div>' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">' +
+          '<div class="map-popup-rent">' + rent + '</div>' +
+          '<span style="font-size:.72rem;padding:2px 8px;border-radius:6px;font-weight:600;color:' + statusColor + ';background:' + statusColor + '1a;border:1px solid ' + statusColor + '33">' + esc(p.status || 'New') + '</span>' +
+        '</div>' +
         (p.name ? '<div class="map-popup-contact">👤 ' + esc(p.name) + (p.phone ? ' · ' + esc(p.phone) : '') + '</div>' : '') +
         '<button class="map-popup-btn" onclick="openDetail(\'' + p.id + '\')">View Property →</button>' +
       '</div>';
 
-      new maplibregl.Popup({ className: 'map-popup', maxWidth: '280px' })
+      const popup = new maplibregl.Popup({ className: 'map-popup', maxWidth: '290px', closeButton: false })
         .setLngLat(coords)
-        .setHTML(html)
+        .setHTML('<div id="' + popupId + '">' + html + '</div>')
         .addTo(dashMap);
+      const popupEl = document.getElementById(popupId);
+      if(popupEl) popupEl._popup = popup;
     });
 
     // Cursor changes on hover
