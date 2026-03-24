@@ -1011,6 +1011,27 @@ h1 .hero-edit-input{font-size:1.35rem}
 .danger-zone .settings-section-header{background:rgba(239,68,68,.06)}
 .danger-zone .settings-section-header h3{color:var(--danger)}
 
+/* ===== DISCLAIMER OVERLAY ===== */
+.disclaimer-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:500;display:flex;align-items:center;justify-content:center;animation:tipFadeIn .2s ease}
+.disclaimer-modal{background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:0 16px 48px rgba(0,0,0,.35);max-width:640px;width:94vw;max-height:88vh;display:flex;flex-direction:column;animation:tipSlideUp .25s ease}
+.disclaimer-modal-header{padding:20px 24px 16px;border-bottom:1px solid var(--border);flex-shrink:0}
+.disclaimer-modal-header h2{font-size:1.15rem;font-weight:700;color:var(--text);margin:0 0 4px}
+.disclaimer-modal-header p{font-size:.8rem;color:var(--text3);margin:0}
+.disclaimer-modal-body{flex:1;overflow-y:auto;padding:20px 24px;font-size:.84rem;line-height:1.7;color:var(--text2)}
+.disclaimer-modal-body h3{font-size:.92rem;font-weight:700;color:var(--text);margin:20px 0 8px}
+.disclaimer-modal-body h3:first-child{margin-top:0}
+.disclaimer-modal-body p{margin-bottom:12px}
+.disclaimer-modal-body ul{margin:0 0 12px 20px;padding:0}
+.disclaimer-modal-body ul li{margin-bottom:4px}
+.disclaimer-modal-footer{padding:16px 24px;border-top:1px solid var(--border);flex-shrink:0}
+.disclaimer-scroll-hint{text-align:center;font-size:.72rem;color:var(--text3);padding:8px 0 12px;font-style:italic;transition:opacity .2s}
+.disclaimer-checkbox{display:flex;align-items:flex-start;gap:10px;margin-bottom:14px}
+.disclaimer-checkbox input[type=checkbox]{width:18px;height:18px;margin-top:2px;accent-color:var(--primary);cursor:pointer;flex-shrink:0}
+.disclaimer-checkbox label{font-size:.82rem;color:var(--text);line-height:1.45;cursor:pointer}
+.disclaimer-btn{width:100%;padding:12px;border:none;border-radius:var(--radius);font-size:.88rem;font-weight:700;cursor:pointer;transition:all .15s}
+.disclaimer-btn.enabled{background:var(--primary);color:#fff}
+.disclaimer-btn.enabled:hover{filter:brightness(1.1)}
+.disclaimer-btn.disabled{background:var(--border);color:var(--text3);cursor:not-allowed}
 
 /* ===== THEME PICKER ===== */
 .theme-picker{position:absolute;top:calc(100% + 6px);right:0;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 8px 24px rgba(0,0,0,.25);z-index:300;width:220px;padding:12px;display:none}
@@ -2720,7 +2741,18 @@ function _renderProfileInner(){
 
   // ── TAB: Analysis ──
   html += `<div class="tab-content ${activeTab==='analysis'?'active':''}" data-tab="analysis">`;
-  if(proOk){
+  if(proOk && needsDisclaimer()){
+    html += `<div class="profile-card profile-full">
+      <div class="profile-card-body">
+        <div class="tab-locked-overlay">
+          <div class="tlo-icon">📋</div>
+          <div class="tlo-title">Disclaimer Required</div>
+          <div class="tlo-desc">Before using Competitor Analysis, you need to review and acknowledge the Calculations & Projections Disclaimer.</div>
+          <button class="btn btn-primary" onclick="showDisclaimerOverlay()">View Disclaimer</button>
+        </div>
+      </div>
+    </div>`;
+  } else if(proOk){
     html += renderAnalysisTab(r);
   } else {
     html += `<div class="profile-card profile-full">
@@ -2738,7 +2770,18 @@ function _renderProfileInner(){
 
   // ── TAB: Projected ROI ──
   html += `<div class="tab-content ${activeTab==='calculator'?'active':''}" data-tab="calculator">`;
-  if(calcOk){
+  if(calcOk && needsDisclaimer()){
+    html += `<div class="profile-card profile-full">
+      <div class="profile-card-body">
+        <div class="tab-locked-overlay">
+          <div class="tlo-icon">📋</div>
+          <div class="tlo-title">Disclaimer Required</div>
+          <div class="tlo-desc">Before using Projected ROI, you need to review and acknowledge the Calculations & Projections Disclaimer.</div>
+          <button class="btn btn-primary" onclick="showDisclaimerOverlay()">View Disclaimer</button>
+        </div>
+      </div>
+    </div>`;
+  } else if(calcOk){
     html += renderCalculatorTab(r);
   } else {
     html += `<div class="profile-card profile-full">
@@ -4795,6 +4838,7 @@ function loadTier(){
 }
 
 function setTier(tier){
+  const wasFree = currentTier === 'free';
   currentTier = tier;
   try { localStorage.setItem('rr_tier', tier) } catch(e){}
   // Sync tier to Firestore so website can read it
@@ -4802,8 +4846,19 @@ function setTier(tier){
     const user = firebase.auth().currentUser;
     if(user && db) db.collection('users').doc(user.uid).update({ tier: tier, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }).catch(()=>{});
   } catch(e){}
-  // Free tier defaults to light mode + standard color profile
-  if(tier === 'free'){ isDark = false; currentAccent = 'standard'; applyTheme(); }
+  // Reset disclaimer acknowledgment on downgrade to free
+  if(tier === 'free'){
+    _disclaimerAcknowledged = false;
+    try {
+      const u = firebase.auth().currentUser;
+      if(u && db) db.collection('users').doc(u.uid).update({ disclaimerAcknowledged: false }).catch(()=>{});
+    } catch(e){}
+    isDark = false; currentAccent = 'standard'; applyTheme();
+  }
+  // Show disclaimer on upgrade from free to paid
+  if(wasFree && tier !== 'free' && !_disclaimerAcknowledged){
+    setTimeout(() => showDisclaimerOverlay(), 400);
+  }
   updateTierUI();
   render();
 }
@@ -4831,6 +4886,188 @@ function tierGateHtml(minTier, featureName, description){
     <div class="tg-desc">${description||''}</div>
     <button class="btn btn-primary btn-sm" onclick="switchView('pricing')">Upgrade Plan</button>
   </div>`;
+}
+
+// ===== DISCLAIMER ACKNOWLEDGMENT =====
+let _disclaimerAcknowledged = false;
+let _disclaimerOverlayOpen = false;
+
+function needsDisclaimer(){
+  // Only paid users who haven't acknowledged need the disclaimer
+  return currentTier !== 'free' && !_disclaimerAcknowledged;
+}
+
+function showDisclaimerOverlay(opts){
+  const fromSettings = opts && opts.fromSettings;
+  if(document.getElementById('disclaimerOverlay')) return;
+  _disclaimerOverlayOpen = true;
+  const overlay = document.createElement('div');
+  overlay.id = 'disclaimerOverlay';
+  overlay.className = 'disclaimer-overlay';
+  const today = new Date();
+  const dateStr = today.toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' });
+  overlay.innerHTML = `<div class="disclaimer-modal">
+    <div class="disclaimer-modal-header">
+      <h2>Calculations & Projections Disclaimer</h2>
+      <p>Please read the following disclaimer in its entirety before continuing.</p>
+    </div>
+    <div class="disclaimer-modal-body" id="disclaimerBody">
+      <h3>1. Nature of Projections</h3>
+      <p>All calculations, projections, estimates, deal temperature ratings, payback periods, cash flow figures, cash-on-cash returns, net operating income, competitive position scores, and any other financial or analytical outputs provided by RentingRadar (the "Projections") are forward-looking estimates generated by mathematical models. These Projections are <strong>not guarantees, promises, or representations</strong> of actual future performance, returns, or outcomes of any kind.</p>
+
+      <h3>2. No Financial, Investment, or Legal Advice</h3>
+      <p>Nothing contained in RentingRadar constitutes financial advice, investment advice, tax advice, legal advice, or any other form of professional advice. RentingRadar is a software tool designed to assist with rental arbitrage research and prospecting. All information presented is for <strong>informational and educational purposes only</strong>. You should consult with qualified financial advisors, accountants, attorneys, and other professionals before making any investment or business decisions.</p>
+
+      <h3>3. Accuracy of Inputs and Outputs</h3>
+      <p>The accuracy of any Projection is entirely dependent upon the data you provide and the data sourced from third-party platforms. RentingRadar does not independently verify the accuracy, completeness, or reliability of any input data, including but not limited to:</p>
+      <ul>
+        <li>Nightly rates, occupancy rates, and availability data from competitor listings</li>
+        <li>Rental amounts, furnishing costs, and operating expenses entered by the user</li>
+        <li>Property details imported from third-party listing platforms</li>
+        <li>Market conditions, seasonal trends, and competitive dynamics</li>
+      </ul>
+      <p>Inaccurate, incomplete, or outdated input data will produce inaccurate Projections. RentingRadar makes no warranty that any output is free from errors, miscalculations, or omissions.</p>
+
+      <h3>4. Market and External Risk Factors</h3>
+      <p>Real estate markets and short-term rental markets are subject to significant and unpredictable fluctuations. Actual results may differ materially from any Projection due to factors including, but not limited to:</p>
+      <ul>
+        <li>Changes in local, state, or federal regulations governing short-term rentals</li>
+        <li>Shifts in market demand, tourism patterns, or economic conditions</li>
+        <li>Changes in platform algorithms, fees, or policies (e.g., Airbnb, VRBO)</li>
+        <li>Unexpected property maintenance, repairs, or capital expenditures</li>
+        <li>Changes in interest rates, insurance costs, or tax obligations</li>
+        <li>Natural disasters, pandemics, or other force majeure events</li>
+        <li>Increased competition or market saturation in your area</li>
+        <li>Vacancy rates, cancellations, chargebacks, and guest-related damages</li>
+      </ul>
+
+      <h3>5. No Fiduciary Relationship</h3>
+      <p>Your use of RentingRadar does not create a fiduciary relationship, advisory relationship, agency relationship, or any other special relationship between you and RentingRadar or Summit Capital LLC. RentingRadar owes you no duty of care beyond the terms outlined in the Terms of Service.</p>
+
+      <h3>6. Assumption of Risk</h3>
+      <p>By using the Competitor Analysis, Projected ROI, and related analytical features of RentingRadar, you acknowledge and agree that:</p>
+      <ul>
+        <li>All investment decisions are made solely at your own risk and discretion</li>
+        <li>You are solely responsible for conducting your own independent due diligence</li>
+        <li>Past performance of any property or market does not guarantee future results</li>
+        <li>You will not rely solely on RentingRadar Projections when making financial decisions</li>
+        <li>You understand that you may lose money on any rental arbitrage investment regardless of what the Projections indicate</li>
+      </ul>
+
+      <h3>7. Limitation of Liability</h3>
+      <p>To the fullest extent permitted by applicable law, RentingRadar and Summit Capital LLC, including their officers, directors, employees, agents, and affiliates, shall not be liable for any direct, indirect, incidental, special, consequential, or punitive damages arising out of or related to your reliance on any Projections, including but not limited to lost profits, lost revenue, financial losses, or any damages resulting from investment decisions influenced by information provided through the platform.</p>
+
+      <h3>8. Indemnification</h3>
+      <p>You agree to indemnify, defend, and hold harmless RentingRadar and Summit Capital LLC from and against any and all claims, liabilities, damages, losses, costs, and expenses (including reasonable attorneys' fees) arising out of or related to your use of the Projections, your investment decisions, or your breach of this disclaimer.</p>
+
+      <h3>9. Modification</h3>
+      <p>RentingRadar reserves the right to modify this disclaimer at any time. Continued use of the analytical features after any modification constitutes your acceptance of the updated disclaimer. You may be required to re-acknowledge this disclaimer if material changes are made.</p>
+
+      <h3>10. Governing Law</h3>
+      <p>This disclaimer shall be governed by and construed in accordance with the laws of the state in which Summit Capital LLC is organized, without regard to conflict of law principles.</p>
+
+      <p style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border);font-size:.78rem;color:var(--text3)">Effective Date: ${dateStr} · RentingRadar is operated by Summit Capital LLC.</p>
+    </div>
+    <div class="disclaimer-modal-footer">
+      <div class="disclaimer-scroll-hint" id="disclaimerScrollHint">↓ Scroll to the bottom to acknowledge</div>
+      <div class="disclaimer-checkbox" style="opacity:.4;pointer-events:none" id="disclaimerCheckWrap">
+        <input type="checkbox" id="disclaimerCheck">
+        <label for="disclaimerCheck">I have read and understand this disclaimer. I acknowledge that all calculations and projections are estimates only, not guarantees, and that I assume full responsibility for my own investment decisions.</label>
+      </div>
+      <button class="disclaimer-btn disabled" id="disclaimerAcceptBtn" disabled>Acknowledge & Continue</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+
+  // Scroll tracking — enable checkbox only when scrolled to bottom
+  const body = document.getElementById('disclaimerBody');
+  const checkWrap = document.getElementById('disclaimerCheckWrap');
+  const scrollHint = document.getElementById('disclaimerScrollHint');
+  const checkBox = document.getElementById('disclaimerCheck');
+  const acceptBtn = document.getElementById('disclaimerAcceptBtn');
+
+  function onBodyScroll(){
+    const atBottom = body.scrollTop + body.clientHeight >= body.scrollHeight - 30;
+    if(atBottom){
+      checkWrap.style.opacity = '1';
+      checkWrap.style.pointerEvents = 'auto';
+      scrollHint.style.opacity = '0';
+    }
+  }
+  body.addEventListener('scroll', onBodyScroll);
+  // Check on load in case content is short enough to not need scroll
+  setTimeout(onBodyScroll, 100);
+
+  // Checkbox enables button
+  checkBox.addEventListener('change', function(){
+    if(this.checked){
+      acceptBtn.className = 'disclaimer-btn enabled';
+      acceptBtn.disabled = false;
+    } else {
+      acceptBtn.className = 'disclaimer-btn disabled';
+      acceptBtn.disabled = true;
+    }
+  });
+
+  // Accept button
+  acceptBtn.addEventListener('click', function(){
+    if(!checkBox.checked) return;
+    _disclaimerAcknowledged = true;
+    _disclaimerOverlayOpen = false;
+    // Persist to Firestore
+    try {
+      const u = firebase.auth().currentUser;
+      if(u && db) db.collection('users').doc(u.uid).update({ disclaimerAcknowledged: true, disclaimerAcknowledgedAt: firebase.firestore.FieldValue.serverTimestamp() }).catch(()=>{});
+    } catch(e){}
+    overlay.remove();
+    window.removeEventListener('beforeunload', _disclaimerBeforeUnload);
+    showToast('Disclaimer acknowledged. Competitor Analysis and Projected ROI are now enabled.', 'success', 5000);
+    // Re-render the current profile tab if on analysis or calculator
+    const calcEl = document.querySelector('.tab-content[data-tab="calculator"]');
+    if(calcEl){ const rec = records.find(x=>x.id===currentProfileId); if(rec) calcEl.innerHTML = renderCalculatorTab(rec); }
+    const anEl = document.querySelector('.tab-content[data-tab="analysis"]');
+    if(anEl){ const rec = records.find(x=>x.id===currentProfileId); if(rec) anEl.innerHTML = renderAnalysisTab(rec); }
+  });
+
+  // Prevent closing unless from settings (viewing only)
+  if(!fromSettings){
+    window.addEventListener('beforeunload', _disclaimerBeforeUnload);
+  }
+
+  // Clicking overlay background shows warning (not dismissable unless fromSettings)
+  overlay.addEventListener('click', function(e){
+    if(e.target === overlay){
+      if(fromSettings){
+        overlay.remove();
+        _disclaimerOverlayOpen = false;
+        window.removeEventListener('beforeunload', _disclaimerBeforeUnload);
+      } else {
+        showDisclaimerCloseWarning();
+      }
+    }
+  });
+}
+
+function _disclaimerBeforeUnload(e){
+  e.preventDefault();
+  e.returnValue = '';
+}
+
+function showDisclaimerCloseWarning(){
+  showAppAlert('You must acknowledge the Calculations & Projections Disclaimer before accessing the Competitor Analysis and Projected ROI features. Please scroll to the bottom and check the acknowledgment box to continue.', {
+    title: 'Acknowledgment Required',
+    icon: '📋'
+  });
+}
+
+function showDisclaimerGatePopup(){
+  showAppConfirm('You need to acknowledge the Calculations & Projections Disclaimer before using this feature. All calculations are projections only — the disclaimer explains what this means for your usage.', {
+    title: 'Disclaimer Required',
+    icon: '📋',
+    confirmText: 'View Disclaimer',
+    cancelText: 'Go Back',
+    onConfirm: () => showDisclaimerOverlay()
+  });
 }
 
 function renderPricing(){
@@ -4970,12 +5207,11 @@ function checkCheckoutReturn(){
     // Clean the URL so a page refresh doesn't re-trigger
     const cleanUrl = window.location.origin + window.location.pathname;
     window.history.replaceState({}, document.title, cleanUrl);
-    // Activate the plan
+    // Activate the plan — setTier will trigger disclaimer overlay for new paid users
     setTier(plan);
-    // Navigate to pricing page and show welcome message after a brief delay for render
     switchView('pricing');
     setTimeout(() => {
-      showToast('Welcome to ' + TIERS[plan].name + '! Your plan is now active.', 'success', 6000);
+      showToast('Welcome to ' + TIERS[plan].name + '! Please review the disclaimer to unlock all features.', 'success', 6000);
     }, 300);
   }
 }
@@ -5050,11 +5286,12 @@ firebase.auth().onAuthStateChanged(async (user) => {
     // If this is a token refresh for the same user, skip full reload to avoid
     // destroying any open editors or typed content
     if(_authDataLoaded && _currentUid === user.uid){
-      // Silently refresh tier in background without re-rendering
+      // Silently refresh tier and disclaimer state in background without re-rendering
       try {
         const userDoc = await db.collection('users').doc(user.uid).get();
         if(userDoc.exists){
           const data = userDoc.data();
+          _disclaimerAcknowledged = !!data.disclaimerAcknowledged;
           if(data.tier) setTier(data.tier);
         }
       } catch(e){ /* tier refresh failed, that's ok */ }
@@ -5069,11 +5306,15 @@ firebase.auth().onAuthStateChanged(async (user) => {
         email: user.email || '',
         photo: user.photoURL || null,
         tier: 'free',
+        disclaimerAcknowledged: false,
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
       });
+      _disclaimerAcknowledged = false;
       setTier('free');
     } else {
       const data = userDoc.data();
+      // Load disclaimer state BEFORE setting tier (so setTier doesn't re-trigger overlay)
+      _disclaimerAcknowledged = !!data.disclaimerAcknowledged;
       if(data.tier) setTier(data.tier);
     }
     // Load user's property data from Firestore
@@ -5156,6 +5397,7 @@ firebase.auth().getRedirectResult().then(function(result){
 function handleSignOut(){
   firebase.auth().signOut().then(() => {
     setUser(null);
+    _disclaimerAcknowledged = false;
     try {
       localStorage.removeItem('rr_user');
       localStorage.removeItem('rr_tier');
@@ -5834,7 +6076,7 @@ function renderCalculatorTab(r){
   const _pynExp = v.hasProjectionData ? Math.round((calcProjMode === 'optimistic' ? v.optimisticD : calcProjMode === 'pessimistic' ? v.pessimisticD : v.projectedD).annualExp) : 0;
   const _pynNet = v.hasProjectionData ? (_pynRev - _pynExp - _pynAnnualRent) : 0;
   const _pynMonthlyNet = v.hasProjectionData ? Math.round(_pynNet / 12) : Math.round(selectedD.monthlyCF);
-  const kpiMonthlyCF = Math.round(_pynMonthlyNet * confidence);
+  const kpiMonthlyCF = Math.round(_pynMonthlyNet * confidencePct / 100);
   const kpiAnnualCF = kpiMonthlyCF * 12;
   const kpiCoC = v.totalInvested > 0 ? (kpiAnnualCF / v.totalInvested * 100) : 0;
   const cfClass = kpiMonthlyCF >= 0 ? 'positive' : 'negative';
@@ -6254,7 +6496,7 @@ function renderCalculatorTab(r){
   // Competitive Position Adjustment row + Adjusted Monthly Net row
   // Store adjusted values on each col for use in deal temp later
   cols.forEach(col => {
-    col.adjustedMonthlyNet = col.hasData ? Math.round(col.monthlyNet * confidence) : 0;
+    col.adjustedMonthlyNet = col.hasData ? Math.round(col.monthlyNet * confidencePct / 100) : 0;
   });
 
   pynRow('Position Adjustment', col => {
@@ -8693,6 +8935,10 @@ function renderSettings(){
           <div class="settings-row-left"><div class="sr-label">Next Billing Date</div><div class="sr-desc">When your next payment is due</div></div>
           <div class="settings-row-right"><div class="settings-value">${t.monthly > 0 ? 'Apr 18, 2026' : '—'}</div></div>
         </div>
+        ${currentTier !== 'free' ? `<div class="settings-row">
+          <div class="settings-row-left"><div class="sr-label">Calculations Disclaimer</div><div class="sr-desc">${_disclaimerAcknowledged ? '<span style="color:var(--success)">Acknowledged</span> — all projections are estimates only' : '<span style="color:var(--warning)">Not yet acknowledged</span> — required for analysis features'}</div></div>
+          <div class="settings-row-right"><button class="btn btn-secondary btn-sm" onclick="showDisclaimerOverlay(${_disclaimerAcknowledged ? '{fromSettings:true}' : ''})">${_disclaimerAcknowledged ? 'Review' : 'Acknowledge'}</button></div>
+        </div>` : ''}
         <div style="margin-top:12px">
           <div class="sr-label" style="font-size:.78rem;font-weight:600;color:var(--text3);margin-bottom:8px">BILLING HISTORY</div>
           <table class="billing-history">
