@@ -1586,6 +1586,11 @@ function renderDashboard(){
 
 /* ===== MAP FUNCTIONS ===== */
 let dashMap = null;
+let _savedMapState = null;
+
+function saveMapState(){
+  if(dashMap){ _savedMapState = { center: dashMap.getCenter().toArray(), zoom: dashMap.getZoom() }; }
+}
 
 function initDashboardMap(){
   const container = document.getElementById('dashboardMap');
@@ -1643,11 +1648,16 @@ function initDashboardMap(){
   const mapStyle = isDark
     ? 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json'
     : 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json';
+  const initCenter = _savedMapState ? _savedMapState.center : [avgLng, avgLat];
+  const initZoom = _savedMapState ? _savedMapState.zoom : (geoProps.length === 1 ? 12 : 9);
+  const hadSavedState = !!_savedMapState;
+  _savedMapState = null;
+
   dashMap = new maplibregl.Map({
     container: 'dashboardMap',
     style: mapStyle,
-    center: [avgLng, avgLat],
-    zoom: geoProps.length === 1 ? 12 : 9,
+    center: initCenter,
+    zoom: initZoom,
     attributionControl: false
   });
 
@@ -1770,7 +1780,7 @@ function initDashboardMap(){
           '<span style="font-size:.72rem;padding:2px 8px;border-radius:6px;font-weight:600;color:' + statusColor + ';background:' + statusColor + '1a;border:1px solid ' + statusColor + '33">' + esc(p.status || 'New') + '</span>' +
         '</div>' +
         (p.name ? '<div class="map-popup-contact">👤 ' + esc(p.name) + (p.phone ? ' · ' + esc(p.phone) : '') + '</div>' : '') +
-        '<button class="map-popup-btn" onclick="openDetail(\'' + p.id + '\')">View Property →</button>' +
+        '<button class="map-popup-btn" onclick="saveMapState();openDetail(\'' + p.id + '\')">View Property →</button>' +
       '</div>';
 
       const popup = new maplibregl.Popup({ className: 'map-popup', maxWidth: '290px', closeButton: false, closeOnClick: false, closeOnMove: false, anchor: 'bottom' })
@@ -1799,8 +1809,8 @@ function initDashboardMap(){
     dashMap.on('mouseenter', 'unclustered-point', () => { dashMap.getCanvas().style.cursor = 'pointer'; });
     dashMap.on('mouseleave', 'unclustered-point', () => { dashMap.getCanvas().style.cursor = ''; });
 
-    // Fit bounds to all properties
-    if(geoProps.length > 1){
+    // Fit bounds to all properties (skip if restoring saved map position)
+    if(geoProps.length > 1 && !hadSavedState){
       const bounds = new maplibregl.LngLatBounds();
       geoProps.forEach(p => bounds.extend([p.lng, p.lat]));
       dashMap.fitBounds(bounds, { padding: 50, maxZoom: 13 });
