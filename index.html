@@ -255,7 +255,10 @@ textarea{resize:vertical;min-height:80px}
 .map-popup-copy:hover{color:var(--primary)}
 .map-popup-copy.copied{color:var(--success,#22c55e)!important;opacity:1}
 .map-popup-phone{cursor:default;display:inline-flex;align-items:center;gap:2px}
-.map-ctrl-hint{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,.7);color:#fff;padding:8px 16px;border-radius:8px;font-size:.82rem;pointer-events:none;z-index:10;opacity:0;transition:opacity .3s}
+.map-ctrl-hint{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,.75);color:#fff;padding:10px 20px;border-radius:10px;font-size:.84rem;font-weight:500;pointer-events:none;z-index:10;opacity:0;transition:opacity .3s;backdrop-filter:blur(4px);letter-spacing:.01em}
+.map-info-panel{position:absolute;bottom:8px;right:8px;background:rgba(0,0,0,.6);color:rgba(255,255,255,.85);padding:5px 10px;border-radius:6px;font-size:.68rem;pointer-events:none;z-index:5;display:flex;align-items:center;gap:4px;backdrop-filter:blur(4px);letter-spacing:.01em}
+.map-info-icon{display:inline-flex;align-items:center;opacity:.7}
+.map-info-sep{opacity:.4;margin:0 1px}
 
 /* ===== TABLE ===== */
 .table-wrap{background:var(--surface);border-radius:var(--radius);border:1px solid var(--border);box-shadow:var(--shadow);overflow:hidden}
@@ -1717,22 +1720,35 @@ function initDashboardMap(){
 
   dashMap.addControl(new maplibregl.NavigationControl(), 'top-right');
 
-  // Ctrl+scroll to zoom — show hint overlay otherwise
+  // Ctrl+scroll to zoom smoothly — page scrolls normally otherwise
   const mapEl = dashMap.getContainer();
   let ctrlHintTimer = null;
+  let ctrlZoomActive = false;
+  let ctrlZoomTimeout = null;
+
+  function enableCtrlZoom(){
+    if(!ctrlZoomActive){
+      ctrlZoomActive = true;
+      dashMap.scrollZoom.enable();
+    }
+    clearTimeout(ctrlZoomTimeout);
+    ctrlZoomTimeout = setTimeout(() => {
+      ctrlZoomActive = false;
+      dashMap.scrollZoom.disable();
+    }, 400);
+  }
+
   mapEl.addEventListener('wheel', (e) => {
     if(e.ctrlKey || e.metaKey){
       e.preventDefault();
-      dashMap.scrollZoom.enable();
-      dashMap.scrollZoom.wheel(e);
-      setTimeout(() => dashMap.scrollZoom.disable(), 50);
-    } else {
-      // Show hint overlay
+      enableCtrlZoom();
+    } else if(!ctrlZoomActive) {
+      // Show hint overlay for non-Ctrl scroll
       let hint = mapEl.querySelector('.map-ctrl-hint');
       if(!hint){
         hint = document.createElement('div');
         hint.className = 'map-ctrl-hint';
-        hint.textContent = navigator.platform.includes('Mac') ? 'Hold ⌘ to zoom' : 'Hold Ctrl to zoom';
+        hint.textContent = 'Hold Ctrl + scroll to zoom';
         mapEl.appendChild(hint);
       }
       hint.style.opacity = '1';
@@ -1740,6 +1756,19 @@ function initDashboardMap(){
       ctrlHintTimer = setTimeout(() => { hint.style.opacity = '0'; }, 1200);
     }
   }, { passive: false });
+
+  // Also enable/disable on keydown/keyup for immediate response
+  function onCtrlDown(e){ if((e.key==='Control'||e.key==='Meta') && mapEl.matches(':hover')){ enableCtrlZoom(); }}
+  function onCtrlUp(e){ if(e.key==='Control'||e.key==='Meta'){ clearTimeout(ctrlZoomTimeout); ctrlZoomActive=false; dashMap.scrollZoom.disable(); }}
+  document.addEventListener('keydown', onCtrlDown);
+  document.addEventListener('keyup', onCtrlUp);
+  dashMap.on('remove', () => { document.removeEventListener('keydown', onCtrlDown); document.removeEventListener('keyup', onCtrlUp); });
+
+  // Persistent info panel in bottom-right
+  const infoPanel = document.createElement('div');
+  infoPanel.className = 'map-info-panel';
+  infoPanel.innerHTML = '<span class="map-info-icon"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></span> Ctrl + Scroll to zoom <span class="map-info-sep">·</span> Click pin for details';
+  mapEl.appendChild(infoPanel);
 
   dashMap.on('load', () => {
     // Clustered source — groups nearby properties dynamically
