@@ -1583,24 +1583,26 @@ function buildPipelineUI(){
     h += '<div class="db-empty">No properties yet. Add your first property to see your pipeline.</div>';
   }
 
-  // Only show category tabs and status breakdown when a specific category is selected
-  if(activeCat !== 'all'){
-    const catColors = { prospects:'#818cf8', outreach:'#38bdf8', qualified:'#34d399' };
-    h += `<div class="pipeline-category-tabs" style="margin-top:14px">
-      ${cats.map(c => {
-        const isActive = activeCat===c.key;
-        const col = catColors[c.key];
-        return `<div class="pipeline-cat-tab ${isActive?'active':''}" onclick="pipelineCategory='${c.key}';_mapFilter='${c.key}';updatePipelineUI();setMapFilter('${c.key}')" style="color:${col};${isActive?'border-bottom-color:'+col:''}">${c.name} <span class="pct-count">${c.count}</span></div>`;
-      }).join('')}
-      <div class="pipeline-cat-tab ${activeCat==='lost'?'active':''}" onclick="pipelineCategory='lost';_mapFilter='lost';updatePipelineUI();setMapFilter('lost')" style="color:var(--danger);${activeCat==='lost'?'border-bottom-color:var(--danger)':''}">Closed/Lost <span class="pct-count">${lostCount}</span></div>
-    </div>`;
+  // Always show category tabs (no active tab when All Properties selected)
+  const catColors = { prospects:'#818cf8', outreach:'#38bdf8', qualified:'#34d399' };
+  h += `<div class="pipeline-category-tabs" style="margin-top:14px">
+    ${cats.map(c => {
+      const isActive = activeCat===c.key;
+      const col = catColors[c.key];
+      return `<div class="pipeline-cat-tab ${isActive?'active':''}" onclick="pipelineCategory='${c.key}';_mapFilter='${c.key}';updatePipelineUI();setMapFilter('${c.key}')" style="color:${col};${isActive?'border-bottom-color:'+col:''}">${c.name} <span class="pct-count">${c.count}</span></div>`;
+    }).join('')}
+    <div class="pipeline-cat-tab ${activeCat==='lost'?'active':''}" onclick="pipelineCategory='lost';_mapFilter='lost';updatePipelineUI();setMapFilter('lost')" style="color:var(--danger);${activeCat==='lost'?'border-bottom-color:var(--danger)':''}">Closed/Lost <span class="pct-count">${lostCount}</span></div>
+  </div>`;
 
+  // Fixed-height status area — populated when a category is selected, empty placeholder when All Properties
+  const maxStatusRows = Math.max(...[...FUNNEL_CATEGORIES.map(c => c.statuses.length), CLOSED_STAGES.length]);
+  const statusAreaHeight = maxStatusRows * 38;
+  if(activeCat !== 'all'){
     const isLost = activeCat === 'lost';
     const catStatuses = isLost ? CLOSED_STAGES : (cats.find(c => c.key === activeCat)?.statuses || []);
     const statusItems = catStatuses.map(st => ({ status: st, count: records.filter(r => r.status === st).length }));
-    const maxStatusRows = Math.max(...[...FUNNEL_CATEGORIES.map(c => c.statuses.length), CLOSED_STAGES.length]);
     if(statusItems.length > 0){
-      h += `<div class="db-status-breakdown" style="min-height:${maxStatusRows * 38}px">`;
+      h += `<div class="db-status-breakdown" style="min-height:${statusAreaHeight}px">`;
       statusItems.forEach(s => {
         const catColor = isLost ? 'var(--danger)' : (funnelStages.find(fs => fs.statuses.includes(s.status))?.color || 'var(--primary)');
         h += `<div class="db-status-row" onclick="event.stopPropagation();_mapFilter='status:${s.status}';setMapFilter('status:${s.status}')">
@@ -1611,7 +1613,11 @@ function buildPipelineUI(){
         </div>`;
       });
       h += '</div>';
+    } else {
+      h += `<div style="min-height:${statusAreaHeight}px"></div>`;
     }
+  } else {
+    h += `<div style="min-height:${statusAreaHeight}px"></div>`;
   }
 
   return h;
