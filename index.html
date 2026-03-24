@@ -1733,9 +1733,20 @@ function initDashboardMap(){
       });
     });
 
+    // Track active popup so we can close it when opening another
+    let activeMapPopup = null;
+
+    // Close popup when clicking empty map area
+    dashMap.on('click', (e) => {
+      const clusters = dashMap.queryRenderedFeatures(e.point, { layers: ['clusters'] });
+      const points = dashMap.queryRenderedFeatures(e.point, { layers: ['unclustered-point'] });
+      if(!clusters.length && !points.length && activeMapPopup){ activeMapPopup.remove(); activeMapPopup = null; }
+    });
+
     // Click individual pin to show popup
     dashMap.on('click', 'unclustered-point', (e) => {
       if(!e.features || !e.features.length) return;
+      if(activeMapPopup){ activeMapPopup.remove(); activeMapPopup = null; }
       const f = e.features[0];
       const p = f.properties;
       const coords = f.geometry.coordinates.slice();
@@ -1762,12 +1773,24 @@ function initDashboardMap(){
         '<button class="map-popup-btn" onclick="openDetail(\'' + p.id + '\')">View Property →</button>' +
       '</div>';
 
-      const popup = new maplibregl.Popup({ className: 'map-popup', maxWidth: '290px', closeButton: false })
+      const popup = new maplibregl.Popup({ className: 'map-popup', maxWidth: '290px', closeButton: false, closeOnClick: false, closeOnMove: false, anchor: 'bottom' })
         .setLngLat(coords)
         .setHTML('<div id="' + popupId + '">' + html + '</div>')
         .addTo(dashMap);
       const popupEl = document.getElementById(popupId);
       if(popupEl) popupEl._popup = popup;
+      activeMapPopup = popup;
+      // Pan map so popup is fully visible — offset upward to account for popup height
+      const mapContainer = dashMap.getContainer();
+      const pt = dashMap.project(coords);
+      const popupHeight = 220;
+      const padding = 20;
+      let dx = 0, dy = 0;
+      if(pt.y - popupHeight - padding < 0) dy = pt.y - popupHeight - padding;
+      if(pt.y + padding > mapContainer.clientHeight) dy = pt.y + padding - mapContainer.clientHeight;
+      if(pt.x - 145 - padding < 0) dx = pt.x - 145 - padding;
+      if(pt.x + 145 + padding > mapContainer.clientWidth) dx = pt.x + 145 + padding - mapContainer.clientWidth;
+      if(dx !== 0 || dy !== 0) dashMap.panBy([dx, dy], { duration: 300 });
     });
 
     // Cursor changes on hover
