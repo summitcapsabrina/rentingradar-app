@@ -1651,54 +1651,92 @@ function initDashboardMap(){
   dashMap.addControl(new maplibregl.NavigationControl(), 'top-right');
 
   dashMap.on('load', () => {
-    dashMap.addSource('properties', { type: 'geojson', data: geojson });
-
-    // Heatmap layer — visible when zoomed out
-    dashMap.addLayer({
-      id: 'property-heat',
-      type: 'heatmap',
-      source: 'properties',
-      maxzoom: 13,
-      paint: {
-        'heatmap-weight': 1,
-        'heatmap-intensity': ['interpolate', ['linear'], ['zoom'], 0, 1, 13, 3],
-        'heatmap-color': [
-          'interpolate', ['linear'], ['heatmap-density'],
-          0, 'rgba(0,0,0,0)',
-          0.2, 'rgba(103,58,183,.3)',
-          0.4, 'rgba(63,81,181,.5)',
-          0.6, 'rgba(33,150,243,.6)',
-          0.8, 'rgba(0,188,212,.7)',
-          1, 'rgba(76,175,80,.8)'
-        ],
-        'heatmap-radius': ['interpolate', ['linear'], ['zoom'], 0, 15, 13, 30],
-        'heatmap-opacity': ['interpolate', ['linear'], ['zoom'], 11, 1, 13, 0]
-      }
+    // Clustered source — groups nearby properties dynamically
+    dashMap.addSource('properties', {
+      type: 'geojson',
+      data: geojson,
+      cluster: true,
+      clusterMaxZoom: 18,
+      clusterRadius: 50
     });
 
-    // Circle markers — visible when zoomed in
+    // Cluster circles — color by point_count: blue(2-4), green(5-10), red(10+)
     dashMap.addLayer({
-      id: 'property-points',
+      id: 'clusters',
       type: 'circle',
       source: 'properties',
-      minzoom: 11,
+      filter: ['has', 'point_count'],
       paint: {
-        'circle-radius': ['interpolate', ['linear'], ['zoom'], 11, 4, 16, 8],
-        'circle-color': '#6366f1',
+        'circle-color': [
+          'interpolate', ['linear'], ['get', 'point_count'],
+          2, '#3b82f6',
+          4, '#3b82f6',
+          5, '#22c55e',
+          10, '#22c55e',
+          11, '#ef4444'
+        ],
+        'circle-radius': [
+          'interpolate', ['linear'], ['get', 'point_count'],
+          2, 18,
+          5, 22,
+          10, 28,
+          30, 36,
+          100, 44
+        ],
+        'circle-opacity': 0.85,
         'circle-stroke-width': 2,
-        'circle-stroke-color': '#fff',
-        'circle-opacity': ['interpolate', ['linear'], ['zoom'], 11, 0, 12, 1]
+        'circle-stroke-color': 'rgba(255,255,255,0.6)'
       }
     });
 
-    // Click handler for individual points
-    dashMap.on('click', 'property-points', (e) => {
+    // Cluster count labels
+    dashMap.addLayer({
+      id: 'cluster-count',
+      type: 'symbol',
+      source: 'properties',
+      filter: ['has', 'point_count'],
+      layout: {
+        'text-field': '{point_count_abbreviated}',
+        'text-size': 13,
+        'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold']
+      },
+      paint: {
+        'text-color': '#ffffff'
+      }
+    });
+
+    // Individual property pins (unclustered) — always visible
+    dashMap.addLayer({
+      id: 'unclustered-point',
+      type: 'circle',
+      source: 'properties',
+      filter: ['!', ['has', 'point_count']],
+      paint: {
+        'circle-radius': ['interpolate', ['linear'], ['zoom'], 5, 5, 16, 9],
+        'circle-color': '#6366f1',
+        'circle-stroke-width': 2.5,
+        'circle-stroke-color': '#fff'
+      }
+    });
+
+    // Click cluster to zoom in
+    dashMap.on('click', 'clusters', (e) => {
+      const features = dashMap.queryRenderedFeatures(e.point, { layers: ['clusters'] });
+      if(!features.length) return;
+      const clusterId = features[0].properties.cluster_id;
+      dashMap.getSource('properties').getClusterExpansionZoom(clusterId, (err, zoom) => {
+        if(err) return;
+        dashMap.easeTo({ center: features[0].geometry.coordinates, zoom: zoom });
+      });
+    });
+
+    // Click individual pin to show popup
+    dashMap.on('click', 'unclustered-point', (e) => {
       if(!e.features || !e.features.length) return;
       const f = e.features[0];
       const p = f.properties;
       const coords = f.geometry.coordinates.slice();
 
-      // Build popup HTML
       const addr = p.property || 'Unknown Address';
       const rent = p.rent ? '$' + Number(p.rent).toLocaleString() + '/mo' : '—';
       const statusColor = getStatusColor(p.status);
@@ -1722,9 +1760,11 @@ function initDashboardMap(){
         .addTo(dashMap);
     });
 
-    // Cursor change on hover
-    dashMap.on('mouseenter', 'property-points', () => { dashMap.getCanvas().style.cursor = 'pointer'; });
-    dashMap.on('mouseleave', 'property-points', () => { dashMap.getCanvas().style.cursor = ''; });
+    // Cursor changes on hover
+    dashMap.on('mouseenter', 'clusters', () => { dashMap.getCanvas().style.cursor = 'pointer'; });
+    dashMap.on('mouseleave', 'clusters', () => { dashMap.getCanvas().style.cursor = ''; });
+    dashMap.on('mouseenter', 'unclustered-point', () => { dashMap.getCanvas().style.cursor = 'pointer'; });
+    dashMap.on('mouseleave', 'unclustered-point', () => { dashMap.getCanvas().style.cursor = ''; });
 
     // Fit bounds to all properties
     if(geoProps.length > 1){
