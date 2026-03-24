@@ -194,6 +194,7 @@ textarea{resize:vertical;min-height:80px}
 .db-pipeline-boxes{display:flex;gap:10px;flex-wrap:wrap}
 .db-pipeline-box{display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:60px;height:64px;border-radius:var(--radius);border:2px solid transparent;cursor:pointer;transition:all .3s ease;gap:3px;position:relative}
 .db-pipeline-box:hover{filter:brightness(1.25);z-index:1}
+.db-pipeline-total:hover{filter:none;cursor:default}
 .db-pipeline-box .pb-icon{line-height:1}
 .db-pipeline-box .pb-count{font-size:.85rem;font-weight:800;line-height:1}
 .db-status-breakdown{display:flex;flex-direction:column;gap:2px;margin-top:4px}
@@ -1400,15 +1401,6 @@ function renderDashboard(){
 
   let h = '<div class="db-grid">';
 
-  // ── KPI CARDS ──
-  h += '<div class="db-kpis">';
-  h += `<div class="db-kpi" onclick="switchView('contacts')" style="cursor:pointer"><div class="kpi-icon" style="background:rgba(99,129,250,.12);color:var(--primary)">📋</div><div class="kpi-val">${total}</div><div class="kpi-label">Total Properties</div><div class="kpi-sub">${withContact} with contacts</div></div>`;
-  h += `<div class="db-kpi" onclick="pipelineCategory='prospects';render();document.querySelector('.pipeline-category-tabs')?.scrollIntoView({behavior:'smooth',block:'nearest'})" style="cursor:pointer"><div class="kpi-icon" style="background:rgba(56,189,248,.12);color:#38bdf8">🔄</div><div class="kpi-val">${active}</div><div class="kpi-label">Active Pipeline</div><div class="kpi-sub">${closed} closed/lost</div></div>`;
-  h += `<div class="db-kpi" onclick="pipelineCategory='qualified';render();document.querySelector('.pipeline-category-tabs')?.scrollIntoView({behavior:'smooth',block:'nearest'})" style="cursor:pointer"><div class="kpi-icon" style="background:rgba(52,211,153,.12);color:#34d399">🔥</div><div class="kpi-val">${hotLeads}</div><div class="kpi-label">Hot Leads</div><div class="kpi-sub">${convRate}% qualification rate</div></div>`;
-  h += `<div class="db-kpi" onclick="switchView('notifications')" style="cursor:pointer"><div class="kpi-icon" style="background:${overdue.length?'rgba(239,68,68,.12)':'rgba(52,211,153,.12)'};color:${overdue.length?'var(--danger)':'var(--success)'}">📅</div><div class="kpi-val" style="color:${overdue.length?'var(--danger)':'var(--text)'}">${followUps.length}</div><div class="kpi-label">Follow-Ups Due</div><div class="kpi-sub">${overdue.length} overdue${todayFU.length ? ', '+todayFU.length+' today' : ''}</div></div>`;
-  h += `<div class="db-kpi"><div class="kpi-icon" style="background:rgba(168,85,247,.12);color:#a855f7">📅</div><div class="kpi-val">${meetings.length}</div><div class="kpi-label">Upcoming Meetings</div><div class="kpi-sub">${pastMeetings} completed</div></div>`;
-  h += '</div>';
-
   // ── MAP CARD ──
   h += '<div class="db-map-card">';
   h += '<div class="db-card-hdr"><h3>🗺️ Property Map</h3><span class="db-hdr-action" id="mapPropertyCount"></span></div>';
@@ -1442,6 +1434,11 @@ function renderDashboard(){
     const boxCounts = boxMeta.map(m => m.key === 'lost' ? lostCount : (cats.find(x => x.key===m.key)?.count || 0));
     const boxTotal = boxCounts.reduce((a,b) => a+b, 0) || 1;
     h += '<div class="db-pipeline-boxes">';
+    // Total properties box (non-clickable)
+    h += `<div class="db-pipeline-box db-pipeline-total" style="color:var(--text2);background:var(--bg);border-color:var(--border);cursor:default;flex:0 0 auto;min-width:72px">
+      <span class="pb-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></span>
+      <span class="pb-count">${total}</span>
+    </div>`;
     boxMeta.forEach((m, i) => {
       const count = boxCounts[i];
       const isActive = activeCat === m.key;
@@ -1492,6 +1489,15 @@ function renderDashboard(){
   }
 
   h += '</div></div>';
+
+  // ── KPI CARDS ──
+  h += '<div class="db-kpis">';
+  h += `<div class="db-kpi" onclick="switchView('contacts')" style="cursor:pointer"><div class="kpi-icon" style="background:rgba(99,129,250,.12);color:var(--primary)">📋</div><div class="kpi-val">${total}</div><div class="kpi-label">Total Properties</div><div class="kpi-sub">${withContact} with contacts</div></div>`;
+  h += `<div class="db-kpi" onclick="pipelineCategory='prospects';render();document.querySelector('.pipeline-category-tabs')?.scrollIntoView({behavior:'smooth',block:'nearest'})" style="cursor:pointer"><div class="kpi-icon" style="background:rgba(56,189,248,.12);color:#38bdf8">🔄</div><div class="kpi-val">${active}</div><div class="kpi-label">Active Pipeline</div><div class="kpi-sub">${closed} closed/lost</div></div>`;
+  h += `<div class="db-kpi" onclick="pipelineCategory='qualified';render();document.querySelector('.pipeline-category-tabs')?.scrollIntoView({behavior:'smooth',block:'nearest'})" style="cursor:pointer"><div class="kpi-icon" style="background:rgba(52,211,153,.12);color:#34d399">🔥</div><div class="kpi-val">${hotLeads}</div><div class="kpi-label">Hot Leads</div><div class="kpi-sub">${convRate}% qualification rate</div></div>`;
+  h += `<div class="db-kpi" onclick="switchView('notifications')" style="cursor:pointer"><div class="kpi-icon" style="background:${overdue.length?'rgba(239,68,68,.12)':'rgba(52,211,153,.12)'};color:${overdue.length?'var(--danger)':'var(--success)'}">📅</div><div class="kpi-val" style="color:${overdue.length?'var(--danger)':'var(--text)'}">${followUps.length}</div><div class="kpi-label">Follow-Ups Due</div><div class="kpi-sub">${overdue.length} overdue${todayFU.length ? ', '+todayFU.length+' today' : ''}</div></div>`;
+  h += `<div class="db-kpi"><div class="kpi-icon" style="background:rgba(168,85,247,.12);color:#a855f7">📅</div><div class="kpi-val">${meetings.length}</div><div class="kpi-label">Upcoming Meetings</div><div class="kpi-sub">${pastMeetings} completed</div></div>`;
+  h += '</div>';
 
   // ── MIDDLE ROW: Tasks + Meetings ──
   h += '<div class="db-row">';
