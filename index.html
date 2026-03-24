@@ -1636,10 +1636,13 @@ function initDashboardMap(){
     }))
   };
 
-  // Init map
+  // Init map — use theme-appropriate tiles
+  const mapStyle = isDark
+    ? 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json'
+    : 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json';
   dashMap = new maplibregl.Map({
     container: 'dashboardMap',
-    style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
+    style: mapStyle,
     center: [avgLng, avgLat],
     zoom: geoProps.length === 1 ? 12 : 9,
     attributionControl: false
@@ -1742,24 +1745,29 @@ async function geocodeExistingProperties(){
   for(const r of toGeocode){
     try {
       const addr = r.property;
-      const resp = await fetch('https://maps.googleapis.com/maps/api/geocode/json?address=' + encodeURIComponent(addr) + '&key=' + GPLACES_KEY);
+      const resp = await fetch('https://places.googleapis.com/v1/places:searchText', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': GPLACES_KEY, 'X-Goog-FieldMask': 'places.location' },
+        body: JSON.stringify({ textQuery: addr, maxResultCount: 1 })
+      });
       const data = await resp.json();
-      if(data.results && data.results[0] && data.results[0].geometry){
-        const loc = data.results[0].geometry.location;
+      if(data.places && data.places[0] && data.places[0].location){
+        const loc = data.places[0].location;
         if(!r.propertyDetails) r.propertyDetails = {};
-        r.propertyDetails.latitude = loc.lat;
-        r.propertyDetails.longitude = loc.lng;
-        saveData();
+        r.propertyDetails.latitude = loc.latitude;
+        r.propertyDetails.longitude = loc.longitude;
       }
     } catch(e){
       console.log('Geocode error for', r.property, e);
     }
     // Small delay to avoid rate limiting
-    await new Promise(resolve => setTimeout(resolve, 200));
+    await new Promise(resolve => setTimeout(resolve, 250));
   }
-  // Re-init map if we geocoded anything
-  if(toGeocode.length > 0 && document.getElementById('dashboardMap')){
-    initDashboardMap();
+  // Save once after all geocoding, then refresh map
+  const geocoded = toGeocode.filter(r => r.propertyDetails && r.propertyDetails.latitude);
+  if(geocoded.length > 0){
+    saveData();
+    if(document.getElementById('dashboardMap')) initDashboardMap();
   }
 }
 
@@ -4098,6 +4106,8 @@ function applyTheme(){
     localStorage.setItem('rr_theme_accent', currentAccent);
   } catch(e){}
   updateThemeUI();
+  // Re-initialize dashboard map with correct theme tiles
+  if(document.getElementById('dashboardMap')){ if(dashMap){ dashMap.remove(); dashMap=null; } setTimeout(initDashboardMap,100); }
 }
 
 function toggleTheme(){
