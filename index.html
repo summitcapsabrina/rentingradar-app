@@ -239,10 +239,8 @@ textarea{resize:vertical;min-height:80px}
 .stat-card .sub{font-size:.8rem;color:var(--text3);margin-top:2px}
 
 /* ===== MAP CARD ===== */
-.db-map-card{border-radius:var(--radius);border:1px solid var(--border);background:var(--surface);overflow:hidden;margin-bottom:16px}
-.db-map-card .db-card-hdr{padding:14px 16px 10px;display:flex;align-items:center;justify-content:space-between}
-.db-map-card .db-card-hdr h3{margin:0;font-size:.92rem}
-#dashboardMap{width:100%;height:320px}
+.db-map-standalone{border-radius:var(--radius);overflow:hidden;position:relative;margin-bottom:16px}
+#dashboardMap{width:100%;height:340px}
 .map-popup{font-family:inherit}
 .map-popup .mapboxgl-popup-content{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:0;box-shadow:0 12px 32px rgba(0,0,0,.25),0 2px 6px rgba(0,0,0,.1);max-width:290px;overflow:hidden}
 .map-popup .mapboxgl-popup-tip{border-top-color:var(--surface)}
@@ -1412,20 +1410,16 @@ function renderDashboard(){
 
   let h = '<div class="db-grid">';
 
-  // ── PIPELINE + MAP COMBINED CARD ──
-  h += '<div class="db-card">';
-  h += '<div class="db-card-hdr"><h3>📊 Pipeline</h3><span class="db-hdr-action" onclick="switchView(\'contacts\')">All Contacts →</span></div>';
-  h += '<div class="db-card-body" id="pipelineUIContainer">';
+  // ── PIPELINE (standalone, no card wrapper) ──
+  h += '<div id="pipelineUIContainer" style="margin-bottom:10px">';
   h += buildPipelineUI();
   h += '</div>';
 
-  // ── MAP (inside pipeline card) ──
-  h += '<div style="border-top:1px solid var(--border)">';
-  h += '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px 6px"><span style="font-size:.78rem;font-weight:600;color:var(--text2)">🗺️ Property Map</span><span class="db-hdr-action" id="mapPropertyCount" style="font-size:.72rem"></span></div>';
+  // ── MAP (standalone, no card wrapper) ──
+  h += '<div class="db-map-standalone">';
+  h += '<span class="db-hdr-action" id="mapPropertyCount" style="position:absolute;top:8px;left:12px;font-size:.72rem;z-index:5;background:rgba(0,0,0,.5);color:rgba(255,255,255,.85);padding:3px 8px;border-radius:5px;pointer-events:none"></span>';
   h += '<div id="dashboardMap"></div>';
   h += '</div>';
-
-  h += '</div>'; // end db-card
 
   // ── KPI CARDS ──
   h += '<div class="db-kpis">';
@@ -1563,7 +1557,7 @@ function buildPipelineUI(){
     const minFlex = 1; // minimum flex value (for 0 or 1 count)
     const flexValues = boxCounts.map(c => Math.max(c, minFlex));
     const totalIsActive = _mapFilter === 'all';
-    h += `<div class="db-pipeline-wrap ${totalIsActive?'active':''}" onclick="_mapFilter='all';updatePipelineUI();setMapFilter('all')">`;
+    h += `<div class="db-pipeline-wrap ${totalIsActive?'active':''}" onclick="_mapFilter='all';pipelineCategory='all';updatePipelineUI();setMapFilter('all')">`;
     h += `<div class="db-pipeline-wrap-hdr">
       <span class="pw-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></span>
       <span class="pw-count">${total}</span>
@@ -1589,32 +1583,35 @@ function buildPipelineUI(){
     h += '<div class="db-empty">No properties yet. Add your first property to see your pipeline.</div>';
   }
 
-  const catColors = { prospects:'#818cf8', outreach:'#38bdf8', qualified:'#34d399' };
-  h += `<div class="pipeline-category-tabs" style="margin-top:14px">
-    ${cats.map(c => {
-      const isActive = activeCat===c.key;
-      const col = catColors[c.key];
-      return `<div class="pipeline-cat-tab ${isActive?'active':''}" onclick="pipelineCategory='${c.key}';_mapFilter='${c.key}';updatePipelineUI();setMapFilter('${c.key}')" style="color:${col};${isActive?'border-bottom-color:'+col:''}">${c.name} <span class="pct-count">${c.count}</span></div>`;
-    }).join('')}
-    <div class="pipeline-cat-tab ${activeCat==='lost'?'active':''}" onclick="pipelineCategory='lost';_mapFilter='lost';updatePipelineUI();setMapFilter('lost')" style="color:var(--danger);${activeCat==='lost'?'border-bottom-color:var(--danger)':''}">Closed/Lost <span class="pct-count">${lostCount}</span></div>
-  </div>`;
+  // Only show category tabs and status breakdown when a specific category is selected
+  if(activeCat !== 'all'){
+    const catColors = { prospects:'#818cf8', outreach:'#38bdf8', qualified:'#34d399' };
+    h += `<div class="pipeline-category-tabs" style="margin-top:14px">
+      ${cats.map(c => {
+        const isActive = activeCat===c.key;
+        const col = catColors[c.key];
+        return `<div class="pipeline-cat-tab ${isActive?'active':''}" onclick="pipelineCategory='${c.key}';_mapFilter='${c.key}';updatePipelineUI();setMapFilter('${c.key}')" style="color:${col};${isActive?'border-bottom-color:'+col:''}">${c.name} <span class="pct-count">${c.count}</span></div>`;
+      }).join('')}
+      <div class="pipeline-cat-tab ${activeCat==='lost'?'active':''}" onclick="pipelineCategory='lost';_mapFilter='lost';updatePipelineUI();setMapFilter('lost')" style="color:var(--danger);${activeCat==='lost'?'border-bottom-color:var(--danger)':''}">Closed/Lost <span class="pct-count">${lostCount}</span></div>
+    </div>`;
 
-  const isLost = activeCat === 'lost';
-  const catStatuses = isLost ? CLOSED_STAGES : (cats.find(c => c.key === activeCat)?.statuses || []);
-  const statusItems = catStatuses.map(st => ({ status: st, count: records.filter(r => r.status === st).length }));
-  const maxStatusRows = Math.max(...[...FUNNEL_CATEGORIES.map(c => c.statuses.length), CLOSED_STAGES.length]);
-  if(statusItems.length > 0){
-    h += `<div class="db-status-breakdown" style="min-height:${maxStatusRows * 38}px">`;
-    statusItems.forEach(s => {
-      const catColor = isLost ? 'var(--danger)' : (funnelStages.find(fs => fs.statuses.includes(s.status))?.color || 'var(--primary)');
-      h += `<div class="db-status-row" onclick="event.stopPropagation();_mapFilter='status:${s.status}';setMapFilter('status:${s.status}')">
-        <div class="db-status-pill-wrap">${statusPill(s.status)}</div>
-        <div class="db-status-bar-track"><div class="db-status-bar-fill" style="width:${total > 0 ? Math.max((s.count/total)*100, s.count > 0 ? 3 : 0) : 0}%;background:${catColor}"></div></div>
-        <div class="db-status-count">${s.count}</div>
-        <svg class="db-status-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
-      </div>`;
-    });
-    h += '</div>';
+    const isLost = activeCat === 'lost';
+    const catStatuses = isLost ? CLOSED_STAGES : (cats.find(c => c.key === activeCat)?.statuses || []);
+    const statusItems = catStatuses.map(st => ({ status: st, count: records.filter(r => r.status === st).length }));
+    const maxStatusRows = Math.max(...[...FUNNEL_CATEGORIES.map(c => c.statuses.length), CLOSED_STAGES.length]);
+    if(statusItems.length > 0){
+      h += `<div class="db-status-breakdown" style="min-height:${maxStatusRows * 38}px">`;
+      statusItems.forEach(s => {
+        const catColor = isLost ? 'var(--danger)' : (funnelStages.find(fs => fs.statuses.includes(s.status))?.color || 'var(--primary)');
+        h += `<div class="db-status-row" onclick="event.stopPropagation();_mapFilter='status:${s.status}';setMapFilter('status:${s.status}')">
+          <div class="db-status-pill-wrap">${statusPill(s.status)}</div>
+          <div class="db-status-bar-track"><div class="db-status-bar-fill" style="width:${total > 0 ? Math.max((s.count/total)*100, s.count > 0 ? 3 : 0) : 0}%;background:${catColor}"></div></div>
+          <div class="db-status-count">${s.count}</div>
+          <svg class="db-status-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+        </div>`;
+      });
+      h += '</div>';
+    }
   }
 
   return h;
