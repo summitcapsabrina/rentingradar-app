@@ -193,14 +193,16 @@ textarea{resize:vertical;min-height:80px}
 .db-empty{text-align:center;padding:24px 16px;color:var(--text3);font-size:.84rem}
 .db-pipeline-wrap{border-radius:var(--radius);border:2px solid var(--border);padding:10px 10px 10px;cursor:pointer;transition:all .3s ease;position:relative}
 .db-pipeline-wrap:hover{border-color:var(--text3)}
-.db-pipeline-wrap.active{border-color:var(--primary);background:var(--primary-light);box-shadow:0 0 0 3px var(--primary-light)}
-.db-pipeline-wrap-hdr{display:flex;align-items:center;gap:6px;margin-bottom:8px;color:var(--text2);padding:0 2px}
+.db-pipeline-wrap.active{border-color:var(--text2);background:rgba(147,153,178,.1);box-shadow:0 0 0 3px rgba(147,153,178,.12)}
+.db-pipeline-wrap-hdr{display:flex;align-items:center;justify-content:center;gap:6px;margin-bottom:8px;color:var(--text2);padding:0 2px}
+.db-pipeline-wrap.active .db-pipeline-wrap-hdr{color:var(--text)}
 .db-pipeline-wrap-hdr .pw-icon{line-height:1;display:flex;align-items:center}
 .db-pipeline-wrap-hdr .pw-count{font-size:.92rem;font-weight:800;line-height:1}
-.db-pipeline-wrap-hdr .pw-label{font-size:.7rem;font-weight:500;color:var(--text3);margin-left:auto;text-transform:uppercase;letter-spacing:.04em}
-.db-pipeline-boxes{display:flex;gap:8px;flex-wrap:wrap}
-.db-pipeline-box{display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:60px;height:64px;border-radius:var(--radius);border:2px solid transparent;cursor:pointer;transition:all .3s ease;gap:3px;position:relative}
+.db-pipeline-wrap-hdr .pw-label{font-size:.7rem;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:.04em}
+.db-pipeline-boxes{display:flex;gap:8px}
+.db-pipeline-box{display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:54px;height:64px;border-radius:var(--radius);border:2px solid transparent;cursor:pointer;transition:all .3s ease;gap:3px;position:relative}
 .db-pipeline-box:hover{filter:brightness(1.25);z-index:1}
+.db-pipeline-box.disabled{opacity:.35;cursor:default;pointer-events:none}
 .db-pipeline-box .pb-icon{line-height:1}
 .db-pipeline-box .pb-count{font-size:.85rem;font-weight:800;line-height:1}
 .db-status-breakdown{display:flex;flex-direction:column;gap:2px;margin-top:4px}
@@ -1557,7 +1559,9 @@ function buildPipelineUI(){
   let h = '';
   if(active > 0 || lostCount > 0){
     const boxCounts = boxMeta.map(m => m.key === 'lost' ? lostCount : (cats.find(x => x.key===m.key)?.count || 0));
-    const boxTotal = boxCounts.reduce((a,b) => a+b, 0) || 1;
+    // For proportional widths: treat 0 same as 1 for min-width, use actual counts for ratio
+    const minFlex = 1; // minimum flex value (for 0 or 1 count)
+    const flexValues = boxCounts.map(c => Math.max(c, minFlex));
     const totalIsActive = _mapFilter === 'all';
     h += `<div class="db-pipeline-wrap ${totalIsActive?'active':''}" onclick="_mapFilter='all';updatePipelineUI();setMapFilter('all')">`;
     h += `<div class="db-pipeline-wrap-hdr">
@@ -1568,12 +1572,15 @@ function buildPipelineUI(){
     h += '<div class="db-pipeline-boxes">';
     boxMeta.forEach((m, i) => {
       const count = boxCounts[i];
-      const isActive = activeCat === m.key;
-      const bg = isActive ? 'rgba('+m.col+',.22)' : 'rgba('+m.col+',.08)';
-      const border = isActive ? 'rgb('+m.col+')' : 'rgba('+m.col+',.25)';
+      const isEmpty = count === 0;
+      const isActive = activeCat === m.key && !isEmpty;
+      const bg = isEmpty ? 'var(--bg)' : (isActive ? 'rgba('+m.col+',.22)' : 'rgba('+m.col+',.08)');
+      const border = isEmpty ? 'var(--border)' : (isActive ? 'rgb('+m.col+')' : 'rgba('+m.col+',.25)');
       const shadow = isActive ? 'box-shadow:0 0 0 3px rgba('+m.col+',.2)' : '';
-      const pct = Math.max((count/boxTotal)*100, count > 0 ? 12 : 8);
-      h += `<div class="db-pipeline-box ${isActive?'active':''}" onclick="event.stopPropagation();pipelineCategory='${m.key}';_mapFilter='${m.key}';updatePipelineUI();setMapFilter('${m.key}')" style="color:rgb(${m.col});background:${bg};border-color:${border};${shadow};flex:${pct} 0 0">
+      const flex = flexValues[i];
+      const disabledClass = isEmpty ? ' disabled' : '';
+      const onclick = isEmpty ? '' : `onclick="event.stopPropagation();pipelineCategory='${m.key}';_mapFilter='${m.key}';updatePipelineUI();setMapFilter('${m.key}')"`;
+      h += `<div class="db-pipeline-box${disabledClass}${isActive?' active':''}" ${onclick} style="color:${isEmpty?'var(--text3)':'rgb('+m.col+')'};background:${bg};border-color:${border};${shadow};flex:${flex} 0 0;min-width:54px">
         <span class="pb-icon">${m.icon}</span>
         <span class="pb-count">${count}</span>
       </div>`;
