@@ -5828,9 +5828,14 @@ function renderCalculatorTab(r){
   const cpColor = confidencePct >= 80 ? '#10b981' : confidencePct >= 65 ? '#f59e0b' : '#ef4444';
   const kpiNOI = selectedD.monthlyNOI;
   const kpiAnnualNOI = selectedD.annualNOI;
-  // Cash Flow and CoC use confidence-adjusted values (matching Adjusted Monthly Net in PYN)
-  const kpiMonthlyCF = Math.round(selectedD.monthlyCF * confidence);
-  const kpiAnnualCF = Math.round(selectedD.annualCF * confidence);
+  // Cash Flow and CoC — use same rounding path as PYN Adjusted Monthly Net to ensure exact match
+  const _pynAnnualRent = Math.round(v.monthlyRent * 12);
+  const _pynRev = v.hasProjectionData ? Math.round(calcProjMode === 'optimistic' ? v.optimisticRevenue : calcProjMode === 'pessimistic' ? v.pessimisticRevenue : v.projectedRevenue) : 0;
+  const _pynExp = v.hasProjectionData ? Math.round((calcProjMode === 'optimistic' ? v.optimisticD : calcProjMode === 'pessimistic' ? v.pessimisticD : v.projectedD).annualExp) : 0;
+  const _pynNet = v.hasProjectionData ? (_pynRev - _pynExp - _pynAnnualRent) : 0;
+  const _pynMonthlyNet = v.hasProjectionData ? Math.round(_pynNet / 12) : Math.round(selectedD.monthlyCF);
+  const kpiMonthlyCF = Math.round(_pynMonthlyNet * confidence);
+  const kpiAnnualCF = kpiMonthlyCF * 12;
   const kpiCoC = v.totalInvested > 0 ? (kpiAnnualCF / v.totalInvested * 100) : 0;
   const cfClass = kpiMonthlyCF >= 0 ? 'positive' : 'negative';
   const cocClass = kpiCoC >= 0 ? 'positive' : 'negative';
@@ -6004,7 +6009,7 @@ function renderCalculatorTab(r){
   // ─────────────────────────────────────────
 
   const inv = v.totalInvested;
-  const acf = Math.round(selectedD.annualCF * confidence);
+  const acf = kpiAnnualCF;
   const cumVals = [];
   let cumRun = -inv;
   cumVals.push(cumRun);
