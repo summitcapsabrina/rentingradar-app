@@ -1411,89 +1411,11 @@ function renderDashboard(){
   let h = '<div class="db-grid">';
 
   // ── PIPELINE + MAP COMBINED CARD ──
-  const activeCat = pipelineCategory || 'all';
-  const cats = FUNNEL_CATEGORIES.map(c => ({
-    ...c,
-    count: records.filter(r => c.statuses.includes(r.status)).length,
-    records: records.filter(r => c.statuses.includes(r.status))
-  }));
-  const allActive = records.filter(r => PIPELINE_STAGES.includes(r.status));
-  const lostRecords = records.filter(r => CLOSED_STAGES.includes(r.status));
-  const lostCount = lostRecords.length;
-
   h += '<div class="db-card">';
   h += '<div class="db-card-hdr"><h3>📊 Pipeline</h3><span class="db-hdr-action" onclick="switchView(\'contacts\')">All Contacts →</span></div>';
-  h += '<div class="db-card-body">';
-
-  // Pipeline visual boxes
-  const boxMeta = [
-    { key:'prospects', col:'129,140,248', icon:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>', label:'New Leads' },
-    { key:'outreach', col:'56,189,248', icon:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6A19.79 19.79 0 012.12 4.18 2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>', label:'In Outreach' },
-    { key:'qualified', col:'52,211,153', icon:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>', label:'Qualified' },
-    { key:'lost', col:'239,68,68', icon:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>', label:'Closed/Lost' }
-  ];
-  if(active > 0 || lostCount > 0){
-    const boxCounts = boxMeta.map(m => m.key === 'lost' ? lostCount : (cats.find(x => x.key===m.key)?.count || 0));
-    const boxTotal = boxCounts.reduce((a,b) => a+b, 0) || 1;
-    const totalIsActive = _mapFilter === 'all';
-    // Outer wrapper = Total / All Properties (clickable to show all on map)
-    h += `<div class="db-pipeline-wrap ${totalIsActive?'active':''}" onclick="_mapFilter='all';setMapFilter('all')">`;
-    h += `<div class="db-pipeline-wrap-hdr">
-      <span class="pw-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></span>
-      <span class="pw-count">${total}</span>
-      <span class="pw-label">All Properties</span>
-    </div>`;
-    h += '<div class="db-pipeline-boxes">';
-    boxMeta.forEach((m, i) => {
-      const count = boxCounts[i];
-      const isActive = activeCat === m.key;
-      const bg = isActive ? 'rgba('+m.col+',.22)' : 'rgba('+m.col+',.08)';
-      const border = isActive ? 'rgb('+m.col+')' : 'rgba('+m.col+',.25)';
-      const shadow = isActive ? 'box-shadow:0 0 0 3px rgba('+m.col+',.2)' : '';
-      const pct = Math.max((count/boxTotal)*100, count > 0 ? 12 : 8);
-      h += `<div class="db-pipeline-box ${isActive?'active':''}" onclick="event.stopPropagation();pipelineCategory='${m.key}';_mapFilter='${m.key}';render()" style="color:rgb(${m.col});background:${bg};border-color:${border};${shadow};flex:${pct} 0 0">
-        <span class="pb-icon">${m.icon}</span>
-        <span class="pb-count">${count}</span>
-      </div>`;
-    });
-    h += '</div>';
-    h += '</div>'; // end db-pipeline-wrap
-  } else {
-    h += '<div class="db-empty">No properties yet. Add your first property to see your pipeline.</div>';
-  }
-
-  // Category tabs
-  const catColors = { prospects:'#818cf8', outreach:'#38bdf8', qualified:'#34d399' };
-  h += `<div class="pipeline-category-tabs" style="margin-top:14px">
-    ${cats.map(c => {
-      const isActive = activeCat===c.key;
-      const col = catColors[c.key];
-      return `<div class="pipeline-cat-tab ${isActive?'active':''}" onclick="pipelineCategory='${c.key}';_mapFilter='${c.key}';render()" style="color:${col};${isActive?'border-bottom-color:'+col:''}">${c.name} <span class="pct-count">${c.count}</span></div>`;
-    }).join('')}
-    <div class="pipeline-cat-tab ${activeCat==='lost'?'active':''}" onclick="pipelineCategory='lost';_mapFilter='lost';render()" style="color:var(--danger);${activeCat==='lost'?'border-bottom-color:var(--danger)':''}">Closed/Lost <span class="pct-count">${lostCount}</span></div>
-  </div>`;
-
-  // Status breakdown for selected category
-  const isLost = activeCat === 'lost';
-  const catStatuses = isLost ? CLOSED_STAGES : (cats.find(c => c.key === activeCat)?.statuses || []);
-  const statusItems = catStatuses.map(st => ({ status: st, count: records.filter(r => r.status === st).length }));
-
-  const maxStatusRows = Math.max(...[...FUNNEL_CATEGORIES.map(c => c.statuses.length), CLOSED_STAGES.length]);
-  if(statusItems.length > 0){
-    h += `<div class="db-status-breakdown" style="min-height:${maxStatusRows * 38}px">`;
-    statusItems.forEach(s => {
-      const catColor = isLost ? 'var(--danger)' : (funnelStages.find(fs => fs.statuses.includes(s.status))?.color || 'var(--primary)');
-      h += `<div class="db-status-row" onclick="event.stopPropagation();_mapFilter='status:${s.status}';setMapFilter('status:${s.status}')">
-        <div class="db-status-pill-wrap">${statusPill(s.status)}</div>
-        <div class="db-status-bar-track"><div class="db-status-bar-fill" style="width:${total > 0 ? Math.max((s.count/total)*100, s.count > 0 ? 3 : 0) : 0}%;background:${catColor}"></div></div>
-        <div class="db-status-count">${s.count}</div>
-        <svg class="db-status-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
-      </div>`;
-    });
-    h += '</div>';
-  }
-
-  h += '</div>'; // end db-card-body
+  h += '<div class="db-card-body" id="pipelineUIContainer">';
+  h += buildPipelineUI();
+  h += '</div>';
 
   // ── MAP (inside pipeline card) ──
   h += '<div style="border-top:1px solid var(--border)">';
@@ -1609,6 +1531,94 @@ function renderDashboard(){
   return h;
 }
 
+function buildPipelineUI(){
+  const total = records.length;
+  const active = records.filter(r => PIPELINE_STAGES.includes(r.status)).length;
+  const closed = records.filter(r => CLOSED_STAGES.includes(r.status)).length;
+  const activeCat = pipelineCategory || 'all';
+  const cats = FUNNEL_CATEGORIES.map(c => ({
+    ...c,
+    count: records.filter(r => c.statuses.includes(r.status)).length
+  }));
+  const lostCount = records.filter(r => CLOSED_STAGES.includes(r.status)).length;
+  const funnelStages = [
+    { name:'New Leads', statuses:['New','No Contact'], color:'#818cf8' },
+    { name:'In Outreach', statuses:['Messaged','Left Voicemail','Follow Up'], color:'#38bdf8' },
+    { name:'Qualified', statuses:['Interested','Meeting'], color:'#34d399' }
+  ];
+
+  const boxMeta = [
+    { key:'prospects', col:'129,140,248', icon:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>' },
+    { key:'outreach', col:'56,189,248', icon:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6A19.79 19.79 0 012.12 4.18 2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>' },
+    { key:'qualified', col:'52,211,153', icon:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>' },
+    { key:'lost', col:'239,68,68', icon:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>' }
+  ];
+
+  let h = '';
+  if(active > 0 || lostCount > 0){
+    const boxCounts = boxMeta.map(m => m.key === 'lost' ? lostCount : (cats.find(x => x.key===m.key)?.count || 0));
+    const boxTotal = boxCounts.reduce((a,b) => a+b, 0) || 1;
+    const totalIsActive = _mapFilter === 'all';
+    h += `<div class="db-pipeline-wrap ${totalIsActive?'active':''}" onclick="_mapFilter='all';updatePipelineUI();setMapFilter('all')">`;
+    h += `<div class="db-pipeline-wrap-hdr">
+      <span class="pw-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></span>
+      <span class="pw-count">${total}</span>
+      <span class="pw-label">All Properties</span>
+    </div>`;
+    h += '<div class="db-pipeline-boxes">';
+    boxMeta.forEach((m, i) => {
+      const count = boxCounts[i];
+      const isActive = activeCat === m.key;
+      const bg = isActive ? 'rgba('+m.col+',.22)' : 'rgba('+m.col+',.08)';
+      const border = isActive ? 'rgb('+m.col+')' : 'rgba('+m.col+',.25)';
+      const shadow = isActive ? 'box-shadow:0 0 0 3px rgba('+m.col+',.2)' : '';
+      const pct = Math.max((count/boxTotal)*100, count > 0 ? 12 : 8);
+      h += `<div class="db-pipeline-box ${isActive?'active':''}" onclick="event.stopPropagation();pipelineCategory='${m.key}';_mapFilter='${m.key}';updatePipelineUI();setMapFilter('${m.key}')" style="color:rgb(${m.col});background:${bg};border-color:${border};${shadow};flex:${pct} 0 0">
+        <span class="pb-icon">${m.icon}</span>
+        <span class="pb-count">${count}</span>
+      </div>`;
+    });
+    h += '</div></div>';
+  } else {
+    h += '<div class="db-empty">No properties yet. Add your first property to see your pipeline.</div>';
+  }
+
+  const catColors = { prospects:'#818cf8', outreach:'#38bdf8', qualified:'#34d399' };
+  h += `<div class="pipeline-category-tabs" style="margin-top:14px">
+    ${cats.map(c => {
+      const isActive = activeCat===c.key;
+      const col = catColors[c.key];
+      return `<div class="pipeline-cat-tab ${isActive?'active':''}" onclick="pipelineCategory='${c.key}';_mapFilter='${c.key}';updatePipelineUI();setMapFilter('${c.key}')" style="color:${col};${isActive?'border-bottom-color:'+col:''}">${c.name} <span class="pct-count">${c.count}</span></div>`;
+    }).join('')}
+    <div class="pipeline-cat-tab ${activeCat==='lost'?'active':''}" onclick="pipelineCategory='lost';_mapFilter='lost';updatePipelineUI();setMapFilter('lost')" style="color:var(--danger);${activeCat==='lost'?'border-bottom-color:var(--danger)':''}">Closed/Lost <span class="pct-count">${lostCount}</span></div>
+  </div>`;
+
+  const isLost = activeCat === 'lost';
+  const catStatuses = isLost ? CLOSED_STAGES : (cats.find(c => c.key === activeCat)?.statuses || []);
+  const statusItems = catStatuses.map(st => ({ status: st, count: records.filter(r => r.status === st).length }));
+  const maxStatusRows = Math.max(...[...FUNNEL_CATEGORIES.map(c => c.statuses.length), CLOSED_STAGES.length]);
+  if(statusItems.length > 0){
+    h += `<div class="db-status-breakdown" style="min-height:${maxStatusRows * 38}px">`;
+    statusItems.forEach(s => {
+      const catColor = isLost ? 'var(--danger)' : (funnelStages.find(fs => fs.statuses.includes(s.status))?.color || 'var(--primary)');
+      h += `<div class="db-status-row" onclick="event.stopPropagation();_mapFilter='status:${s.status}';setMapFilter('status:${s.status}')">
+        <div class="db-status-pill-wrap">${statusPill(s.status)}</div>
+        <div class="db-status-bar-track"><div class="db-status-bar-fill" style="width:${total > 0 ? Math.max((s.count/total)*100, s.count > 0 ? 3 : 0) : 0}%;background:${catColor}"></div></div>
+        <div class="db-status-count">${s.count}</div>
+        <svg class="db-status-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+      </div>`;
+    });
+    h += '</div>';
+  }
+
+  return h;
+}
+
+function updatePipelineUI(){
+  const container = document.getElementById('pipelineUIContainer');
+  if(container) container.innerHTML = buildPipelineUI();
+}
+
 /* ===== MAP FUNCTIONS ===== */
 let dashMap = null;
 let _savedMapState = null;
@@ -1649,13 +1659,13 @@ function setMapFilter(filter){
     countEl.textContent = (filter === 'all' ? shown : shown + ' of ' + total) + ' mapped';
   }
 
-  // Fit bounds to filtered set
+  // Smoothly fly to filtered set
   if(filtered.features.length > 1){
     const bounds = new maplibregl.LngLatBounds();
     filtered.features.forEach(f => bounds.extend(f.geometry.coordinates));
-    dashMap.fitBounds(bounds, { padding: 50, maxZoom: 15, duration: 600 });
+    dashMap.fitBounds(bounds, { padding: 60, maxZoom: 15, duration: 1000, easing: t => t<.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2 });
   } else if(filtered.features.length === 1){
-    dashMap.easeTo({ center: filtered.features[0].geometry.coordinates, zoom: 13, duration: 600 });
+    dashMap.flyTo({ center: filtered.features[0].geometry.coordinates, zoom: 13, duration: 1000, easing: t => t<.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2 });
   }
 }
 
