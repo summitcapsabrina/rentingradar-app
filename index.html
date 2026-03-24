@@ -229,6 +229,24 @@ textarea{resize:vertical;min-height:80px}
 .stat-card .value{font-size:1.6rem;font-weight:700}
 .stat-card .sub{font-size:.8rem;color:var(--text3);margin-top:2px}
 
+/* ===== MAP CARD ===== */
+.db-map-card{border-radius:var(--radius);border:1px solid var(--border);background:var(--surface);overflow:hidden;margin-bottom:16px}
+.db-map-card .db-card-hdr{padding:14px 16px 10px;display:flex;align-items:center;justify-content:space-between}
+.db-map-card .db-card-hdr h3{margin:0;font-size:.92rem}
+#dashboardMap{width:100%;height:320px}
+.map-popup{font-family:inherit}
+.map-popup .mapboxgl-popup-content{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:0;box-shadow:0 8px 24px rgba(0,0,0,.3);max-width:280px}
+.map-popup .mapboxgl-popup-tip{border-top-color:var(--surface)}
+.map-popup .mapboxgl-popup-close-button{font-size:18px;color:var(--text3);padding:4px 8px;right:2px;top:2px}
+.map-popup .mapboxgl-popup-close-button:hover{color:var(--text);background:transparent}
+.map-popup-inner{padding:12px 14px}
+.map-popup-addr{font-size:.82rem;font-weight:700;color:var(--text);margin-bottom:6px;line-height:1.3}
+.map-popup-stats{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:6px;font-size:.72rem;color:var(--text2)}
+.map-popup-stats span{display:flex;align-items:center;gap:3px}
+.map-popup-contact{font-size:.72rem;color:var(--text3);margin-bottom:8px}
+.map-popup-btn{display:block;width:100%;padding:7px 0;text-align:center;font-size:.78rem;font-weight:600;color:#fff;background:var(--primary);border:none;border-radius:var(--radius);cursor:pointer;transition:opacity .15s}
+.map-popup-btn:hover{opacity:.85}
+
 /* ===== TABLE ===== */
 .table-wrap{background:var(--surface);border-radius:var(--radius);border:1px solid var(--border);box-shadow:var(--shadow);overflow:hidden}
 .table-toolbar{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border);flex-wrap:wrap}
@@ -1063,6 +1081,9 @@ h1 .hero-edit-input{font-size:1.35rem}
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
+<!-- MapLibre GL JS for interactive maps -->
+<link href="https://unpkg.com/maplibre-gl@4.1.1/dist/maplibre-gl.css" rel="stylesheet">
+<script src="https://unpkg.com/maplibre-gl@4.1.1/dist/maplibre-gl.js"></script>
 </head>
 <body>
 <!-- Loading overlay — shown until Firestore data is ready -->
@@ -1241,6 +1262,8 @@ async function loadDataFromFirestore(userUid){
     records = [];
   }
   render();
+  // Geocode properties that don't have coordinates yet
+  geocodeExistingProperties();
   hideLoadingOverlay();
 }
 
@@ -1308,8 +1331,8 @@ function render(){
   const area = document.getElementById('contentArea');
   area.style.paddingTop = currentView === 'profile' ? '0' : '';
   switch(currentView){
-    case 'dashboard': area.innerHTML = renderDashboard(); break;
-    case 'pipeline': pipelineCategory=pipelineCategory||'prospects'; currentView='dashboard'; area.innerHTML = renderDashboard(); document.querySelector('.pipeline-category-tabs')?.scrollIntoView({behavior:'smooth',block:'nearest'}); break;
+    case 'dashboard': area.innerHTML = renderDashboard(); setTimeout(initDashboardMap, 50); break;
+    case 'pipeline': pipelineCategory=pipelineCategory||'prospects'; currentView='dashboard'; area.innerHTML = renderDashboard(); setTimeout(initDashboardMap, 50); document.querySelector('.pipeline-category-tabs')?.scrollIntoView({behavior:'smooth',block:'nearest'}); break;
     case 'contacts': area.innerHTML = renderContacts(); break;
     case 'notifications': area.innerHTML = renderNotifications(); break;
     case 'profile': area.innerHTML = renderProfile(); break;
@@ -1375,6 +1398,12 @@ function renderDashboard(){
   h += `<div class="db-kpi" onclick="pipelineCategory='qualified';render();document.querySelector('.pipeline-category-tabs')?.scrollIntoView({behavior:'smooth',block:'nearest'})" style="cursor:pointer"><div class="kpi-icon" style="background:rgba(52,211,153,.12);color:#34d399">🔥</div><div class="kpi-val">${hotLeads}</div><div class="kpi-label">Hot Leads</div><div class="kpi-sub">${convRate}% qualification rate</div></div>`;
   h += `<div class="db-kpi" onclick="switchView('notifications')" style="cursor:pointer"><div class="kpi-icon" style="background:${overdue.length?'rgba(239,68,68,.12)':'rgba(52,211,153,.12)'};color:${overdue.length?'var(--danger)':'var(--success)'}">📅</div><div class="kpi-val" style="color:${overdue.length?'var(--danger)':'var(--text)'}">${followUps.length}</div><div class="kpi-label">Follow-Ups Due</div><div class="kpi-sub">${overdue.length} overdue${todayFU.length ? ', '+todayFU.length+' today' : ''}</div></div>`;
   h += `<div class="db-kpi"><div class="kpi-icon" style="background:rgba(168,85,247,.12);color:#a855f7">📅</div><div class="kpi-val">${meetings.length}</div><div class="kpi-label">Upcoming Meetings</div><div class="kpi-sub">${pastMeetings} completed</div></div>`;
+  h += '</div>';
+
+  // ── MAP CARD ──
+  h += '<div class="db-map-card">';
+  h += '<div class="db-card-hdr"><h3>🗺️ Property Map</h3><span class="db-hdr-action" id="mapPropertyCount"></span></div>';
+  h += '<div id="dashboardMap"></div>';
   h += '</div>';
 
   // ── PIPELINE (funnel bar + category tabs + property cards) ──
@@ -1550,6 +1579,188 @@ function renderDashboard(){
   h += '</div>'; // end db-grid
 
   return h;
+}
+
+/* ===== MAP FUNCTIONS ===== */
+let dashMap = null;
+
+function initDashboardMap(){
+  const container = document.getElementById('dashboardMap');
+  if(!container) return;
+
+  // Collect geocoded properties
+  const geoProps = records.filter(r => {
+    const d = r.propertyDetails || {};
+    return d.latitude && d.longitude;
+  }).map(r => {
+    const d = r.propertyDetails || {};
+    return {
+      id: r.id,
+      lat: d.latitude,
+      lng: d.longitude,
+      property: r.property,
+      name: r.name || '',
+      phone: r.phone || '',
+      status: r.status || '',
+      rent: d.monthlyRent || 0,
+      beds: d.bedrooms || '—',
+      baths: d.bathrooms || '—',
+      sqft: d.sqft || '—',
+      addressParts: r.addressParts || parseAddressParts(r.property)
+    };
+  });
+
+  // Update count
+  const countEl = document.getElementById('mapPropertyCount');
+  if(countEl) countEl.textContent = geoProps.length + ' of ' + records.length + ' mapped';
+
+  if(geoProps.length === 0){
+    container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text3);font-size:.82rem;font-style:italic">No geocoded properties yet. Add properties with addresses to see them on the map.</div>';
+    return;
+  }
+
+  // Destroy existing map
+  if(dashMap){ dashMap.remove(); dashMap = null; }
+
+  // Calculate center from properties
+  const avgLat = geoProps.reduce((s,p) => s + p.lat, 0) / geoProps.length;
+  const avgLng = geoProps.reduce((s,p) => s + p.lng, 0) / geoProps.length;
+
+  // Build GeoJSON
+  const geojson = {
+    type: 'FeatureCollection',
+    features: geoProps.map(p => ({
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: [p.lng, p.lat] },
+      properties: { ...p }
+    }))
+  };
+
+  // Init map
+  dashMap = new maplibregl.Map({
+    container: 'dashboardMap',
+    style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
+    center: [avgLng, avgLat],
+    zoom: geoProps.length === 1 ? 12 : 9,
+    attributionControl: false
+  });
+
+  dashMap.addControl(new maplibregl.NavigationControl(), 'top-right');
+
+  dashMap.on('load', () => {
+    dashMap.addSource('properties', { type: 'geojson', data: geojson });
+
+    // Heatmap layer — visible when zoomed out
+    dashMap.addLayer({
+      id: 'property-heat',
+      type: 'heatmap',
+      source: 'properties',
+      maxzoom: 13,
+      paint: {
+        'heatmap-weight': 1,
+        'heatmap-intensity': ['interpolate', ['linear'], ['zoom'], 0, 1, 13, 3],
+        'heatmap-color': [
+          'interpolate', ['linear'], ['heatmap-density'],
+          0, 'rgba(0,0,0,0)',
+          0.2, 'rgba(103,58,183,.3)',
+          0.4, 'rgba(63,81,181,.5)',
+          0.6, 'rgba(33,150,243,.6)',
+          0.8, 'rgba(0,188,212,.7)',
+          1, 'rgba(76,175,80,.8)'
+        ],
+        'heatmap-radius': ['interpolate', ['linear'], ['zoom'], 0, 15, 13, 30],
+        'heatmap-opacity': ['interpolate', ['linear'], ['zoom'], 11, 1, 13, 0]
+      }
+    });
+
+    // Circle markers — visible when zoomed in
+    dashMap.addLayer({
+      id: 'property-points',
+      type: 'circle',
+      source: 'properties',
+      minzoom: 11,
+      paint: {
+        'circle-radius': ['interpolate', ['linear'], ['zoom'], 11, 4, 16, 8],
+        'circle-color': '#6366f1',
+        'circle-stroke-width': 2,
+        'circle-stroke-color': '#fff',
+        'circle-opacity': ['interpolate', ['linear'], ['zoom'], 11, 0, 12, 1]
+      }
+    });
+
+    // Click handler for individual points
+    dashMap.on('click', 'property-points', (e) => {
+      if(!e.features || !e.features.length) return;
+      const f = e.features[0];
+      const p = f.properties;
+      const coords = f.geometry.coordinates.slice();
+
+      // Build popup HTML
+      const addr = p.property || 'Unknown Address';
+      const rent = p.rent ? '$' + Number(p.rent).toLocaleString() + '/mo' : '—';
+      const statusColor = getStatusColor(p.status);
+
+      const html = '<div class="map-popup-inner">' +
+        '<div class="map-popup-addr">' + esc(addr) + '</div>' +
+        '<div class="map-popup-stats">' +
+          '<span>🛏 ' + esc(String(p.beds)) + ' bd</span>' +
+          '<span>🛁 ' + esc(String(p.baths)) + ' ba</span>' +
+          (p.sqft && p.sqft !== '—' ? '<span>📐 ' + Number(p.sqft).toLocaleString() + ' sqft</span>' : '') +
+          '<span style="color:' + statusColor + '">● ' + esc(p.status || 'New') + '</span>' +
+        '</div>' +
+        '<div style="font-size:.82rem;font-weight:700;color:var(--num-success);margin-bottom:6px">' + rent + '</div>' +
+        (p.name ? '<div class="map-popup-contact">👤 ' + esc(p.name) + (p.phone ? ' · ' + esc(p.phone) : '') + '</div>' : '') +
+        '<button class="map-popup-btn" onclick="openDetail(\'' + p.id + '\')">View Property →</button>' +
+      '</div>';
+
+      new maplibregl.Popup({ className: 'map-popup', maxWidth: '280px' })
+        .setLngLat(coords)
+        .setHTML(html)
+        .addTo(dashMap);
+    });
+
+    // Cursor change on hover
+    dashMap.on('mouseenter', 'property-points', () => { dashMap.getCanvas().style.cursor = 'pointer'; });
+    dashMap.on('mouseleave', 'property-points', () => { dashMap.getCanvas().style.cursor = ''; });
+
+    // Fit bounds to all properties
+    if(geoProps.length > 1){
+      const bounds = new maplibregl.LngLatBounds();
+      geoProps.forEach(p => bounds.extend([p.lng, p.lat]));
+      dashMap.fitBounds(bounds, { padding: 50, maxZoom: 13 });
+    }
+  });
+}
+
+async function geocodeExistingProperties(){
+  const toGeocode = records.filter(r => {
+    const d = r.propertyDetails || {};
+    return !d.latitude && r.property && r.property.length > 5;
+  });
+  if(!toGeocode.length) return;
+
+  for(const r of toGeocode){
+    try {
+      const addr = r.property;
+      const resp = await fetch('https://maps.googleapis.com/maps/api/geocode/json?address=' + encodeURIComponent(addr) + '&key=' + GPLACES_KEY);
+      const data = await resp.json();
+      if(data.results && data.results[0] && data.results[0].geometry){
+        const loc = data.results[0].geometry.location;
+        if(!r.propertyDetails) r.propertyDetails = {};
+        r.propertyDetails.latitude = loc.lat;
+        r.propertyDetails.longitude = loc.lng;
+        saveData();
+      }
+    } catch(e){
+      console.log('Geocode error for', r.property, e);
+    }
+    // Small delay to avoid rate limiting
+    await new Promise(resolve => setTimeout(resolve, 200));
+  }
+  // Re-init map if we geocoded anything
+  if(toGeocode.length > 0 && document.getElementById('dashboardMap')){
+    initDashboardMap();
+  }
 }
 
 /* ===== PIPELINE ===== */
@@ -3792,6 +4003,10 @@ function downloadFile(content, filename, type){
 /* ===== UTILS ===== */
 function truncate(s, n){ return s && s.length > n ? s.substring(0,n)+'…' : (s||'') }
 function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') }
+function getStatusColor(status){
+  const m = { 'New':'#818cf8', 'No Contact':'#94a3b8', 'Contacted':'#38bdf8', 'Responded':'#2dd4bf', 'Viewing Scheduled':'#a78bfa', 'Viewed':'#c084fc', 'Application Sent':'#f59e0b', 'Approved':'#22c55e', 'Lease Signed':'#10b981', 'Not Interested':'#64748b', 'Deal Fell Through':'#ef4444', 'Follow Up':'#3b82f6', 'Interested':'#34d399', 'Meeting':'#8b5cf6', 'Messaged':'#06b6d4', 'Left Voicemail':'#f97316' };
+  return m[status] || '#94a3b8';
+}
 function fmtPhone(s){
   if(!s) return '';
   const digits = s.replace(/\D/g,'');
@@ -6952,7 +7167,7 @@ async function selectAddress(el, recId){
     const resp = await fetch('https://places.googleapis.com/v1/places/' + placeId, {
       headers: {
         'X-Goog-Api-Key': GPLACES_KEY,
-        'X-Goog-FieldMask': 'addressComponents,formattedAddress'
+        'X-Goog-FieldMask': 'addressComponents,formattedAddress,location'
       }
     });
     const place = await resp.json();
@@ -6967,6 +7182,13 @@ async function selectAddress(el, recId){
       parts.zip = get('postal_code');
     } else {
       parts.street = description;
+    }
+
+    // Capture geolocation from place details
+    if(place.location){
+      window._selectedGeoLocation = { lat: place.location.latitude, lng: place.location.longitude };
+    } else {
+      window._selectedGeoLocation = null;
     }
 
     applyParts(parts);
@@ -7092,6 +7314,15 @@ function saveAddressEditor(recId){
 
   r.addressParts = addrParts;
   r.property = formatAddressOneLine(addrParts);
+
+  // Save geolocation if captured from autocomplete
+  if(window._selectedGeoLocation){
+    if(!r.propertyDetails) r.propertyDetails = {};
+    r.propertyDetails.latitude = window._selectedGeoLocation.lat;
+    r.propertyDetails.longitude = window._selectedGeoLocation.lng;
+    window._selectedGeoLocation = null;
+  }
+
   window._selectedAddrParts = null;
   saveData();
   document.getElementById('addressEditorOverlay')?.remove();
@@ -7703,6 +7934,14 @@ function saveContactCard(recId){
   if(r.status !== oldStatus){
     r.notes.push({ id:uid(), text:`Status changed: ${oldStatus} → ${r.status}`, date:new Date().toISOString(), type:'status' });
   }
+
+  // Save geolocation if captured from autocomplete
+  if(window._selectedGeoLocation){
+    r.propertyDetails.latitude = window._selectedGeoLocation.lat;
+    r.propertyDetails.longitude = window._selectedGeoLocation.lng;
+    window._selectedGeoLocation = null;
+  }
+
   saveData();
   // Schedule meeting notifications if meeting date was set or changed
   if(r.meetingDate && (r.meetingDate !== oldMeetingDate || r.meetingTime !== oldMeetingTime)){
