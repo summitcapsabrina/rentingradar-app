@@ -6000,8 +6000,8 @@ function renderCalculatorTab(r){
   kpiHtml += '<div class="calc-kpi-grid calc-kpi-grid-left"' + (insufficientComps ? ' style="opacity:.5"' : '') + '>';
   kpiHtml += '<div class="calc-kpi"'+tipAttrs('Net Operating Income','Projected revenue minus all operating expenses (co-host, Airbnb fees, cleaning, utilities, etc.). Does not include rent.')+'><div class="kpi-label">Net Operating Income'+projTagHtml+'</div><div class="kpi-monthly">'+(insufficientComps ? '<span style="color:var(--text3)">$—<span class="kpi-per">/mo</span></span>' : fmtMoney(Math.round(kpiNOI))+'<span class="kpi-per">/mo</span>')+'</div><div class="kpi-annual">'+(insufficientComps ? '<span style="color:var(--text3);font-size:.7rem">$—/yr</span>' : fmtMoney(Math.round(kpiAnnualNOI))+'/yr')+'</div></div>';
   kpiHtml += '<div class="calc-kpi"'+tipAttrs('Monthly Rent','Your monthly lease payment for this property — entered in the Expenses tab.')+'><div class="kpi-label">Monthly Rent<div class="kpi-proj-tag" style="color:#eab308;border-color:#eab308">Fixed</div></div><div class="kpi-monthly">'+(v.monthlyRent ? fmtMoney(v.monthlyRent) : '<span style="color:var(--text3);font-style:italic">Set in Property Details</span>')+'<span class="kpi-per">/mo</span></div><div class="kpi-annual">'+fmtMoney(v.monthlyRent*12)+'/yr</div></div>';
-  kpiHtml += '<div class="calc-kpi '+(insufficientComps?'':cfClass)+'"'+tipAttrs('Cash Flow','NOI minus rent, adjusted by Position Adjustment ('+confidencePct+'%). This is your confidence-discounted take-home profit after all expenses and rent.')+'><div class="kpi-label">Cash Flow'+projTagHtml+'</div><div class="kpi-monthly">'+(insufficientComps ? '<span style="color:var(--text3)">$—<span class="kpi-per">/mo</span></span>' : fmtMoney(Math.round(kpiMonthlyCF))+'<span class="kpi-per">/mo</span>')+'</div><div class="kpi-annual">'+(insufficientComps ? '<span style="color:var(--text3);font-size:.7rem">$—/yr</span>' : fmtMoney(Math.round(kpiAnnualCF))+'/yr')+'</div></div>';
-  kpiHtml += '<div class="calc-kpi '+(insufficientComps?'':cocClass)+'"'+tipAttrs('Cash on Cash Return','Adjusted annual cash flow divided by total investment. Uses the confidence-discounted cash flow ('+confidencePct+'% Position Adjustment) to measure how quickly your investment pays for itself.')+'><div class="kpi-label">Cash on Cash Return'+projTagHtml+'</div><div class="kpi-monthly">'+(insufficientComps ? '<span style="color:var(--text3)">—%</span>' : kpiCoC.toFixed(1)+'%')+'</div><div class="kpi-annual">'+(insufficientComps ? '<span style="color:var(--text3);font-size:.7rem">$— invested</span>' : fmtMoney(Math.round(v.totalInvested))+' invested')+'</div></div>';
+  kpiHtml += '<div class="calc-kpi '+(insufficientComps?'':cfClass)+'"'+tipAttrs('Cash Flow','NOI minus rent, adjusted by Position Adjustment ('+confidencePct+'%). This represents your estimated confidence-discounted take-home profit after all expenses and rent.')+'><div class="kpi-label">Cash Flow'+projTagHtml+'</div><div class="kpi-monthly">'+(insufficientComps ? '<span style="color:var(--text3)">$—<span class="kpi-per">/mo</span></span>' : fmtMoney(Math.round(kpiMonthlyCF))+'<span class="kpi-per">/mo</span>')+'</div><div class="kpi-annual">'+(insufficientComps ? '<span style="color:var(--text3);font-size:.7rem">$—/yr</span>' : fmtMoney(Math.round(kpiAnnualCF))+'/yr')+'</div></div>';
+  kpiHtml += '<div class="calc-kpi '+(insufficientComps?'':cocClass)+'"'+tipAttrs('Cash on Cash Return','Adjusted annual cash flow divided by total investment. Uses the confidence-discounted cash flow ('+confidencePct+'% Position Adjustment) to estimate how quickly your investment might pay for itself.')+'><div class="kpi-label">Cash on Cash Return'+projTagHtml+'</div><div class="kpi-monthly">'+(insufficientComps ? '<span style="color:var(--text3)">—%</span>' : kpiCoC.toFixed(1)+'%')+'</div><div class="kpi-annual">'+(insufficientComps ? '<span style="color:var(--text3);font-size:.7rem">$— invested</span>' : fmtMoney(Math.round(v.totalInvested))+' invested')+'</div></div>';
   kpiHtml += '</div>';
 
   // ─────────────────────────────────────────
@@ -6046,7 +6046,7 @@ function renderCalculatorTab(r){
     paybackColor = 'var(--num-danger)';
   }
 
-  paybackHtml += '<div class="calc-section"'+(insufficientComps?' style="opacity:.5"':'')+'><div class="calc-section-header"'+tipAttrs('Payback Period','How long it takes for your cumulative cash flow to recover your total upfront investment. Uses the selected projection mode\\x27s annual cash flow, discounted by the Position Adjustment ('+confidencePct+'%).') +'>Payback Period</div><div class="calc-section-body" style="padding:8px 10px">';
+  paybackHtml += '<div class="calc-section"'+(insufficientComps?' style="opacity:.5"':'')+'><div class="calc-section-header"'+tipAttrs('Payback Period','Estimated time for your cumulative cash flow to recover your total upfront investment. Uses the selected projection mode\\x27s annual cash flow, discounted by the Position Adjustment ('+confidencePct+'%). Actual results may vary.') +'>Payback Period</div><div class="calc-section-body" style="padding:8px 10px">';
   if(insufficientComps){
     paybackHtml += '<div style="opacity:.5">';
     paybackHtml += '<div style="text-align:center;margin-bottom:10px">';
@@ -6200,7 +6200,7 @@ function renderCalculatorTab(r){
     col.monthlyNet = col.hasData ? Math.round(col.net / 12) : 0;
   });
 
-  pynHtml += '<div class="calc-section"' + (insufficientComps ? ' style="opacity:.5"' : '') + '><div class="calc-section-header"'+tipAttrs('Projected Yearly Net','Projected annual profit across three scenarios. Each column uses different directional multipliers applied to your comp data, then discounted by your competitive position. Select a column to drive the KPIs, Deal Temperature, and Payback Period.')+'>Projected Yearly Net</div>';
+  pynHtml += '<div class="calc-section"' + (insufficientComps ? ' style="opacity:.5"' : '') + '><div class="calc-section-header"'+tipAttrs('Projected Yearly Net','Estimated annual profit across three scenarios. Each column uses different directional multipliers applied to your comp data, then discounted by your competitive position. Select a column to drive the KPIs, Deal Temperature, and Payback Period. These are projections only — actual results may differ.')+'>Projected Yearly Net</div>';
 
   // Clickable column headers — selecting a column drives KPIs, Deal Temp, and Payback
   pynHtml += '<div class="pyn-col-headers">';
@@ -6260,13 +6260,13 @@ function renderCalculatorTab(r){
   pynRow('Position Adjustment', col => {
     if(!col.hasData) return noDataHtml;
     return '<span style="font-weight:700;color:'+cpColor+'">'+confidencePct+'%</span>';
-  }, {tip:'Confidence factor based on competitive position score ('+v.positionScore.toFixed(2)+'). Ranges from 55% (loses to all comps) to 100% (beats all comps). Discounts the monthly net to reflect how likely you are to achieve the projected revenue given your competitive landscape.'});
+  }, {tip:'Confidence factor based on competitive position score ('+v.positionScore.toFixed(2)+'). Ranges from 55% (loses to all comps) to 100% (beats all comps). Discounts the monthly net to estimate how likely you might be to achieve the projected revenue given your competitive landscape.'});
   pynRow('Adjusted Monthly Net', col => {
     if(!col.hasData) return noDataHtml;
     const adj = col.adjustedMonthlyNet;
     if(adj >= 0) return '<span style="color:var(--num-success);font-weight:700">'+fmtMoney(adj)+'/mo</span>';
     return '<span style="color:var(--num-danger);font-weight:700">-$'+Math.abs(adj).toLocaleString()+'/mo</span>';
-  }, {total:true, tip:'Monthly Net × Position Adjustment percentage. This confidence-adjusted figure drives the Deal Temperature recommendation below.'});
+  }, {total:true, tip:'Monthly Net × Position Adjustment percentage. This confidence-adjusted estimate drives the Deal Temperature recommendation below.'});
 
   pynHtml += '</div></div>';
 
@@ -6280,10 +6280,10 @@ function renderCalculatorTab(r){
   const dealTemp = insufficientComps ? null : (dealMonthlyNet >= 1000 ? 'slam-dunk' : dealMonthlyNet >= 500 ? 'potential' : dealMonthlyNet > 0 ? 'risky' : 'no-go');
   const dealSource = insufficientComps ? 'Add at least 3 comps in Competitor Analysis' : confidencePct + '% confidence · ' + ordinal(v.marketPercentile) + ' percentile in market';
   const temps = [
-    { key:'no-go', label:'No-Go', icon:'🚫', color:'#ef4444', desc:'This deal loses money after accounting for competitive position.', hint:'Adjusted Monthly Net is $0 or less. After factoring in your competitive positioning against nearby comps, this property cannot cover its operating costs — every month held increases cumulative losses and ties up capital that could be deployed elsewhere.' },
-    { key:'risky', label:'Risky', icon:'⚠️', color:'#f59e0b', desc:'Thin margins that leave little room for unexpected costs or vacancies.', hint:'Adjusted Monthly Net is $1–$499/mo. While technically profitable, margins this thin mean a single slow month, unexpected repair, or seasonal vacancy could push the deal into negative territory — proceed only with a strong contingency reserve.' },
-    { key:'potential', label:'Potential', icon:'🔥', color:'#3b82f6', desc:'Solid returns with reasonable margin of safety.', hint:'Adjusted Monthly Net is $500–$999/mo. This property generates healthy cash flow with enough cushion to absorb typical vacancy gaps and maintenance surprises while still delivering a meaningful return on invested capital.' },
-    { key:'slam-dunk', label:'Slam-Dunk', icon:'🏆', color:'#10b981', desc:'Strong returns even after competitive position discount.', hint:'Adjusted Monthly Net is $1,000+/mo. Even after discounting for competitive pressure, this deal delivers exceptional monthly cash flow — the kind of margin that accelerates payback, funds portfolio growth, and withstands market downturns.' }
+    { key:'no-go', label:'No-Go', icon:'🚫', color:'#ef4444', desc:'This deal likely loses money after accounting for competitive position.', hint:'Adjusted Monthly Net is $0 or less. After factoring in your competitive positioning against nearby comps, this property may not be able to cover its operating costs — every month held could increase cumulative losses and tie up capital that might be better deployed elsewhere.' },
+    { key:'risky', label:'Risky', icon:'⚠️', color:'#f59e0b', desc:'Thin margins that may leave little room for unexpected costs or vacancies.', hint:'Adjusted Monthly Net is $1–$499/mo. While potentially profitable, margins this thin suggest that a single slow month, unexpected repair, or seasonal vacancy could push the deal into negative territory — consider proceeding only with a strong contingency reserve.' },
+    { key:'potential', label:'Potential', icon:'🔥', color:'#3b82f6', desc:'Solid estimated returns with reasonable margin of safety.', hint:'Adjusted Monthly Net is $500–$999/mo. This property may generate healthy cash flow with enough cushion to help absorb typical vacancy gaps and maintenance surprises, while still potentially delivering a meaningful return on invested capital.' },
+    { key:'slam-dunk', label:'Slam-Dunk', icon:'🏆', color:'#10b981', desc:'Potentially strong returns even after competitive position discount.', hint:'Adjusted Monthly Net is $1,000+/mo. Even after discounting for competitive pressure, this deal may deliver strong monthly cash flow — the kind of margin that should help accelerate payback, could fund portfolio growth, and might better withstand market downturns.' }
   ];
   dealHtml += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:10px' + (insufficientComps ? ';opacity:.5' : '') + '">';
   temps.forEach(t => {
@@ -8609,7 +8609,7 @@ function showTip(title, body){
   const overlay = document.createElement('div');
   overlay.id = 'tipOverlay';
   overlay.className = 'tip-overlay';
-  overlay.innerHTML = '<div class="tip-popup"><div class="tip-popup-title"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>'+title+'</div><div class="tip-popup-body">'+body+'</div><div class="tip-popup-actions" style="display:flex;gap:8px"><button class="tip-btn tip-btn-ok" style="flex:1" onclick="closeTip()">Ok</button><button class="tip-btn tip-btn-disable" style="flex:1" onclick="confirmDisableTips()">Disable Tips</button></div></div>';
+  overlay.innerHTML = '<div class="tip-popup"><div class="tip-popup-title"><svg width="18" height="18" viewBox="-1 -1 26 26" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>'+title+'</div><div class="tip-popup-body">'+body+'</div><div class="tip-popup-actions" style="display:flex;gap:8px"><button class="tip-btn tip-btn-ok" style="flex:1" onclick="closeTip()">Ok</button><button class="tip-btn tip-btn-disable" style="flex:1" onclick="confirmDisableTips()">Disable Tips</button></div></div>';
   overlay.addEventListener('click', function(e){ if(e.target === overlay) closeTip(); });
   document.body.appendChild(overlay);
 }
@@ -8620,7 +8620,7 @@ function closeTip(){
 function confirmDisableTips(){
   const overlay = document.getElementById('tipOverlay');
   if(overlay){
-    overlay.querySelector('.tip-popup').innerHTML = '<div class="tip-popup-title"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>Disable Tips?</div><div class="tip-popup-body">Are you sure you want to disable calculation tips? You can re-enable them anytime in Settings.</div><div class="tip-popup-actions" style="display:flex;gap:8px"><button class="tip-btn tip-btn-ok" style="flex:1" onclick="doDisableTips()">Disable</button><button class="tip-btn tip-btn-disable" style="flex:1" onclick="closeTip()">Cancel</button></div>';
+    overlay.querySelector('.tip-popup').innerHTML = '<div class="tip-popup-title"><svg width="18" height="18" viewBox="-1 -1 26 26" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>Disable Tips?</div><div class="tip-popup-body">Are you sure you want to disable calculation tips? You can re-enable them anytime in Settings.</div><div class="tip-popup-actions" style="display:flex;gap:8px"><button class="tip-btn tip-btn-ok" style="flex:1" onclick="doDisableTips()">Disable</button><button class="tip-btn tip-btn-disable" style="flex:1" onclick="closeTip()">Cancel</button></div>';
   }
 }
 function doDisableTips(){
