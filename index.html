@@ -8754,9 +8754,9 @@ function copyAddress(btn, recId){
 
 /* ===== MEETING NOTIFICATION SYSTEM ===== */
 const DEFAULT_MEETING_REMINDERS = [
-  { label:'1 day before', minutes: 1440 },
-  { label:'3 hours before', minutes: 180 },
-  { label:'1 hour before', minutes: 60 }
+  { label:'1 day', minutes: 1440 },
+  { label:'3 hours', minutes: 180 },
+  { label:'1 hour', minutes: 60 }
 ];
 
 function getMeetingReminderSettings(){
@@ -8859,9 +8859,9 @@ function initNotifications(){
 function updateMeetingReminder(index, newMinutes){
   loadSettingsPrefs();
   const rems = getMeetingReminderSettings();
-  const presetLabels = {15:'15 min before',30:'30 min before',60:'1 hour before',120:'2 hours before',180:'3 hours before',360:'6 hours before',720:'12 hours before',1440:'1 day before',2880:'2 days before',4320:'3 days before',10080:'1 week before'};
+  const presetLabels = {15:'15 min',30:'30 min',60:'1 hour',120:'2 hours',180:'3 hours',360:'6 hours',720:'12 hours',1440:'1 day',2880:'2 days',4320:'3 days',10080:'1 week'};
   rems[index].minutes = parseInt(newMinutes);
-  rems[index].label = presetLabels[newMinutes] || newMinutes + ' min before';
+  rems[index].label = presetLabels[newMinutes] || newMinutes + ' min';
   settingsPrefs.meetingReminders = rems;
   saveSettingsPrefs();
 }
@@ -8882,7 +8882,7 @@ function addMeetingReminder(){
   loadSettingsPrefs();
   const rems = getMeetingReminderSettings();
   if(rems.length >= 6){ showToast('Maximum 6 reminders allowed.', 'warning'); return; }
-  rems.push({ label:'30 min before', minutes: 30 });
+  rems.push({ label:'30 min', minutes: 30 });
   settingsPrefs.meetingReminders = rems;
   saveSettingsPrefs();
   const area = document.getElementById('contentArea');
@@ -8912,7 +8912,7 @@ function _buildReminderChipsHtml(type){
     REMINDER_PRESETS.forEach(p => { html += '<option value="'+p.v+'" '+(rem.minutes===p.v?'selected':'')+' style="background:var(--surface);color:var(--text)">'+p.l+'</option>'; });
     if(!REMINDER_PRESETS.some(p=>p.v===rem.minutes)) html += '<option value="'+rem.minutes+'" selected style="background:var(--surface);color:var(--text)">'+rem.minutes+' min</option>';
     html += '</select>';
-    html += '<span style="color:var(--text3);font-size:.72rem">before</span>';
+    html += '';
     html += '<button onclick="'+removeFn+'('+i+')" style="background:none;border:none;color:var(--text3);cursor:pointer;padding:0 2px;font-size:.9rem;line-height:1" title="Remove">&times;</button>';
     html += '</div>';
   });
@@ -8923,8 +8923,8 @@ function _buildReminderChipsHtml(type){
 
 /* ===== FOLLOW-UP REMINDER SYSTEM ===== */
 const DEFAULT_FOLLOWUP_REMINDERS = [
-  { label:'1 day before', minutes: 1440 },
-  { label:'3 hours before', minutes: 180 }
+  { label:'1 day', minutes: 1440 },
+  { label:'3 hours', minutes: 180 }
 ];
 
 function getFollowUpReminderSettings(){
@@ -8943,9 +8943,9 @@ function getFollowUpNotifyTime(){
 function updateFollowUpReminder(index, newMinutes){
   loadSettingsPrefs();
   const rems = getFollowUpReminderSettings();
-  const presetLabels = {15:'15 min before',30:'30 min before',60:'1 hour before',120:'2 hours before',180:'3 hours before',360:'6 hours before',720:'12 hours before',1440:'1 day before',2880:'2 days before',4320:'3 days before',10080:'1 week before'};
+  const presetLabels = {15:'15 min',30:'30 min',60:'1 hour',120:'2 hours',180:'3 hours',360:'6 hours',720:'12 hours',1440:'1 day',2880:'2 days',4320:'3 days',10080:'1 week'};
   rems[index].minutes = parseInt(newMinutes);
-  rems[index].label = presetLabels[newMinutes] || newMinutes + ' min before';
+  rems[index].label = presetLabels[newMinutes] || newMinutes + ' min';
   settingsPrefs.followUpReminders = rems;
   saveSettingsPrefs();
 }
@@ -8965,7 +8965,7 @@ function addFollowUpReminder(){
   loadSettingsPrefs();
   const rems = getFollowUpReminderSettings();
   if(rems.length >= 6){ showToast('Maximum 6 reminders allowed.', 'warning'); return; }
-  rems.push({ label:'1 day before', minutes: 1440 });
+  rems.push({ label:'1 day', minutes: 1440 });
   settingsPrefs.followUpReminders = rems;
   saveSettingsPrefs();
   const area = document.getElementById('contentArea');
