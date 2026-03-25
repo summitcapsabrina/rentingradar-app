@@ -7952,7 +7952,7 @@ function showProfitReqInputModal(recId, currentVal){
   _prInput.addEventListener('keydown', function(e){
     if(e.key === 'Enter' && e.shiftKey){
       e.preventDefault();
-      submitProfitReq('${recId}', ${currentVal});
+      submitProfitReq(recId, currentVal);
     }
   });
 }
