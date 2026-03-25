@@ -819,9 +819,35 @@ h1 .hero-edit-input{font-size:1.35rem}
 /* Tip question mark icon */
 /* Tip trigger: no visible element — cursor changes to ? on hover via inline style */
 /* AI button */
-.calc-ai-btn{display:inline-flex;align-items:center;gap:4px;font-size:.68rem;padding:2px 8px;border-radius:12px;border:1px solid rgba(16,185,129,.3);background:rgba(16,185,129,.08);color:#10b981;cursor:pointer;font-weight:600;transition:all .15s;margin-left:auto}
+.calc-ai-btn{display:inline-flex;align-items:center;gap:4px;font-size:.68rem;padding:2px 8px;border-radius:12px;border:1px solid rgba(16,185,129,.3);background:rgba(16,185,129,.08);color:#10b981;cursor:pointer;font-weight:600;transition:all .15s}
 .calc-ai-btn:hover{background:rgba(16,185,129,.15);border-color:#10b981}
 .calc-ai-btn.locked{opacity:.5;cursor:not-allowed;border-color:var(--border);background:rgba(148,163,184,.06);color:var(--text3)}
+.calc-copy-btn{display:inline-flex;align-items:center;gap:4px;font-size:.68rem;padding:2px 8px;border-radius:12px;border:1px solid rgba(99,129,250,.3);background:rgba(99,129,250,.08);color:var(--primary);cursor:pointer;font-weight:600;transition:all .15s;margin-left:auto}
+.calc-copy-btn:hover{background:rgba(99,129,250,.15);border-color:var(--primary)}
+.calc-copy-btn.locked{opacity:.5;cursor:not-allowed;border-color:var(--border);background:rgba(148,163,184,.06);color:var(--text3)}
+.copy-exp-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:400;display:flex;align-items:center;justify-content:center}
+.copy-exp-modal{background:var(--surface);border:1px solid var(--border);border-radius:16px;width:420px;max-width:92vw;max-height:80vh;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.3);display:flex;flex-direction:column}
+.copy-exp-header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border)}
+.copy-exp-header h3{font-size:.95rem;font-weight:700;color:var(--text)}
+.copy-exp-search{padding:12px 16px;border-bottom:1px solid var(--border)}
+.copy-exp-search input{width:100%;padding:8px 12px 8px 34px;border:1px solid var(--border);border-radius:var(--radius);background:var(--input-bg);color:var(--text);font-size:.85rem}
+.copy-exp-search input:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(79,110,247,.12);outline:none}
+.copy-exp-search-wrap{position:relative}
+.copy-exp-search-wrap svg{position:absolute;left:10px;top:50%;transform:translateY(-50%);width:15px;height:15px;color:var(--text3)}
+.copy-exp-results{flex:1;overflow-y:auto;max-height:320px;scrollbar-width:thin;scrollbar-color:var(--border) transparent}
+.copy-exp-results::-webkit-scrollbar{width:5px}
+.copy-exp-results::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+.copy-exp-item{display:flex;align-items:center;gap:10px;padding:10px 16px;cursor:pointer;transition:background .1s;border-bottom:1px solid var(--border)}
+.copy-exp-item:last-child{border-bottom:none}
+.copy-exp-item:hover,.copy-exp-item.active{background:var(--primary-light)}
+.copy-exp-item-icon{width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:.7rem;flex-shrink:0;background:var(--bg);color:var(--text3)}
+.copy-exp-item-main{flex:1;min-width:0}
+.copy-exp-item-title{font-size:.85rem;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)}
+.copy-exp-item-title mark{background:rgba(99,129,250,.25);color:var(--primary);border-radius:2px;padding:0 1px}
+:root.light .copy-exp-item-title mark{background:#dbeafe;color:#1e40af}
+.copy-exp-item-sub{font-size:.7rem;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.copy-exp-item-hint{font-size:.58rem;color:var(--text3);opacity:.5;white-space:nowrap;margin-left:8px}
+.copy-exp-empty{padding:24px 16px;text-align:center;color:var(--text3);font-size:.85rem}
 
 /* ===== ANALYSIS TAB ===== */
 .an-section{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:14px}
@@ -6317,6 +6343,8 @@ function renderExpensesTab(r){
   // Right panel: Monthly Operating Expenses
   h += '<div class="calc-panel">';
   h += '<div class="calc-section"><div class="calc-section-header">Monthly Operating Expenses';
+  const isPaidUser = requireTier('basic','Copy Expenses');
+  h += '<button class="calc-copy-btn '+(isPaidUser?'':'locked')+'" onclick="'+(isPaidUser?'openCopyExpensesSearch(\''+r.id+'\')':'showAppAlert(\'Copy Expenses from another property is available for Basic and Pro users.\', {title: \'Feature Locked\', icon: \'🔒\'})')+'" title="'+(isPaidUser?'Copy expenses from another property':'Basic or Pro plan required')+'">📋 Copy from Property'+(isPaidUser?'':' 🔒')+'</button>';
   h += '<button class="calc-ai-btn '+(isProUser?'':'locked')+'" onclick="'+(isProUser?'estimateExpensesAI(\''+r.id+'\')':'showAppAlert(\'AI expense estimation requires Pro plan.\', {title: \'Feature Locked\', icon: \'🔒\'})')+'" title="'+(isProUser?'Estimate for this market':'Pro plan required')+'">✨ AI Estimate'+(isProUser?'':' 🔒')+'</button>';
   h += '</div><div class="calc-section-body">';
   h += cRow('Insurance', cInput('insurance', c.insurance));
@@ -6351,6 +6379,162 @@ function _rerenderExpensesTab(){
   if(tabEl){
     tabEl.innerHTML = renderExpensesTab(r);
   }
+}
+
+// ===== COPY EXPENSES FROM PROPERTY =====
+const EXPENSE_FIELDS = ['insurance','strFee','water','gas','electric','wifiTv','futureRepairs','incidentals','parking','garbageRecycling','channelManager','cityPermit','coHostPct'];
+
+function openCopyExpensesSearch(targetId){
+  const existing = document.getElementById('copyExpOverlay');
+  if(existing) existing.remove();
+
+  let _ceIdx = -1;
+
+  const overlay = document.createElement('div');
+  overlay.id = 'copyExpOverlay';
+  overlay.className = 'copy-exp-overlay';
+  overlay.innerHTML = `
+    <div class="copy-exp-modal">
+      <div class="copy-exp-header">
+        <h3>📋 Copy Expenses from Property</h3>
+        <button style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:1.1rem;line-height:1;padding:4px" onclick="document.getElementById('copyExpOverlay').remove()">✕</button>
+      </div>
+      <div class="copy-exp-search">
+        <div class="copy-exp-search-wrap">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+          <input type="text" id="copyExpSearchInput" placeholder="Search properties, contacts..." autocomplete="off">
+        </div>
+      </div>
+      <div class="copy-exp-results" id="copyExpResults"></div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  // Close on backdrop click
+  overlay.addEventListener('click', (e) => { if(e.target === overlay) overlay.remove(); });
+
+  const input = document.getElementById('copyExpSearchInput');
+  const resultsBox = document.getElementById('copyExpResults');
+  input.focus();
+
+  function matchAllWords(text, query){
+    if(!text) return false;
+    const words = query.split(/\s+/).filter(w => w.length > 0);
+    return words.every(w => text.toLowerCase().includes(w));
+  }
+
+  function highlightText(text, query){
+    if(!text) return '';
+    const words = query.split(/\s+/).filter(w => w.length > 0);
+    const lower = text.toLowerCase();
+    let bestIdx = -1, bestLen = 0;
+    for(const w of words){ const i = lower.indexOf(w); if(i >= 0 && w.length > bestLen){ bestIdx = i; bestLen = w.length; } }
+    if(bestIdx === -1) return esc(text);
+    return esc(text.substring(0,bestIdx)) + '<mark>' + esc(text.substring(bestIdx, bestIdx+bestLen)) + '</mark>' + esc(text.substring(bestIdx+bestLen));
+  }
+
+  function renderResults(q){
+    _ceIdx = -1;
+    if(!q || q.length < 1){
+      // Show recently accessed (excluding current property)
+      const recents = records.filter(r => r.lastAccessed && r.id !== targetId).sort((a,b) => new Date(b.lastAccessed) - new Date(a.lastAccessed)).slice(0,8);
+      if(!recents.length){ resultsBox.innerHTML = '<div class="copy-exp-empty">No recently viewed properties</div>'; return; }
+      let html = '';
+      recents.forEach((r, i) => {
+        const timeAgo = getTimeAgo(r.lastAccessed);
+        const sc = getCalc(r);
+        const hasExp = EXPENSE_FIELDS.some(k => sc[k] > 0);
+        html += '<div class="copy-exp-item" data-id="'+r.id+'" data-idx="'+i+'"><div class="copy-exp-item-icon">🕐</div><div class="copy-exp-item-main"><div class="copy-exp-item-title">'+esc(r.property || 'No address')+'</div><div class="copy-exp-item-sub">'+(r.name?esc(r.name)+' · ':'')+esc(r.status)+' · '+timeAgo+(hasExp?'':' · <span style="color:var(--warning)">No expenses</span>')+'</div></div>'+(i===0?'<div class="copy-exp-item-hint">Shift+Enter</div>':'')+'</div>';
+      });
+      resultsBox.innerHTML = html;
+      attachResultClicks();
+      return;
+    }
+
+    const matched = [];
+    records.forEach(r => {
+      if(r.id === targetId) return;
+      const searchable = [r.property, r.name, r.phone, r.email].filter(Boolean).join(' ');
+      if(matchAllWords(searchable, q)) matched.push(r);
+    });
+
+    if(!matched.length){ resultsBox.innerHTML = '<div class="copy-exp-empty">No matching properties</div>'; return; }
+
+    let html = '';
+    matched.slice(0,8).forEach((r, i) => {
+      const sc = getCalc(r);
+      const hasExp = EXPENSE_FIELDS.some(k => sc[k] > 0);
+      const nameLine = (r.name ? highlightText(r.name, q) : '<span style="opacity:.4">No contact</span>') + (r.status ? ' · <span style="font-weight:600">'+esc(r.status)+'</span>' : '') + (hasExp ? '' : ' · <span style="color:var(--warning)">No expenses</span>');
+      html += '<div class="copy-exp-item" data-id="'+r.id+'" data-idx="'+i+'"><div class="copy-exp-item-icon">🏠</div><div class="copy-exp-item-main"><div class="copy-exp-item-title">'+highlightText(r.property || 'No address', q)+'</div><div class="copy-exp-item-sub">'+nameLine+'</div></div>'+(i===0?'<div class="copy-exp-item-hint">Shift+Enter</div>':'')+'</div>';
+    });
+    resultsBox.innerHTML = html;
+    attachResultClicks();
+  }
+
+  function attachResultClicks(){
+    resultsBox.querySelectorAll('.copy-exp-item').forEach(el => {
+      el.addEventListener('click', () => { selectCopySource(el.dataset.id, targetId); });
+    });
+  }
+
+  function highlightItem(){
+    resultsBox.querySelectorAll('.copy-exp-item').forEach((el,i) => el.classList.toggle('active', i === _ceIdx));
+  }
+
+  input.addEventListener('input', () => { renderResults(input.value.trim().toLowerCase()); });
+
+  input.addEventListener('keydown', (e) => {
+    const items = resultsBox.querySelectorAll('.copy-exp-item');
+    if(!items.length) return;
+    if(e.key === 'ArrowDown'){ e.preventDefault(); _ceIdx = Math.min(_ceIdx + 1, items.length - 1); highlightItem(); items[_ceIdx]?.scrollIntoView({block:'nearest'}); }
+    else if(e.key === 'ArrowUp'){ e.preventDefault(); _ceIdx = Math.max(_ceIdx - 1, 0); highlightItem(); items[_ceIdx]?.scrollIntoView({block:'nearest'}); }
+    else if(e.key === 'Enter' && e.shiftKey){ e.preventDefault(); const firstId = items[0]?.dataset?.id; if(firstId) selectCopySource(firstId, targetId); }
+    else if(e.key === 'Enter' && _ceIdx >= 0){ e.preventDefault(); const id = items[_ceIdx]?.dataset?.id; if(id) selectCopySource(id, targetId); }
+    else if(e.key === 'Escape'){ overlay.remove(); }
+  });
+
+  // Show recently accessed initially
+  renderResults('');
+}
+
+function selectCopySource(sourceId, targetId){
+  const source = records.find(r => r.id === sourceId);
+  const target = records.find(r => r.id === targetId);
+  if(!source || !target) return;
+
+  const sc = getCalc(source);
+  const hasExp = EXPENSE_FIELDS.some(k => sc[k] > 0);
+  if(!hasExp){
+    showAppAlert('The selected property has no Monthly Operating Expenses to copy.', { title: 'No Expenses Found', icon: '⚠️' });
+    return;
+  }
+
+  // Close search modal
+  document.getElementById('copyExpOverlay')?.remove();
+
+  // Build a summary of what will be copied
+  const labels = {insurance:'Insurance',strFee:'STR Fee',water:'Water',gas:'Gas',electric:'Electric',wifiTv:'Wifi + TV/Cable',futureRepairs:'Future Repairs',incidentals:'Incidentals',parking:'Parking',garbageRecycling:'Garbage / Recycling',channelManager:'Channel Manager',cityPermit:'City Permit',coHostPct:'Co-Host / PM Fee (%)'};
+  const nonZero = EXPENSE_FIELDS.filter(k => sc[k] > 0);
+  const summary = nonZero.map(k => labels[k] + ': ' + (k === 'coHostPct' ? sc[k] + '%' : '$' + Number(sc[k]).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}))).join(', ');
+
+  showAppConfirm('Copy all Monthly Operating Expenses from <strong>' + esc(source.property || 'selected property') + '</strong> into this property?<br><br><span style="font-size:.8rem;color:var(--text3)">' + summary + '</span>', {
+    title: 'Copy Expenses',
+    icon: '📋',
+    confirmText: 'Copy Expenses',
+    onConfirm: () => {
+      if(!target.details) target.details = {};
+      if(!target.details.calculator) target.details.calculator = {};
+      const tc = target.details.calculator;
+      EXPENSE_FIELDS.forEach(k => { tc[k] = sc[k]; });
+      // Also copy cleaning if manually set
+      if(sc._cleaningManual && sc.cleaning !== undefined){
+        tc.cleaning = sc.cleaning;
+        tc._cleaningManual = true;
+      }
+      saveData();
+      _rerenderExpensesTab();
+      showToast('Expenses copied from ' + (source.property || 'property') + '.', 'success', 4000);
+    }
+  });
 }
 
 function ordinal(n){ const s = ['th','st','nd','rd']; const v = n % 100; return n + (s[(v-20)%10]||s[v]||s[0]); }
