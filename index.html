@@ -2098,8 +2098,9 @@ function initDashboardMap(){
       let dHtml = '<div class="cluster-popup-back" onclick="window._clusterSlideBack(\'' + popupId + '\')">';
       dHtml += '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>';
       dHtml += '<span>Back to list</span></div>';
-      dHtml += '<div class="map-popup-inner">';
-      dHtml += '<div class="map-popup-addr">' + esc(addr) + '<button class="map-popup-copy" onclick="event.stopPropagation();copyMapField(this,\'' + esc(addr).replace(/'/g, "\\'") + '\')" title="Copy address">' + copyBtn + '</button></div>';
+      dHtml += '<div class="map-popup-inner" style="position:relative">';
+      dHtml += '<div class="map-popup-close" onclick="document.getElementById(\'' + popupId + '\')._popup.remove()" title="Close" style="top:2px;right:2px">✕</div>';
+      dHtml += '<div class="map-popup-addr" style="padding-right:30px">' + esc(addr) + '<button class="map-popup-copy" onclick="event.stopPropagation();copyMapField(this,\'' + esc(addr).replace(/'/g, "\\'") + '\')" title="Copy address">' + copyBtn + '</button></div>';
       dHtml += '<div class="map-popup-divider"></div>';
       dHtml += '<div class="map-popup-stats">';
       dHtml += '<span>🛏 ' + esc(String(p.beds)) + ' bd</span>';
