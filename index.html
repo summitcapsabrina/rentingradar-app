@@ -5371,6 +5371,8 @@ firebase.auth().onAuthStateChanged(async (user) => {
       const data = userDoc.data();
       // Load disclaimer state BEFORE setting tier (so setTier doesn't re-trigger overlay)
       _disclaimerAcknowledged = !!data.disclaimerAcknowledged;
+      _disclaimerVersion = data.disclaimerVersion || 0;
+      if(data.disclaimerAcknowledgedAt && data.disclaimerAcknowledgedAt.toDate){ _disclaimerAcknowledgedAt = data.disclaimerAcknowledgedAt.toDate().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'}); }
       if(data.tier) setTier(data.tier);
     }
     // Load user's property data from Firestore
