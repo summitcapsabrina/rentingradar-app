@@ -744,6 +744,10 @@ h1 .hero-edit-input{font-size:1.35rem}
 .calc-row.total-row .calc-val{font-weight:700;font-size:.85rem}
 .calc-label{font-size:.85rem;color:var(--text2);flex:1;min-width:0;line-height:1.3}
 .calc-label-hint{font-size:.65rem;color:var(--text3);font-style:italic;display:block}
+.tip-label{cursor:default;position:relative;display:inline}
+.tip-label::after{content:'';display:none;width:14px;height:14px;margin-left:4px;vertical-align:middle;background:currentColor;-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='-1 -1 26 26' fill='none' stroke='currentColor' stroke-width='2.5'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3'/%3E%3Cline x1='12' y1='17' x2='12.01' y2='17'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='-1 -1 26 26' fill='none' stroke='currentColor' stroke-width='2.5'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3'/%3E%3Cline x1='12' y1='17' x2='12.01' y2='17'/%3E%3C/svg%3E") center/contain no-repeat;opacity:.5}
+.tip-label:hover{cursor:help}
+.tip-label:hover::after{display:inline-block}
 .calc-val{width:110px;flex-shrink:0;text-align:right;display:flex;align-items:center;justify-content:flex-end;gap:0}
 .pyn-col-headers{display:flex;align-items:flex-end;padding:8px 12px 0;gap:4px}
 .pyn-label-spacer{flex:1;min-width:0}
@@ -6183,8 +6187,11 @@ function fmtMoney(n){
 function cRow(label, valHtml, opts={}){
   const cls = opts.total ? ' total-row' : '';
   const hint = opts.hint ? '<span class="calc-label-hint">'+opts.hint+'</span>' : '';
-  const tipA = opts.tip ? tipAttrs(label.replace(/<[^>]*>/g,''), opts.tip) : '';
-  return '<div class="calc-row'+cls+'"><div class="calc-label"'+tipA+'>'+label+hint+'</div>'+valHtml+'</div>';
+  const tipA = opts.tip ? tipAttrs(label.replace(/<[^>]*>/g,''), opts.tip, true) : '';
+  if(tipA){
+    return '<div class="calc-row'+cls+'"><div class="calc-label"><span class="tip-label"'+tipA+'>'+label+'</span>'+hint+'</div>'+valHtml+'</div>';
+  }
+  return '<div class="calc-row'+cls+'"><div class="calc-label">'+label+hint+'</div>'+valHtml+'</div>';
 }
 function cInput(id, value, opts={}){
   const cls = opts.pct ? ' calc-pct' : '';
@@ -6948,9 +6955,13 @@ function renderCalculatorTab(r){
 
   function pynRow(label, getVal, opts){
     const isTotal = opts && opts.total;
-    const tipA = opts && opts.tip ? tipAttrs(label, opts.tip) : '';
+    const tipA = opts && opts.tip ? tipAttrs(label, opts.tip, true) : '';
     pynHtml += '<div class="calc-row'+(isTotal?' total-row':'')+'">';
-    pynHtml += '<div class="calc-label"'+tipA+'>'+label+'</div>';
+    if(tipA){
+      pynHtml += '<div class="calc-label"><span class="tip-label"'+tipA+'>'+label+'</span></div>';
+    } else {
+      pynHtml += '<div class="calc-label">'+label+'</div>';
+    }
     cols.forEach(col => {
       const isActive = col.key === calcProjMode;
       pynHtml += '<div class="calc-val pyn-val'+(isActive?' pyn-val-active':'')+'">';
@@ -7006,13 +7017,18 @@ function renderCalculatorTab(r){
   const selectedCol = cols.find(c => c.key === calcProjMode) || cols[1];
   const rawMonthlyNet = selectedCol.hasData ? selectedCol.monthlyNet : 0;
   const dealMonthlyNet = selectedCol.hasData ? selectedCol.adjustedMonthlyNet : 0;
-  const dealTemp = insufficientComps ? null : (dealMonthlyNet >= 1000 ? 'slam-dunk' : dealMonthlyNet >= 500 ? 'potential' : dealMonthlyNet > 0 ? 'risky' : 'no-go');
+  // Pull Profit Req from Analysis tab (default $1,000/mo) to calibrate deal temperature
+  const _dtAn = getAnalysis(r);
+  const _dtProfitReq = parseFloat(_dtAn.profitRequirement) || 1000;
+  const _dtHalf = Math.round(_dtProfitReq * 0.5);
+  const dealTemp = insufficientComps ? null : (dealMonthlyNet >= _dtProfitReq ? 'slam-dunk' : dealMonthlyNet >= _dtHalf ? 'potential' : dealMonthlyNet > 0 ? 'risky' : 'no-go');
   const dealSource = insufficientComps ? 'Add at least 3 comps in Competitor Analysis' : confidencePct + '% confidence · ' + ordinal(v.marketPercentile) + ' percentile in market';
+  const _profReqNote = _dtProfitReq !== 1000 ? ' Calibrated to your '+fmtMoney(_dtProfitReq)+'/mo profit requirement (adjustable in the Competitor Analysis tab).' : ' Calibrated to the default $1,000/mo profit requirement — adjust this in the Competitor Analysis tab under Required Revenue to recalibrate these thresholds.';
   const temps = [
-    { key:'no-go', label:'No-Go', icon:'🚫', color:'#ef4444', desc:'This deal likely loses money after accounting for competitive position.', hint:'After factoring in your competitive positioning against nearby comps, this property may not be able to cover its operating costs — every month held could increase cumulative losses and tie up capital that might be better deployed elsewhere.' },
-    { key:'risky', label:'Risky', icon:'⚠️', color:'#f59e0b', desc:'Thin margins that may leave little room for unexpected costs or vacancies.', hint:'While potentially profitable, margins this thin suggest that a single slow month, unexpected repair, or seasonal vacancy could push the deal into negative territory — consider proceeding only with a strong contingency reserve.' },
-    { key:'potential', label:'Potential', icon:'🔥', color:'#3b82f6', desc:'Solid estimated returns with reasonable margin of safety.', hint:'This property may generate healthy cash flow with enough cushion to help absorb typical vacancy gaps and maintenance surprises, while still potentially delivering a meaningful return on invested capital.' },
-    { key:'slam-dunk', label:'Slam-Dunk', icon:'🏆', color:'#10b981', desc:'Potentially strong returns even after competitive position discount.', hint:'Even after discounting for competitive pressure, this deal may deliver strong monthly cash flow — the kind of margin that should help accelerate payback, could fund portfolio growth, and might better withstand market downturns.' }
+    { key:'no-go', label:'No-Go', icon:'🚫', color:'#ef4444', desc:'This deal likely loses money after accounting for competitive position.', hint:'After factoring in your competitive positioning against nearby comps, this property may not be able to cover its operating costs — every month held could increase cumulative losses and tie up capital that might be better deployed elsewhere.'+_profReqNote },
+    { key:'risky', label:'Risky', icon:'⚠️', color:'#f59e0b', desc:'Thin margins that may leave little room for unexpected costs or vacancies.', hint:'While potentially profitable, margins this thin suggest that a single slow month, unexpected repair, or seasonal vacancy could push the deal into negative territory — consider proceeding only with a strong contingency reserve.'+_profReqNote },
+    { key:'potential', label:'Potential', icon:'🔥', color:'#3b82f6', desc:'Solid estimated returns with reasonable margin of safety.', hint:'This property may generate healthy cash flow with enough cushion to help absorb typical vacancy gaps and maintenance surprises, while still potentially delivering a meaningful return on invested capital.'+_profReqNote },
+    { key:'slam-dunk', label:'Slam-Dunk', icon:'🏆', color:'#10b981', desc:'Potentially strong returns even after competitive position discount.', hint:'Even after discounting for competitive pressure, this deal may deliver strong monthly cash flow — the kind of margin that should help accelerate payback, could fund portfolio growth, and might better withstand market downturns.'+_profReqNote }
   ];
   dealHtml += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:10px' + (insufficientComps ? ';opacity:.5' : '') + '">';
   temps.forEach(t => {
@@ -7031,21 +7047,21 @@ function renderCalculatorTab(r){
 
   // Deal Temperature Gauge — continuous bar showing exactly where the adjusted value falls
   if(!insufficientComps){
-    // Gauge range: -$500 (bottom edge) to $1,500 (top edge), total span $2,000
-    // Zone boundaries: $0 at 25%, $500 at 50%, $1,000 at 75%
-    const gaugeMin = -500, gaugeMax = 1500, gaugeSpan = gaugeMax - gaugeMin;
+    // Gauge range: dynamic based on profit requirement
+    // Zone boundaries: $0 at 25%, half-profitReq at 50%, profitReq at 75%
+    const gaugeMin = -_dtHalf, gaugeMax = _dtProfitReq + _dtHalf, gaugeSpan = gaugeMax - gaugeMin;
     const clampedVal = Math.max(gaugeMin, Math.min(gaugeMax, dealMonthlyNet));
     const gaugePct = ((clampedVal - gaugeMin) / gaugeSpan * 100).toFixed(1);
     // Zone percentages: No-Go 0-25%, Risky 25-50%, Potential 50-75%, Slam-Dunk 75-100%
     const zoneBreaks = [
-      { pct: 25, color: '#ef4444' },  // No-Go: -$500 to $0
-      { pct: 50, color: '#f59e0b' },  // Risky: $0 to $500
-      { pct: 75, color: '#3b82f6' },  // Potential: $500 to $1,000
-      { pct: 100, color: '#10b981' }  // Slam-Dunk: $1,000 to $1,500
+      { pct: 25, color: '#ef4444' },  // No-Go: -half to $0
+      { pct: 50, color: '#f59e0b' },  // Risky: $0 to half
+      { pct: 75, color: '#3b82f6' },  // Potential: half to profitReq
+      { pct: 100, color: '#10b981' }  // Slam-Dunk: profitReq to profitReq+half
     ];
 
     // Determine marker color based on which zone it's in
-    const markerColor = dealMonthlyNet >= 1000 ? '#10b981' : dealMonthlyNet >= 500 ? '#3b82f6' : dealMonthlyNet > 0 ? '#f59e0b' : '#ef4444';
+    const markerColor = dealMonthlyNet >= _dtProfitReq ? '#10b981' : dealMonthlyNet >= _dtHalf ? '#3b82f6' : dealMonthlyNet > 0 ? '#f59e0b' : '#ef4444';
 
     dealHtml += '<div style="margin-bottom:6px">';
     // Gauge track — 4 colored zone segments (horizontal orientation)
@@ -7074,11 +7090,11 @@ function renderCalculatorTab(r){
 
     // Zone boundary labels (horizontal)
     dealHtml += '<div style="position:relative;width:100%;margin-top:1px;margin-bottom:4px;display:flex;justify-content:space-between;font-size:.68rem;color:var(--text3)">';
-    dealHtml += '<div>-$500</div>';
+    dealHtml += '<div>'+fmtMoney(-_dtHalf)+'</div>';
     dealHtml += '<div>$0</div>';
-    dealHtml += '<div>$500</div>';
-    dealHtml += '<div>$1,000</div>';
-    dealHtml += '<div>$1,500+</div>';
+    dealHtml += '<div>'+fmtMoney(_dtHalf)+'</div>';
+    dealHtml += '<div>'+fmtMoney(_dtProfitReq)+'</div>';
+    dealHtml += '<div>'+fmtMoney(_dtProfitReq + _dtHalf)+'+</div>';
     dealHtml += '</div>';
     dealHtml += '</div>';
 
@@ -7092,7 +7108,7 @@ function renderCalculatorTab(r){
     dealHtml += '</div>';
     // Zone labels
     dealHtml += '<div style="position:relative;width:100%;margin-top:1px;margin-bottom:4px;display:flex;justify-content:space-between;font-size:.68rem;color:var(--text3)">';
-    dealHtml += '<div>-$500</div><div>$0</div><div>$500</div><div>$1,000</div><div>$1,500+</div>';
+    dealHtml += '<div>'+fmtMoney(-_dtHalf)+'</div><div>$0</div><div>'+fmtMoney(_dtHalf)+'</div><div>'+fmtMoney(_dtProfitReq)+'</div><div>'+fmtMoney(_dtProfitReq+_dtHalf)+'+</div>';
     dealHtml += '</div>';
     dealHtml += '</div>';
     dealHtml += '<div style="text-align:center;font-size:.62rem;color:var(--text3);font-style:italic;margin-bottom:6px">'+dealSource+'</div>';
