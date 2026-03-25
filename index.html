@@ -1398,7 +1398,10 @@ function render(){
   const area = document.getElementById('contentArea');
   area.style.paddingTop = currentView === 'profile' ? '0' : '';
   switch(currentView){
-    case 'dashboard': area.innerHTML = renderDashboard(); setTimeout(initDashboardMap, 50); break;
+    case 'dashboard':
+      if(_savedMapState && _savedMapState.filter){ _mapFilter = _savedMapState.filter; }
+      if(_savedMapState && _savedMapState.pipelineCat){ pipelineCategory = _savedMapState.pipelineCat; }
+      area.innerHTML = renderDashboard(); setTimeout(initDashboardMap, 50); break;
     case 'pipeline': pipelineCategory=pipelineCategory||'prospects'; currentView='dashboard'; area.innerHTML = renderDashboard(); setTimeout(initDashboardMap, 50); document.querySelector('.pipeline-category-tabs')?.scrollIntoView({behavior:'smooth',block:'nearest'}); break;
     case 'contacts': area.innerHTML = renderContacts(); break;
     case 'notifications': area.innerHTML = renderNotifications(); break;
@@ -1728,7 +1731,7 @@ function setMapFilter(filter){
 }
 
 function saveMapState(){
-  if(dashMap){ _savedMapState = { center: dashMap.getCenter().toArray(), zoom: dashMap.getZoom() }; }
+  if(dashMap){ _savedMapState = { center: dashMap.getCenter().toArray(), zoom: dashMap.getZoom(), filter: _mapFilter, pipelineCat: pipelineCategory }; }
 }
 
 function clearMapState(){
@@ -2235,9 +2238,25 @@ function initDashboardMap(){
       dashMap.fitBounds(bounds, { padding: 50, maxZoom: 13 });
     }
 
-    // Apply current map filter (if not 'all' or restoring)
-    if(_mapFilter !== 'all' && !hadSavedState){
-      setTimeout(() => setMapFilter(_mapFilter), 100);
+    // Apply current map filter
+    if(_mapFilter !== 'all'){
+      setTimeout(() => {
+        // When restoring saved state, apply filter without fly animation
+        if(hadSavedState){
+          const src = dashMap.getSource('properties');
+          if(src && _allGeoJson){
+            let allowedStatuses = null;
+            if(_mapFilter.startsWith('status:')){ allowedStatuses = [_mapFilter.substring(7)]; }
+            else { const catMap = { prospects:['New','No Contact'], outreach:['Messaged','Left Voicemail','Follow Up'], qualified:['Interested','Meeting'], lost:CLOSED_STAGES }; allowedStatuses = catMap[_mapFilter] || null; }
+            const filtered = allowedStatuses ? { type:'FeatureCollection', features: _allGeoJson.features.filter(f => allowedStatuses.includes(f.properties.status)) } : _allGeoJson;
+            src.setData(filtered);
+            const countEl = document.getElementById('mapPropertyCount');
+            if(countEl){ countEl.textContent = (filtered.features.length + ' of ' + _allGeoJson.features.length) + ' mapped'; }
+          }
+        } else {
+          setMapFilter(_mapFilter);
+        }
+      }, 100);
     }
   });
 }
