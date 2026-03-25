@@ -6140,7 +6140,7 @@ const CALC_DEFAULTS = {
   garbageRecycling:0, channelManager:0, cityPermit:0,
   coHostPct:0
 };
-const CLEANING_DEFAULTS = {0:0, 1:0, 2:0, 3:0, 4:0, 5:0, 6:0};
+const CLEANING_DEFAULTS = {0:0, 1:500, 2:650, 3:900, 4:1200, 5:1200, 6:1200};
 
 function getCalc(r){
   if(!r.details) r.details = {};
@@ -7365,19 +7365,6 @@ function renderAnalysisTab(r){
     else if(c.rating === 'beats') beatsComps.push(entry);
     else competesComps.push(entry); // default
   });
-
-  // Right: Revenue Projection panel
-  h += '<div class="an-section"><div class="an-section-hdr"'+tipAttrs('Revenue Projection','Revenue projections using directional multipliers. Optimistic uses higher multipliers (best-case), Realistic uses base multipliers (weighted estimate), Pessimistic uses lower multipliers (conservative). Multipliers adjust comp revenue based on whether you Lose To, Compete With, or Beat each comp.')+'>Revenue Projection</div><div class="an-section-body" style="padding:0">';
-  h += '<div class="an-req-bar" style="border:none;border-radius:0;margin:0">';
-  if(insuffComps){
-    h += '<div class="an-req-item" style="text-align:center;padding:18px 14px"><div class="req-label" style="color:var(--text3);font-size:.82rem">Add at least 3 comps to see projections</div></div>';
-  } else {
-    h += '<div class="an-req-item"><div class="req-label" style="color:var(--num-success)">Optimistic</div><div class="req-val" style="color:var(--num-success)">'+(optRev ? fmtMoney(optRev) : '$0')+'<span class="req-period">/yr</span></div><div class="req-annual">'+(optRev ? fmtMoney(Math.round(optRev/12)) : '$0')+'/mo</div></div>';
-    h += '<div class="an-req-item" style="background:rgba(99,129,250,.06)"><div class="req-label" style="color:var(--num-computed)">Realistic</div><div class="req-val" style="color:var(--num-computed)">'+(projRev ? fmtMoney(projRev) : '$0')+'<span class="req-period">/yr</span></div><div class="req-annual">'+(projRev ? fmtMoney(Math.round(projRev/12)) : '$0')+'/mo</div></div>';
-    h += '<div class="an-req-item"><div class="req-label" style="color:var(--num-danger)">Pessimistic</div><div class="req-val" style="color:var(--num-danger)">'+(pessRev ? fmtMoney(pessRev) : '$0')+'<span class="req-period">/yr</span></div><div class="req-annual">'+(pessRev ? fmtMoney(Math.round(pessRev/12)) : '$0')+'/mo</div></div>';
-  }
-  h += '</div>';
-  h += '</div></div>';
 
   h += '</div>'; // end an-top-grid
 
