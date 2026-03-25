@@ -1865,6 +1865,8 @@ function initDashboardMap(){
   }
 
   mapEl.addEventListener('wheel', (e) => {
+    // Skip map zoom hints if scrolling inside a popup (cluster list, property popup, etc.)
+    if(e.target.closest && e.target.closest('.maplibregl-popup,.mapboxgl-popup')) return;
     if(e.ctrlKey || e.metaKey){
       e.preventDefault();
       enableCtrlZoom();
