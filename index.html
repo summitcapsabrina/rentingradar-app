@@ -263,13 +263,21 @@ textarea{resize:vertical;min-height:80px}
 .map-popup-phone{cursor:default;display:inline-flex;align-items:center;gap:2px}
 .map-ctrl-hint{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,.75);color:#fff;padding:10px 20px;border-radius:10px;font-size:.84rem;font-weight:500;pointer-events:none;z-index:10;opacity:0;transition:opacity .3s;backdrop-filter:blur(4px);letter-spacing:.01em}
 .map-info-panel{position:absolute;bottom:8px;right:8px;background:rgba(0,0,0,.6);color:rgba(255,255,255,.85);padding:5px 10px;border-radius:6px;font-size:.68rem;pointer-events:none;z-index:5;display:flex;align-items:center;gap:4px;backdrop-filter:blur(4px);letter-spacing:.01em}
-.map-cluster-popup .mapboxgl-popup-content,.map-cluster-popup .maplibregl-popup-content{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:0;box-shadow:0 12px 32px rgba(0,0,0,.25),0 2px 6px rgba(0,0,0,.1);max-width:280px;min-width:240px;overflow:hidden}
+.map-cluster-popup .mapboxgl-popup-content,.map-cluster-popup .maplibregl-popup-content{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:0;box-shadow:0 12px 32px rgba(0,0,0,.25),0 2px 6px rgba(0,0,0,.1);max-width:290px;min-width:250px;overflow:hidden}
 .map-cluster-popup .mapboxgl-popup-tip,.map-cluster-popup .maplibregl-popup-tip{border-top-color:var(--surface);border-bottom-color:var(--surface);border-left-color:transparent;border-right-color:transparent}
 .map-cluster-popup .mapboxgl-popup-close-button,.map-cluster-popup .maplibregl-popup-close-button{display:none}
+.cluster-popup-slider{position:relative;overflow:hidden}
+.cluster-popup-panel{transition:transform .25s ease,opacity .2s ease}
+.cluster-popup-panel.slide-out{transform:translateX(-100%);opacity:0;position:absolute;top:0;left:0;width:100%;pointer-events:none}
+.cluster-popup-detail{transform:translateX(100%);opacity:0;position:absolute;top:0;left:0;width:100%;pointer-events:none;transition:transform .25s ease,opacity .2s ease}
+.cluster-popup-detail.slide-in{transform:translateX(0);opacity:1;position:relative;pointer-events:auto}
 .cluster-popup-header{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--border)}
 .cluster-popup-header span{font-size:.78rem;font-weight:700;color:var(--text)}
 .cluster-popup-close{width:24px;height:24px;border-radius:50%;background:var(--bg);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text3);font-size:13px;line-height:1;transition:all .15s}
 .cluster-popup-close:hover{color:var(--text);background:var(--surface);border-color:var(--text3)}
+.cluster-popup-back{display:flex;align-items:center;gap:5px;padding:8px 14px;border-bottom:1px solid var(--border);cursor:pointer;font-size:.74rem;font-weight:600;color:var(--primary);transition:background .12s}
+.cluster-popup-back:hover{background:var(--bg)}
+.cluster-popup-back svg{flex-shrink:0}
 .cluster-popup-list{max-height:220px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--border) transparent}
 .cluster-popup-list::-webkit-scrollbar{width:5px}
 .cluster-popup-list::-webkit-scrollbar-track{background:transparent}
@@ -280,8 +288,8 @@ textarea{resize:vertical;min-height:80px}
 .cluster-popup-item-info{flex:1;min-width:0}
 .cluster-popup-item-addr{font-size:.78rem;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cluster-popup-item-status{font-size:.65rem;font-weight:600;padding:1px 6px;border-radius:4px;display:inline-block;margin-top:2px}
-.cluster-popup-arrow{color:var(--text3);font-size:.8rem;flex-shrink:0;transition:color .15s}
-.cluster-popup-item:hover .cluster-popup-arrow{color:var(--primary)}
+.cluster-popup-arrow{color:var(--primary);font-size:1.1rem;font-weight:700;flex-shrink:0;transition:transform .15s;line-height:1}
+.cluster-popup-item:hover .cluster-popup-arrow{transform:translateX(2px)}
 .map-info-icon{display:inline-flex;align-items:center;opacity:.7}
 .map-info-sep{opacity:.4;margin:0 1px}
 
@@ -1983,30 +1991,37 @@ function initDashboardMap(){
       } catch(ex){ console.log('Cluster leaves error:', ex); }
     });
 
-    // Helper: show cluster list popup
-    function showClusterPopup(leaves, coords, clusterId, restoreScrollTop){
+    // Helper: show cluster list popup with slide-to-detail
+    function showClusterPopup(leaves, coords, clusterId, restoreScrollTop, restoreDetailId){
       if(activeMapPopup){ activeMapPopup.remove(); activeMapPopup = null; }
       const popupId = 'cp_' + Date.now();
-      let html = '<div id="' + popupId + '">';
-      html += '<div class="cluster-popup-header"><span>' + leaves.length + ' Properties</span>';
-      html += '<div class="cluster-popup-close" onclick="document.getElementById(\'' + popupId + '\')._popup.remove()" title="Close">✕</div></div>';
-      html += '<div class="cluster-popup-list" id="' + popupId + '_list">';
+
+      // Build list panel
+      let listHtml = '<div class="cluster-popup-panel" id="' + popupId + '_listpanel">';
+      listHtml += '<div class="cluster-popup-header"><span>' + leaves.length + ' Properties</span>';
+      listHtml += '<div class="cluster-popup-close" onclick="document.getElementById(\'' + popupId + '\')._popup.remove()" title="Close">✕</div></div>';
+      listHtml += '<div class="cluster-popup-list" id="' + popupId + '_list">';
       leaves.forEach(f => {
         const p = f.properties;
         const addr = p.property || 'Unknown Address';
         const st = p.status || 'New';
         const stColor = getStatusColor(st);
-        html += '<div class="cluster-popup-item" onclick="_savedClusterPopup={coords:[' + coords[0] + ',' + coords[1] + '],clusterId:' + clusterId + ',scrollTop:document.getElementById(\'' + popupId + '_list\')?.scrollTop||0};_savedMapPopupId=null;saveMapState();openDetail(\'' + p.id + '\')">';
-        html += '<div class="cluster-popup-item-info">';
-        html += '<div class="cluster-popup-item-addr">' + esc(addr) + '</div>';
-        html += '<span class="cluster-popup-item-status" style="color:' + stColor + ';background:' + stColor + '1a;border:1px solid ' + stColor + '33">' + esc(st) + '</span>';
-        html += '</div>';
-        html += '<span class="cluster-popup-arrow">›</span>';
-        html += '</div>';
+        listHtml += '<div class="cluster-popup-item" data-pid="' + p.id + '" onclick="window._clusterSlideToDetail(\'' + popupId + '\',\'' + p.id + '\')">';
+        listHtml += '<div class="cluster-popup-item-info">';
+        listHtml += '<div class="cluster-popup-item-addr">' + esc(addr) + '</div>';
+        listHtml += '<span class="cluster-popup-item-status" style="color:' + stColor + ';background:' + stColor + '1a;border:1px solid ' + stColor + '33">' + esc(st) + '</span>';
+        listHtml += '</div>';
+        listHtml += '<span class="cluster-popup-arrow"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span>';
+        listHtml += '</div>';
       });
-      html += '</div></div>';
+      listHtml += '</div></div>';
 
-      const popup = new maplibregl.Popup({ className: 'map-cluster-popup', maxWidth: '280px', closeButton: false, closeOnClick: false, closeOnMove: false, anchor: 'bottom' })
+      // Detail panel placeholder
+      let detailHtml = '<div class="cluster-popup-detail" id="' + popupId + '_detail"></div>';
+
+      let html = '<div id="' + popupId + '" class="cluster-popup-slider">' + listHtml + detailHtml + '</div>';
+
+      const popup = new maplibregl.Popup({ className: 'map-cluster-popup', maxWidth: '290px', closeButton: false, closeOnClick: false, closeOnMove: false, anchor: 'bottom' })
         .setLngLat(coords)
         .setHTML(html)
         .addTo(dashMap);
@@ -2014,7 +2029,14 @@ function initDashboardMap(){
       if(popupEl) popupEl._popup = popup;
       activeMapPopup = popup;
 
-      // Restore scroll position if returning from property
+      // Store leaves data on the wrapper so slide functions can access it
+      if(popupEl){
+        popupEl._leaves = leaves;
+        popupEl._coords = coords;
+        popupEl._clusterId = clusterId;
+      }
+
+      // Restore scroll position if returning from property profile
       if(typeof restoreScrollTop === 'number'){
         setTimeout(() => {
           const listEl = document.getElementById(popupId + '_list');
@@ -2022,16 +2044,97 @@ function initDashboardMap(){
         }, 50);
       }
 
+      // If returning and a detail was open, slide to it
+      if(restoreDetailId){
+        setTimeout(() => { window._clusterSlideToDetail(popupId, restoreDetailId); }, 80);
+      }
+
       // Pan map if popup is clipped
       const mapContainer = dashMap.getContainer();
       const pt = dashMap.project(coords);
-      const popupHeight = 280, pad = 20;
+      const popupHeight = 300, pad = 20;
       let dx = 0, dy = 0;
       if(pt.y - popupHeight - pad < 0) dy = pt.y - popupHeight - pad;
-      if(pt.x - 140 - pad < 0) dx = pt.x - 140 - pad;
-      if(pt.x + 140 + pad > mapContainer.clientWidth) dx = pt.x + 140 + pad - mapContainer.clientWidth;
+      if(pt.x - 145 - pad < 0) dx = pt.x - 145 - pad;
+      if(pt.x + 145 + pad > mapContainer.clientWidth) dx = pt.x + 145 + pad - mapContainer.clientWidth;
       if(dx !== 0 || dy !== 0) dashMap.panBy([dx, dy], { duration: 300 });
     }
+
+    // Slide from cluster list to property detail
+    window._clusterSlideToDetail = function(popupId, propId){
+      const wrapper = document.getElementById(popupId);
+      if(!wrapper) return;
+      const listPanel = document.getElementById(popupId + '_listpanel');
+      const detailPanel = document.getElementById(popupId + '_detail');
+      if(!listPanel || !detailPanel) return;
+
+      // Find property data from stored leaves
+      const leaves = wrapper._leaves || [];
+      const leaf = leaves.find(f => f.properties.id === propId);
+      if(!leaf) return;
+      const p = leaf.properties;
+
+      // Store current scroll position on the list
+      const listEl = document.getElementById(popupId + '_list');
+      wrapper._listScrollTop = listEl ? listEl.scrollTop : 0;
+      wrapper._activeDetailId = propId;
+
+      // Build detail content — same as normal property popup + back button
+      const addr = p.property || 'Unknown Address';
+      const rent = p.rent ? '$' + Number(p.rent).toLocaleString() + '/mo' : '—';
+      const statusColor = getStatusColor(p.status);
+      const copyBtn = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>';
+      const coords = wrapper._coords;
+      const clusterId = wrapper._clusterId;
+
+      let dHtml = '<div class="cluster-popup-back" onclick="window._clusterSlideBack(\'' + popupId + '\')">';
+      dHtml += '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>';
+      dHtml += '<span>Back to list</span></div>';
+      dHtml += '<div class="map-popup-inner">';
+      dHtml += '<div class="map-popup-addr">' + esc(addr) + '<button class="map-popup-copy" onclick="event.stopPropagation();copyMapField(this,\'' + esc(addr).replace(/'/g, "\\'") + '\')" title="Copy address">' + copyBtn + '</button></div>';
+      dHtml += '<div class="map-popup-divider"></div>';
+      dHtml += '<div class="map-popup-stats">';
+      dHtml += '<span>🛏 ' + esc(String(p.beds)) + ' bd</span>';
+      dHtml += '<span>🛁 ' + esc(String(p.baths)) + ' ba</span>';
+      if(p.sqft && p.sqft !== '—') dHtml += '<span>📐 ' + Number(p.sqft).toLocaleString() + ' sqft</span>';
+      dHtml += '</div>';
+      dHtml += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">';
+      dHtml += '<div class="map-popup-rent">' + rent + '</div>';
+      dHtml += '<span style="font-size:.72rem;padding:2px 8px;border-radius:6px;font-weight:600;color:' + statusColor + ';background:' + statusColor + '1a;border:1px solid ' + statusColor + '33">' + esc(p.status || 'New') + '</span>';
+      dHtml += '</div>';
+      if(p.name) {
+        dHtml += '<div class="map-popup-contact">👤 ' + esc(p.name);
+        if(p.phone) dHtml += ' · <span class="map-popup-phone">' + esc(p.phone) + '<button class="map-popup-copy" onclick="event.stopPropagation();copyMapField(this,\'' + esc(p.phone).replace(/'/g, "\\'") + '\')" title="Copy phone">' + copyBtn + '</button></span>';
+        dHtml += '</div>';
+      }
+      dHtml += '<button class="map-popup-btn" onclick="_savedClusterPopup={coords:[' + coords[0] + ',' + coords[1] + '],clusterId:' + clusterId + ',scrollTop:' + (wrapper._listScrollTop||0) + ',detailId:\'' + p.id + '\'};_savedMapPopupId=null;saveMapState();openDetail(\'' + p.id + '\')">View Property →</button>';
+      dHtml += '</div>';
+
+      detailPanel.innerHTML = dHtml;
+
+      // Slide: list out, detail in
+      listPanel.classList.add('slide-out');
+      detailPanel.classList.add('slide-in');
+    };
+
+    // Slide back from detail to cluster list
+    window._clusterSlideBack = function(popupId){
+      const wrapper = document.getElementById(popupId);
+      if(!wrapper) return;
+      const listPanel = document.getElementById(popupId + '_listpanel');
+      const detailPanel = document.getElementById(popupId + '_detail');
+      if(!listPanel || !detailPanel) return;
+
+      wrapper._activeDetailId = null;
+      listPanel.classList.remove('slide-out');
+      detailPanel.classList.remove('slide-in');
+
+      // Restore scroll position
+      setTimeout(() => {
+        const listEl = document.getElementById(popupId + '_list');
+        if(listEl && wrapper._listScrollTop) listEl.scrollTop = wrapper._listScrollTop;
+      }, 30);
+    };
 
     // Close popup when clicking empty map area (skip if click was on cluster or pin)
     dashMap.on('click', (e) => {
@@ -2101,12 +2204,13 @@ function initDashboardMap(){
           const src = dashMap.getSource('properties');
           try {
             let leaves;
+            const restoreCoords = best.geometry.coordinates.slice();
             const result = src.getClusterLeaves(cid, cnt, 0, (err, cbLeaves) => {
-              if(!err && cbLeaves && cbLeaves.length) showClusterPopup(cbLeaves, best.geometry.coordinates.slice(), cid, sc.scrollTop);
+              if(!err && cbLeaves && cbLeaves.length) showClusterPopup(cbLeaves, restoreCoords, cid, sc.scrollTop, sc.detailId);
             });
             if(result && typeof result.then === 'function'){
               leaves = await result;
-              if(leaves && leaves.length) showClusterPopup(leaves, best.geometry.coordinates.slice(), cid, sc.scrollTop);
+              if(leaves && leaves.length) showClusterPopup(leaves, restoreCoords, cid, sc.scrollTop, sc.detailId);
             }
           } catch(ex){}
         }
