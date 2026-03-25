@@ -7491,6 +7491,11 @@ function renderAnalysisTab(r){
   return h;
 }
 
+function _normalizeCompLink(url){
+  // Strip query params and trailing slashes for consistent comparison
+  return (url || '').replace(/\?.*$/,'').replace(/\/+$/,'').toLowerCase();
+}
+
 function addComp(recId, category){
   const r = records.find(x => x.id === recId);
   if(!r) return;
@@ -7500,6 +7505,49 @@ function addComp(recId, category){
   const comps = getComps(r);
   const sectionCount = comps.filter(c => c.rating === category).length;
   if(sectionCount >= 10){ showAppAlert('Maximum 10 comparables per section', {title: 'Limit Reached', icon: '📊'}); return }
+
+  // Check for duplicate link
+  const normalizedNew = _normalizeCompLink(link);
+  const ratingLabels = { loses:'Loses To', competes:'Competes With', beats:'Beats' };
+  const dupeInSame = comps.find(c => c.rating === category && _normalizeCompLink(c.link) === normalizedNew);
+  const dupeInOther = comps.find(c => c.rating !== category && _normalizeCompLink(c.link) === normalizedNew);
+
+  if(dupeInSame){
+    // Same category duplicate — alert and clear input
+    if(input) input.value = '';
+    showAppAlert('This property has already been added to the <strong>' + (ratingLabels[category] || category) + '</strong> section.', { title: 'Duplicate Comp', icon: '⚠️' });
+    return;
+  }
+
+  if(dupeInOther){
+    // Different category duplicate — let user choose to remove or override
+    const existingCat = ratingLabels[dupeInOther.rating] || dupeInOther.rating;
+    const newCat = ratingLabels[category] || category;
+    showAppConfirm('This property is already in the <strong>' + existingCat + '</strong> section. Would you like to move it to <strong>' + newCat + '</strong>, or keep it in both?', {
+      title: 'Duplicate Comp Found',
+      icon: '⚠️',
+      confirmText: 'Move to ' + newCat,
+      cancelText: 'Keep in Both',
+      onConfirm: () => {
+        // Remove from old category
+        const dupeIdx = comps.indexOf(dupeInOther);
+        if(dupeIdx >= 0) comps.splice(dupeIdx, 1);
+        // Add to new category
+        _doAddComp(r, comps, link, category, input);
+      },
+      onCancel: () => {
+        // Keep in both — add to new category as well
+        _doAddComp(r, comps, link, category, input);
+      }
+    });
+    return;
+  }
+
+  // No duplicate — add normally
+  _doAddComp(r, comps, link, category, input);
+}
+
+function _doAddComp(r, comps, link, category, input){
   const shortLink = link.replace(/\?.*$/,'').replace(/https?:\/\/(www\.)?airbnb\.com\/rooms\//,'').substring(0,18)+'...';
   comps.push({
     link: link, linkShort: shortLink,
@@ -7507,6 +7555,7 @@ function addComp(recId, category){
     guests:0, bedrooms:0, beds:0, bathrooms:0, host:'',
     rating: category, notes:''
   });
+  if(input) input.value = '';
   saveData();
   render();
 }
