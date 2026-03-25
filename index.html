@@ -7375,14 +7375,14 @@ function renderAnalysisTab(r){
   const competeRate = totalComps > 0 ? Math.round((competesN / totalComps) * 100) : 0;
   const loseRate = totalComps > 0 ? Math.round((losesN / totalComps) * 100) : 0;
 
-  h += '<div class="an-section"><div class="an-section-hdr"'+tipAttrs('Comp Strength','A breakdown of how your property compares to your saved comps. Categorize each comp as Loses To, Competes With, or Beats to build your competitive profile. The stacked bar shows the distribution and overall strength of your position in the market.')+'>Comp Strength</div><div class="an-section-body" style="padding:0;display:flex;flex-direction:column">';
+  h += '<div class="an-section"><div class="an-section-hdr"'+tipAttrs('Competitor Strength','A breakdown of how your property compares to your saved comps. Categorize each comp as Loses To, Competes With, or Beats to build your competitive profile. The stacked bar shows the distribution and overall strength of your position in the market.')+'>Competitor Strength</div><div class="an-section-body" style="padding:0;display:flex;flex-direction:column">';
 
   if(totalComps === 0){
     h += '<div style="flex:1;display:flex;align-items:center;justify-content:center;padding:18px 14px"><div style="color:var(--text3);font-size:.82rem;text-align:center">Add comps to see your competitive strength</div></div>';
   } else {
     h += '<div class="an-req-bar" style="border:none;border-radius:0;margin:0;flex:1">';
     h += '<div class="an-req-item"><div class="req-label" style="color:#ef4444">Loses To</div><div class="req-val" style="color:#ef4444;font-size:1.3rem">'+losesN+'</div><div class="req-annual">'+loseRate+'%</div></div>';
-    h += '<div class="an-req-item" style="background:rgba(99,129,250,.06)"><div class="req-label" style="color:var(--num-computed)">Competes</div><div class="req-val" style="color:var(--num-computed);font-size:1.3rem">'+competesN+'</div><div class="req-annual">'+competeRate+'%</div></div>';
+    h += '<div class="an-req-item" style="background:rgba(99,129,250,.06)"><div class="req-label" style="color:var(--num-computed)">Competes With</div><div class="req-val" style="color:var(--num-computed);font-size:1.3rem">'+competesN+'</div><div class="req-annual">'+competeRate+'%</div></div>';
     h += '<div class="an-req-item"><div class="req-label" style="color:#10b981">Beats</div><div class="req-val" style="color:#10b981;font-size:1.3rem">'+beatsN+'</div><div class="req-annual">'+winRate+'%</div></div>';
     h += '</div>';
 
