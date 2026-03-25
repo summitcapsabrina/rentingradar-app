@@ -263,6 +263,25 @@ textarea{resize:vertical;min-height:80px}
 .map-popup-phone{cursor:default;display:inline-flex;align-items:center;gap:2px}
 .map-ctrl-hint{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,.75);color:#fff;padding:10px 20px;border-radius:10px;font-size:.84rem;font-weight:500;pointer-events:none;z-index:10;opacity:0;transition:opacity .3s;backdrop-filter:blur(4px);letter-spacing:.01em}
 .map-info-panel{position:absolute;bottom:8px;right:8px;background:rgba(0,0,0,.6);color:rgba(255,255,255,.85);padding:5px 10px;border-radius:6px;font-size:.68rem;pointer-events:none;z-index:5;display:flex;align-items:center;gap:4px;backdrop-filter:blur(4px);letter-spacing:.01em}
+.map-cluster-popup .mapboxgl-popup-content,.map-cluster-popup .maplibregl-popup-content{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:0;box-shadow:0 12px 32px rgba(0,0,0,.25),0 2px 6px rgba(0,0,0,.1);max-width:280px;min-width:240px;overflow:hidden}
+.map-cluster-popup .mapboxgl-popup-tip,.map-cluster-popup .maplibregl-popup-tip{border-top-color:var(--surface);border-bottom-color:var(--surface);border-left-color:transparent;border-right-color:transparent}
+.map-cluster-popup .mapboxgl-popup-close-button,.map-cluster-popup .maplibregl-popup-close-button{display:none}
+.cluster-popup-header{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--border)}
+.cluster-popup-header span{font-size:.78rem;font-weight:700;color:var(--text)}
+.cluster-popup-close{width:24px;height:24px;border-radius:50%;background:var(--bg);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text3);font-size:13px;line-height:1;transition:all .15s}
+.cluster-popup-close:hover{color:var(--text);background:var(--surface);border-color:var(--text3)}
+.cluster-popup-list{max-height:220px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--border) transparent}
+.cluster-popup-list::-webkit-scrollbar{width:5px}
+.cluster-popup-list::-webkit-scrollbar-track{background:transparent}
+.cluster-popup-list::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+.cluster-popup-item{display:flex;align-items:center;gap:10px;padding:9px 14px;cursor:pointer;transition:background .12s;border-bottom:1px solid var(--border)}
+.cluster-popup-item:last-child{border-bottom:none}
+.cluster-popup-item:hover{background:var(--bg)}
+.cluster-popup-item-info{flex:1;min-width:0}
+.cluster-popup-item-addr{font-size:.78rem;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cluster-popup-item-status{font-size:.65rem;font-weight:600;padding:1px 6px;border-radius:4px;display:inline-block;margin-top:2px}
+.cluster-popup-arrow{color:var(--text3);font-size:.8rem;flex-shrink:0;transition:color .15s}
+.cluster-popup-item:hover .cluster-popup-arrow{color:var(--primary)}
 .map-info-icon{display:inline-flex;align-items:center;opacity:.7}
 .map-info-sep{opacity:.4;margin:0 1px}
 
@@ -1653,6 +1672,7 @@ function updatePipelineUI(){
 let dashMap = null;
 let _savedMapState = null;
 let _savedMapPopupId = null;
+let _savedClusterPopup = null; // { coords, scrollTop, clusterId }
 let _mapFilter = 'all'; // 'all', category key, or 'status:StatusName'
 let _allGeoJson = null; // full unfiltered GeoJSON
 
@@ -1706,6 +1726,7 @@ function saveMapState(){
 function clearMapState(){
   _savedMapState = null;
   _savedMapPopupId = null;
+  _savedClusterPopup = null;
   _mapFilter = 'all';
 }
 
@@ -1936,19 +1957,72 @@ function initDashboardMap(){
       }
     });
 
-    // Click cluster to zoom in
+    // Track active popup so we can close it when opening another
+    let activeMapPopup = null;
+
+    // Click cluster to show scrollable property list
     dashMap.on('click', 'clusters', (e) => {
       const features = dashMap.queryRenderedFeatures(e.point, { layers: ['clusters'] });
       if(!features.length) return;
       const clusterId = features[0].properties.cluster_id;
-      dashMap.getSource('properties').getClusterExpansionZoom(clusterId, (err, zoom) => {
-        if(err) return;
-        dashMap.easeTo({ center: features[0].geometry.coordinates, zoom: zoom });
+      const coords = features[0].geometry.coordinates.slice();
+      const pointCount = features[0].properties.point_count;
+      const src = dashMap.getSource('properties');
+      src.getClusterLeaves(clusterId, pointCount, 0, (err, leaves) => {
+        if(err || !leaves || !leaves.length) return;
+        showClusterPopup(leaves, coords, clusterId);
       });
     });
 
-    // Track active popup so we can close it when opening another
-    let activeMapPopup = null;
+    // Helper: show cluster list popup
+    function showClusterPopup(leaves, coords, clusterId, restoreScrollTop){
+      if(activeMapPopup){ activeMapPopup.remove(); activeMapPopup = null; }
+      const popupId = 'cp_' + Date.now();
+      let html = '<div id="' + popupId + '">';
+      html += '<div class="cluster-popup-header"><span>' + leaves.length + ' Properties</span>';
+      html += '<div class="cluster-popup-close" onclick="document.getElementById(\'' + popupId + '\')._popup.remove()" title="Close">✕</div></div>';
+      html += '<div class="cluster-popup-list" id="' + popupId + '_list">';
+      leaves.forEach(f => {
+        const p = f.properties;
+        const addr = p.property || 'Unknown Address';
+        const st = p.status || 'New';
+        const stColor = getStatusColor(st);
+        html += '<div class="cluster-popup-item" onclick="_savedClusterPopup={coords:[' + coords[0] + ',' + coords[1] + '],clusterId:' + clusterId + ',scrollTop:document.getElementById(\'' + popupId + '_list\')?.scrollTop||0};_savedMapPopupId=null;saveMapState();openDetail(\'' + p.id + '\')">';
+        html += '<div class="cluster-popup-item-info">';
+        html += '<div class="cluster-popup-item-addr">' + esc(addr) + '</div>';
+        html += '<span class="cluster-popup-item-status" style="color:' + stColor + ';background:' + stColor + '1a;border:1px solid ' + stColor + '33">' + esc(st) + '</span>';
+        html += '</div>';
+        html += '<span class="cluster-popup-arrow">›</span>';
+        html += '</div>';
+      });
+      html += '</div></div>';
+
+      const popup = new maplibregl.Popup({ className: 'map-cluster-popup', maxWidth: '280px', closeButton: false, closeOnClick: false, closeOnMove: false, anchor: 'bottom' })
+        .setLngLat(coords)
+        .setHTML(html)
+        .addTo(dashMap);
+      const popupEl = document.getElementById(popupId);
+      if(popupEl) popupEl._popup = popup;
+      activeMapPopup = popup;
+
+      // Restore scroll position if returning from property
+      if(typeof restoreScrollTop === 'number'){
+        setTimeout(() => {
+          const listEl = document.getElementById(popupId + '_list');
+          if(listEl) listEl.scrollTop = restoreScrollTop;
+        }, 50);
+      }
+
+      // Pan map if popup is clipped
+      const mapContainer = dashMap.getContainer();
+      const pt = dashMap.project(coords);
+      const popupHeight = 280, pad = 20;
+      let dx = 0, dy = 0;
+      if(pt.y - popupHeight - pad < 0) dy = pt.y - popupHeight - pad;
+      if(pt.x - 140 - pad < 0) dx = pt.x - 140 - pad;
+      if(pt.x + 140 + pad > mapContainer.clientWidth) dx = pt.x + 140 + pad - mapContainer.clientWidth;
+      if(dx !== 0 || dy !== 0) dashMap.panBy([dx, dy], { duration: 300 });
+    }
 
     // Close popup when clicking empty map area
     dashMap.on('click', (e) => {
@@ -1998,6 +2072,29 @@ function initDashboardMap(){
       if(feat){
         setTimeout(() => { showPropertyPopup(feat.properties, feat.geometry.coordinates.slice(), false); }, 200);
       }
+    } else if(hadSavedState && _savedClusterPopup){
+      const sc = _savedClusterPopup;
+      _savedClusterPopup = null;
+      // Re-query cluster leaves at the saved coordinates after map settles
+      setTimeout(() => {
+        // Find the cluster feature nearest to the saved coords
+        const rendered = dashMap.queryRenderedFeatures(undefined, { layers: ['clusters'] });
+        let best = null, bestDist = Infinity;
+        rendered.forEach(f => {
+          const fc = f.geometry.coordinates;
+          const d = Math.abs(fc[0] - sc.coords[0]) + Math.abs(fc[1] - sc.coords[1]);
+          if(d < bestDist){ bestDist = d; best = f; }
+        });
+        if(best){
+          const cid = best.properties.cluster_id;
+          const cnt = best.properties.point_count;
+          dashMap.getSource('properties').getClusterLeaves(cid, cnt, 0, (err, leaves) => {
+            if(!err && leaves && leaves.length){
+              showClusterPopup(leaves, best.geometry.coordinates.slice(), cid, sc.scrollTop);
+            }
+          });
+        }
+      }, 300);
     }
 
     // Cursor changes on hover
