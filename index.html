@@ -7219,8 +7219,7 @@ function renderCalculatorTab(r){
     const rentNoGo = _rentForTarget(0);
 
     // Dial range: $0 (left, best) to current rent (right, worst)
-    const incr = parseFloat(getAnalysis(r).rentDialIncrement) || 50;
-    const dW = 400, dH = 230, dCx = 200, dCy = 205, dR = 165;
+    const dW = 380, dH = 210, dCx = 190, dCy = 185, dR = 145;
     const rentDialMin = 0;
     const rentDialMax = _raRent;
     const rentDialRange = rentDialMax - rentDialMin || 1;
@@ -7241,7 +7240,7 @@ function renderCalculatorTab(r){
 
     // Store dial config for drag handler
     const _rdCol = _raSelectedCol;
-    h += '<div id="rentDialConfig_'+r.id+'" data-min="'+rentDialMin+'" data-max="'+rentDialMax+'" data-cx="'+dCx+'" data-cy="'+dCy+'" data-r="'+dR+'" data-w="'+dW+'" data-rev="'+_rdCol.rev+'" data-exp="'+_rdCol.exp+'" data-conf="'+_raConfPct+'" style="display:none"></div>';
+    h += '<div id="rentDialConfig_'+r.id+'" data-min="'+rentDialMin+'" data-max="'+rentDialMax+'" data-cx="'+dCx+'" data-cy="'+dCy+'" data-r="'+dR+'" data-w="'+dW+'" data-rev="'+_rdCol.rev+'" data-exp="'+_rdCol.exp+'" data-conf="'+_raConfPct+'" data-currentrent="'+_raRent+'" style="display:none"></div>';
 
     h += '<svg id="rentDial_'+r.id+'" viewBox="0 0 '+dW+' '+dH+'" style="display:block;width:100%;margin:0 auto;cursor:pointer;touch-action:none">';
 
@@ -7323,28 +7322,13 @@ function renderCalculatorTab(r){
     clearTimeout(window._rentDialInitTimer);
     window._rentDialInitTimer = setTimeout(function(){ _initRentDialDrag(r.id); }, 10);
 
-    // Readout
-    h += '<div id="rentDialReadout_'+r.id+'" style="margin:8px 0 6px">';
-    h += '<div style="font-size:1.8rem;font-weight:800;color:var(--text)">'+fmtMoney(dialRent)+'/mo</div>';
-    h += '<div style="font-size:1rem;font-weight:700;color:'+dtColDial+'">'+dtIcoDial+' '+dtLblDial+' · '+fmtMoney(adjNetDial)+'/mo net</div>';
+    // Readout — clickable rent to type a value
+    h += '<div id="rentDialReadout_'+r.id+'" style="margin:6px 0 4px">';
+    h += '<div onclick="openRentDialInput(\''+r.id+'\')" style="font-size:1.6rem;font-weight:800;color:var(--text);cursor:pointer;display:inline-block;border-bottom:2px dashed var(--border);padding-bottom:2px" title="Click to type a rent amount">'+fmtMoney(dialRent)+'/mo</div>';
+    h += '<div style="font-size:.95rem;font-weight:700;color:'+dtColDial+'">'+dtIcoDial+' '+dtLblDial+' · '+fmtMoney(adjNetDial)+'/mo net</div>';
     h += '</div>';
 
-    // +/- buttons
-    h += '<div style="display:flex;justify-content:center;align-items:center;gap:12px;margin-top:8px">';
-    h += '<button class="btn btn-secondary" style="padding:8px 24px;font-size:1rem;font-weight:700" onclick="adjustRentDial(\''+r.id+'\',-1)">−</button>';
-    h += '<button class="btn btn-secondary" style="padding:8px 24px;font-size:1rem;font-weight:700" onclick="adjustRentDial(\''+r.id+'\',1)">+</button>';
-    h += '</div>';
-
-    // Increment selector
-    h += '<div style="display:flex;align-items:center;justify-content:center;gap:7px;margin-top:12px">';
-    h += '<span style="font-size:.75rem;color:var(--text3)">Increment:</span>';
-    [25,50,100,250].forEach(val => {
-      const isActive = val === incr;
-      h += '<span onclick="setRentDialIncrement(\''+r.id+'\','+val+')" style="font-size:.75rem;padding:4px 12px;border-radius:12px;cursor:pointer;font-weight:600;'+(isActive?'background:var(--primary);color:#fff':'background:var(--bg);color:var(--text3);border:1px solid var(--border)')+'">$'+val+'</span>';
-    });
-    h += '</div>';
-
-    h += '<div style="font-size:.68rem;color:var(--text3);margin-top:10px;font-style:italic;text-align:center;opacity:.7">☝ Click &amp; drag the dial · Projection only</div>';
+    h += '<div style="font-size:.65rem;color:var(--text3);margin-top:6px;font-style:italic;text-align:center;opacity:.7">Click amount or drag dial · Projection only</div>';
   }
   h += '</div>'; // end left half
 
@@ -7375,7 +7359,8 @@ function renderCalculatorTab(r){
     h += '<button class="btn btn-secondary" style="padding:4px 14px;font-size:.8rem;min-width:34px;font-weight:700'+(conW<=0?';opacity:.35;pointer-events:none':'')+'" onclick="adjustConcessionWeeks(\''+r.id+'\',-1)">−</button>';
     h += '<button class="btn btn-secondary" style="padding:4px 14px;font-size:.8rem;min-width:34px;font-weight:700'+(conW>=12?';opacity:.35;pointer-events:none':'')+'" onclick="adjustConcessionWeeks(\''+r.id+'\',1)">+</button>';
     h += '</div>';
-    if(savedMonths > 0) h += '<div style="font-size:.72rem;color:#10b981;font-weight:700;margin-top:8px">'+savedMonths+' mo faster · Saves '+fmtMoney(conSavings)+'</div>';
+    const _savColor = savedMonths > 0 ? '#10b981' : 'var(--text3)';
+    h += '<div style="font-size:.72rem;color:'+_savColor+';font-weight:700;margin-top:8px">'+savedMonths+' mo faster · Saves '+fmtMoney(conSavings)+'</div>';
     h += '</div>';
 
     // Before / After cards
@@ -7415,6 +7400,7 @@ function renderCalculatorTab(r){
     const barAreaH = chartBarH - barPadT - barPadB;
     const barW2 = Math.floor(barAreaW / barWeeks.length) - 4;
 
+    h += '<div style="height:160px;overflow:hidden">';
     h += '<svg viewBox="0 0 '+chartBarW+' '+chartBarH+'" style="width:100%;display:block;margin:0 auto">';
 
     for(let g = 0; g <= yTickCount; g++){
@@ -7444,7 +7430,8 @@ function renderCalculatorTab(r){
     h += '<text x="'+(barPadL + barAreaW/2)+'" y="'+(barPadT + barAreaH + 26)+'" text-anchor="middle" fill="var(--text3)" font-size="7" font-weight="600">Weeks of Free Rent</text>';
 
     h += '</svg>';
-    h += '<div style="font-size:.6rem;color:var(--text3);text-align:center;margin-top:6px">✓ = Your selection ('+conW+' week'+(conW!==1?'s':'')+')</div>';
+    h += '</div>'; // end fixed-height chart wrapper
+    h += '<div style="font-size:.6rem;color:var(--text3);text-align:center;margin-top:4px">✓ = Your selection ('+conW+' week'+(conW!==1?'s':'')+')</div>';
     h += '</div>';
   }
   h += '</div>'; // end right half
@@ -8055,9 +8042,9 @@ function _quickUpdateRentDial(recId, rent){
   if(!svg || !readout || !cfg) return;
   const dMin = parseFloat(cfg.dataset.min);
   const dMax = parseFloat(cfg.dataset.max);
-  const cx = parseFloat(cfg.dataset.cx) || 200;
-  const cy = parseFloat(cfg.dataset.cy) || 205;
-  const R = parseFloat(cfg.dataset.r) || 165;
+  const cx = parseFloat(cfg.dataset.cx) || 190;
+  const cy = parseFloat(cfg.dataset.cy) || 185;
+  const R = parseFloat(cfg.dataset.r) || 145;
   const range = dMax - dMin || 1;
   const pct = Math.max(0, Math.min(1, (rent - dMin) / range));
   const angle = Math.PI + pct * Math.PI;
@@ -8114,8 +8101,8 @@ function _quickUpdateRentDial(recId, rent){
   const label = dtLbl(adjNet);
   const icon = dtIco(adjNet);
 
-  readout.innerHTML = '<div style="font-size:1.8rem;font-weight:800;color:var(--text)">$'+Math.round(rent).toLocaleString()+'/mo</div>'
-    + '<div style="font-size:1rem;font-weight:700;color:'+color+'">'+icon+' '+label+' · $'+adjNet.toLocaleString()+'/mo net</div>';
+  readout.innerHTML = '<div onclick="openRentDialInput(\''+recId+'\')" style="font-size:1.6rem;font-weight:800;color:var(--text);cursor:pointer;display:inline-block;border-bottom:2px dashed var(--border);padding-bottom:2px" title="Click to type a rent amount">$'+Math.round(rent).toLocaleString()+'/mo</div>'
+    + '<div style="font-size:.95rem;font-weight:700;color:'+color+'">'+icon+' '+label+' · $'+adjNet.toLocaleString()+'/mo net</div>';
 }
 function setRentDialIncrement(recId, val){
   const r = records.find(x => x.id === recId);
@@ -8136,6 +8123,53 @@ function adjustRentDial(recId, direction){
   const newRent = Math.max(0, Math.min(currentRent, previewRent + direction * incr));
   _rentDialPreview[recId] = newRent;
   // Re-render the calculator tab to update the dial
+  const calcEl = document.querySelector('.tab-content[data-tab="calculator"]');
+  if(calcEl){
+    const rr = records.find(x => x.id === currentProfileId);
+    if(rr) calcEl.innerHTML = renderCalculatorTab(rr);
+  }
+}
+
+// ── Rent Dial: click-to-type input ──
+function openRentDialInput(recId){
+  const r = records.find(x => x.id === recId);
+  if(!r) return;
+  const currentRent = parseFloat(r.propertyDetails?.monthlyRent) || 0;
+  const previewRent = _rentDialPreview[recId] !== undefined ? _rentDialPreview[recId] : currentRent;
+  const existing = document.getElementById('rentDialInputOverlay');
+  if(existing) existing.remove();
+  const overlay = document.createElement('div');
+  overlay.className = 'multi-editor-overlay';
+  overlay.id = 'rentDialInputOverlay';
+  overlay.innerHTML = '<div class="multi-editor" style="max-width:400px"><div class="multi-editor-header"><h3>Adjust Rent (Projection)</h3><button class="modal-close" onclick="document.getElementById(\'rentDialInputOverlay\').remove()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div><div class="multi-editor-body" style="padding:24px 20px"><input type="number" id="rentDialInputVal" placeholder="Monthly rent" value="'+Math.round(previewRent)+'" min="0" max="'+currentRent+'" style="font-size:1rem;padding:10px 12px;margin-bottom:4px"><div id="rentDialInputErr" style="font-size:.72rem;color:#ef4444;font-weight:600;min-height:18px;margin-bottom:8px"></div><div style="font-size:.72rem;color:var(--text3);margin-bottom:16px">Max: $'+currentRent.toLocaleString()+'/mo (current rent) · Shift+Enter to save</div><div style="display:flex;gap:10px;justify-content:flex-end"><button class="btn btn-secondary" onclick="document.getElementById(\'rentDialInputOverlay\').remove()">Cancel</button><button class="btn btn-primary" id="rentDialInputSaveBtn" onclick="saveRentDialInput(\''+recId+'\')">Save</button></div></div></div>';
+  document.body.appendChild(overlay);
+  const inp = document.getElementById('rentDialInputVal');
+  inp.focus();
+  inp.select();
+  inp.addEventListener('input', function(){
+    const v = parseFloat(this.value);
+    const errEl = document.getElementById('rentDialInputErr');
+    if(v > currentRent){
+      errEl.textContent = 'Cannot exceed current rent of $'+currentRent.toLocaleString()+'/mo';
+      document.getElementById('rentDialInputSaveBtn').style.opacity = '.4';
+      document.getElementById('rentDialInputSaveBtn').style.pointerEvents = 'none';
+    } else {
+      errEl.textContent = '';
+      document.getElementById('rentDialInputSaveBtn').style.opacity = '';
+      document.getElementById('rentDialInputSaveBtn').style.pointerEvents = '';
+    }
+  });
+  inp.addEventListener('keydown', function(e){ if(e.key==='Enter'&&e.shiftKey){ e.preventDefault(); saveRentDialInput(recId); }});
+}
+function saveRentDialInput(recId){
+  const r = records.find(x => x.id === recId);
+  if(!r) return;
+  const currentRent = parseFloat(r.propertyDetails?.monthlyRent) || 0;
+  const val = parseFloat(document.getElementById('rentDialInputVal')?.value);
+  if(isNaN(val) || val < 0) return;
+  if(val > currentRent) return; // blocked
+  _rentDialPreview[recId] = Math.round(val);
+  document.getElementById('rentDialInputOverlay')?.remove();
   const calcEl = document.querySelector('.tab-content[data-tab="calculator"]');
   if(calcEl){
     const rr = records.find(x => x.id === currentProfileId);
