@@ -2686,6 +2686,12 @@ function openDetail(id, restoreTab){
   previousView = currentView;
   currentProfileId = id;
   currentView = 'profile';
+  // Reset negotiation tools to defaults on fresh open
+  if(!restoreTab){
+    delete _rentDialPreview[id];
+    const _rr = records.find(x => x.id === id);
+    if(_rr){ const _an = getAnalysis(_rr); delete _an.concessionWeeks; }
+  }
   // Fresh open: reset to Property Details tab at top; Back/Forward: restore saved tab
   if(!restoreTab){
     profileActiveTab = 'details';
@@ -7191,7 +7197,7 @@ function renderCalculatorTab(r){
   // ── NEGOTIATION TOOLS — single card with Rent Adjustment (left) + Rental Concessions (right) ──
   h += '<div class="calc-section" style="margin-top:0"><div class="calc-section-header"'+tipAttrs('Negotiation Tools','Projection-only tools to explore rent and concession scenarios. Changes here do NOT affect your actual property data.')+'>Negotiation Tools</div><div class="calc-section-body" style="padding:0">';
 
-  h += '<div style="display:flex;flex-wrap:wrap;min-height:420px">';
+  h += '<div style="display:flex;flex-wrap:wrap;height:520px;overflow:hidden">';
 
   // ════════════ LEFT HALF: Rent Adjustment ════════════
   h += '<div style="flex:1;min-width:280px;padding:18px;text-align:center;border-right:1px solid var(--border)">';
@@ -7342,7 +7348,7 @@ function renderCalculatorTab(r){
     });
     h += '</div>';
 
-    h += '<div style="font-size:.62rem;color:var(--text3);margin-top:10px;font-style:italic;text-align:center">Projection only — does not change your actual rent.</div>';
+    h += '<div style="font-size:.6rem;color:var(--text3);margin-top:10px;font-style:italic;text-align:center;opacity:.7">☝ Click &amp; drag the dial · Projection only</div>';
   }
   h += '</div>'; // end left half
 
@@ -7356,7 +7362,7 @@ function renderCalculatorTab(r){
     // Use dial preview rent for concession calcs if available
     const _conRent = _rentDialPreview[r.id] !== undefined ? _rentDialPreview[r.id] : _raRent;
     const _conWRaw = getAnalysis(r).concessionWeeks;
-    const conW = _conWRaw !== undefined ? parseFloat(_conWRaw) : 7;
+    const conW = _conWRaw !== undefined ? parseFloat(_conWRaw) : 6;
     const conSavings = Math.round((_conRent / 4) * conW);
     // Recalculate investment + ACF using dial rent
     const _conAdjNet = _calcAdjNet(_conRent);
@@ -7423,16 +7429,19 @@ function renderCalculatorTab(r){
       h += '<text x="'+(barPadL-5)+'" y="'+(gy+3).toFixed(1)+'" text-anchor="end" fill="var(--text3)" font-size="7.5" font-weight="500">'+yVal+'y</text>';
     }
 
+    // Find closest bar week to user's selected concession weeks
+    const _selBarIdx = barWeeks.reduce((best, w, i) => Math.abs(w - conW) < Math.abs(barWeeks[best] - conW) ? i : best, 0);
     barWeeks.forEach((w, i) => {
       const pbVal = barPBs[i] !== null ? barPBs[i] : yMaxDisplay;
       const barH = Math.max(0, (pbVal / yMaxDisplay) * barAreaH);
       const bx = barPadL + i * (barAreaW / barWeeks.length) + 2;
       const by = barPadT + barAreaH - barH;
       const barCol = pbVal <= 2 ? '#10b981' : pbVal <= 4 ? '#3b82f6' : pbVal <= 6 ? '#f59e0b' : '#ef4444';
-      const isRec = w >= 6 && w <= 8;
-      h += '<rect x="'+bx.toFixed(1)+'" y="'+by.toFixed(1)+'" width="'+barW2+'" height="'+barH.toFixed(1)+'" rx="3" fill="'+barCol+'" opacity="'+(isRec?'.85':'.5')+'"/>';
-      h += '<text x="'+(bx + barW2/2).toFixed(1)+'" y="'+(by - 3).toFixed(1)+'" text-anchor="middle" fill="'+barCol+'" font-size="6.5" font-weight="700">'+_fmtPayback(barPBs[i])+'</text>';
-      h += '<text x="'+(bx + barW2/2).toFixed(1)+'" y="'+(barPadT + barAreaH + 14)+'" text-anchor="middle" fill="'+(isRec?'#10b981':'var(--text3)')+'" font-size="7" font-weight="'+(isRec?'700':'500')+'">'+w+'wk'+(isRec?' ✓':'')+'</text>';
+      const isSel = i === _selBarIdx;
+      h += '<rect x="'+bx.toFixed(1)+'" y="'+by.toFixed(1)+'" width="'+barW2+'" height="'+barH.toFixed(1)+'" rx="3" fill="'+barCol+'" opacity="'+(isSel?'1':'.4')+'"/>';
+      if(isSel) h += '<rect x="'+(bx-1).toFixed(1)+'" y="'+(by-1).toFixed(1)+'" width="'+(barW2+2)+'" height="'+(barH+2).toFixed(1)+'" rx="4" fill="none" stroke="'+barCol+'" stroke-width="1.5" opacity=".6"/>';
+      h += '<text x="'+(bx + barW2/2).toFixed(1)+'" y="'+(by - 3).toFixed(1)+'" text-anchor="middle" fill="'+barCol+'" font-size="6.5" font-weight="700"'+(isSel?' opacity="1"':' opacity=".6"')+'>'+_fmtPayback(barPBs[i])+'</text>';
+      h += '<text x="'+(bx + barW2/2).toFixed(1)+'" y="'+(barPadT + barAreaH + 14)+'" text-anchor="middle" fill="'+(isSel?barCol:'var(--text3)')+'" font-size="7" font-weight="'+(isSel?'700':'500')+'">'+w+'wk'+(isSel?' ✓':'')+'</text>';
     });
 
     h += '<text x="4" y="'+(barPadT + barAreaH/2)+'" text-anchor="start" fill="var(--text3)" font-size="7" font-weight="700">Break-</text>';
@@ -7440,7 +7449,7 @@ function renderCalculatorTab(r){
     h += '<text x="'+(barPadL + barAreaW/2)+'" y="'+(barPadT + barAreaH + 30)+'" text-anchor="middle" fill="var(--text3)" font-size="7.5" font-weight="600">Weeks of Free Rent</text>';
 
     h += '</svg>';
-    h += '<div style="font-size:.6rem;color:var(--text3);text-align:center;margin-top:6px">✓ = Recommended range (6–8 weeks)</div>';
+    h += '<div style="font-size:.6rem;color:var(--text3);text-align:center;margin-top:6px">✓ = Your selection ('+conW+' week'+(conW!==1?'s':'')+')</div>';
     h += '</div>';
   }
   h += '</div>'; // end right half
@@ -7939,7 +7948,7 @@ function editConcessionWeeks(recId){
   const r = records.find(x => x.id === recId);
   if(!r) return;
   const an = getAnalysis(r);
-  const current = parseFloat(an.concessionWeeks) || 7;
+  const current = an.concessionWeeks !== undefined ? parseFloat(an.concessionWeeks) : 6;
   const existing = document.getElementById('concessionWeeksOverlay');
   if(existing) existing.remove();
   const overlay = document.createElement('div');
@@ -8144,7 +8153,7 @@ function adjustConcessionWeeks(recId, delta){
   const r = records.find(x => x.id === recId);
   if(!r) return;
   const an = getAnalysis(r);
-  const current = an.concessionWeeks !== undefined ? parseFloat(an.concessionWeeks) : 7;
+  const current = an.concessionWeeks !== undefined ? parseFloat(an.concessionWeeks) : 6;
   an.concessionWeeks = Math.max(0, Math.min(20, current + delta));
   saveData();
   const calcEl = document.querySelector('.tab-content[data-tab="calculator"]');
