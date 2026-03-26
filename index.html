@@ -7215,7 +7215,7 @@ function renderCalculatorTab(r){
 
     // Large SVG semi-circle dial
     const incr = parseFloat(getAnalysis(r).rentDialIncrement) || 50;
-    const dW = 280, dH = 160, dCx = 140, dCy = 145, dR = 110;
+    const dW = 280, dH = 165, dCx = 140, dCy = 145, dR = 110;
     const rentDialMin = Math.max(0, Math.min(rentSlamDunk, Math.round(_raRent * 0.6)));
     const rentDialMax = Math.round(_raRent * 1.1);
     const rentDialRange = rentDialMax - rentDialMin || 1;
@@ -7229,27 +7229,39 @@ function renderCalculatorTab(r){
 
     const needlePct = Math.max(0, Math.min(1, (dialRent - rentDialMin) / rentDialRange));
 
-    h += '<svg id="rentDial_'+r.id+'" width="'+dW+'" height="'+dH+'" viewBox="0 0 '+dW+' '+dH+'" style="display:block;margin:0 auto">';
+    // Compute actual zone boundary positions on the arc (proportional to rent range)
+    const zBoundSlamDunk = Math.max(0, Math.min(1, (rentSlamDunk - rentDialMin) / rentDialRange));
+    const zBoundPotential = Math.max(0, Math.min(1, (rentPotential - rentDialMin) / rentDialRange));
+    const zBoundNoGo = Math.max(0, Math.min(1, (rentNoGo - rentDialMin) / rentDialRange));
 
-    // Draw four colored arc segments — full opacity, prominent
+    // Store dial config for drag handler (includes projection data for fast recalc)
+    const _rdCol = _raSelectedCol;
+    h += '<div id="rentDialConfig_'+r.id+'" data-min="'+rentDialMin+'" data-max="'+rentDialMax+'" data-cx="'+dCx+'" data-cy="'+dCy+'" data-r="'+dR+'" data-rev="'+_rdCol.rev+'" data-exp="'+_rdCol.exp+'" data-conf="'+_raConfPct+'" style="display:none"></div>';
+
+    h += '<svg id="rentDial_'+r.id+'" width="'+dW+'" height="'+dH+'" viewBox="0 0 '+dW+' '+dH+'" style="display:block;margin:0 auto;cursor:pointer;touch-action:none">';
+
+    // Draw four colored arc segments — mapped to actual zone boundaries
     const arcZones = [
-      { color: '#10b981', start: 0, end: 0.25 },
-      { color: '#3b82f6', start: 0.25, end: 0.5 },
-      { color: '#f59e0b', start: 0.5, end: 0.75 },
-      { color: '#ef4444', start: 0.75, end: 1 }
+      { color: '#10b981', start: 0, end: zBoundSlamDunk },
+      { color: '#3b82f6', start: zBoundSlamDunk, end: zBoundPotential },
+      { color: '#f59e0b', start: zBoundPotential, end: zBoundNoGo },
+      { color: '#ef4444', start: zBoundNoGo, end: 1 }
     ];
     arcZones.forEach(z => {
+      if(z.end <= z.start) return; // skip zero-width zones
       const a1 = Math.PI + z.start * Math.PI;
       const a2 = Math.PI + z.end * Math.PI;
       const x1 = dCx + dR * Math.cos(a1), y1 = dCy + dR * Math.sin(a1);
       const x2 = dCx + dR * Math.cos(a2), y2 = dCy + dR * Math.sin(a2);
-      h += '<path d="M'+x1.toFixed(1)+','+y1.toFixed(1)+' A'+dR+','+dR+' 0 0,1 '+x2.toFixed(1)+','+y2.toFixed(1)+'" fill="none" stroke="'+z.color+'" stroke-width="20" opacity=".7"/>';
+      const large = (z.end - z.start) > 0.5 ? 1 : 0;
+      h += '<path d="M'+x1.toFixed(1)+','+y1.toFixed(1)+' A'+dR+','+dR+' 0 '+large+',1 '+x2.toFixed(1)+','+y2.toFixed(1)+'" fill="none" stroke="'+z.color+'" stroke-width="20" opacity=".7"/>';
     });
 
-    // Zone boundary labels — only at zone transitions (3 interior boundaries), prominent
-    const innerBoundaryPcts = [0.25, 0.5, 0.75];
+    // Zone boundary labels — at actual zone transitions, prominent
+    const innerBoundaryPcts = [zBoundSlamDunk, zBoundPotential, zBoundNoGo];
     const innerBoundaryRents = [rentSlamDunk, rentPotential, rentNoGo];
     innerBoundaryPcts.forEach((pct, i) => {
+      if(pct <= 0.02 || pct >= 0.98) return; // skip if at edge
       const angle = Math.PI + pct * Math.PI;
       const lR = dR + 24;
       const lx = dCx + lR * Math.cos(angle);
@@ -7263,26 +7275,54 @@ function renderCalculatorTab(r){
       h += '<line x1="'+tx1.toFixed(1)+'" y1="'+ty1.toFixed(1)+'" x2="'+tx2.toFixed(1)+'" y2="'+ty2.toFixed(1)+'" stroke="var(--text)" stroke-width="1.5" opacity=".5"/>';
     });
 
-    // Zone name labels (centered in each zone arc)
-    const zoneLabels = [{name:'Slam-Dunk',color:'#10b981',mid:0.125},{name:'Potential',color:'#3b82f6',mid:0.375},{name:'Risky',color:'#f59e0b',mid:0.625},{name:'No-Go',color:'#ef4444',mid:0.875}];
-    zoneLabels.forEach(z => {
-      const angle = Math.PI + z.mid * Math.PI;
+    // Zone name labels (centered in each zone arc segment)
+    const zoneLabelDefs = [
+      {name:'Slam-Dunk',color:'#10b981',start:0,end:zBoundSlamDunk},
+      {name:'Potential',color:'#3b82f6',start:zBoundSlamDunk,end:zBoundPotential},
+      {name:'Risky',color:'#f59e0b',start:zBoundPotential,end:zBoundNoGo},
+      {name:'No-Go',color:'#ef4444',start:zBoundNoGo,end:1}
+    ];
+    zoneLabelDefs.forEach(z => {
+      const span = z.end - z.start;
+      if(span < 0.06) return; // skip if zone too narrow for text
+      const mid = z.start + span / 2;
+      const angle = Math.PI + mid * Math.PI;
       const lr = dR - 26;
       const lx = dCx + lr * Math.cos(angle);
       const ly = dCy + lr * Math.sin(angle);
       h += '<text x="'+lx.toFixed(1)+'" y="'+ly.toFixed(1)+'" text-anchor="middle" fill="'+z.color+'" font-size="8" font-weight="800">'+z.name+'</text>';
     });
 
-    // Needle
-    const nLen = dR * 0.8;
+    // Needle — white arrow pointer with tip extending to arc
+    const nLen = dR - 8; // extend to just past the arc
     const needleAngle = Math.PI + needlePct * Math.PI;
     const nx = dCx + nLen * Math.cos(needleAngle);
     const ny = dCy + nLen * Math.sin(needleAngle);
-    h += '<line x1="'+dCx+'" y1="'+dCy+'" x2="'+nx.toFixed(1)+'" y2="'+ny.toFixed(1)+'" stroke="'+dtColDial+'" stroke-width="3.5" stroke-linecap="round"/>';
-    h += '<circle cx="'+dCx+'" cy="'+dCy+'" r="7" fill="'+dtColDial+'" stroke="var(--surface)" stroke-width="2"/>';
+    // Arrow tip: triangle at the end, pointing along the needle direction
+    const tipLen = 14;
+    const tipW = 6;
+    const tipX = dCx + (nLen + tipLen * 0.3) * Math.cos(needleAngle);
+    const tipY = dCy + (nLen + tipLen * 0.3) * Math.sin(needleAngle);
+    const perpAngle = needleAngle + Math.PI / 2;
+    const baseX1 = dCx + (nLen - tipLen) * Math.cos(needleAngle) + tipW * Math.cos(perpAngle);
+    const baseY1 = dCy + (nLen - tipLen) * Math.sin(needleAngle) + tipW * Math.sin(perpAngle);
+    const baseX2 = dCx + (nLen - tipLen) * Math.cos(needleAngle) - tipW * Math.cos(perpAngle);
+    const baseY2 = dCy + (nLen - tipLen) * Math.sin(needleAngle) - tipW * Math.sin(perpAngle);
+    // Needle body (tapered) — with class for drag updates
+    h += '<line class="dial-needle-body" x1="'+dCx+'" y1="'+dCy+'" x2="'+(dCx + (nLen - tipLen) * Math.cos(needleAngle)).toFixed(1)+'" y2="'+(dCy + (nLen - tipLen) * Math.sin(needleAngle)).toFixed(1)+'" stroke="#fff" stroke-width="3" stroke-linecap="round"/>';
+    // Arrow head — with class for drag updates
+    h += '<polygon class="dial-needle-arrow" points="'+tipX.toFixed(1)+','+tipY.toFixed(1)+' '+baseX1.toFixed(1)+','+baseY1.toFixed(1)+' '+baseX2.toFixed(1)+','+baseY2.toFixed(1)+'" fill="#fff" stroke="rgba(0,0,0,.25)" stroke-width=".5"/>';
+    // Center hub — with class for drag updates
+    h += '<circle class="dial-hub" cx="'+dCx+'" cy="'+dCy+'" r="8" fill="#fff" stroke="rgba(0,0,0,.2)" stroke-width="1.5"/>';
     h += '<circle cx="'+dCx+'" cy="'+dCy+'" r="3" fill="var(--surface)"/>';
+    // Invisible larger hit area for dragging
+    h += '<circle cx="'+dCx+'" cy="'+dCy+'" r="'+dR+'" fill="transparent" id="rentDialHitArea_'+r.id+'" style="cursor:grab"/>';
 
     h += '</svg>';
+
+    // Schedule drag handler attachment after innerHTML is set
+    clearTimeout(window._rentDialInitTimer);
+    window._rentDialInitTimer = setTimeout(function(){ _initRentDialDrag(r.id); }, 10);
 
     // Rent amount + deal temp readout
     h += '<div id="rentDialReadout_'+r.id+'" style="margin:8px 0 4px">';
@@ -7930,6 +7970,151 @@ function saveConcessionWeeks(recId){
 // ── Rent Adjustment: update rent on property ──
 // ── Rent Negotiation Dial (standalone — does NOT change actual rent) ──
 let _rentDialPreview = {}; // { recId: previewRentAmount }
+let _rentDialDragging = false;
+
+function _initRentDialDrag(recId){
+  const svg = document.getElementById('rentDial_'+recId);
+  const cfg = document.getElementById('rentDialConfig_'+recId);
+  if(!svg || !cfg) return;
+  const dMin = parseFloat(cfg.dataset.min);
+  const dMax = parseFloat(cfg.dataset.max);
+  const cx = parseFloat(cfg.dataset.cx);
+  const cy = parseFloat(cfg.dataset.cy);
+
+  function angleToRent(clientX, clientY){
+    const rect = svg.getBoundingClientRect();
+    const scaleX = 280 / rect.width; // viewBox width / rendered width
+    const svgX = (clientX - rect.left) * scaleX;
+    const svgY = (clientY - rect.top) * scaleX;
+    const dx = svgX - cx;
+    const dy = svgY - cy;
+    let angle = Math.atan2(dy, dx); // radians, 0=right, PI/-PI=left
+    // Normalize: arc goes from PI (left) to 2PI (right), i.e. top half
+    // atan2 returns -PI to PI. We need angle in [PI, 2PI] range
+    if(angle > 0 && angle < Math.PI * 0.15) angle = 2 * Math.PI; // clamp to right end
+    if(angle >= 0 && angle < Math.PI) return null; // below the arc center, ignore
+    if(angle < 0) angle += 2 * Math.PI; // convert -PI..0 to PI..2PI
+    const pct = Math.max(0, Math.min(1, (angle - Math.PI) / Math.PI));
+    const rent = Math.round(dMin + pct * (dMax - dMin));
+    return rent;
+  }
+
+  function updateDial(clientX, clientY){
+    const rent = angleToRent(clientX, clientY);
+    if(rent === null) return;
+    _rentDialPreview[recId] = rent;
+    // Fast re-render of readout + needle without full tab re-render
+    _quickUpdateRentDial(recId, rent);
+  }
+
+  function onPointerDown(e){
+    if(e.button && e.button !== 0) return;
+    e.preventDefault();
+    _rentDialDragging = true;
+    svg.style.cursor = 'grabbing';
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    updateDial(clientX, clientY);
+
+    function onPointerMove(e2){
+      if(!_rentDialDragging) return;
+      e2.preventDefault();
+      const cx2 = e2.touches ? e2.touches[0].clientX : e2.clientX;
+      const cy2 = e2.touches ? e2.touches[0].clientY : e2.clientY;
+      updateDial(cx2, cy2);
+    }
+    function onPointerUp(){
+      _rentDialDragging = false;
+      svg.style.cursor = 'pointer';
+      document.removeEventListener('mousemove', onPointerMove);
+      document.removeEventListener('mouseup', onPointerUp);
+      document.removeEventListener('touchmove', onPointerMove);
+      document.removeEventListener('touchend', onPointerUp);
+      // Do a full re-render now to sync everything
+      const calcEl = document.querySelector('.tab-content[data-tab="calculator"]');
+      if(calcEl){
+        const rr = records.find(x => x.id === currentProfileId);
+        if(rr) calcEl.innerHTML = renderCalculatorTab(rr);
+      }
+    }
+    document.addEventListener('mousemove', onPointerMove, {passive:false});
+    document.addEventListener('mouseup', onPointerUp);
+    document.addEventListener('touchmove', onPointerMove, {passive:false});
+    document.addEventListener('touchend', onPointerUp);
+  }
+
+  svg.addEventListener('mousedown', onPointerDown);
+  svg.addEventListener('touchstart', onPointerDown, {passive:false});
+}
+
+// Fast visual update of the dial needle + readout during dragging (avoids full re-render)
+function _quickUpdateRentDial(recId, rent){
+  const svg = document.getElementById('rentDial_'+recId);
+  const readout = document.getElementById('rentDialReadout_'+recId);
+  const cfg = document.getElementById('rentDialConfig_'+recId);
+  if(!svg || !readout || !cfg) return;
+  const dMin = parseFloat(cfg.dataset.min);
+  const dMax = parseFloat(cfg.dataset.max);
+  const cx = 140, cy = 145, R = 110;
+  const range = dMax - dMin || 1;
+  const pct = Math.max(0, Math.min(1, (rent - dMin) / range));
+  const angle = Math.PI + pct * Math.PI;
+
+  // Update needle elements
+  const needleBody = svg.querySelector('.dial-needle-body');
+  const needleArrow = svg.querySelector('.dial-needle-arrow');
+  const hub = svg.querySelector('.dial-hub');
+  if(needleBody){
+    const nLen = R - 8;
+    const tipLen = 14;
+    const bx = cx + (nLen - tipLen) * Math.cos(angle);
+    const by = cy + (nLen - tipLen) * Math.sin(angle);
+    needleBody.setAttribute('x2', bx.toFixed(1));
+    needleBody.setAttribute('y2', by.toFixed(1));
+  }
+  if(needleArrow){
+    const nLen = R - 8;
+    const tipLen = 14, tipW = 6;
+    const tipX = cx + (nLen + tipLen * 0.3) * Math.cos(angle);
+    const tipY = cy + (nLen + tipLen * 0.3) * Math.sin(angle);
+    const perp = angle + Math.PI / 2;
+    const b1x = cx + (nLen - tipLen) * Math.cos(angle) + tipW * Math.cos(perp);
+    const b1y = cy + (nLen - tipLen) * Math.sin(angle) + tipW * Math.sin(perp);
+    const b2x = cx + (nLen - tipLen) * Math.cos(angle) - tipW * Math.cos(perp);
+    const b2y = cy + (nLen - tipLen) * Math.sin(angle) - tipW * Math.sin(perp);
+    needleArrow.setAttribute('points', tipX.toFixed(1)+','+tipY.toFixed(1)+' '+b1x.toFixed(1)+','+b1y.toFixed(1)+' '+b2x.toFixed(1)+','+b2y.toFixed(1));
+  }
+
+  // Compute deal temperature for this rent
+  const r = records.find(x => x.id === recId);
+  if(!r) return;
+  // We need the projection data — use stored helpers via a mini recalc
+  // Quick recalc adjNet using the stored config
+  const an = getAnalysis(r);
+  const pr = parseFloat(an.profitRequirement) || 1000;
+  const prHalf = Math.round(pr * 0.5);
+  // Read the adjNet from the readout's data attrs if stored, or compute inline
+  // For speed, recompute from first principles using cfg data
+  const dtCol = function(mn){ return mn >= pr ? '#10b981' : mn >= prHalf ? '#3b82f6' : mn > 0 ? '#f59e0b' : '#ef4444'; };
+  const dtLbl = function(mn){ return mn >= pr ? 'Slam-Dunk' : mn >= prHalf ? 'Potential' : mn > 0 ? 'Risky' : 'No-Go'; };
+  const dtIco = function(mn){ return mn >= pr ? '🏆' : mn >= prHalf ? '🔥' : mn > 0 ? '⚠️' : '🚫'; };
+
+  // We need col.rev, col.exp, confPct — store them in cfg
+  const rev = parseFloat(cfg.dataset.rev) || 0;
+  const exp = parseFloat(cfg.dataset.exp) || 0;
+  const confPct = parseFloat(cfg.dataset.conf) || 100;
+  const annualRent = Math.round(rent * 12);
+  const net = rev - exp - annualRent;
+  const monthlyNet = Math.round(net / 12);
+  const adjNet = Math.round(monthlyNet * confPct / 100);
+
+  const color = dtCol(adjNet);
+  const label = dtLbl(adjNet);
+  const icon = dtIco(adjNet);
+
+  readout.innerHTML = '<div style="font-size:1.4rem;font-weight:800;color:var(--text)">$'+Math.round(rent).toLocaleString()+'/mo</div>'
+    + '<div style="font-size:.85rem;font-weight:700;color:'+color+'">'+icon+' '+label+' · $'+adjNet.toLocaleString()+'/mo net</div>';
+}
 function setRentDialIncrement(recId, val){
   const r = records.find(x => x.id === recId);
   if(!r) return;
