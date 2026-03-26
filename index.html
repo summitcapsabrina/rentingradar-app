@@ -6575,8 +6575,12 @@ function renderCalculatorTab(r){
   const kpiMonthlyCF = Math.round(_pynMonthlyNet * confidencePct / 100);
   const kpiAnnualCF = kpiMonthlyCF * 12;
   const kpiCoC = v.totalInvested > 0 ? (kpiAnnualCF / v.totalInvested * 100) : 0;
-  const cfClass = kpiMonthlyCF >= 0 ? 'positive' : 'negative';
-  const cocClass = kpiCoC >= 0 ? 'positive' : 'negative';
+  // Color Cash Flow & CoC using deal temperature bands based on profit requirement
+  const _kpiPR = parseFloat((r.details && r.details.analysis && r.details.analysis.profitRequirement) || 0) || 1000;
+  const _kpiPRHalf = Math.round(_kpiPR * 0.5);
+  const _dtColor = kpiMonthlyCF >= _kpiPR ? '#10b981' : kpiMonthlyCF >= _kpiPRHalf ? '#3b82f6' : kpiMonthlyCF > 0 ? '#f59e0b' : '#ef4444';
+  const cfClass = '';
+  const cocClass = '';
   const modeLabels = { optimistic: 'Optimistic', realistic: 'Realistic', pessimistic: 'Pessimistic' };
   const modeColors = { optimistic: 'var(--num-success)', realistic: 'var(--num-computed)', pessimistic: 'var(--num-danger)' };
   const modeLabel = modeLabels[calcProjMode] || 'Realistic';
@@ -6741,8 +6745,8 @@ function renderCalculatorTab(r){
   const _prPillLabel = _kpiProfitReq === 1000 ? 'Recommended' : 'Edited ✎';
   const _prPillColor = _kpiProfitReq === 1000 ? 'color:#10b981;border-color:#10b981' : 'color:#eab308;border-color:#eab308';
   kpiHtml += '<div class="calc-kpi" style="cursor:pointer;position:relative" onclick="editAnalysisProfitReq(\''+r.id+'\')"'+tipAttrs('Profit Requirement','Your minimum desired monthly net profit. This drives the Deal Temperature thresholds — adjust it here to recalibrate. Default is $1,000/mo.',true)+'><div class="kpi-label">Profit Requirement<div class="kpi-proj-tag" style="'+_prPillColor+'">'+_prPillLabel+'</div></div><div class="kpi-monthly">'+fmtMoney(_kpiProfitReq)+'<span class="kpi-per">/mo</span></div><div class="kpi-annual">'+fmtMoney(_kpiProfitReq*12)+'/yr</div></div>';
-  kpiHtml += '<div class="calc-kpi '+(insufficientComps?'':cfClass)+'"'+tipAttrs('Cash Flow','NOI minus rent, adjusted by Position Adjustment ('+confidencePct+'%). This represents your estimated confidence-discounted take-home profit after all expenses and rent.')+'><div class="kpi-label">Cash Flow'+projTagHtml+'</div><div class="kpi-monthly">'+(insufficientComps ? '<span style="color:var(--text3)">$—<span class="kpi-per">/mo</span></span>' : fmtMoney(Math.round(kpiMonthlyCF))+'<span class="kpi-per">/mo</span>')+'</div><div class="kpi-annual">'+(insufficientComps ? '<span style="color:var(--text3);font-size:.7rem">$—/yr</span>' : fmtMoney(Math.round(kpiAnnualCF))+'/yr')+'</div></div>';
-  kpiHtml += '<div class="calc-kpi '+(insufficientComps?'':cocClass)+'"'+tipAttrs('Cash on Cash Return','Adjusted annual cash flow divided by total investment. Uses the confidence-discounted cash flow ('+confidencePct+'% Position Adjustment) to estimate how quickly your investment might pay for itself.')+'><div class="kpi-label">Cash on Cash Return'+projTagHtml+'</div><div class="kpi-monthly">'+(insufficientComps ? '<span style="color:var(--text3)">—%</span>' : kpiCoC.toFixed(1)+'%')+'</div><div class="kpi-annual">'+(insufficientComps ? '<span style="color:var(--text3);font-size:.7rem">$— invested</span>' : fmtMoney(Math.round(v.totalInvested))+' invested')+'</div></div>';
+  kpiHtml += '<div class="calc-kpi"'+tipAttrs('Cash Flow','NOI minus rent, adjusted by Position Adjustment ('+confidencePct+'%). This represents your estimated confidence-discounted take-home profit after all expenses and rent.')+'><div class="kpi-label">Cash Flow'+projTagHtml+'</div><div class="kpi-monthly" style="'+(insufficientComps?'':'color:'+_dtColor)+'">'+(insufficientComps ? '<span style="color:var(--text3)">$—<span class="kpi-per">/mo</span></span>' : fmtMoney(Math.round(kpiMonthlyCF))+'<span class="kpi-per">/mo</span>')+'</div><div class="kpi-annual">'+(insufficientComps ? '<span style="color:var(--text3);font-size:.7rem">$—/yr</span>' : fmtMoney(Math.round(kpiAnnualCF))+'/yr')+'</div></div>';
+  kpiHtml += '<div class="calc-kpi"'+tipAttrs('Cash on Cash Return','Adjusted annual cash flow divided by total investment. Uses the confidence-discounted cash flow ('+confidencePct+'% Position Adjustment) to estimate how quickly your investment might pay for itself.')+'><div class="kpi-label">Cash on Cash Return'+projTagHtml+'</div><div class="kpi-monthly" style="'+(insufficientComps?'':'color:'+_dtColor)+'">'+(insufficientComps ? '<span style="color:var(--text3)">—%</span>' : kpiCoC.toFixed(1)+'%')+'</div><div class="kpi-annual">'+(insufficientComps ? '<span style="color:var(--text3);font-size:.7rem">$— invested</span>' : fmtMoney(Math.round(v.totalInvested))+' invested')+'</div></div>';
   kpiHtml += '</div>';
 
   // ─────────────────────────────────────────
