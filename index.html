@@ -5075,8 +5075,8 @@ function showAppConfirm(message, opts = {}){
       <div style="font-size:2.2rem;margin-bottom:12px">${icon}</div>
       <div style="font-size:.95rem;color:var(--text);margin-bottom:20px;max-width:380px;margin-left:auto;margin-right:auto;line-height:1.5">${message}</div>
       <div style="display:flex;gap:10px;justify-content:center">
-        <button class="btn btn-secondary" id="appConfirmCancelBtn">${cancelText}</button>
-        <button class="btn ${confirmClass}" id="appConfirmOkBtn">${confirmText}</button>
+        <button class="btn btn-secondary" id="appConfirmCancelBtn" style="padding:10px 20px">${cancelText}</button>
+        <button class="btn ${confirmClass}" id="appConfirmOkBtn" style="padding:10px 20px">${confirmText}</button>
       </div>
     </div>
   </div>`;
@@ -9664,10 +9664,10 @@ function openRentHistoryPopup(recId){
     html += '<div style="text-align:center;padding:20px 0;color:var(--text3);font-size:.82rem">No rent history recorded yet.<br><span style="font-size:.72rem">Changes to the monthly rent will be tracked here going forward.</span></div>';
   }
 
-  // Buttons
+  // Buttons — matched heights
   html += '<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">';
-  html += '<button class="btn btn-secondary" onclick="document.getElementById(\'rentHistoryOverlay\').remove()">OK</button>';
-  html += '<button class="btn btn-primary" onclick="confirmRentChange(\''+recId+'\')">Change Monthly Rent</button>';
+  html += '<button class="btn btn-secondary" style="padding:10px 20px" onclick="document.getElementById(\'rentHistoryOverlay\').remove()">OK</button>';
+  html += '<button class="btn btn-primary" style="padding:10px 20px" onclick="confirmRentChange(\''+recId+'\')">Change Monthly Rent</button>';
   html += '</div>';
 
   html += '</div></div>';
@@ -9682,8 +9682,7 @@ function confirmRentChange(recId){
     icon: '⚠️',
     confirmText: 'Yes, Update Rent',
     cancelText: 'Cancel',
-    onConfirm: () => showRentEditInput(recId),
-    onCancel: () => openRentHistoryPopup(recId)
+    onConfirm: () => showRentEditInput(recId)
   });
 }
 
@@ -9696,7 +9695,7 @@ function showRentEditInput(recId){
   const overlay = document.createElement('div');
   overlay.className = 'multi-editor-overlay';
   overlay.id = 'rentEditOverlay';
-  overlay.innerHTML = '<div class="multi-editor" style="max-width:400px"><div class="multi-editor-header"><h3>Update Monthly Rent</h3><button class="modal-close" onclick="document.getElementById(\'rentEditOverlay\').remove()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div><div class="multi-editor-body" style="padding:24px 20px"><input type="number" id="rentEditInput" placeholder="New rent amount" value="'+current+'" min="0" style="font-size:1rem;padding:10px 12px;margin-bottom:8px"><div style="font-size:.72rem;color:var(--text3);margin-bottom:16px">Enter the new listing rent · Shift+Enter to save</div><div style="display:flex;gap:10px;justify-content:flex-end"><button class="btn btn-secondary" onclick="document.getElementById(\'rentEditOverlay\').remove()">Cancel</button><button class="btn btn-primary" onclick="saveRentEdit(\''+recId+'\')">Save</button></div></div></div>';
+  overlay.innerHTML = '<div class="multi-editor" style="max-width:400px"><div class="multi-editor-header"><h3>Update Monthly Rent</h3><button class="modal-close" onclick="document.getElementById(\'rentEditOverlay\').remove()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div><div class="multi-editor-body" style="padding:24px 20px"><input type="number" id="rentEditInput" placeholder="New rent amount" value="'+current+'" min="0" style="font-size:1rem;padding:10px 12px;margin-bottom:8px"><div style="font-size:.72rem;color:var(--text3);margin-bottom:16px">Enter the new listing rent · Shift+Enter to save</div><div style="display:flex;gap:10px;justify-content:flex-end"><button class="btn btn-secondary" style="padding:10px 20px" onclick="document.getElementById(\'rentEditOverlay\').remove()">Cancel</button><button class="btn btn-primary" style="padding:10px 20px" onclick="saveRentEdit(\''+recId+'\')">Save</button></div></div></div>';
   document.body.appendChild(overlay);
   const inp = document.getElementById('rentEditInput');
   inp.focus();
