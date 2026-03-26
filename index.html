@@ -1717,6 +1717,10 @@ let _allGeoJson = null; // full unfiltered GeoJSON
 
 function setMapFilter(filter){
   _mapFilter = filter;
+  // Close any open map popups (cluster list, property popup)
+  document.querySelectorAll('.maplibregl-popup,.mapboxgl-popup').forEach(el => {
+    if(el._popup) el._popup.remove(); else el.remove();
+  });
   if(!dashMap || !_allGeoJson) return;
   const src = dashMap.getSource('properties');
   if(!src) return;
