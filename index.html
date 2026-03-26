@@ -7144,7 +7144,7 @@ function renderCalculatorTab(r){
   h += paybackHtml;
 
   // ══════════════════════════════════════════
-  // SECTION 6 & 7: Rental Concessions (left) + Rent Adjustment (right)
+  // SECTION 6 & 7: Rent Negotiation Dial (left) + Rental Concessions (right)
   // ══════════════════════════════════════════
 
   const _raRent = v.monthlyRent;
@@ -7190,39 +7190,154 @@ function renderCalculatorTab(r){
 
   h += '<div class="calc-layout" style="margin-top:0">';
 
-  // ── LEFT COLUMN: Rental Concessions ──
+  // ── LEFT COLUMN: Rent Negotiation Dial (standalone projection) ──
   h += '<div class="calc-panel">';
-
-  // ═══ CONCESSION OPTION A: Stacked Comparison Bars ═══
-  h += '<div class="calc-section"><div class="calc-section-header"'+tipAttrs('Rental Concessions — Option A','Horizontal bars showing how different weeks of free rent affect your payback period. Longer concessions reduce your effective investment, accelerating break-even. 6–8 weeks is a common target.')+'>Concessions: Stacked Bars</div><div class="calc-section-body" style="padding:10px 14px">';
-  if(!_raHasData || _raInv <= 0 || _raAcf <= 0){
-    h += '<div style="color:var(--text3);font-size:.82rem;text-align:center;padding:12px 0">Add at least 3 comps and investment details to see concession scenarios</div>';
+  h += '<div class="calc-section"><div class="calc-section-header"'+tipAttrs('Rent Negotiation','A standalone projection tool — adjustments here do NOT change the actual rent on this property. Use this to explore what rent amount would make this deal attractive before negotiating with the landlord.')+'>Rent Negotiation</div><div class="calc-section-body" style="padding:14px;text-align:center">';
+  if(!_raHasData || !_raRent){
+    h += '<div style="color:var(--text3);font-size:.82rem;padding:18px 0">Set monthly rent and add at least 3 comps to use the dial</div>';
   } else {
-    const conWeeks = [0,2,4,6,8,10];
-    const maxPayback = _calcPayback(_raInv, _raAcf) || 10;
-    conWeeks.forEach(w => {
-      const savings = Math.round((_raRent / 4) * w);
-      const adjInv = Math.max(0, _raInv - savings);
-      const pb = _calcPayback(adjInv, _raAcf);
-      const pbVal = pb !== null ? pb : 10;
-      const barPct = Math.min(100, (pbVal / Math.max(maxPayback * 1.2, 1)) * 100);
-      const barColor = pbVal <= 2 ? '#10b981' : pbVal <= 4 ? '#3b82f6' : pbVal <= 6 ? '#f59e0b' : '#ef4444';
-      const isRec = w >= 6 && w <= 8;
-      h += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">';
-      h += '<div style="width:42px;flex-shrink:0;font-size:.72rem;font-weight:600;color:'+(isRec?'#10b981':'var(--text2)')+';text-align:right">'+w+' wks'+(isRec?' ✓':'')+'</div>';
-      h += '<div style="flex:1;height:22px;background:var(--bg);border-radius:6px;overflow:hidden;position:relative">';
-      h += '<div style="width:'+barPct.toFixed(1)+'%;height:100%;background:'+barColor+';opacity:.7;border-radius:6px;transition:width .3s"></div>';
-      h += '<div style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:.68rem;font-weight:700;color:var(--text)">'+_fmtPayback(pb)+'</div>';
-      h += '</div>';
-      h += '<div style="width:60px;flex-shrink:0;font-size:.65rem;color:var(--text3);text-align:right">-'+fmtMoney(savings)+'</div>';
-      h += '</div>';
+    // Compute zone boundary rents (what rent gives adjNet = threshold)
+    // adjNet = round(round((rev - exp - rent*12)/12) * confPct/100)
+    // We solve approximately: rent where adjNet hits each threshold
+    function _rentForTarget(target){
+      const col = _raSelectedCol;
+      // target = round(round((rev - exp - rent*12)/12) * confPct/100)
+      // target * 100 / confPct ≈ (rev - exp - rent*12)/12
+      // rent ≈ (rev - exp - (target * 100 / confPct * 12)) / 12
+      const rawMonthly = target * 100 / _raConfPct;
+      const rent = (col.rev - col.exp - rawMonthly * 12) / 12;
+      return Math.round(rent);
+    }
+    const rentSlamDunk = _rentForTarget(_raPR);
+    const rentPotential = _rentForTarget(_raPRHalf);
+    const rentRisky = _rentForTarget(1); // just above 0
+    const rentNoGo = _rentForTarget(0);
+
+    // Current dial state — use preview rent if set, otherwise actual rent
+    const dialRent = _rentDialPreview[r.id] !== undefined ? _rentDialPreview[r.id] : _raRent;
+    const adjNetDial = _calcAdjNet(dialRent);
+    const dtColDial = _dtColorFor(adjNetDial);
+    const dtLblDial = _dtLabelFor(adjNetDial);
+    const dtIcoDial = _dtIconFor(adjNetDial);
+
+    // Increment selector
+    const incr = parseFloat(getAnalysis(r).rentDialIncrement) || 50;
+    h += '<div style="display:flex;align-items:center;justify-content:center;gap:6px;margin-bottom:12px">';
+    h += '<span style="font-size:.65rem;color:var(--text3)">Increment:</span>';
+    [25,50,100,250].forEach(val => {
+      const isActive = val === incr;
+      h += '<span onclick="setRentDialIncrement(\''+r.id+'\','+val+')" style="font-size:.65rem;padding:2px 8px;border-radius:12px;cursor:pointer;font-weight:600;'+(isActive?'background:var(--primary);color:#fff':'background:var(--bg);color:var(--text3);border:1px solid var(--border)')+'">$'+val+'</span>';
     });
-    h += '<div style="font-size:.62rem;color:var(--text3);text-align:center;margin-top:4px">✓ = Recommended range (6–8 weeks)</div>';
+    h += '</div>';
+
+    // Large SVG semi-circle dial
+    const dW = 280, dH = 160, dCx = 140, dCy = 145, dR = 110;
+    const rentDialMin = Math.max(0, Math.min(rentSlamDunk, Math.round(_raRent * 0.6)));
+    const rentDialMax = Math.round(_raRent * 1.1);
+    const rentDialRange = rentDialMax - rentDialMin || 1;
+
+    h += '<svg id="rentDial_'+r.id+'" width="'+dW+'" height="'+dH+'" viewBox="0 0 '+dW+' '+dH+'" style="display:block;margin:0 auto">';
+
+    // Draw arc zones with labels
+    // Zone mapping: lower rent = better deal
+    // We need to map rent values to angles on the arc (PI to 2PI, left to right)
+    // Left = low rent (good), Right = high rent (bad)
+    const zoneRents = [
+      { label: 'Slam-Dunk', color: '#10b981', rentMax: rentSlamDunk },
+      { label: 'Potential', color: '#3b82f6', rentMax: rentPotential },
+      { label: 'Risky', color: '#f59e0b', rentMax: rentNoGo },
+      { label: 'No-Go', color: '#ef4444', rentMax: rentDialMax }
+    ];
+
+    // Draw four equal arc segments
+    const arcZones = [
+      { color: '#10b981', start: 0, end: 0.25 },
+      { color: '#3b82f6', start: 0.25, end: 0.5 },
+      { color: '#f59e0b', start: 0.5, end: 0.75 },
+      { color: '#ef4444', start: 0.75, end: 1 }
+    ];
+    arcZones.forEach(z => {
+      const a1 = Math.PI + z.start * Math.PI;
+      const a2 = Math.PI + z.end * Math.PI;
+      const x1 = dCx + dR * Math.cos(a1), y1 = dCy + dR * Math.sin(a1);
+      const x2 = dCx + dR * Math.cos(a2), y2 = dCy + dR * Math.sin(a2);
+      h += '<path d="M'+x1.toFixed(1)+','+y1.toFixed(1)+' A'+dR+','+dR+' 0 0,1 '+x2.toFixed(1)+','+y2.toFixed(1)+'" fill="none" stroke="'+z.color+'" stroke-width="18" opacity=".2"/>';
+    });
+
+    // Active arc fill up to needle
+    const needlePct = Math.max(0, Math.min(1, (dialRent - rentDialMin) / rentDialRange));
+    const activeArcEnd = Math.PI + needlePct * Math.PI;
+    const activeX = dCx + dR * Math.cos(activeArcEnd);
+    const activeY = dCy + dR * Math.sin(activeArcEnd);
+    const largeArc = needlePct > 0.5 ? 1 : 0;
+    const arcStartX = dCx + dR * Math.cos(Math.PI);
+    const arcStartY = dCy + dR * Math.sin(Math.PI);
+    if(needlePct > 0.01){
+      h += '<path d="M'+arcStartX.toFixed(1)+','+arcStartY.toFixed(1)+' A'+dR+','+dR+' 0 '+largeArc+',1 '+activeX.toFixed(1)+','+activeY.toFixed(1)+'" fill="none" stroke="'+dtColDial+'" stroke-width="18" opacity=".5" stroke-linecap="round"/>';
+    }
+
+    // Zone boundary labels (rent amounts at zone transitions)
+    const zoneBoundaryPcts = [0, 0.25, 0.5, 0.75, 1];
+    const zoneBoundaryRents = [rentDialMin, rentSlamDunk, rentPotential, rentNoGo, rentDialMax];
+    const zoneBoundaryLabels = ['$'+rentDialMin.toLocaleString(), '$'+rentSlamDunk.toLocaleString(), '$'+rentPotential.toLocaleString(), '$'+rentNoGo.toLocaleString(), '$'+rentDialMax.toLocaleString()];
+    zoneBoundaryPcts.forEach((pct, i) => {
+      const angle = Math.PI + pct * Math.PI;
+      const lR = dR + 22;
+      const lx = dCx + lR * Math.cos(angle);
+      const ly = dCy + lR * Math.sin(angle);
+      const anchor = pct < 0.3 ? 'start' : pct > 0.7 ? 'end' : 'middle';
+      h += '<text x="'+lx.toFixed(1)+'" y="'+ly.toFixed(1)+'" text-anchor="'+anchor+'" fill="var(--text3)" font-size="8" font-weight="600">'+zoneBoundaryLabels[i]+'</text>';
+      // Tick mark
+      const t1R = dR - 9, t2R = dR + 9;
+      const tx1 = dCx + t1R * Math.cos(angle), ty1 = dCy + t1R * Math.sin(angle);
+      const tx2 = dCx + t2R * Math.cos(angle), ty2 = dCy + t2R * Math.sin(angle);
+      h += '<line x1="'+tx1.toFixed(1)+'" y1="'+ty1.toFixed(1)+'" x2="'+tx2.toFixed(1)+'" y2="'+ty2.toFixed(1)+'" stroke="var(--text3)" stroke-width="1.5" opacity=".4"/>';
+    });
+
+    // Zone name labels (centered in each zone arc)
+    const zoneLabels = [{name:'Slam-Dunk',color:'#10b981',mid:0.125},{name:'Potential',color:'#3b82f6',mid:0.375},{name:'Risky',color:'#f59e0b',mid:0.625},{name:'No-Go',color:'#ef4444',mid:0.875}];
+    zoneLabels.forEach(z => {
+      const angle = Math.PI + z.mid * Math.PI;
+      const lr = dR - 24;
+      const lx = dCx + lr * Math.cos(angle);
+      const ly = dCy + lr * Math.sin(angle);
+      h += '<text x="'+lx.toFixed(1)+'" y="'+ly.toFixed(1)+'" text-anchor="middle" fill="'+z.color+'" font-size="7.5" font-weight="700" opacity=".7">'+z.name+'</text>';
+    });
+
+    // Needle
+    const nLen = dR * 0.8;
+    const needleAngle = Math.PI + needlePct * Math.PI;
+    const nx = dCx + nLen * Math.cos(needleAngle);
+    const ny = dCy + nLen * Math.sin(needleAngle);
+    h += '<line x1="'+dCx+'" y1="'+dCy+'" x2="'+nx.toFixed(1)+'" y2="'+ny.toFixed(1)+'" stroke="'+dtColDial+'" stroke-width="3.5" stroke-linecap="round"/>';
+    h += '<circle cx="'+dCx+'" cy="'+dCy+'" r="7" fill="'+dtColDial+'" stroke="var(--surface)" stroke-width="2"/>';
+    h += '<circle cx="'+dCx+'" cy="'+dCy+'" r="3" fill="var(--surface)"/>';
+
+    h += '</svg>';
+
+    // Rent amount + deal temp readout
+    h += '<div id="rentDialReadout_'+r.id+'" style="margin:8px 0 4px">';
+    h += '<div style="font-size:1.4rem;font-weight:800;color:var(--text)">'+fmtMoney(dialRent)+'/mo</div>';
+    h += '<div style="font-size:.85rem;font-weight:700;color:'+dtColDial+'">'+dtIcoDial+' '+dtLblDial+' · '+fmtMoney(adjNetDial)+'/mo net</div>';
+    h += '</div>';
+
+    // +/- buttons
+    h += '<div style="display:flex;justify-content:center;align-items:center;gap:10px;margin-top:8px">';
+    h += '<button class="btn btn-secondary" style="padding:6px 18px;font-size:.85rem;font-weight:700" onclick="adjustRentDial(\''+r.id+'\',-1)">−</button>';
+    h += '<div style="font-size:.72rem;color:var(--text3);min-width:50px;text-align:center">$'+incr+' steps</div>';
+    h += '<button class="btn btn-secondary" style="padding:6px 18px;font-size:.85rem;font-weight:700" onclick="adjustRentDial(\''+r.id+'\',1)">+</button>';
+    h += '</div>';
+
+    h += '<div style="font-size:.6rem;color:var(--text3);margin-top:8px;font-style:italic;text-align:center">This is a projection tool — changes here do not affect your actual rent.</div>';
   }
   h += '</div></div>';
+  h += '</div>'; // end left calc-panel
 
-  // ═══ CONCESSION OPTION B: Before/After Split Panel ═══
-  h += '<div class="calc-section"><div class="calc-section-header"'+tipAttrs('Rental Concessions — Option B','Side-by-side comparison showing payback with and without rental concessions. Click the weeks pill to adjust.')+'>Concessions: Before/After</div><div class="calc-section-body" style="padding:12px 14px">';
+  // ── RIGHT COLUMN: Rental Concessions ──
+  h += '<div class="calc-panel">';
+
+  // Before/After with +/- buttons
+  h += '<div class="calc-section"><div class="calc-section-header"'+tipAttrs('Rental Concessions','Negotiate free rent weeks to reduce your upfront investment and accelerate break-even. 6–8 weeks is a common target for rental arbitrage.')+'>Rental Concessions</div><div class="calc-section-body" style="padding:12px 14px">';
   if(!_raHasData || _raInv <= 0 || _raAcf <= 0){
     h += '<div style="color:var(--text3);font-size:.82rem;text-align:center;padding:12px 0">Add at least 3 comps and investment details to see concession comparison</div>';
   } else {
@@ -7232,6 +7347,7 @@ function renderCalculatorTab(r){
     const pbBefore = _calcPayback(_raInv, _raAcf);
     const pbAfter = _calcPayback(adjInvB, _raAcf);
     const savedMonths = pbBefore !== null && pbAfter !== null ? Math.round((pbBefore - pbAfter) * 12) : 0;
+
     h += '<div style="display:flex;gap:10px;align-items:stretch">';
     // Left: Without
     h += '<div style="flex:1;background:var(--bg);border-radius:var(--radius);padding:12px;text-align:center;border:1px solid var(--border)">';
@@ -7239,10 +7355,12 @@ function renderCalculatorTab(r){
     h += '<div style="font-size:1.1rem;font-weight:800;color:var(--num-danger)">'+_fmtPayback(pbBefore)+'</div>';
     h += '<div style="font-size:.68rem;color:var(--text3);margin-top:4px">Investment: '+fmtMoney(_raInv)+'</div>';
     h += '</div>';
-    // Center: Delta
-    h += '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:0 4px">';
-    h += '<div style="font-size:1.2rem">→</div>';
-    h += '<div onclick="editConcessionWeeks(\''+r.id+'\')" style="background:var(--primary);color:#fff;padding:3px 10px;border-radius:20px;font-size:.72rem;font-weight:700;cursor:pointer;white-space:nowrap" title="Click to edit">'+conW+' wks</div>';
+    // Center: Delta with +/- buttons
+    h += '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:0 2px">';
+    h += '<button class="btn btn-secondary" style="padding:2px 8px;font-size:.7rem;min-width:28px" onclick="adjustConcessionWeeks(\''+r.id+'\',1)">+</button>';
+    h += '<div style="background:var(--primary);color:#fff;padding:3px 10px;border-radius:20px;font-size:.72rem;font-weight:700;white-space:nowrap">'+conW+' wks</div>';
+    h += '<button class="btn btn-secondary" style="padding:2px 8px;font-size:.7rem;min-width:28px" onclick="adjustConcessionWeeks(\''+r.id+'\',-1)">−</button>';
+    h += '<div style="font-size:1rem">→</div>';
     if(savedMonths > 0) h += '<div style="font-size:.65rem;color:#10b981;font-weight:700">'+savedMonths+'mo faster</div>';
     h += '</div>';
     // Right: With
@@ -7252,250 +7370,60 @@ function renderCalculatorTab(r){
     h += '<div style="font-size:.68rem;color:var(--text3);margin-top:4px">Effective: '+fmtMoney(adjInvB)+'</div>';
     h += '</div>';
     h += '</div>';
-    h += '<div style="font-size:.62rem;color:var(--text3);text-align:center;margin-top:8px">Saves '+fmtMoney(conSavings)+' off upfront investment · Click weeks to adjust</div>';
-  }
-  h += '</div></div>';
+    h += '<div style="font-size:.62rem;color:var(--text3);text-align:center;margin-top:8px">Saves '+fmtMoney(conSavings)+' off upfront investment · Use +/− to adjust weeks</div>';
 
-  // ═══ CONCESSION OPTION C: Impact Grid with Progress Rings ═══
-  h += '<div class="calc-section"><div class="calc-section-header"'+tipAttrs('Rental Concessions — Option C','Grid of concession scenarios with progress rings showing how close each option gets you to break-even. The recommended range (6–8 weeks) is highlighted.')+'>Concessions: Impact Grid</div><div class="calc-section-body" style="padding:10px 12px">';
-  if(!_raHasData || _raInv <= 0 || _raAcf <= 0){
-    h += '<div style="color:var(--text3);font-size:.82rem;text-align:center;padding:12px 0">Add at least 3 comps and investment details to see concession grid</div>';
-  } else {
-    const conGridWeeks = [0,2,4,6,8,10];
-    const basePB = _calcPayback(_raInv, _raAcf) || 10;
-    h += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">';
-    conGridWeeks.forEach(w => {
-      const savings = Math.round((_raRent / 4) * w);
-      const adjInvC = Math.max(0, _raInv - savings);
-      const pb = _calcPayback(adjInvC, _raAcf);
-      const pbVal = pb !== null ? pb : 10;
-      const progress = Math.min(100, ((basePB - pbVal) / basePB) * 100);
-      const isRec = w >= 6 && w <= 8;
-      const ringColor = pbVal <= 2 ? '#10b981' : pbVal <= 4 ? '#3b82f6' : pbVal <= 6 ? '#f59e0b' : '#ef4444';
-      const ringR = 18, ringC = 113.1;
-      const ringOffset = ringC - (ringC * Math.max(0, progress) / 100);
-      h += '<div style="background:var(--bg);border-radius:var(--radius);padding:10px 8px;text-align:center;border:'+(isRec?'2px solid #10b981':'1px solid var(--border)')+'">';
-      h += '<div style="font-size:.68rem;font-weight:700;color:'+(isRec?'#10b981':'var(--text2)')+'">'+w+' weeks'+(isRec?' ✓':'')+'</div>';
-      // SVG ring
-      h += '<svg width="48" height="48" viewBox="0 0 48 48" style="margin:6px auto;display:block"><circle cx="24" cy="24" r="'+ringR+'" fill="none" stroke="var(--border)" stroke-width="3" opacity=".3"/><circle cx="24" cy="24" r="'+ringR+'" fill="none" stroke="'+ringColor+'" stroke-width="3" stroke-dasharray="'+ringC.toFixed(1)+'" stroke-dashoffset="'+ringOffset.toFixed(1)+'" stroke-linecap="round" transform="rotate(-90 24 24)" style="transition:stroke-dashoffset .4s"/></svg>';
-      h += '<div style="font-size:.82rem;font-weight:800;color:'+ringColor+'">'+_fmtPayback(pb)+'</div>';
-      h += '<div style="font-size:.6rem;color:var(--text3);margin-top:2px">-'+fmtMoney(savings)+'</div>';
-      h += '</div>';
+    // ── Vertical Bar Chart: Weeks (X) vs Break-Even Time (Y) ──
+    h += '<div style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px">';
+    h += '<div style="font-size:.7rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.3px;margin-bottom:10px;text-align:center">Concession Impact</div>';
+
+    const barWeeks = [0,2,4,6,8,10,12];
+    const barPBs = barWeeks.map(w => {
+      const sav = Math.round((_raRent / 4) * w);
+      const adjI = Math.max(0, _raInv - sav);
+      return _calcPayback(adjI, _raAcf);
     });
-    h += '</div>';
-    h += '<div style="font-size:.62rem;color:var(--text3);text-align:center;margin-top:6px">✓ = Recommended range (6–8 weeks of free rent)</div>';
-  }
-  h += '</div></div>';
+    const maxPBVal = Math.max(...barPBs.map(p => p !== null ? p : 10), 1);
+    const chartBarH = 140, chartBarW = 240, barPadL = 36, barPadR = 8, barPadT = 8, barPadB = 28;
+    const barAreaW = chartBarW - barPadL - barPadR;
+    const barAreaH = chartBarH - barPadT - barPadB;
+    const barW2 = Math.floor(barAreaW / barWeeks.length) - 6;
 
-  // ═══ CONCESSION OPTION D: Interactive Timeline ═══
-  h += '<div class="calc-section"><div class="calc-section-header"'+tipAttrs('Rental Concessions — Option D','Timeline showing payback periods with and without concessions. The green block represents free rent weeks. Click the weeks to adjust.')+'>Concessions: Timeline</div><div class="calc-section-body" style="padding:12px 14px">';
-  if(!_raHasData || _raInv <= 0 || _raAcf <= 0){
-    h += '<div style="color:var(--text3);font-size:.82rem;text-align:center;padding:12px 0">Add at least 3 comps and investment details to see concession timeline</div>';
-  } else {
-    const conWD = parseFloat(getAnalysis(r).concessionWeeks) || 7;
-    const conSavD = Math.round((_raRent / 4) * conWD);
-    const adjInvD = Math.max(0, _raInv - conSavD);
-    const pbBeforeD = _calcPayback(_raInv, _raAcf);
-    const pbAfterD = _calcPayback(adjInvD, _raAcf);
-    const pbBeforeMonths = pbBeforeD !== null ? Math.round(pbBeforeD * 12) : 120;
-    const pbAfterMonths = pbAfterD !== null ? Math.round(pbAfterD * 12) : 120;
-    const maxMonths = Math.max(pbBeforeMonths, 36);
-    const conMonths = Math.round(conWD / 4.33);
-    const savedMoD = pbBeforeMonths - pbAfterMonths;
+    h += '<svg viewBox="0 0 '+chartBarW+' '+chartBarH+'" style="width:100%;max-width:360px;display:block;margin:0 auto">';
 
-    h += '<div onclick="editConcessionWeeks(\''+r.id+'\')" style="text-align:center;margin-bottom:10px;cursor:pointer" title="Click to edit concession weeks">';
-    h += '<span style="background:var(--primary);color:#fff;padding:3px 12px;border-radius:20px;font-size:.75rem;font-weight:700">'+conWD+' weeks free rent ✎</span>';
-    h += '</div>';
-
-    // Without concessions bar
-    h += '<div style="margin-bottom:8px">';
-    h += '<div style="font-size:.62rem;color:var(--text3);text-transform:uppercase;letter-spacing:.3px;margin-bottom:3px">Without Concessions</div>';
-    h += '<div style="position:relative;height:24px;background:var(--bg);border-radius:6px;overflow:hidden">';
-    const beforePct = Math.min(100, pbBeforeMonths / maxMonths * 100);
-    h += '<div style="width:'+beforePct.toFixed(1)+'%;height:100%;background:rgba(239,68,68,.25);border-radius:6px"></div>';
-    h += '<div style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:.7rem;font-weight:700;color:var(--text)">'+_fmtPayback(pbBeforeD)+'</div>';
-    h += '</div></div>';
-
-    // With concessions bar
-    h += '<div style="margin-bottom:6px">';
-    h += '<div style="font-size:.62rem;color:#10b981;text-transform:uppercase;letter-spacing:.3px;margin-bottom:3px">With '+conWD+' Weeks Free</div>';
-    h += '<div style="position:relative;height:24px;background:var(--bg);border-radius:6px;overflow:hidden;display:flex">';
-    const freeRentPct = Math.min(20, conMonths / maxMonths * 100);
-    const afterPct = Math.min(100 - freeRentPct, pbAfterMonths / maxMonths * 100);
-    h += '<div style="width:'+freeRentPct.toFixed(1)+'%;height:100%;background:rgba(16,185,129,.4);border-radius:6px 0 0 6px"></div>';
-    h += '<div style="width:'+afterPct.toFixed(1)+'%;height:100%;background:rgba(16,185,129,.2);border-radius:0 6px 6px 0"></div>';
-    h += '<div style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:.7rem;font-weight:700;color:#10b981">'+_fmtPayback(pbAfterD)+'</div>';
-    h += '</div></div>';
-
-    // Delta callout
-    h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px">';
-    h += '<div style="font-size:.65rem;color:var(--text3)">Saves '+fmtMoney(conSavD)+' off investment</div>';
-    if(savedMoD > 0) h += '<div style="font-size:.75rem;font-weight:800;color:#10b981">'+savedMoD+' months faster</div>';
-    h += '</div>';
-  }
-  h += '</div></div>';
-
-  h += '</div>'; // end left calc-panel
-
-  // ── RIGHT COLUMN: Monthly Rent Adjustment ──
-  h += '<div class="calc-panel">';
-
-  // ═══ RENT OPTION A: Sliding Tier Cards ═══
-  h += '<div class="calc-section"><div class="calc-section-header"'+tipAttrs('Rent Adjustment — Option A','Scenario cards showing how different rent amounts change your deal temperature. Click a card to update the rent on this property.')+'>Rent Negotiation: Tier Cards</div><div class="calc-section-body" style="padding:10px 12px">';
-  if(!_raHasData || !_raRent){
-    h += '<div style="color:var(--text3);font-size:.82rem;text-align:center;padding:12px 0">Set monthly rent and add at least 3 comps to see rent scenarios</div>';
-  } else {
-    const rentSteps = [0, -0.05, -0.10, -0.15, -0.20, -0.25];
-    h += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">';
-    rentSteps.forEach(pct => {
-      const adjRent = Math.round(_raRent * (1 + pct));
-      const adjNet = _calcAdjNet(adjRent);
-      const dtCol = _dtColorFor(adjNet);
-      const dtLbl = _dtLabelFor(adjNet);
-      const dtIco = _dtIconFor(adjNet);
-      const isCurrent = pct === 0;
-      const isTarget = !isCurrent && adjNet >= _raPR && _calcAdjNet(Math.round(_raRent * (1 + pct + 0.05))) < _raPR;
-      h += '<div onclick="updatePropertyRent(\''+r.id+'\','+adjRent+')" style="background:var(--bg);border-radius:var(--radius);padding:10px 6px;text-align:center;cursor:pointer;border:2px solid '+(isCurrent?'var(--primary)':isTarget?'#10b981':'var(--border)')+';transition:all .15s;position:relative" title="Click to set rent to '+fmtMoney(adjRent)+'">';
-      if(isCurrent) h += '<div style="position:absolute;top:-8px;left:50%;transform:translateX(-50%);background:var(--primary);color:#fff;font-size:.55rem;padding:1px 8px;border-radius:10px;font-weight:700;white-space:nowrap">Current</div>';
-      if(isTarget) h += '<div style="position:absolute;top:-8px;left:50%;transform:translateX(-50%);background:#10b981;color:#fff;font-size:.55rem;padding:1px 8px;border-radius:10px;font-weight:700;white-space:nowrap">Target</div>';
-      h += '<div style="font-size:.88rem;font-weight:800;color:var(--text)">'+fmtMoney(adjRent)+'</div>';
-      h += '<div style="font-size:.62rem;color:var(--text3);margin:2px 0">'+(pct===0?'Current':Math.round(pct*100)+'%')+'</div>';
-      h += '<div style="font-size:1rem;margin:4px 0">'+dtIco+'</div>';
-      h += '<div style="font-size:.7rem;font-weight:700;color:'+dtCol+'">'+dtLbl+'</div>';
-      h += '<div style="font-size:.65rem;color:var(--text3);margin-top:2px">'+fmtMoney(adjNet)+'/mo</div>';
-      h += '</div>';
-    });
-    h += '</div>';
-    h += '<div style="font-size:.62rem;color:var(--text3);text-align:center;margin-top:6px">Click a card to update rent · Deal Temperature recalculates live</div>';
-  }
-  h += '</div></div>';
-
-  // ═══ RENT OPTION B: Dial / Knob Gauge ═══
-  h += '<div class="calc-section"><div class="calc-section-header"'+tipAttrs('Rent Adjustment — Option B','Circular gauge showing your current rent position. Use the buttons to adjust in $50 increments and watch the deal temperature shift.')+'>Rent Negotiation: Dial</div><div class="calc-section-body" style="padding:12px 14px;text-align:center">';
-  if(!_raHasData || !_raRent){
-    h += '<div style="color:var(--text3);font-size:.82rem;padding:12px 0">Set monthly rent and add at least 3 comps to see the dial</div>';
-  } else {
-    const adjNetB = _calcAdjNet(_raRent);
-    const dtColB = _dtColorFor(adjNetB);
-    const dtLblB = _dtLabelFor(adjNetB);
-    // SVG semi-circle dial
-    const dialR = 60, dialCx = 75, dialCy = 75;
-    const dialArc = Math.PI; // half-circle
-    const rentMin = Math.round(_raRent * 0.7);
-    const rentMax = _raRent;
-    const rentRange = rentMax - rentMin || 1;
-    const rentPct = Math.max(0, Math.min(1, (_raRent - rentMin) / rentRange));
-    const needleAngle = Math.PI + rentPct * Math.PI; // PI to 2PI (left to right)
-    const nx = dialCx + dialR * 0.85 * Math.cos(needleAngle);
-    const ny = dialCy + dialR * 0.85 * Math.sin(needleAngle);
-    h += '<svg width="150" height="90" viewBox="0 0 150 90" style="display:block;margin:0 auto">';
-    // Background arc segments
-    const zones = [{color:'#10b981',start:0,end:0.25},{color:'#3b82f6',start:0.25,end:0.5},{color:'#f59e0b',start:0.5,end:0.75},{color:'#ef4444',start:0.75,end:1}];
-    zones.forEach(z => {
-      const a1 = Math.PI + z.start * Math.PI;
-      const a2 = Math.PI + z.end * Math.PI;
-      const x1d = dialCx + dialR * Math.cos(a1), y1d = dialCy + dialR * Math.sin(a1);
-      const x2d = dialCx + dialR * Math.cos(a2), y2d = dialCy + dialR * Math.sin(a2);
-      h += '<path d="M'+x1d.toFixed(1)+','+y1d.toFixed(1)+' A'+dialR+','+dialR+' 0 0,1 '+x2d.toFixed(1)+','+y2d.toFixed(1)+'" fill="none" stroke="'+z.color+'" stroke-width="10" opacity=".25"/>';
-    });
-    // Needle
-    h += '<line x1="'+dialCx+'" y1="'+dialCy+'" x2="'+nx.toFixed(1)+'" y2="'+ny.toFixed(1)+'" stroke="'+dtColB+'" stroke-width="3" stroke-linecap="round"/>';
-    h += '<circle cx="'+dialCx+'" cy="'+dialCy+'" r="5" fill="'+dtColB+'"/>';
-    h += '</svg>';
-    h += '<div style="font-size:1.2rem;font-weight:800;color:var(--text);margin:4px 0">'+fmtMoney(_raRent)+'/mo</div>';
-    h += '<div style="font-size:.78rem;font-weight:700;color:'+dtColB+'">'+dtLblB+' · '+fmtMoney(adjNetB)+'/mo net</div>';
-    h += '<div style="display:flex;justify-content:center;gap:8px;margin-top:10px">';
-    h += '<button class="btn btn-secondary" style="padding:4px 14px;font-size:.78rem" onclick="adjustRentBy(\''+r.id+'\',-50)">- $50</button>';
-    h += '<button class="btn btn-secondary" style="padding:4px 14px;font-size:.78rem" onclick="adjustRentBy(\''+r.id+'\',50)">+ $50</button>';
-    h += '</div>';
-    h += '<div style="font-size:.62rem;color:var(--text3);margin-top:6px">Adjust rent in $50 increments</div>';
-  }
-  h += '</div></div>';
-
-  // ═══ RENT OPTION C: Negotiation Table ═══
-  h += '<div class="calc-section"><div class="calc-section-header"'+tipAttrs('Rent Adjustment — Option C','Table showing rent reduction steps with resulting cash flow, deal temperature, and payback. The first row to hit Slam-Dunk is your negotiation target.')+'>Rent Negotiation: Table</div><div class="calc-section-body" style="padding:0">';
-  if(!_raHasData || !_raRent){
-    h += '<div style="color:var(--text3);font-size:.82rem;text-align:center;padding:12px 0">Set monthly rent and add at least 3 comps to see the table</div>';
-  } else {
-    const rentTableSteps = [];
-    for(let step = 0; step <= 500; step += 50){
-      rentTableSteps.push(_raRent - step);
+    // Y-axis grid lines and labels
+    const ySteps = 4;
+    for(let g = 0; g <= ySteps; g++){
+      const gy = barPadT + (g / ySteps) * barAreaH;
+      const yVal = maxPBVal * (1 - g / ySteps);
+      h += '<line x1="'+barPadL+'" y1="'+gy.toFixed(1)+'" x2="'+(chartBarW-barPadR)+'" y2="'+gy.toFixed(1)+'" stroke="rgba(148,163,184,.1)" stroke-width="1"/>';
+      if(g % 2 === 0) h += '<text x="'+(barPadL-4)+'" y="'+(gy+3).toFixed(1)+'" text-anchor="end" fill="var(--text3)" font-size="7" font-weight="500">'+yVal.toFixed(1)+'y</text>';
     }
-    h += '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.75rem">';
-    h += '<tr style="border-bottom:1px solid var(--border)">';
-    h += '<th style="padding:6px 10px;text-align:left;color:var(--text3);font-weight:600;font-size:.65rem;text-transform:uppercase">Rent</th>';
-    h += '<th style="padding:6px 10px;text-align:right;color:var(--text3);font-weight:600;font-size:.65rem;text-transform:uppercase">Cash Flow</th>';
-    h += '<th style="padding:6px 10px;text-align:center;color:var(--text3);font-weight:600;font-size:.65rem;text-transform:uppercase">Temperature</th>';
-    h += '<th style="padding:6px 10px;text-align:right;color:var(--text3);font-weight:600;font-size:.65rem;text-transform:uppercase">Payback</th>';
-    h += '</tr>';
-    let foundTarget = false;
-    rentTableSteps.forEach((rent, i) => {
-      if(rent < 0) return;
-      const adjN = _calcAdjNet(rent);
-      const col = _dtColorFor(adjN);
-      const lbl = _dtLabelFor(adjN);
-      const ico = _dtIconFor(adjN);
-      const isCur = i === 0;
-      const isTarget2 = !foundTarget && !isCur && adjN >= _raPR;
-      if(isTarget2) foundTarget = true;
-      // Compute payback with this rent
-      const annRent2 = Math.round(rent * 12);
-      const colData = _raSelectedCol;
-      const net2 = colData.hasData ? (colData.rev - colData.exp - annRent2) : 0;
-      const adjCF2 = Math.round(Math.round(net2 / 12) * _raConfPct / 100) * 12;
-      const pb2 = _calcPayback(_raInv, adjCF2);
-      h += '<tr onclick="updatePropertyRent(\''+r.id+'\','+rent+')" style="cursor:pointer;border-bottom:1px solid rgba(148,163,184,.06);transition:background .15s;border-left:3px solid '+col+'' + (isTarget2?';background:rgba(16,185,129,.08)':'') + '" onmouseover="this.style.background=\'rgba(148,163,184,.06)\'" onmouseout="this.style.background=\''+(isTarget2?'rgba(16,185,129,.08)':'')+'\'">';
-      h += '<td style="padding:6px 10px;font-weight:'+(isCur?'700':'500')+';color:var(--text)">'+fmtMoney(rent)+(isCur?' <span style="font-size:.6rem;color:var(--primary)">current</span>':'')+(isTarget2?' <span style="font-size:.6rem;color:#10b981;font-weight:700">← target</span>':'')+'</td>';
-      h += '<td style="padding:6px 10px;text-align:right;font-weight:600;color:'+col+'">'+fmtMoney(adjN)+'/mo</td>';
-      h += '<td style="padding:6px 10px;text-align:center">'+ico+' <span style="color:'+col+';font-weight:600">'+lbl+'</span></td>';
-      h += '<td style="padding:6px 10px;text-align:right;color:var(--text2)">'+_fmtPayback(pb2)+'</td>';
-      h += '</tr>';
+
+    // Bars
+    barWeeks.forEach((w, i) => {
+      const pbVal = barPBs[i] !== null ? barPBs[i] : 10;
+      const barH = (pbVal / maxPBVal) * barAreaH;
+      const bx = barPadL + i * (barAreaW / barWeeks.length) + 3;
+      const by = barPadT + barAreaH - barH;
+      const barCol = pbVal <= 2 ? '#10b981' : pbVal <= 4 ? '#3b82f6' : pbVal <= 6 ? '#f59e0b' : '#ef4444';
+      const isRec = w >= 6 && w <= 8;
+      h += '<rect x="'+bx.toFixed(1)+'" y="'+by.toFixed(1)+'" width="'+barW2+'" height="'+barH.toFixed(1)+'" rx="3" fill="'+barCol+'" opacity="'+(isRec?'.85':'.5')+'"/>';
+      // Value label on top of bar
+      h += '<text x="'+(bx + barW2/2).toFixed(1)+'" y="'+(by - 3).toFixed(1)+'" text-anchor="middle" fill="'+barCol+'" font-size="7" font-weight="700">'+_fmtPayback(barPBs[i])+'</text>';
+      // X-axis label
+      h += '<text x="'+(bx + barW2/2).toFixed(1)+'" y="'+(chartBarH - 6)+'" text-anchor="middle" fill="'+(isRec?'#10b981':'var(--text3)')+'" font-size="7.5" font-weight="'+(isRec?'700':'500')+'">'+w+'wk'+(isRec?' ✓':'')+'</text>';
     });
-    h += '</table></div>';
-    h += '<div style="font-size:.62rem;color:var(--text3);text-align:center;padding:6px 0">Click a row to update rent</div>';
-  }
-  h += '</div></div>';
 
-  // ═══ RENT OPTION D: Horizontal Slider ═══
-  h += '<div class="calc-section"><div class="calc-section-header"'+tipAttrs('Rent Adjustment — Option D','Drag the slider to explore different rent amounts. The live preview updates deal temperature, cash flow, and payback in real time.')+'>Rent Negotiation: Slider</div><div class="calc-section-body" style="padding:14px">';
-  if(!_raHasData || !_raRent){
-    h += '<div style="color:var(--text3);font-size:.82rem;text-align:center;padding:12px 0">Set monthly rent and add at least 3 comps to use the slider</div>';
-  } else {
-    const sliderMin = Math.max(0, Math.round(_raRent * 0.7));
-    const sliderMax = _raRent;
-    const sliderVal = _raRent;
-    const adjNetD = _calcAdjNet(sliderVal);
-    const dtColD = _dtColorFor(adjNetD);
-    const dtLblD = _dtLabelFor(adjNetD);
-    const dtIcoD = _dtIconFor(adjNetD);
-    const pbSlider = _calcPayback(_raInv, kpiAnnualCF);
-    h += '<div style="text-align:center;margin-bottom:12px">';
-    h += '<div id="rentSliderAmount_'+r.id+'" style="font-size:1.3rem;font-weight:800;color:var(--text)">'+fmtMoney(sliderVal)+'/mo</div>';
-    h += '</div>';
-    h += '<input type="range" id="rentSlider_'+r.id+'" min="'+sliderMin+'" max="'+sliderMax+'" step="50" value="'+sliderVal+'" style="width:100%;accent-color:var(--primary);cursor:pointer;height:6px" oninput="previewRentSlider(\''+r.id+'\',this.value)">';
-    h += '<div style="display:flex;justify-content:space-between;font-size:.65rem;color:var(--text3);margin-top:2px"><div>'+fmtMoney(sliderMin)+'</div><div>'+fmtMoney(sliderMax)+'</div></div>';
-    // Live preview cards
-    h += '<div style="display:flex;gap:8px;margin-top:14px">';
-    h += '<div style="flex:1;background:var(--bg);border-radius:var(--radius);padding:10px;text-align:center;border:1px solid var(--border)">';
-    h += '<div style="font-size:.6rem;color:var(--text3);text-transform:uppercase;letter-spacing:.3px">Deal Temp</div>';
-    h += '<div id="rentSliderTemp_'+r.id+'" style="font-size:1rem;margin:4px 0">'+dtIcoD+'</div>';
-    h += '<div id="rentSliderTempLabel_'+r.id+'" style="font-size:.72rem;font-weight:700;color:'+dtColD+'">'+dtLblD+'</div>';
-    h += '</div>';
-    h += '<div style="flex:1;background:var(--bg);border-radius:var(--radius);padding:10px;text-align:center;border:1px solid var(--border)">';
-    h += '<div style="font-size:.6rem;color:var(--text3);text-transform:uppercase;letter-spacing:.3px">Cash Flow</div>';
-    h += '<div id="rentSliderCF_'+r.id+'" style="font-size:.88rem;font-weight:800;color:'+dtColD+';margin-top:6px">'+fmtMoney(adjNetD)+'/mo</div>';
-    h += '</div>';
-    h += '<div style="flex:1;background:var(--bg);border-radius:var(--radius);padding:10px;text-align:center;border:1px solid var(--border)">';
-    h += '<div style="font-size:.6rem;color:var(--text3);text-transform:uppercase;letter-spacing:.3px">Payback</div>';
-    h += '<div id="rentSliderPB_'+r.id+'" style="font-size:.88rem;font-weight:800;color:var(--text);margin-top:6px">'+_fmtPayback(pbSlider)+'</div>';
-    h += '</div>';
-    h += '</div>';
-    h += '<div style="display:flex;justify-content:center;margin-top:10px">';
-    h += '<button class="btn btn-primary" style="font-size:.75rem;padding:6px 18px" onclick="applyRentSlider(\''+r.id+'\')">Apply This Rent</button>';
+    // Y-axis title
+    h += '<text x="6" y="'+(barPadT + barAreaH/2)+'" text-anchor="middle" fill="var(--text3)" font-size="7" font-weight="600" transform="rotate(-90,6,'+(barPadT + barAreaH/2)+')">Break-Even</text>';
+    // X-axis title
+    h += '<text x="'+(barPadL + barAreaW/2)+'" y="'+(chartBarH - 0)+'" text-anchor="middle" fill="var(--text3)" font-size="7" font-weight="600">Weeks of Free Rent</text>';
+
+    h += '</svg>';
+    h += '<div style="font-size:.58rem;color:var(--text3);text-align:center;margin-top:2px">✓ = Recommended range (6–8 weeks)</div>';
     h += '</div>';
   }
   h += '</div></div>';
-
   h += '</div>'; // end right calc-panel
   h += '</div>'; // end calc-layout
 
@@ -8014,65 +7942,47 @@ function saveConcessionWeeks(recId){
 }
 
 // ── Rent Adjustment: update rent on property ──
-function updatePropertyRent(recId, newRent){
+// ── Rent Negotiation Dial (standalone — does NOT change actual rent) ──
+let _rentDialPreview = {}; // { recId: previewRentAmount }
+function setRentDialIncrement(recId, val){
   const r = records.find(x => x.id === recId);
   if(!r) return;
-  if(!r.propertyDetails) r.propertyDetails = {};
-  logRentChange(r, newRent);
-  r.propertyDetails.monthlyRent = newRent;
+  const an = getAnalysis(r);
+  an.rentDialIncrement = val;
+  _rentDialPreview[recId] = undefined; // reset preview
   saveData();
   render();
 }
-function adjustRentBy(recId, delta){
+function adjustRentDial(recId, direction){
   const r = records.find(x => x.id === recId);
   if(!r) return;
-  const current = parseFloat(r.propertyDetails?.monthlyRent) || 0;
-  const newRent = Math.max(0, current + delta);
-  updatePropertyRent(recId, newRent);
+  const an = getAnalysis(r);
+  const incr = parseFloat(an.rentDialIncrement) || 50;
+  const currentRent = parseFloat(r.propertyDetails?.monthlyRent) || 0;
+  const previewRent = _rentDialPreview[recId] !== undefined ? _rentDialPreview[recId] : currentRent;
+  const newRent = Math.max(0, previewRent + direction * incr);
+  _rentDialPreview[recId] = newRent;
+  // Re-render the calculator tab to update the dial
+  const calcEl = document.querySelector('.tab-content[data-tab="calculator"]');
+  if(calcEl){
+    const rr = records.find(x => x.id === currentProfileId);
+    if(rr) calcEl.innerHTML = renderCalculatorTab(rr);
+  }
 }
 
-// ── Rent Slider: live preview without saving ──
-function previewRentSlider(recId, val){
+// ── Concession Weeks +/- adjustment ──
+function adjustConcessionWeeks(recId, delta){
   const r = records.find(x => x.id === recId);
   if(!r) return;
-  const rent = parseInt(val);
-  const v = calcComputeAll(r);
-  const modeMap = { optimistic: v.optimisticRevenue, realistic: v.projectedRevenue, pessimistic: v.pessimisticRevenue };
-  const expMap = { optimistic: v.optimisticD, realistic: v.projectedD, pessimistic: v.pessimisticD };
-  const rev = v.hasProjectionData ? Math.round(modeMap[calcProjMode] || v.projectedRevenue) : 0;
-  const exp = v.hasProjectionData ? Math.round((expMap[calcProjMode] || v.projectedD).annualExp) : 0;
-  const annRent = Math.round(rent * 12);
-  const net = rev - exp - annRent;
-  const monthlyNet = Math.round(net / 12);
-  const confidence = 0.55 + 0.45 * ((v.positionScore + 1) / 2);
-  const confPct = Math.round(confidence * 100);
-  const adjNet = Math.round(monthlyNet * confPct / 100);
-  const pr = parseFloat((r.details?.analysis?.profitRequirement) || 0) || 1000;
-  const prHalf = Math.round(pr * 0.5);
-  const dtCol = adjNet >= pr ? '#10b981' : adjNet >= prHalf ? '#3b82f6' : adjNet > 0 ? '#f59e0b' : '#ef4444';
-  const dtLbl = adjNet >= pr ? 'Slam-Dunk' : adjNet >= prHalf ? 'Potential' : adjNet > 0 ? 'Risky' : 'No-Go';
-  const dtIco = adjNet >= pr ? '🏆' : adjNet >= prHalf ? '🔥' : adjNet > 0 ? '⚠️' : '🚫';
-  const adjAcf = adjNet * 12;
-  const inv = v.totalInvested;
-  let pbYrs = null;
-  if(inv > 0 && adjAcf > 0){ pbYrs = inv / adjAcf; if(pbYrs > 10) pbYrs = null; }
-  const pbStr = pbYrs !== null ? (Math.floor(pbYrs)+'y '+Math.round((pbYrs-Math.floor(pbYrs))*12)+'m') : '10+ yrs';
-
-  const amtEl = document.getElementById('rentSliderAmount_'+recId);
-  const tempEl = document.getElementById('rentSliderTemp_'+recId);
-  const tempLblEl = document.getElementById('rentSliderTempLabel_'+recId);
-  const cfEl = document.getElementById('rentSliderCF_'+recId);
-  const pbEl = document.getElementById('rentSliderPB_'+recId);
-  if(amtEl) amtEl.innerHTML = '$'+rent.toLocaleString()+'/mo';
-  if(tempEl) tempEl.innerHTML = dtIco;
-  if(tempLblEl){ tempLblEl.innerHTML = dtLbl; tempLblEl.style.color = dtCol; }
-  if(cfEl){ cfEl.innerHTML = (adjNet<0?'-':'')+fmtMoney(Math.abs(adjNet))+'/mo'; cfEl.style.color = dtCol; }
-  if(pbEl) pbEl.innerHTML = pbStr;
-}
-function applyRentSlider(recId){
-  const slider = document.getElementById('rentSlider_'+recId);
-  if(!slider) return;
-  updatePropertyRent(recId, parseInt(slider.value));
+  const an = getAnalysis(r);
+  const current = parseFloat(an.concessionWeeks) || 7;
+  an.concessionWeeks = Math.max(0, Math.min(52, current + delta));
+  saveData();
+  const calcEl = document.querySelector('.tab-content[data-tab="calculator"]');
+  if(calcEl){
+    const rr = records.find(x => x.id === currentProfileId);
+    if(rr) calcEl.innerHTML = renderCalculatorTab(rr);
+  }
 }
 
 /**
