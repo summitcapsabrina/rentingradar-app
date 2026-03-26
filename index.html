@@ -7197,20 +7197,26 @@ function renderCalculatorTab(r){
   // ── NEGOTIATION TOOLS — single card with Rent Adjustment (left) + Rental Concessions (right) ──
   h += '<div class="calc-section" style="margin-top:0"><div class="calc-section-header"'+tipAttrs('Negotiation Forecasting Tools','Projection-only tools to explore rent and concession scenarios. Changes here do NOT affect your actual property data.')+'>Negotiation Forecasting Tools</div><div class="calc-section-body" style="padding:0">';
 
-  h += '<div style="display:flex;flex-wrap:wrap;height:520px;overflow:hidden">';
-
-  // ════════════ LEFT HALF: Rent Adjustment ════════════
-  h += '<div style="flex:1;min-width:300px;padding:20px 16px;text-align:center;border-right:1px solid var(--border);display:flex;flex-direction:column;justify-content:center">';
-  h += '<div style="font-size:.82rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px"'+tipAttrs('Rent Adjustment','Drag the dial or click the amount to explore what rent would make this deal attractive. This is a projection tool — it does NOT change the actual rent.')+'>Rent Adjustment</div>';
-  // Projection mode pills
+  // ── Title row with both section names side by side ──
   const _nftModeLabels = {pessimistic:'Pessimistic',realistic:'Realistic',optimistic:'Optimistic'};
   const _nftModeColors = {pessimistic:'var(--num-danger)',realistic:'var(--num-computed)',optimistic:'var(--num-success)'};
-  h += '<div style="display:flex;justify-content:center;gap:6px;margin-bottom:8px">';
-  ['pessimistic','realistic','optimistic'].forEach(m => {
-    const active = m === calcProjMode;
-    h += '<span style="font-size:.6rem;padding:2px 8px;border-radius:10px;font-weight:600;letter-spacing:.3px;'+(active?'background:'+_nftModeColors[m]+';color:#fff':'color:var(--text3);border:1px solid var(--border)')+'">'+_nftModeLabels[m]+'</span>';
-  });
+  const _nftPillsHtml = (function(){ let p='<div style="display:flex;justify-content:center;gap:6px;margin-top:4px">'; ['pessimistic','realistic','optimistic'].forEach(m => { const active = m === calcProjMode; p += '<span style="font-size:.6rem;padding:2px 8px;border-radius:10px;font-weight:600;letter-spacing:.3px;'+(active?'background:'+_nftModeColors[m]+';color:#fff':'color:var(--text3);border:1px solid var(--border)')+'">'+_nftModeLabels[m]+'</span>'; }); p += '</div>'; return p; })();
+
+  h += '<div style="display:flex;flex-wrap:wrap;border-bottom:1px solid var(--border)">';
+  h += '<div style="flex:1;min-width:300px;padding:14px 16px 10px;text-align:center;border-right:1px solid var(--border)">';
+  h += '<div style="font-size:.82rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.4px"'+tipAttrs('Rent Adjustment','Drag the dial or click the amount to explore what rent would make this deal attractive. This is a projection tool — it does NOT change the actual rent.')+'>Rent Adjustment</div>';
+  h += _nftPillsHtml;
   h += '</div>';
+  h += '<div style="flex:1;min-width:280px;padding:14px 16px 10px;text-align:center">';
+  h += '<div style="font-size:.82rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.4px"'+tipAttrs('Rental Concessions','Negotiate free rent weeks to reduce your upfront investment and accelerate break-even. 6–8 weeks is a common target for rental arbitrage.')+'>Rental Concessions</div>';
+  h += _nftPillsHtml;
+  h += '</div>';
+  h += '</div>'; // end title row
+
+  h += '<div style="display:flex;flex-wrap:wrap;height:480px;overflow:hidden">';
+
+  // ════════════ LEFT HALF: Rent Adjustment ════════════
+  h += '<div style="flex:1;min-width:300px;padding:12px 16px;text-align:center;border-right:1px solid var(--border);display:flex;flex-direction:column;justify-content:center">';
 
   if(!_raHasData || !_raRent){
     h += '<div style="color:var(--text3);font-size:.9rem;padding:18px 0">Set monthly rent and add at least 3 comps to use the dial</div>';
@@ -7342,16 +7348,7 @@ function renderCalculatorTab(r){
   h += '</div>'; // end left half
 
   // ════════════ RIGHT HALF: Rental Concessions ════════════
-  h += '<div style="flex:1;min-width:280px;padding:18px">';
-  h += '<div style="font-size:.72rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;text-align:center"'+tipAttrs('Rental Concessions','Negotiate free rent weeks to reduce your upfront investment and accelerate break-even. 6–8 weeks is a common target for rental arbitrage.')+'>Rental Concessions</div>';
-  h += '<div style="display:flex;justify-content:center;gap:6px;margin-bottom:10px">';
-  ['pessimistic','realistic','optimistic'].forEach(m => {
-    const active = m === calcProjMode;
-    const _cModeColors = {pessimistic:'var(--num-danger)',realistic:'var(--num-computed)',optimistic:'var(--num-success)'};
-    const _cModeLabels = {pessimistic:'Pessimistic',realistic:'Realistic',optimistic:'Optimistic'};
-    h += '<span style="font-size:.6rem;padding:2px 8px;border-radius:10px;font-weight:600;letter-spacing:.3px;'+(active?'background:'+_cModeColors[m]+';color:#fff':'color:var(--text3);border:1px solid var(--border)')+'">'+_cModeLabels[m]+'</span>';
-  });
-  h += '</div>';
+  h += '<div style="flex:1;min-width:280px;padding:14px 18px">';
 
   if(!_raHasData || _raInv <= 0 || _raAcf <= 0){
     h += '<div style="color:var(--text3);font-size:.82rem;text-align:center;padding:12px 0">Add at least 3 comps and investment details to see concession comparison</div>';
