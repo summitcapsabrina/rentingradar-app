@@ -7144,7 +7144,7 @@ function renderCalculatorTab(r){
   h += paybackHtml;
 
   // ══════════════════════════════════════════
-  // SECTION 6 & 7: Rent Negotiation Dial (left) + Rental Concessions (right)
+  // SECTION 6 & 7: Negotiation Tools — Rent Adjustment (left) + Rental Concessions (right)
   // ══════════════════════════════════════════
 
   const _raRent = v.monthlyRent;
@@ -7188,39 +7188,38 @@ function renderCalculatorTab(r){
     return y + 'y ' + m + 'm';
   }
 
-  h += '<div class="calc-layout" style="margin-top:0">';
+  // ── NEGOTIATION TOOLS — single card with Rent Adjustment (left) + Rental Concessions (right) ──
+  h += '<div class="calc-section" style="margin-top:0"><div class="calc-section-header"'+tipAttrs('Negotiation Tools','Projection-only tools to explore rent and concession scenarios. Changes here do NOT affect your actual property data.')+'>Negotiation Tools</div><div class="calc-section-body" style="padding:0">';
 
-  // ── LEFT COLUMN: Rent Negotiation Dial (standalone projection) ──
-  h += '<div class="calc-panel">';
-  h += '<div class="calc-section"><div class="calc-section-header"'+tipAttrs('Rent Negotiation','A standalone projection tool — adjustments here do NOT change the actual rent on this property. Use this to explore what rent amount would make this deal attractive before negotiating with the landlord.')+'>Rent Negotiation</div><div class="calc-section-body" style="padding:14px;text-align:center">';
+  h += '<div style="display:flex;flex-wrap:wrap;min-height:420px">';
+
+  // ════════════ LEFT HALF: Rent Adjustment ════════════
+  h += '<div style="flex:1;min-width:280px;padding:18px;text-align:center;border-right:1px solid var(--border)">';
+  h += '<div style="font-size:.72rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;margin-bottom:12px"'+tipAttrs('Rent Adjustment','Drag the dial or use +/− to explore what rent would make this deal attractive. This is a projection tool — it does NOT change the actual rent.')+'>Rent Adjustment</div>';
+
   if(!_raHasData || !_raRent){
     h += '<div style="color:var(--text3);font-size:.82rem;padding:18px 0">Set monthly rent and add at least 3 comps to use the dial</div>';
   } else {
-    // Compute zone boundary rents (what rent gives adjNet = threshold)
-    // adjNet = round(round((rev - exp - rent*12)/12) * confPct/100)
-    // We solve approximately: rent where adjNet hits each threshold
+    // Compute zone boundary rents
     function _rentForTarget(target){
       const col = _raSelectedCol;
-      // target = round(round((rev - exp - rent*12)/12) * confPct/100)
-      // target * 100 / confPct ≈ (rev - exp - rent*12)/12
-      // rent ≈ (rev - exp - (target * 100 / confPct * 12)) / 12
       const rawMonthly = target * 100 / _raConfPct;
       const rent = (col.rev - col.exp - rawMonthly * 12) / 12;
       return Math.round(rent);
     }
     const rentSlamDunk = _rentForTarget(_raPR);
     const rentPotential = _rentForTarget(_raPRHalf);
-    const rentRisky = _rentForTarget(1); // just above 0
+    const rentRisky = _rentForTarget(1);
     const rentNoGo = _rentForTarget(0);
 
-    // Large SVG semi-circle dial
+    // Dial range: $0 (left, best) to current rent (right, worst)
     const incr = parseFloat(getAnalysis(r).rentDialIncrement) || 50;
-    const dW = 280, dH = 165, dCx = 140, dCy = 145, dR = 110;
-    const rentDialMin = Math.max(0, Math.min(rentSlamDunk, Math.round(_raRent * 0.6)));
-    const rentDialMax = Math.round(_raRent * 1.1);
+    const dW = 320, dH = 190, dCx = 160, dCy = 168, dR = 130;
+    const rentDialMin = 0;
+    const rentDialMax = _raRent;
     const rentDialRange = rentDialMax - rentDialMin || 1;
 
-    // Current dial state — use preview rent if set, otherwise actual rent
+    // Current dial state
     const dialRent = _rentDialPreview[r.id] !== undefined ? _rentDialPreview[r.id] : _raRent;
     const adjNetDial = _calcAdjNet(dialRent);
     const dtColDial = _dtColorFor(adjNetDial);
@@ -7229,18 +7228,18 @@ function renderCalculatorTab(r){
 
     const needlePct = Math.max(0, Math.min(1, (dialRent - rentDialMin) / rentDialRange));
 
-    // Compute actual zone boundary positions on the arc (proportional to rent range)
+    // Zone boundary positions on the arc
     const zBoundSlamDunk = Math.max(0, Math.min(1, (rentSlamDunk - rentDialMin) / rentDialRange));
     const zBoundPotential = Math.max(0, Math.min(1, (rentPotential - rentDialMin) / rentDialRange));
     const zBoundNoGo = Math.max(0, Math.min(1, (rentNoGo - rentDialMin) / rentDialRange));
 
-    // Store dial config for drag handler (includes projection data for fast recalc)
+    // Store dial config for drag handler
     const _rdCol = _raSelectedCol;
-    h += '<div id="rentDialConfig_'+r.id+'" data-min="'+rentDialMin+'" data-max="'+rentDialMax+'" data-cx="'+dCx+'" data-cy="'+dCy+'" data-r="'+dR+'" data-rev="'+_rdCol.rev+'" data-exp="'+_rdCol.exp+'" data-conf="'+_raConfPct+'" style="display:none"></div>';
+    h += '<div id="rentDialConfig_'+r.id+'" data-min="'+rentDialMin+'" data-max="'+rentDialMax+'" data-cx="'+dCx+'" data-cy="'+dCy+'" data-r="'+dR+'" data-w="'+dW+'" data-rev="'+_rdCol.rev+'" data-exp="'+_rdCol.exp+'" data-conf="'+_raConfPct+'" style="display:none"></div>';
 
     h += '<svg id="rentDial_'+r.id+'" width="'+dW+'" height="'+dH+'" viewBox="0 0 '+dW+' '+dH+'" style="display:block;margin:0 auto;cursor:pointer;touch-action:none">';
 
-    // Draw four colored arc segments — mapped to actual zone boundaries
+    // Colored arc segments mapped to actual zone boundaries
     const arcZones = [
       { color: '#10b981', start: 0, end: zBoundSlamDunk },
       { color: '#3b82f6', start: zBoundSlamDunk, end: zBoundPotential },
@@ -7248,34 +7247,41 @@ function renderCalculatorTab(r){
       { color: '#ef4444', start: zBoundNoGo, end: 1 }
     ];
     arcZones.forEach(z => {
-      if(z.end <= z.start) return; // skip zero-width zones
+      if(z.end <= z.start) return;
       const a1 = Math.PI + z.start * Math.PI;
       const a2 = Math.PI + z.end * Math.PI;
       const x1 = dCx + dR * Math.cos(a1), y1 = dCy + dR * Math.sin(a1);
       const x2 = dCx + dR * Math.cos(a2), y2 = dCy + dR * Math.sin(a2);
       const large = (z.end - z.start) > 0.5 ? 1 : 0;
-      h += '<path d="M'+x1.toFixed(1)+','+y1.toFixed(1)+' A'+dR+','+dR+' 0 '+large+',1 '+x2.toFixed(1)+','+y2.toFixed(1)+'" fill="none" stroke="'+z.color+'" stroke-width="20" opacity=".7"/>';
+      h += '<path d="M'+x1.toFixed(1)+','+y1.toFixed(1)+' A'+dR+','+dR+' 0 '+large+',1 '+x2.toFixed(1)+','+y2.toFixed(1)+'" fill="none" stroke="'+z.color+'" stroke-width="22" opacity=".7"/>';
     });
 
-    // Zone boundary labels — at actual zone transitions, prominent
+    // Edge labels: $0 at left, current rent at right
+    const leftEdgeX = dCx + (dR + 26) * Math.cos(Math.PI);
+    const leftEdgeY = dCy + (dR + 26) * Math.sin(Math.PI);
+    h += '<text x="'+leftEdgeX.toFixed(1)+'" y="'+leftEdgeY.toFixed(1)+'" text-anchor="start" fill="var(--text)" font-size="9" font-weight="700">$0</text>';
+    const rightEdgeX = dCx + (dR + 26) * Math.cos(2 * Math.PI);
+    const rightEdgeY = dCy + (dR + 26) * Math.sin(2 * Math.PI);
+    h += '<text x="'+rightEdgeX.toFixed(1)+'" y="'+rightEdgeY.toFixed(1)+'" text-anchor="end" fill="var(--text)" font-size="9" font-weight="700">$'+_raRent.toLocaleString()+'</text>';
+
+    // Interior boundary labels + ticks
     const innerBoundaryPcts = [zBoundSlamDunk, zBoundPotential, zBoundNoGo];
     const innerBoundaryRents = [rentSlamDunk, rentPotential, rentNoGo];
     innerBoundaryPcts.forEach((pct, i) => {
-      if(pct <= 0.02 || pct >= 0.98) return; // skip if at edge
+      if(pct <= 0.04 || pct >= 0.96) return;
       const angle = Math.PI + pct * Math.PI;
-      const lR = dR + 24;
+      const lR = dR + 26;
       const lx = dCx + lR * Math.cos(angle);
       const ly = dCy + lR * Math.sin(angle);
       const anchor = pct < 0.3 ? 'start' : pct > 0.7 ? 'end' : 'middle';
       h += '<text x="'+lx.toFixed(1)+'" y="'+ly.toFixed(1)+'" text-anchor="'+anchor+'" fill="var(--text)" font-size="9" font-weight="700">$'+innerBoundaryRents[i].toLocaleString()+'</text>';
-      // Tick mark
-      const t1R = dR - 10, t2R = dR + 10;
+      const t1R = dR - 11, t2R = dR + 11;
       const tx1 = dCx + t1R * Math.cos(angle), ty1 = dCy + t1R * Math.sin(angle);
       const tx2 = dCx + t2R * Math.cos(angle), ty2 = dCy + t2R * Math.sin(angle);
       h += '<line x1="'+tx1.toFixed(1)+'" y1="'+ty1.toFixed(1)+'" x2="'+tx2.toFixed(1)+'" y2="'+ty2.toFixed(1)+'" stroke="var(--text)" stroke-width="1.5" opacity=".5"/>';
     });
 
-    // Zone name labels (centered in each zone arc segment)
+    // Zone name labels
     const zoneLabelDefs = [
       {name:'Slam-Dunk',color:'#10b981',start:0,end:zBoundSlamDunk},
       {name:'Potential',color:'#3b82f6',start:zBoundSlamDunk,end:zBoundPotential},
@@ -7284,23 +7290,19 @@ function renderCalculatorTab(r){
     ];
     zoneLabelDefs.forEach(z => {
       const span = z.end - z.start;
-      if(span < 0.06) return; // skip if zone too narrow for text
+      if(span < 0.06) return;
       const mid = z.start + span / 2;
       const angle = Math.PI + mid * Math.PI;
-      const lr = dR - 26;
+      const lr = dR - 30;
       const lx = dCx + lr * Math.cos(angle);
       const ly = dCy + lr * Math.sin(angle);
-      h += '<text x="'+lx.toFixed(1)+'" y="'+ly.toFixed(1)+'" text-anchor="middle" fill="'+z.color+'" font-size="8" font-weight="800">'+z.name+'</text>';
+      h += '<text x="'+lx.toFixed(1)+'" y="'+ly.toFixed(1)+'" text-anchor="middle" fill="'+z.color+'" font-size="9" font-weight="800">'+z.name+'</text>';
     });
 
-    // Needle — white arrow pointer with tip extending to arc
-    const nLen = dR - 8; // extend to just past the arc
+    // White arrow needle
+    const nLen = dR - 8;
     const needleAngle = Math.PI + needlePct * Math.PI;
-    const nx = dCx + nLen * Math.cos(needleAngle);
-    const ny = dCy + nLen * Math.sin(needleAngle);
-    // Arrow tip: triangle at the end, pointing along the needle direction
-    const tipLen = 14;
-    const tipW = 6;
+    const tipLen = 16, tipW = 7;
     const tipX = dCx + (nLen + tipLen * 0.3) * Math.cos(needleAngle);
     const tipY = dCy + (nLen + tipLen * 0.3) * Math.sin(needleAngle);
     const perpAngle = needleAngle + Math.PI / 2;
@@ -7308,150 +7310,143 @@ function renderCalculatorTab(r){
     const baseY1 = dCy + (nLen - tipLen) * Math.sin(needleAngle) + tipW * Math.sin(perpAngle);
     const baseX2 = dCx + (nLen - tipLen) * Math.cos(needleAngle) - tipW * Math.cos(perpAngle);
     const baseY2 = dCy + (nLen - tipLen) * Math.sin(needleAngle) - tipW * Math.sin(perpAngle);
-    // Needle body (tapered) — with class for drag updates
     h += '<line class="dial-needle-body" x1="'+dCx+'" y1="'+dCy+'" x2="'+(dCx + (nLen - tipLen) * Math.cos(needleAngle)).toFixed(1)+'" y2="'+(dCy + (nLen - tipLen) * Math.sin(needleAngle)).toFixed(1)+'" stroke="#fff" stroke-width="3" stroke-linecap="round"/>';
-    // Arrow head — with class for drag updates
     h += '<polygon class="dial-needle-arrow" points="'+tipX.toFixed(1)+','+tipY.toFixed(1)+' '+baseX1.toFixed(1)+','+baseY1.toFixed(1)+' '+baseX2.toFixed(1)+','+baseY2.toFixed(1)+'" fill="#fff" stroke="rgba(0,0,0,.25)" stroke-width=".5"/>';
-    // Center hub — with class for drag updates
-    h += '<circle class="dial-hub" cx="'+dCx+'" cy="'+dCy+'" r="8" fill="#fff" stroke="rgba(0,0,0,.2)" stroke-width="1.5"/>';
-    h += '<circle cx="'+dCx+'" cy="'+dCy+'" r="3" fill="var(--surface)"/>';
-    // Invisible larger hit area for dragging
+    h += '<circle class="dial-hub" cx="'+dCx+'" cy="'+dCy+'" r="9" fill="#fff" stroke="rgba(0,0,0,.2)" stroke-width="1.5"/>';
+    h += '<circle cx="'+dCx+'" cy="'+dCy+'" r="3.5" fill="var(--surface)"/>';
     h += '<circle cx="'+dCx+'" cy="'+dCy+'" r="'+dR+'" fill="transparent" id="rentDialHitArea_'+r.id+'" style="cursor:grab"/>';
 
     h += '</svg>';
 
-    // Schedule drag handler attachment after innerHTML is set
     clearTimeout(window._rentDialInitTimer);
     window._rentDialInitTimer = setTimeout(function(){ _initRentDialDrag(r.id); }, 10);
 
-    // Rent amount + deal temp readout
-    h += '<div id="rentDialReadout_'+r.id+'" style="margin:8px 0 4px">';
-    h += '<div style="font-size:1.4rem;font-weight:800;color:var(--text)">'+fmtMoney(dialRent)+'/mo</div>';
-    h += '<div style="font-size:.85rem;font-weight:700;color:'+dtColDial+'">'+dtIcoDial+' '+dtLblDial+' · '+fmtMoney(adjNetDial)+'/mo net</div>';
+    // Readout
+    h += '<div id="rentDialReadout_'+r.id+'" style="margin:6px 0 6px">';
+    h += '<div style="font-size:1.5rem;font-weight:800;color:var(--text)">'+fmtMoney(dialRent)+'/mo</div>';
+    h += '<div style="font-size:.9rem;font-weight:700;color:'+dtColDial+'">'+dtIcoDial+' '+dtLblDial+' · '+fmtMoney(adjNetDial)+'/mo net</div>';
     h += '</div>';
 
     // +/- buttons
-    h += '<div style="display:flex;justify-content:center;align-items:center;gap:10px;margin-top:8px">';
-    h += '<button class="btn btn-secondary" style="padding:6px 18px;font-size:.85rem;font-weight:700" onclick="adjustRentDial(\''+r.id+'\',-1)">−</button>';
-    h += '<button class="btn btn-secondary" style="padding:6px 18px;font-size:.85rem;font-weight:700" onclick="adjustRentDial(\''+r.id+'\',1)">+</button>';
+    h += '<div style="display:flex;justify-content:center;align-items:center;gap:10px;margin-top:6px">';
+    h += '<button class="btn btn-secondary" style="padding:7px 20px;font-size:.9rem;font-weight:700" onclick="adjustRentDial(\''+r.id+'\',-1)">−</button>';
+    h += '<button class="btn btn-secondary" style="padding:7px 20px;font-size:.9rem;font-weight:700" onclick="adjustRentDial(\''+r.id+'\',1)">+</button>';
     h += '</div>';
 
-    // Increment selector — below +/- buttons
+    // Increment selector
     h += '<div style="display:flex;align-items:center;justify-content:center;gap:6px;margin-top:10px">';
-    h += '<span style="font-size:.65rem;color:var(--text3)">Increment:</span>';
+    h += '<span style="font-size:.68rem;color:var(--text3)">Increment:</span>';
     [25,50,100,250].forEach(val => {
       const isActive = val === incr;
-      h += '<span onclick="setRentDialIncrement(\''+r.id+'\','+val+')" style="font-size:.65rem;padding:2px 8px;border-radius:12px;cursor:pointer;font-weight:600;'+(isActive?'background:var(--primary);color:#fff':'background:var(--bg);color:var(--text3);border:1px solid var(--border)')+'">$'+val+'</span>';
+      h += '<span onclick="setRentDialIncrement(\''+r.id+'\','+val+')" style="font-size:.68rem;padding:3px 10px;border-radius:12px;cursor:pointer;font-weight:600;'+(isActive?'background:var(--primary);color:#fff':'background:var(--bg);color:var(--text3);border:1px solid var(--border)')+'">$'+val+'</span>';
     });
     h += '</div>';
 
-    h += '<div style="font-size:.6rem;color:var(--text3);margin-top:8px;font-style:italic;text-align:center">This is a projection tool — changes here do not affect your actual rent.</div>';
+    h += '<div style="font-size:.62rem;color:var(--text3);margin-top:10px;font-style:italic;text-align:center">Projection only — does not change your actual rent.</div>';
   }
-  h += '</div></div>';
-  h += '</div>'; // end left calc-panel
+  h += '</div>'; // end left half
 
-  // ── RIGHT COLUMN: Rental Concessions ──
-  h += '<div class="calc-panel">';
+  // ════════════ RIGHT HALF: Rental Concessions ════════════
+  h += '<div style="flex:1;min-width:280px;padding:18px">';
+  h += '<div style="font-size:.72rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;margin-bottom:12px;text-align:center"'+tipAttrs('Rental Concessions','Negotiate free rent weeks to reduce your upfront investment and accelerate break-even. 6–8 weeks is a common target for rental arbitrage.')+'>Rental Concessions</div>';
 
-  // Before/After with +/- buttons
-  h += '<div class="calc-section"><div class="calc-section-header"'+tipAttrs('Rental Concessions','Negotiate free rent weeks to reduce your upfront investment and accelerate break-even. 6–8 weeks is a common target for rental arbitrage.')+'>Rental Concessions</div><div class="calc-section-body" style="padding:12px 14px">';
   if(!_raHasData || _raInv <= 0 || _raAcf <= 0){
     h += '<div style="color:var(--text3);font-size:.82rem;text-align:center;padding:12px 0">Add at least 3 comps and investment details to see concession comparison</div>';
   } else {
+    // Use dial preview rent for concession calcs if available
+    const _conRent = _rentDialPreview[r.id] !== undefined ? _rentDialPreview[r.id] : _raRent;
     const _conWRaw = getAnalysis(r).concessionWeeks;
     const conW = _conWRaw !== undefined ? parseFloat(_conWRaw) : 7;
-    const conSavings = Math.round((_raRent / 4) * conW);
+    const conSavings = Math.round((_conRent / 4) * conW);
+    // Recalculate investment + ACF using dial rent
+    const _conAdjNet = _calcAdjNet(_conRent);
+    const _conAnnualCF = _conAdjNet * 12;
     const adjInvB = Math.max(0, _raInv - conSavings);
-    const pbBefore = _calcPayback(_raInv, _raAcf);
-    const pbAfter = _calcPayback(adjInvB, _raAcf);
+    const pbBefore = _calcPayback(_raInv, _conAnnualCF);
+    const pbAfter = _calcPayback(adjInvB, _conAnnualCF);
     const savedMonths = pbBefore !== null && pbAfter !== null ? Math.round((pbBefore - pbAfter) * 12) : 0;
 
-    // Weeks selector with +/- side by side
-    h += '<div style="display:flex;flex-direction:column;align-items:center;margin-bottom:14px">';
-    h += '<div onclick="editConcessionWeeks(\''+r.id+'\')" style="cursor:pointer;background:var(--primary);color:#fff;padding:4px 16px;border-radius:20px;font-size:.85rem;font-weight:700;white-space:nowrap">'+conW+' week'+(conW!==1?'s':'')+'</div>';
-    h += '<div style="display:flex;gap:6px;margin-top:6px">';
-    h += '<button class="btn btn-secondary" style="padding:3px 12px;font-size:.75rem;min-width:32px;font-weight:700'+(conW<=0?';opacity:.35;pointer-events:none':'')+'" onclick="adjustConcessionWeeks(\''+r.id+'\',-1)">−</button>';
-    h += '<button class="btn btn-secondary" style="padding:3px 12px;font-size:.75rem;min-width:32px;font-weight:700'+(conW>=20?';opacity:.35;pointer-events:none':'')+'" onclick="adjustConcessionWeeks(\''+r.id+'\',1)">+</button>';
+    // Weeks selector
+    h += '<div style="display:flex;flex-direction:column;align-items:center;margin-bottom:16px">';
+    h += '<div onclick="editConcessionWeeks(\''+r.id+'\')" style="cursor:pointer;background:var(--primary);color:#fff;padding:5px 18px;border-radius:20px;font-size:.9rem;font-weight:700;white-space:nowrap">'+conW+' week'+(conW!==1?'s':'')+'</div>';
+    h += '<div style="display:flex;gap:8px;margin-top:8px">';
+    h += '<button class="btn btn-secondary" style="padding:4px 14px;font-size:.8rem;min-width:34px;font-weight:700'+(conW<=0?';opacity:.35;pointer-events:none':'')+'" onclick="adjustConcessionWeeks(\''+r.id+'\',-1)">−</button>';
+    h += '<button class="btn btn-secondary" style="padding:4px 14px;font-size:.8rem;min-width:34px;font-weight:700'+(conW>=20?';opacity:.35;pointer-events:none':'')+'" onclick="adjustConcessionWeeks(\''+r.id+'\',1)">+</button>';
     h += '</div>';
-    if(savedMonths > 0) h += '<div style="font-size:.68rem;color:#10b981;font-weight:700;margin-top:6px">'+savedMonths+' mo faster · Saves '+fmtMoney(conSavings)+'</div>';
+    if(savedMonths > 0) h += '<div style="font-size:.72rem;color:#10b981;font-weight:700;margin-top:8px">'+savedMonths+' mo faster · Saves '+fmtMoney(conSavings)+'</div>';
     h += '</div>';
 
+    // Before / After cards
     h += '<div style="display:flex;gap:10px;align-items:stretch">';
-    // Left: Without
-    h += '<div style="flex:1;background:var(--bg);border-radius:var(--radius);padding:16px 12px;text-align:center;border:1px solid var(--border);display:flex;flex-direction:column;align-items:center;justify-content:center">';
-    h += '<div style="font-size:.62rem;text-transform:uppercase;letter-spacing:.4px;color:var(--text3);margin-bottom:8px">Without Concessions</div>';
-    h += '<div style="font-size:1.3rem;font-weight:800;color:var(--num-danger)">'+_fmtPayback(pbBefore)+'</div>';
-    h += '<div style="font-size:.7rem;color:var(--text3);margin-top:6px">to break even</div>';
-    h += '<div style="font-size:.75rem;color:var(--text3);margin-top:8px;font-weight:600">Investment: '+fmtMoney(_raInv)+'</div>';
+    h += '<div style="flex:1;background:var(--bg);border-radius:var(--radius);padding:18px 14px;text-align:center;border:1px solid var(--border);display:flex;flex-direction:column;align-items:center;justify-content:center">';
+    h += '<div style="font-size:.66rem;text-transform:uppercase;letter-spacing:.4px;color:var(--text3);margin-bottom:10px">Without Concessions</div>';
+    h += '<div style="font-size:1.35rem;font-weight:800;color:var(--num-danger)">'+_fmtPayback(pbBefore)+'</div>';
+    h += '<div style="font-size:.72rem;color:var(--text3);margin-top:8px">to break even</div>';
+    h += '<div style="font-size:.78rem;color:var(--text3);margin-top:10px;font-weight:600">Investment: '+fmtMoney(_raInv)+'</div>';
     h += '</div>';
-    // Center: Arrow
-    h += '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 2px">';
-    h += '<div style="font-size:1.2rem;color:var(--text3)">→</div>';
-    h += '</div>';
-    // Right: With
-    h += '<div style="flex:1;background:var(--bg);border-radius:var(--radius);padding:16px 12px;text-align:center;border:2px solid #10b981;display:flex;flex-direction:column;align-items:center;justify-content:center">';
-    h += '<div style="font-size:.62rem;text-transform:uppercase;letter-spacing:.4px;color:#10b981;margin-bottom:8px">With '+conW+' Week'+(conW!==1?'s':'')+' Free</div>';
-    h += '<div style="font-size:1.3rem;font-weight:800;color:#10b981">'+_fmtPayback(pbAfter)+'</div>';
-    h += '<div style="font-size:.7rem;color:var(--text3);margin-top:6px">to break even</div>';
-    h += '<div style="font-size:.75rem;color:var(--text3);margin-top:8px;font-weight:600">Effective: '+fmtMoney(adjInvB)+'</div>';
+    h += '<div style="display:flex;align-items:center;padding:0 4px"><div style="font-size:1.3rem;color:var(--text3)">→</div></div>';
+    h += '<div style="flex:1;background:var(--bg);border-radius:var(--radius);padding:18px 14px;text-align:center;border:2px solid #10b981;display:flex;flex-direction:column;align-items:center;justify-content:center">';
+    h += '<div style="font-size:.66rem;text-transform:uppercase;letter-spacing:.4px;color:#10b981;margin-bottom:10px">With '+conW+' Week'+(conW!==1?'s':'')+' Free</div>';
+    h += '<div style="font-size:1.35rem;font-weight:800;color:#10b981">'+_fmtPayback(pbAfter)+'</div>';
+    h += '<div style="font-size:.72rem;color:var(--text3);margin-top:8px">to break even</div>';
+    h += '<div style="font-size:.78rem;color:var(--text3);margin-top:10px;font-weight:600">Effective: '+fmtMoney(adjInvB)+'</div>';
     h += '</div>';
     h += '</div>';
 
-    // ── Vertical Bar Chart: Weeks (X) vs Break-Even Time (Y) — full width ──
-    h += '<div style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px">';
-    h += '<div style="font-size:.7rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.3px;margin-bottom:10px;text-align:center">Concession Impact</div>';
+    // ── Bar Chart ──
+    h += '<div style="margin-top:18px;border-top:1px solid var(--border);padding-top:14px">';
+    h += '<div style="font-size:.72rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.3px;margin-bottom:12px;text-align:center">Concession Impact</div>';
 
     const barWeeks = [0,2,4,6,8,10,12,14,16,18,20];
     const barPBs = barWeeks.map(w => {
-      const sav = Math.round((_raRent / 4) * w);
+      const sav = Math.round((_conRent / 4) * w);
       const adjI = Math.max(0, _raInv - sav);
-      return _calcPayback(adjI, _raAcf);
+      return _calcPayback(adjI, _conAnnualCF);
     });
-    const maxPBVal = Math.max(...barPBs.map(p => p !== null ? p : 10), 1);
-    const chartBarW = 420, chartBarH = 160, barPadL = 52, barPadR = 10, barPadT = 10, barPadB = 30;
+    const maxPBRaw = Math.max(...barPBs.map(p => p !== null ? p : 10), 1);
+    const yMaxYears = Math.ceil(maxPBRaw);
+    const yStep = yMaxYears <= 4 ? 1 : yMaxYears <= 8 ? 2 : yMaxYears <= 15 ? 3 : 5;
+    const yMaxDisplay = Math.ceil(yMaxYears / yStep) * yStep;
+    const yTickCount = yMaxDisplay / yStep;
+
+    const chartBarW = 420, chartBarH = 190, barPadL = 52, barPadR = 10, barPadT = 10, barPadB = 52;
     const barAreaW = chartBarW - barPadL - barPadR;
     const barAreaH = chartBarH - barPadT - barPadB;
     const barW2 = Math.floor(barAreaW / barWeeks.length) - 4;
 
     h += '<svg viewBox="0 0 '+chartBarW+' '+chartBarH+'" style="width:100%;display:block;margin:0 auto">';
 
-    // Y-axis grid lines and labels
-    const ySteps = 4;
-    for(let g = 0; g <= ySteps; g++){
-      const gy = barPadT + (g / ySteps) * barAreaH;
-      const yVal = maxPBVal * (1 - g / ySteps);
+    for(let g = 0; g <= yTickCount; g++){
+      const yVal = yMaxDisplay - g * yStep;
+      const gy = barPadT + (g / yTickCount) * barAreaH;
       h += '<line x1="'+barPadL+'" y1="'+gy.toFixed(1)+'" x2="'+(chartBarW-barPadR)+'" y2="'+gy.toFixed(1)+'" stroke="rgba(148,163,184,.12)" stroke-width="1"/>';
-      if(g % 2 === 0) h += '<text x="'+(barPadL-5)+'" y="'+(gy+3).toFixed(1)+'" text-anchor="end" fill="var(--text3)" font-size="7.5" font-weight="500">'+yVal.toFixed(1)+'y</text>';
+      h += '<text x="'+(barPadL-5)+'" y="'+(gy+3).toFixed(1)+'" text-anchor="end" fill="var(--text3)" font-size="7.5" font-weight="500">'+yVal+'y</text>';
     }
 
-    // Bars
     barWeeks.forEach((w, i) => {
-      const pbVal = barPBs[i] !== null ? barPBs[i] : 10;
-      const barH = (pbVal / maxPBVal) * barAreaH;
+      const pbVal = barPBs[i] !== null ? barPBs[i] : yMaxDisplay;
+      const barH = Math.max(0, (pbVal / yMaxDisplay) * barAreaH);
       const bx = barPadL + i * (barAreaW / barWeeks.length) + 2;
       const by = barPadT + barAreaH - barH;
       const barCol = pbVal <= 2 ? '#10b981' : pbVal <= 4 ? '#3b82f6' : pbVal <= 6 ? '#f59e0b' : '#ef4444';
       const isRec = w >= 6 && w <= 8;
       h += '<rect x="'+bx.toFixed(1)+'" y="'+by.toFixed(1)+'" width="'+barW2+'" height="'+barH.toFixed(1)+'" rx="3" fill="'+barCol+'" opacity="'+(isRec?'.85':'.5')+'"/>';
-      // Value label on top of bar
       h += '<text x="'+(bx + barW2/2).toFixed(1)+'" y="'+(by - 3).toFixed(1)+'" text-anchor="middle" fill="'+barCol+'" font-size="6.5" font-weight="700">'+_fmtPayback(barPBs[i])+'</text>';
-      // X-axis label
-      h += '<text x="'+(bx + barW2/2).toFixed(1)+'" y="'+(chartBarH - 6)+'" text-anchor="middle" fill="'+(isRec?'#10b981':'var(--text3)')+'" font-size="7" font-weight="'+(isRec?'700':'500')+'">'+w+'wk'+(isRec?' ✓':'')+'</text>';
+      h += '<text x="'+(bx + barW2/2).toFixed(1)+'" y="'+(barPadT + barAreaH + 14)+'" text-anchor="middle" fill="'+(isRec?'#10b981':'var(--text3)')+'" font-size="7" font-weight="'+(isRec?'700':'500')+'">'+w+'wk'+(isRec?' ✓':'')+'</text>';
     });
 
-    // Y-axis title — horizontal, positioned left of labels
     h += '<text x="4" y="'+(barPadT + barAreaH/2)+'" text-anchor="start" fill="var(--text3)" font-size="7" font-weight="700">Break-</text>';
     h += '<text x="4" y="'+(barPadT + barAreaH/2 + 9)+'" text-anchor="start" fill="var(--text3)" font-size="7" font-weight="700">Even</text>';
-    // X-axis title
-    h += '<text x="'+(barPadL + barAreaW/2)+'" y="'+(chartBarH - 0)+'" text-anchor="middle" fill="var(--text3)" font-size="7.5" font-weight="600">Weeks of Free Rent</text>';
+    h += '<text x="'+(barPadL + barAreaW/2)+'" y="'+(barPadT + barAreaH + 30)+'" text-anchor="middle" fill="var(--text3)" font-size="7.5" font-weight="600">Weeks of Free Rent</text>';
 
     h += '</svg>';
-    h += '<div style="font-size:.58rem;color:var(--text3);text-align:center;margin-top:2px">✓ = Recommended range (6–8 weeks)</div>';
+    h += '<div style="font-size:.6rem;color:var(--text3);text-align:center;margin-top:6px">✓ = Recommended range (6–8 weeks)</div>';
     h += '</div>';
   }
-  h += '</div></div>';
-  h += '</div>'; // end right calc-panel
-  h += '</div>'; // end calc-layout
+  h += '</div>'; // end right half
+
+  h += '</div>'; // end flex container
+  h += '</div></div>'; // end calc-section-body + calc-section
 
   return h;
 }
@@ -7968,7 +7963,7 @@ function saveConcessionWeeks(recId){
 }
 
 // ── Rent Adjustment: update rent on property ──
-// ── Rent Negotiation Dial (standalone — does NOT change actual rent) ──
+// ── Rent Adjustment Dial (standalone — does NOT change actual rent) ──
 let _rentDialPreview = {}; // { recId: previewRentAmount }
 let _rentDialDragging = false;
 
@@ -7983,7 +7978,8 @@ function _initRentDialDrag(recId){
 
   function angleToRent(clientX, clientY){
     const rect = svg.getBoundingClientRect();
-    const scaleX = 280 / rect.width; // viewBox width / rendered width
+    const svgW = parseFloat(cfg.dataset.w) || 320;
+    const scaleX = svgW / rect.width; // viewBox width / rendered width
     const svgX = (clientX - rect.left) * scaleX;
     const svgY = (clientY - rect.top) * scaleX;
     const dx = svgX - cx;
@@ -8055,7 +8051,9 @@ function _quickUpdateRentDial(recId, rent){
   if(!svg || !readout || !cfg) return;
   const dMin = parseFloat(cfg.dataset.min);
   const dMax = parseFloat(cfg.dataset.max);
-  const cx = 140, cy = 145, R = 110;
+  const cx = parseFloat(cfg.dataset.cx) || 160;
+  const cy = parseFloat(cfg.dataset.cy) || 168;
+  const R = parseFloat(cfg.dataset.r) || 130;
   const range = dMax - dMin || 1;
   const pct = Math.max(0, Math.min(1, (rent - dMin) / range));
   const angle = Math.PI + pct * Math.PI;
@@ -8066,7 +8064,7 @@ function _quickUpdateRentDial(recId, rent){
   const hub = svg.querySelector('.dial-hub');
   if(needleBody){
     const nLen = R - 8;
-    const tipLen = 14;
+    const tipLen = 16;
     const bx = cx + (nLen - tipLen) * Math.cos(angle);
     const by = cy + (nLen - tipLen) * Math.sin(angle);
     needleBody.setAttribute('x2', bx.toFixed(1));
@@ -8074,7 +8072,7 @@ function _quickUpdateRentDial(recId, rent){
   }
   if(needleArrow){
     const nLen = R - 8;
-    const tipLen = 14, tipW = 6;
+    const tipLen = 16, tipW = 7;
     const tipX = cx + (nLen + tipLen * 0.3) * Math.cos(angle);
     const tipY = cy + (nLen + tipLen * 0.3) * Math.sin(angle);
     const perp = angle + Math.PI / 2;
@@ -8131,7 +8129,7 @@ function adjustRentDial(recId, direction){
   const incr = parseFloat(an.rentDialIncrement) || 50;
   const currentRent = parseFloat(r.propertyDetails?.monthlyRent) || 0;
   const previewRent = _rentDialPreview[recId] !== undefined ? _rentDialPreview[recId] : currentRent;
-  const newRent = Math.max(0, previewRent + direction * incr);
+  const newRent = Math.max(0, Math.min(currentRent, previewRent + direction * incr));
   _rentDialPreview[recId] = newRent;
   // Re-render the calculator tab to update the dial
   const calcEl = document.querySelector('.tab-content[data-tab="calculator"]');
@@ -9862,7 +9860,7 @@ function openRentHistoryPopup(recId){
 
 function confirmRentChange(recId){
   document.getElementById('rentHistoryOverlay')?.remove();
-  showAppConfirm('Only update the rent when the listing confirms a new amount.<br><br>To explore how different rent amounts affect your deal projections, use the <strong>Rent Negotiation</strong> section in the <strong>Projected ROI</strong> tab instead.<br><br>Are you sure you want to change the actual monthly rent?', {
+  showAppConfirm('Only update the rent when the listing confirms a new amount.<br><br>To explore how different rent amounts affect your deal projections, use the <strong>Rent Adjustment</strong> tool in the <strong>Negotiation Tools</strong> section of the <strong>Projected ROI</strong> tab instead.<br><br>Are you sure you want to change the actual monthly rent?', {
     title: 'Change Monthly Rent',
     icon: '⚠️',
     confirmText: 'Yes, Update Rent',
