@@ -7373,7 +7373,7 @@ function renderCalculatorTab(r){
     h += '<div onclick="editConcessionWeeks(\''+r.id+'\')" style="cursor:pointer;background:var(--primary);color:#fff;padding:5px 18px;border-radius:20px;font-size:.9rem;font-weight:700;white-space:nowrap">'+conW+' week'+(conW!==1?'s':'')+'</div>';
     h += '<div style="display:flex;gap:8px;margin-top:8px">';
     h += '<button class="btn btn-secondary" style="padding:4px 14px;font-size:.8rem;min-width:34px;font-weight:700'+(conW<=0?';opacity:.35;pointer-events:none':'')+'" onclick="adjustConcessionWeeks(\''+r.id+'\',-1)">−</button>';
-    h += '<button class="btn btn-secondary" style="padding:4px 14px;font-size:.8rem;min-width:34px;font-weight:700'+(conW>=20?';opacity:.35;pointer-events:none':'')+'" onclick="adjustConcessionWeeks(\''+r.id+'\',1)">+</button>';
+    h += '<button class="btn btn-secondary" style="padding:4px 14px;font-size:.8rem;min-width:34px;font-weight:700'+(conW>=12?';opacity:.35;pointer-events:none':'')+'" onclick="adjustConcessionWeeks(\''+r.id+'\',1)">+</button>';
     h += '</div>';
     if(savedMonths > 0) h += '<div style="font-size:.72rem;color:#10b981;font-weight:700;margin-top:8px">'+savedMonths+' mo faster · Saves '+fmtMoney(conSavings)+'</div>';
     h += '</div>';
@@ -7396,10 +7396,9 @@ function renderCalculatorTab(r){
     h += '</div>';
 
     // ── Bar Chart ──
-    h += '<div style="margin-top:18px;border-top:1px solid var(--border);padding-top:14px">';
-    h += '<div style="font-size:.72rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.3px;margin-bottom:12px;text-align:center">Concession Impact</div>';
+    h += '<div style="margin-top:10px;border-top:1px solid var(--border);padding-top:8px">';
 
-    const barWeeks = [0,2,4,6,8,10,12,14,16,18,20];
+    const barWeeks = [0,1,2,3,4,5,6,7,8,9,10,11,12];
     const barPBs = barWeeks.map(w => {
       const sav = Math.round((_conRent / 4) * w);
       const adjI = Math.max(0, _raInv - sav);
@@ -7411,7 +7410,7 @@ function renderCalculatorTab(r){
     const yMaxDisplay = Math.ceil(yMaxYears / yStep) * yStep;
     const yTickCount = yMaxDisplay / yStep;
 
-    const chartBarW = 420, chartBarH = 190, barPadL = 52, barPadR = 10, barPadT = 10, barPadB = 52;
+    const chartBarW = 420, chartBarH = 180, barPadL = 52, barPadR = 10, barPadT = 8, barPadB = 44;
     const barAreaW = chartBarW - barPadL - barPadR;
     const barAreaH = chartBarH - barPadT - barPadB;
     const barW2 = Math.floor(barAreaW / barWeeks.length) - 4;
@@ -7436,13 +7435,13 @@ function renderCalculatorTab(r){
       const isSel = i === _selBarIdx;
       h += '<rect x="'+bx.toFixed(1)+'" y="'+by.toFixed(1)+'" width="'+barW2+'" height="'+barH.toFixed(1)+'" rx="3" fill="'+barCol+'" opacity="'+(isSel?'1':'.4')+'"/>';
       if(isSel) h += '<rect x="'+(bx-1).toFixed(1)+'" y="'+(by-1).toFixed(1)+'" width="'+(barW2+2)+'" height="'+(barH+2).toFixed(1)+'" rx="4" fill="none" stroke="'+barCol+'" stroke-width="1.5" opacity=".6"/>';
-      h += '<text x="'+(bx + barW2/2).toFixed(1)+'" y="'+(by - 3).toFixed(1)+'" text-anchor="middle" fill="'+barCol+'" font-size="6.5" font-weight="700"'+(isSel?' opacity="1"':' opacity=".6"')+'>'+_fmtPayback(barPBs[i])+'</text>';
-      h += '<text x="'+(bx + barW2/2).toFixed(1)+'" y="'+(barPadT + barAreaH + 14)+'" text-anchor="middle" fill="'+(isSel?barCol:'var(--text3)')+'" font-size="7" font-weight="'+(isSel?'700':'500')+'">'+w+'wk'+(isSel?' ✓':'')+'</text>';
+      h += '<text x="'+(bx + barW2/2).toFixed(1)+'" y="'+(by - 3).toFixed(1)+'" text-anchor="middle" fill="'+barCol+'" font-size="6" font-weight="700"'+(isSel?' opacity="1"':' opacity=".6"')+'>'+_fmtPayback(barPBs[i])+'</text>';
+      h += '<text x="'+(bx + barW2/2).toFixed(1)+'" y="'+(barPadT + barAreaH + 12)+'" text-anchor="middle" fill="'+(isSel?barCol:'var(--text3)')+'" font-size="6.5" font-weight="'+(isSel?'700':'500')+'">'+w+(isSel?' ✓':'')+'</text>';
     });
 
     h += '<text x="4" y="'+(barPadT + barAreaH/2)+'" text-anchor="start" fill="var(--text3)" font-size="7" font-weight="700">Break-</text>';
     h += '<text x="4" y="'+(barPadT + barAreaH/2 + 9)+'" text-anchor="start" fill="var(--text3)" font-size="7" font-weight="700">Even</text>';
-    h += '<text x="'+(barPadL + barAreaW/2)+'" y="'+(barPadT + barAreaH + 30)+'" text-anchor="middle" fill="var(--text3)" font-size="7.5" font-weight="600">Weeks of Free Rent</text>';
+    h += '<text x="'+(barPadL + barAreaW/2)+'" y="'+(barPadT + barAreaH + 26)+'" text-anchor="middle" fill="var(--text3)" font-size="7" font-weight="600">Weeks of Free Rent</text>';
 
     h += '</svg>';
     h += '<div style="font-size:.6rem;color:var(--text3);text-align:center;margin-top:6px">✓ = Your selection ('+conW+' week'+(conW!==1?'s':'')+')</div>';
@@ -7961,7 +7960,7 @@ function saveConcessionWeeks(recId){
   if(!r) return;
   const val = parseFloat(document.getElementById('concessionWeeksInput')?.value) || 0;
   const an = getAnalysis(r);
-  an.concessionWeeks = Math.max(0, Math.min(20, val));
+  an.concessionWeeks = Math.max(0, Math.min(12, val));
   saveData();
   document.getElementById('concessionWeeksOverlay')?.remove();
   render();
@@ -8150,7 +8149,7 @@ function adjustConcessionWeeks(recId, delta){
   if(!r) return;
   const an = getAnalysis(r);
   const current = an.concessionWeeks !== undefined ? parseFloat(an.concessionWeeks) : 6;
-  an.concessionWeeks = Math.max(0, Math.min(20, current + delta));
+  an.concessionWeeks = Math.max(0, Math.min(12, current + delta));
   saveData();
   const calcEl = document.querySelector('.tab-content[data-tab="calculator"]');
   if(calcEl){
