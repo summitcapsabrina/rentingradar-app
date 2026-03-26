@@ -2852,7 +2852,7 @@ function _renderProfileInner(){
       </div>
       <div style="display:flex;align-items:center;gap:16px;margin-top:4px;flex-wrap:wrap">
         <div class="hero-stats">
-            <div class="hero-stat hero-rent-editable" style="font-size:.95rem;cursor:pointer" onclick="editHeroRent(this,'${r.id}')" title="Click to edit rent"><strong style="color:var(--success);font-size:1.05rem">${d.monthlyRent ? '$'+Number(d.monthlyRent).toLocaleString()+'/mo' : '<span style="color:var(--text3)">+ Rent</span>'}</strong></div>
+            <div class="hero-stat hero-rent-editable" style="font-size:.95rem;cursor:pointer;display:inline-flex;align-items:center;gap:4px" onclick="editHeroRent(this,'${r.id}')" title="Click to edit rent"><strong style="color:var(--success);font-size:1.05rem">${d.monthlyRent ? '$'+Number(d.monthlyRent).toLocaleString()+'/mo' : '<span style="color:var(--text3)">+ Rent</span>'}</strong></div>${buildRentSparkline(r)}<span onclick="event.stopPropagation();showAppAlert('Only update the rent amount here when the listing shows a new rent. To explore how different rent amounts would affect your deal temperature and cash flow, use the <strong>Rent Negotiation</strong> tools in the <strong>Projected ROI</strong> tab.', {title:'About Monthly Rent', icon:'ℹ️'})" style="cursor:help;display:inline-flex;align-items:center;opacity:.5;vertical-align:middle" title="When should I change the rent?"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><circle cx="12" cy="17" r=".5" fill="currentColor"/></svg></span>
             <div class="hero-stat"><strong>${d.bedrooms||'—'}</strong> Beds</div>
             <div class="hero-stat"><strong>${d.bathrooms||'—'}</strong> ${d.bathrooms==='1'?'Bath':'Baths'}</div>
             <div class="hero-stat"><strong>${d.sqft ? Number(d.sqft).toLocaleString() : '—'}</strong> Sq Ft</div>
@@ -6095,7 +6095,9 @@ function activateHeroInput(recId, field, containerId, currentVal){
     container.onclick = null;
     const save = () => {
       if(!records.find(x=>x.id===recId).propertyDetails) records.find(x=>x.id===recId).propertyDetails = {};
-      records.find(x=>x.id===recId).propertyDetails.monthlyRent = input.value.trim();
+      const _rr = records.find(x=>x.id===recId);
+      logRentChange(_rr, input.value.trim());
+      _rr.propertyDetails.monthlyRent = input.value.trim();
       saveData(); activeHeroEdit = null; render();
     };
     input.addEventListener('blur', save);
@@ -8016,6 +8018,7 @@ function updatePropertyRent(recId, newRent){
   const r = records.find(x => x.id === recId);
   if(!r) return;
   if(!r.propertyDetails) r.propertyDetails = {};
+  logRentChange(r, newRent);
   r.propertyDetails.monthlyRent = newRent;
   saveData();
   render();
@@ -9462,7 +9465,7 @@ function saveContactCard(recId){
   if(ceBeds !== undefined) r.propertyDetails.bedrooms = ceBeds;
   if(ceBaths !== undefined) r.propertyDetails.bathrooms = ceBaths;
   if(ceSqft !== undefined) r.propertyDetails.sqft = ceSqft;
-  if(ceRent !== undefined) r.propertyDetails.monthlyRent = ceRent;
+  if(ceRent !== undefined){ logRentChange(r, ceRent); r.propertyDetails.monthlyRent = ceRent; }
   r.propertyDetails.market = document.getElementById('ce_market')?.value?.trim() || '';
   r.propertyDetails.submarket = document.getElementById('ce_submarket')?.value?.trim() || '';
   r.propertyDetails.availableDate = ceAvailNow ? 'now' : ceAvailDate;
@@ -9667,6 +9670,68 @@ function editHeroMarket(el, recId){
   });
 }
 
+// ── Rent History Tracking ──
+function logRentChange(r, newRent){
+  if(!r.propertyDetails) r.propertyDetails = {};
+  if(!r.propertyDetails.rentHistory) r.propertyDetails.rentHistory = [];
+  const history = r.propertyDetails.rentHistory;
+  const amt = parseFloat(newRent) || 0;
+  const today = new Date().toISOString().split('T')[0];
+  // Don't log if same amount as last entry
+  if(history.length > 0 && history[history.length - 1].amount === amt) return;
+  // If last entry was today, update it instead of adding duplicate
+  if(history.length > 0 && history[history.length - 1].date === today){
+    history[history.length - 1].amount = amt;
+  } else {
+    history.push({ date: today, amount: amt });
+  }
+  // Keep max 50 entries
+  if(history.length > 50) r.propertyDetails.rentHistory = history.slice(-50);
+}
+
+function buildRentSparkline(r){
+  const history = r.propertyDetails?.rentHistory;
+  if(!history || history.length < 2) return '';
+  const amounts = history.map(h => h.amount);
+  const minA = Math.min(...amounts);
+  const maxA = Math.max(...amounts);
+  const range = maxA - minA || 1;
+  const w = 60, h2 = 24, pad = 2;
+  const cw = w - pad * 2, ch = h2 - pad * 2;
+  const pts = amounts.map((a, i) => {
+    const x = pad + (i / (amounts.length - 1)) * cw;
+    const y = pad + ch - ((a - minA) / range) * ch;
+    return x.toFixed(1) + ',' + y.toFixed(1);
+  });
+  const lastAmt = amounts[amounts.length - 1];
+  const prevAmt = amounts[amounts.length - 2];
+  const lineColor = lastAmt < prevAmt ? '#10b981' : lastAmt > prevAmt ? '#ef4444' : 'var(--text3)';
+  const arrow = lastAmt < prevAmt ? '↓' : lastAmt > prevAmt ? '↑' : '—';
+  const delta = lastAmt - prevAmt;
+  const deltaStr = (delta >= 0 ? '+' : '-') + '$' + Math.abs(delta).toLocaleString();
+  return '<span onclick="event.stopPropagation();showRentHistory(\''+r.id+'\')" style="display:inline-flex;align-items:center;gap:3px;cursor:pointer;vertical-align:middle" title="Rent history: '+amounts.length+' changes · Click for details"><svg width="'+w+'" height="'+h2+'" viewBox="0 0 '+w+' '+h2+'" style="display:inline-block;vertical-align:middle"><polyline points="'+pts.join(' ')+'" fill="none" stroke="'+lineColor+'" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="'+pts[pts.length-1].split(',')[0]+'" cy="'+pts[pts.length-1].split(',')[1]+'" r="2" fill="'+lineColor+'"/></svg><span style="font-size:.6rem;color:'+lineColor+';font-weight:700">'+arrow+deltaStr+'</span></span>';
+}
+
+function showRentHistory(recId){
+  const r = records.find(x => x.id === recId);
+  if(!r) return;
+  const history = r.propertyDetails?.rentHistory || [];
+  if(history.length === 0){ showAppAlert('No rent changes recorded yet.', {title:'Rent History', icon:'📊'}); return; }
+  let body = '<div style="max-height:300px;overflow-y:auto;scrollbar-width:thin">';
+  body += '<table style="width:100%;border-collapse:collapse;font-size:.8rem">';
+  body += '<tr style="border-bottom:1px solid var(--border)"><th style="padding:4px 8px;text-align:left;color:var(--text3);font-size:.65rem;text-transform:uppercase">Date</th><th style="padding:4px 8px;text-align:right;color:var(--text3);font-size:.65rem;text-transform:uppercase">Rent</th><th style="padding:4px 8px;text-align:right;color:var(--text3);font-size:.65rem;text-transform:uppercase">Change</th></tr>';
+  history.forEach((h, i) => {
+    const prev = i > 0 ? history[i-1].amount : null;
+    const delta = prev !== null ? h.amount - prev : 0;
+    const deltaStr = prev === null ? '—' : (delta >= 0 ? '+' : '-') + '$' + Math.abs(delta).toLocaleString();
+    const deltaColor = delta < 0 ? '#10b981' : delta > 0 ? '#ef4444' : 'var(--text3)';
+    body += '<tr style="border-bottom:1px solid rgba(148,163,184,.06)"><td style="padding:5px 8px;color:var(--text2)">' + fmtDate(h.date) + '</td><td style="padding:5px 8px;text-align:right;font-weight:600;color:var(--text)">$' + h.amount.toLocaleString() + '/mo</td><td style="padding:5px 8px;text-align:right;font-weight:600;color:' + deltaColor + '">' + deltaStr + '</td></tr>';
+  });
+  body += '</table></div>';
+  body += '<div style="margin-top:10px;padding:8px 10px;background:rgba(99,129,250,.06);border-radius:var(--radius);font-size:.72rem;color:var(--text2)"><strong style="color:var(--primary)">Tip:</strong> Only update the rent here when the listing shows a new rent amount. To explore how different rent amounts affect your deal, use the <strong>Rent Negotiation</strong> tools in the <strong>Projected ROI</strong> tab.</div>';
+  showAppAlert(body, {title:'Rent History', icon:'📊'});
+}
+
 function editHeroRent(el, recId){
   if(el.querySelector('input')) return;
   const r = records.find(x => x.id === recId);
@@ -9692,6 +9757,7 @@ function editHeroRent(el, recId){
     if(saved) return;
     saved = true;
     const val = parseFloat(input.value) || 0;
+    logRentChange(r, val);
     r.propertyDetails.monthlyRent = val;
     r.monthlyRent = val;
     saveData();
