@@ -7213,6 +7213,13 @@ function renderCalculatorTab(r){
     const rentRisky = _rentForTarget(1); // just above 0
     const rentNoGo = _rentForTarget(0);
 
+    // Large SVG semi-circle dial
+    const incr = parseFloat(getAnalysis(r).rentDialIncrement) || 50;
+    const dW = 280, dH = 160, dCx = 140, dCy = 145, dR = 110;
+    const rentDialMin = Math.max(0, Math.min(rentSlamDunk, Math.round(_raRent * 0.6)));
+    const rentDialMax = Math.round(_raRent * 1.1);
+    const rentDialRange = rentDialMax - rentDialMin || 1;
+
     // Current dial state — use preview rent if set, otherwise actual rent
     const dialRent = _rentDialPreview[r.id] !== undefined ? _rentDialPreview[r.id] : _raRent;
     const adjNetDial = _calcAdjNet(dialRent);
@@ -7220,36 +7227,11 @@ function renderCalculatorTab(r){
     const dtLblDial = _dtLabelFor(adjNetDial);
     const dtIcoDial = _dtIconFor(adjNetDial);
 
-    // Increment selector
-    const incr = parseFloat(getAnalysis(r).rentDialIncrement) || 50;
-    h += '<div style="display:flex;align-items:center;justify-content:center;gap:6px;margin-bottom:12px">';
-    h += '<span style="font-size:.65rem;color:var(--text3)">Increment:</span>';
-    [25,50,100,250].forEach(val => {
-      const isActive = val === incr;
-      h += '<span onclick="setRentDialIncrement(\''+r.id+'\','+val+')" style="font-size:.65rem;padding:2px 8px;border-radius:12px;cursor:pointer;font-weight:600;'+(isActive?'background:var(--primary);color:#fff':'background:var(--bg);color:var(--text3);border:1px solid var(--border)')+'">$'+val+'</span>';
-    });
-    h += '</div>';
-
-    // Large SVG semi-circle dial
-    const dW = 280, dH = 160, dCx = 140, dCy = 145, dR = 110;
-    const rentDialMin = Math.max(0, Math.min(rentSlamDunk, Math.round(_raRent * 0.6)));
-    const rentDialMax = Math.round(_raRent * 1.1);
-    const rentDialRange = rentDialMax - rentDialMin || 1;
+    const needlePct = Math.max(0, Math.min(1, (dialRent - rentDialMin) / rentDialRange));
 
     h += '<svg id="rentDial_'+r.id+'" width="'+dW+'" height="'+dH+'" viewBox="0 0 '+dW+' '+dH+'" style="display:block;margin:0 auto">';
 
-    // Draw arc zones with labels
-    // Zone mapping: lower rent = better deal
-    // We need to map rent values to angles on the arc (PI to 2PI, left to right)
-    // Left = low rent (good), Right = high rent (bad)
-    const zoneRents = [
-      { label: 'Slam-Dunk', color: '#10b981', rentMax: rentSlamDunk },
-      { label: 'Potential', color: '#3b82f6', rentMax: rentPotential },
-      { label: 'Risky', color: '#f59e0b', rentMax: rentNoGo },
-      { label: 'No-Go', color: '#ef4444', rentMax: rentDialMax }
-    ];
-
-    // Draw four equal arc segments
+    // Draw four colored arc segments — full opacity, prominent
     const arcZones = [
       { color: '#10b981', start: 0, end: 0.25 },
       { color: '#3b82f6', start: 0.25, end: 0.5 },
@@ -7261,47 +7243,34 @@ function renderCalculatorTab(r){
       const a2 = Math.PI + z.end * Math.PI;
       const x1 = dCx + dR * Math.cos(a1), y1 = dCy + dR * Math.sin(a1);
       const x2 = dCx + dR * Math.cos(a2), y2 = dCy + dR * Math.sin(a2);
-      h += '<path d="M'+x1.toFixed(1)+','+y1.toFixed(1)+' A'+dR+','+dR+' 0 0,1 '+x2.toFixed(1)+','+y2.toFixed(1)+'" fill="none" stroke="'+z.color+'" stroke-width="18" opacity=".2"/>';
+      h += '<path d="M'+x1.toFixed(1)+','+y1.toFixed(1)+' A'+dR+','+dR+' 0 0,1 '+x2.toFixed(1)+','+y2.toFixed(1)+'" fill="none" stroke="'+z.color+'" stroke-width="20" opacity=".7"/>';
     });
 
-    // Active arc fill up to needle
-    const needlePct = Math.max(0, Math.min(1, (dialRent - rentDialMin) / rentDialRange));
-    const activeArcEnd = Math.PI + needlePct * Math.PI;
-    const activeX = dCx + dR * Math.cos(activeArcEnd);
-    const activeY = dCy + dR * Math.sin(activeArcEnd);
-    const largeArc = needlePct > 0.5 ? 1 : 0;
-    const arcStartX = dCx + dR * Math.cos(Math.PI);
-    const arcStartY = dCy + dR * Math.sin(Math.PI);
-    if(needlePct > 0.01){
-      h += '<path d="M'+arcStartX.toFixed(1)+','+arcStartY.toFixed(1)+' A'+dR+','+dR+' 0 '+largeArc+',1 '+activeX.toFixed(1)+','+activeY.toFixed(1)+'" fill="none" stroke="'+dtColDial+'" stroke-width="18" opacity=".5" stroke-linecap="round"/>';
-    }
-
-    // Zone boundary labels (rent amounts at zone transitions)
-    const zoneBoundaryPcts = [0, 0.25, 0.5, 0.75, 1];
-    const zoneBoundaryRents = [rentDialMin, rentSlamDunk, rentPotential, rentNoGo, rentDialMax];
-    const zoneBoundaryLabels = ['$'+rentDialMin.toLocaleString(), '$'+rentSlamDunk.toLocaleString(), '$'+rentPotential.toLocaleString(), '$'+rentNoGo.toLocaleString(), '$'+rentDialMax.toLocaleString()];
-    zoneBoundaryPcts.forEach((pct, i) => {
+    // Zone boundary labels — only at zone transitions (3 interior boundaries), prominent
+    const innerBoundaryPcts = [0.25, 0.5, 0.75];
+    const innerBoundaryRents = [rentSlamDunk, rentPotential, rentNoGo];
+    innerBoundaryPcts.forEach((pct, i) => {
       const angle = Math.PI + pct * Math.PI;
-      const lR = dR + 22;
+      const lR = dR + 24;
       const lx = dCx + lR * Math.cos(angle);
       const ly = dCy + lR * Math.sin(angle);
       const anchor = pct < 0.3 ? 'start' : pct > 0.7 ? 'end' : 'middle';
-      h += '<text x="'+lx.toFixed(1)+'" y="'+ly.toFixed(1)+'" text-anchor="'+anchor+'" fill="var(--text3)" font-size="8" font-weight="600">'+zoneBoundaryLabels[i]+'</text>';
+      h += '<text x="'+lx.toFixed(1)+'" y="'+ly.toFixed(1)+'" text-anchor="'+anchor+'" fill="var(--text)" font-size="9" font-weight="700">$'+innerBoundaryRents[i].toLocaleString()+'</text>';
       // Tick mark
-      const t1R = dR - 9, t2R = dR + 9;
+      const t1R = dR - 10, t2R = dR + 10;
       const tx1 = dCx + t1R * Math.cos(angle), ty1 = dCy + t1R * Math.sin(angle);
       const tx2 = dCx + t2R * Math.cos(angle), ty2 = dCy + t2R * Math.sin(angle);
-      h += '<line x1="'+tx1.toFixed(1)+'" y1="'+ty1.toFixed(1)+'" x2="'+tx2.toFixed(1)+'" y2="'+ty2.toFixed(1)+'" stroke="var(--text3)" stroke-width="1.5" opacity=".4"/>';
+      h += '<line x1="'+tx1.toFixed(1)+'" y1="'+ty1.toFixed(1)+'" x2="'+tx2.toFixed(1)+'" y2="'+ty2.toFixed(1)+'" stroke="var(--text)" stroke-width="1.5" opacity=".5"/>';
     });
 
     // Zone name labels (centered in each zone arc)
     const zoneLabels = [{name:'Slam-Dunk',color:'#10b981',mid:0.125},{name:'Potential',color:'#3b82f6',mid:0.375},{name:'Risky',color:'#f59e0b',mid:0.625},{name:'No-Go',color:'#ef4444',mid:0.875}];
     zoneLabels.forEach(z => {
       const angle = Math.PI + z.mid * Math.PI;
-      const lr = dR - 24;
+      const lr = dR - 26;
       const lx = dCx + lr * Math.cos(angle);
       const ly = dCy + lr * Math.sin(angle);
-      h += '<text x="'+lx.toFixed(1)+'" y="'+ly.toFixed(1)+'" text-anchor="middle" fill="'+z.color+'" font-size="7.5" font-weight="700" opacity=".7">'+z.name+'</text>';
+      h += '<text x="'+lx.toFixed(1)+'" y="'+ly.toFixed(1)+'" text-anchor="middle" fill="'+z.color+'" font-size="8" font-weight="800">'+z.name+'</text>';
     });
 
     // Needle
@@ -7324,8 +7293,16 @@ function renderCalculatorTab(r){
     // +/- buttons
     h += '<div style="display:flex;justify-content:center;align-items:center;gap:10px;margin-top:8px">';
     h += '<button class="btn btn-secondary" style="padding:6px 18px;font-size:.85rem;font-weight:700" onclick="adjustRentDial(\''+r.id+'\',-1)">−</button>';
-    h += '<div style="font-size:.72rem;color:var(--text3);min-width:50px;text-align:center">$'+incr+' steps</div>';
     h += '<button class="btn btn-secondary" style="padding:6px 18px;font-size:.85rem;font-weight:700" onclick="adjustRentDial(\''+r.id+'\',1)">+</button>';
+    h += '</div>';
+
+    // Increment selector — below +/- buttons
+    h += '<div style="display:flex;align-items:center;justify-content:center;gap:6px;margin-top:10px">';
+    h += '<span style="font-size:.65rem;color:var(--text3)">Increment:</span>';
+    [25,50,100,250].forEach(val => {
+      const isActive = val === incr;
+      h += '<span onclick="setRentDialIncrement(\''+r.id+'\','+val+')" style="font-size:.65rem;padding:2px 8px;border-radius:12px;cursor:pointer;font-weight:600;'+(isActive?'background:var(--primary);color:#fff':'background:var(--bg);color:var(--text3);border:1px solid var(--border)')+'">$'+val+'</span>';
+    });
     h += '</div>';
 
     h += '<div style="font-size:.6rem;color:var(--text3);margin-top:8px;font-style:italic;text-align:center">This is a projection tool — changes here do not affect your actual rent.</div>';
@@ -7341,83 +7318,92 @@ function renderCalculatorTab(r){
   if(!_raHasData || _raInv <= 0 || _raAcf <= 0){
     h += '<div style="color:var(--text3);font-size:.82rem;text-align:center;padding:12px 0">Add at least 3 comps and investment details to see concession comparison</div>';
   } else {
-    const conW = parseFloat(getAnalysis(r).concessionWeeks) || 7;
+    const _conWRaw = getAnalysis(r).concessionWeeks;
+    const conW = _conWRaw !== undefined ? parseFloat(_conWRaw) : 7;
     const conSavings = Math.round((_raRent / 4) * conW);
     const adjInvB = Math.max(0, _raInv - conSavings);
     const pbBefore = _calcPayback(_raInv, _raAcf);
     const pbAfter = _calcPayback(adjInvB, _raAcf);
     const savedMonths = pbBefore !== null && pbAfter !== null ? Math.round((pbBefore - pbAfter) * 12) : 0;
 
+    // Weeks selector with +/- side by side
+    h += '<div style="display:flex;flex-direction:column;align-items:center;margin-bottom:14px">';
+    h += '<div onclick="editConcessionWeeks(\''+r.id+'\')" style="cursor:pointer;background:var(--primary);color:#fff;padding:4px 16px;border-radius:20px;font-size:.85rem;font-weight:700;white-space:nowrap">'+conW+' week'+(conW!==1?'s':'')+'</div>';
+    h += '<div style="display:flex;gap:6px;margin-top:6px">';
+    h += '<button class="btn btn-secondary" style="padding:3px 12px;font-size:.75rem;min-width:32px;font-weight:700'+(conW<=0?';opacity:.35;pointer-events:none':'')+'" onclick="adjustConcessionWeeks(\''+r.id+'\',-1)">−</button>';
+    h += '<button class="btn btn-secondary" style="padding:3px 12px;font-size:.75rem;min-width:32px;font-weight:700'+(conW>=20?';opacity:.35;pointer-events:none':'')+'" onclick="adjustConcessionWeeks(\''+r.id+'\',1)">+</button>';
+    h += '</div>';
+    if(savedMonths > 0) h += '<div style="font-size:.68rem;color:#10b981;font-weight:700;margin-top:6px">'+savedMonths+' mo faster · Saves '+fmtMoney(conSavings)+'</div>';
+    h += '</div>';
+
     h += '<div style="display:flex;gap:10px;align-items:stretch">';
     // Left: Without
-    h += '<div style="flex:1;background:var(--bg);border-radius:var(--radius);padding:12px;text-align:center;border:1px solid var(--border)">';
-    h += '<div style="font-size:.62rem;text-transform:uppercase;letter-spacing:.4px;color:var(--text3);margin-bottom:6px">Without Concessions</div>';
-    h += '<div style="font-size:1.1rem;font-weight:800;color:var(--num-danger)">'+_fmtPayback(pbBefore)+'</div>';
-    h += '<div style="font-size:.68rem;color:var(--text3);margin-top:4px">Investment: '+fmtMoney(_raInv)+'</div>';
+    h += '<div style="flex:1;background:var(--bg);border-radius:var(--radius);padding:16px 12px;text-align:center;border:1px solid var(--border);display:flex;flex-direction:column;align-items:center;justify-content:center">';
+    h += '<div style="font-size:.62rem;text-transform:uppercase;letter-spacing:.4px;color:var(--text3);margin-bottom:8px">Without Concessions</div>';
+    h += '<div style="font-size:1.3rem;font-weight:800;color:var(--num-danger)">'+_fmtPayback(pbBefore)+'</div>';
+    h += '<div style="font-size:.7rem;color:var(--text3);margin-top:6px">to break even</div>';
+    h += '<div style="font-size:.75rem;color:var(--text3);margin-top:8px;font-weight:600">Investment: '+fmtMoney(_raInv)+'</div>';
     h += '</div>';
-    // Center: Delta with +/- buttons
-    h += '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:0 2px">';
-    h += '<button class="btn btn-secondary" style="padding:2px 8px;font-size:.7rem;min-width:28px" onclick="adjustConcessionWeeks(\''+r.id+'\',1)">+</button>';
-    h += '<div style="background:var(--primary);color:#fff;padding:3px 10px;border-radius:20px;font-size:.72rem;font-weight:700;white-space:nowrap">'+conW+' wks</div>';
-    h += '<button class="btn btn-secondary" style="padding:2px 8px;font-size:.7rem;min-width:28px" onclick="adjustConcessionWeeks(\''+r.id+'\',-1)">−</button>';
-    h += '<div style="font-size:1rem">→</div>';
-    if(savedMonths > 0) h += '<div style="font-size:.65rem;color:#10b981;font-weight:700">'+savedMonths+'mo faster</div>';
+    // Center: Arrow
+    h += '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 2px">';
+    h += '<div style="font-size:1.2rem;color:var(--text3)">→</div>';
     h += '</div>';
     // Right: With
-    h += '<div style="flex:1;background:var(--bg);border-radius:var(--radius);padding:12px;text-align:center;border:2px solid #10b981">';
-    h += '<div style="font-size:.62rem;text-transform:uppercase;letter-spacing:.4px;color:#10b981;margin-bottom:6px">With '+conW+' Weeks Free</div>';
-    h += '<div style="font-size:1.1rem;font-weight:800;color:#10b981">'+_fmtPayback(pbAfter)+'</div>';
-    h += '<div style="font-size:.68rem;color:var(--text3);margin-top:4px">Effective: '+fmtMoney(adjInvB)+'</div>';
+    h += '<div style="flex:1;background:var(--bg);border-radius:var(--radius);padding:16px 12px;text-align:center;border:2px solid #10b981;display:flex;flex-direction:column;align-items:center;justify-content:center">';
+    h += '<div style="font-size:.62rem;text-transform:uppercase;letter-spacing:.4px;color:#10b981;margin-bottom:8px">With '+conW+' Week'+(conW!==1?'s':'')+' Free</div>';
+    h += '<div style="font-size:1.3rem;font-weight:800;color:#10b981">'+_fmtPayback(pbAfter)+'</div>';
+    h += '<div style="font-size:.7rem;color:var(--text3);margin-top:6px">to break even</div>';
+    h += '<div style="font-size:.75rem;color:var(--text3);margin-top:8px;font-weight:600">Effective: '+fmtMoney(adjInvB)+'</div>';
     h += '</div>';
     h += '</div>';
-    h += '<div style="font-size:.62rem;color:var(--text3);text-align:center;margin-top:8px">Saves '+fmtMoney(conSavings)+' off upfront investment · Use +/− to adjust weeks</div>';
 
-    // ── Vertical Bar Chart: Weeks (X) vs Break-Even Time (Y) ──
+    // ── Vertical Bar Chart: Weeks (X) vs Break-Even Time (Y) — full width ──
     h += '<div style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px">';
     h += '<div style="font-size:.7rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.3px;margin-bottom:10px;text-align:center">Concession Impact</div>';
 
-    const barWeeks = [0,2,4,6,8,10,12];
+    const barWeeks = [0,2,4,6,8,10,12,14,16,18,20];
     const barPBs = barWeeks.map(w => {
       const sav = Math.round((_raRent / 4) * w);
       const adjI = Math.max(0, _raInv - sav);
       return _calcPayback(adjI, _raAcf);
     });
     const maxPBVal = Math.max(...barPBs.map(p => p !== null ? p : 10), 1);
-    const chartBarH = 140, chartBarW = 240, barPadL = 36, barPadR = 8, barPadT = 8, barPadB = 28;
+    const chartBarW = 420, chartBarH = 160, barPadL = 52, barPadR = 10, barPadT = 10, barPadB = 30;
     const barAreaW = chartBarW - barPadL - barPadR;
     const barAreaH = chartBarH - barPadT - barPadB;
-    const barW2 = Math.floor(barAreaW / barWeeks.length) - 6;
+    const barW2 = Math.floor(barAreaW / barWeeks.length) - 4;
 
-    h += '<svg viewBox="0 0 '+chartBarW+' '+chartBarH+'" style="width:100%;max-width:360px;display:block;margin:0 auto">';
+    h += '<svg viewBox="0 0 '+chartBarW+' '+chartBarH+'" style="width:100%;display:block;margin:0 auto">';
 
     // Y-axis grid lines and labels
     const ySteps = 4;
     for(let g = 0; g <= ySteps; g++){
       const gy = barPadT + (g / ySteps) * barAreaH;
       const yVal = maxPBVal * (1 - g / ySteps);
-      h += '<line x1="'+barPadL+'" y1="'+gy.toFixed(1)+'" x2="'+(chartBarW-barPadR)+'" y2="'+gy.toFixed(1)+'" stroke="rgba(148,163,184,.1)" stroke-width="1"/>';
-      if(g % 2 === 0) h += '<text x="'+(barPadL-4)+'" y="'+(gy+3).toFixed(1)+'" text-anchor="end" fill="var(--text3)" font-size="7" font-weight="500">'+yVal.toFixed(1)+'y</text>';
+      h += '<line x1="'+barPadL+'" y1="'+gy.toFixed(1)+'" x2="'+(chartBarW-barPadR)+'" y2="'+gy.toFixed(1)+'" stroke="rgba(148,163,184,.12)" stroke-width="1"/>';
+      if(g % 2 === 0) h += '<text x="'+(barPadL-5)+'" y="'+(gy+3).toFixed(1)+'" text-anchor="end" fill="var(--text3)" font-size="7.5" font-weight="500">'+yVal.toFixed(1)+'y</text>';
     }
 
     // Bars
     barWeeks.forEach((w, i) => {
       const pbVal = barPBs[i] !== null ? barPBs[i] : 10;
       const barH = (pbVal / maxPBVal) * barAreaH;
-      const bx = barPadL + i * (barAreaW / barWeeks.length) + 3;
+      const bx = barPadL + i * (barAreaW / barWeeks.length) + 2;
       const by = barPadT + barAreaH - barH;
       const barCol = pbVal <= 2 ? '#10b981' : pbVal <= 4 ? '#3b82f6' : pbVal <= 6 ? '#f59e0b' : '#ef4444';
       const isRec = w >= 6 && w <= 8;
       h += '<rect x="'+bx.toFixed(1)+'" y="'+by.toFixed(1)+'" width="'+barW2+'" height="'+barH.toFixed(1)+'" rx="3" fill="'+barCol+'" opacity="'+(isRec?'.85':'.5')+'"/>';
       // Value label on top of bar
-      h += '<text x="'+(bx + barW2/2).toFixed(1)+'" y="'+(by - 3).toFixed(1)+'" text-anchor="middle" fill="'+barCol+'" font-size="7" font-weight="700">'+_fmtPayback(barPBs[i])+'</text>';
+      h += '<text x="'+(bx + barW2/2).toFixed(1)+'" y="'+(by - 3).toFixed(1)+'" text-anchor="middle" fill="'+barCol+'" font-size="6.5" font-weight="700">'+_fmtPayback(barPBs[i])+'</text>';
       // X-axis label
-      h += '<text x="'+(bx + barW2/2).toFixed(1)+'" y="'+(chartBarH - 6)+'" text-anchor="middle" fill="'+(isRec?'#10b981':'var(--text3)')+'" font-size="7.5" font-weight="'+(isRec?'700':'500')+'">'+w+'wk'+(isRec?' ✓':'')+'</text>';
+      h += '<text x="'+(bx + barW2/2).toFixed(1)+'" y="'+(chartBarH - 6)+'" text-anchor="middle" fill="'+(isRec?'#10b981':'var(--text3)')+'" font-size="7" font-weight="'+(isRec?'700':'500')+'">'+w+'wk'+(isRec?' ✓':'')+'</text>';
     });
 
-    // Y-axis title
-    h += '<text x="6" y="'+(barPadT + barAreaH/2)+'" text-anchor="middle" fill="var(--text3)" font-size="7" font-weight="600" transform="rotate(-90,6,'+(barPadT + barAreaH/2)+')">Break-Even</text>';
+    // Y-axis title — horizontal, positioned left of labels
+    h += '<text x="4" y="'+(barPadT + barAreaH/2)+'" text-anchor="start" fill="var(--text3)" font-size="7" font-weight="700">Break-</text>';
+    h += '<text x="4" y="'+(barPadT + barAreaH/2 + 9)+'" text-anchor="start" fill="var(--text3)" font-size="7" font-weight="700">Even</text>';
     // X-axis title
-    h += '<text x="'+(barPadL + barAreaW/2)+'" y="'+(chartBarH - 0)+'" text-anchor="middle" fill="var(--text3)" font-size="7" font-weight="600">Weeks of Free Rent</text>';
+    h += '<text x="'+(barPadL + barAreaW/2)+'" y="'+(chartBarH - 0)+'" text-anchor="middle" fill="var(--text3)" font-size="7.5" font-weight="600">Weeks of Free Rent</text>';
 
     h += '</svg>';
     h += '<div style="font-size:.58rem;color:var(--text3);text-align:center;margin-top:2px">✓ = Recommended range (6–8 weeks)</div>';
@@ -7935,7 +7921,7 @@ function saveConcessionWeeks(recId){
   if(!r) return;
   const val = parseFloat(document.getElementById('concessionWeeksInput')?.value) || 0;
   const an = getAnalysis(r);
-  an.concessionWeeks = Math.max(0, Math.min(52, val));
+  an.concessionWeeks = Math.max(0, Math.min(20, val));
   saveData();
   document.getElementById('concessionWeeksOverlay')?.remove();
   render();
@@ -7975,8 +7961,8 @@ function adjustConcessionWeeks(recId, delta){
   const r = records.find(x => x.id === recId);
   if(!r) return;
   const an = getAnalysis(r);
-  const current = parseFloat(an.concessionWeeks) || 7;
-  an.concessionWeeks = Math.max(0, Math.min(52, current + delta));
+  const current = an.concessionWeeks !== undefined ? parseFloat(an.concessionWeeks) : 7;
+  an.concessionWeeks = Math.max(0, Math.min(20, current + delta));
   saveData();
   const calcEl = document.querySelector('.tab-content[data-tab="calculator"]');
   if(calcEl){
