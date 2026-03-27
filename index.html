@@ -5238,7 +5238,7 @@ function _tutLoadSeenFromFirestore(data){
 const _tutorialDefs = {
   free: [
     { type:'welcome', emoji:'🏠', title:'Welcome to RentingRadar!', body:'This quick tutorial will walk you through setting up your first property, managing expenses, and navigating your CRM. You\'ll be a pro in no time!' },
-    { target:'[onclick*="openAddModal"]', title:'Add a Property', body:'Click this button to add your first property to the pipeline.', position:'bottom', action:'click', actionHint:'Click "Add Property" to continue' },
+    { target:'[onclick*="openAddModal"]', title:'Add a Property', body:'Click this button to add your first property to the pipeline.', position:'left', action:'click', actionHint:'Click "Add Property" to continue' },
     { waitFor:'#addStep1', target:'[onclick*="showManualAddForm"]', title:'Choose Manual Entry', body:'You can import from a URL (Pro feature) or enter details manually. Click Manual Entry to continue.', position:'left', action:'click', actionHint:'Click "Manual Entry"', noBlock:true },
     { waitFor:'#add_property', target:'#add_property', title:'Enter the Address', body:'Type the property address. Our autocomplete will help fill in city, state, and zip automatically.', position:'left', action:'input', actionHint:'Type an address to continue', noBlock:true },
     { waitFor:'#add_property', target:'#addStep2', title:'Add Property Details', body:'Fill in key details like bedrooms, bathrooms, square footage, and monthly rent. The more info you add now, the better your analysis will be later.', position:'left', action:null, noBlock:true },
@@ -5444,21 +5444,25 @@ function _tutShowStep(){
     const ex = tgt.left + tgt.width / 2;
     const ey = tgt.top + tgt.height / 2;
 
-    // Quadratic bezier control point — swoop the arrow so it doesn't overlap the tooltip.
-    // Strategy: push the control point BELOW the start point, and offset it horizontally
-    // toward the target so the curve bows outward smoothly.
+    // Quadratic bezier control point — swoop the arrow so it never overlaps the tooltip.
+    // The control point is always pushed below the tooltip bottom and offset horizontally
+    // so the curve bows outward with a visible swoop, even when nearly vertically aligned.
     const dx = ex - sx, dy = ey - sy;
     const dist = Math.sqrt(dx * dx + dy * dy);
+    // Guarantee a minimum horizontal offset so the curve is never a straight line
+    const minSwoop = 50;
+    const hDir = dx >= 0 ? 1 : -1;
+    const hOffset = Math.abs(dx) < minSwoop ? hDir * minSwoop : dx * 0.45;
 
     let cx, cy;
     if(dy >= 0){
       // Target is below or level with tooltip bottom — gentle downward swoop
-      cx = sx + dx * 0.5;
-      cy = sy + Math.max(30, dy * 0.5);
+      cx = sx + hOffset;
+      cy = sy + Math.max(40, dy * 0.5);
     } else {
-      // Target is ABOVE tooltip bottom — swoop down first then curve up
-      const drop = Math.min(60, dist * 0.25);
-      cx = sx + dx * 0.4;
+      // Target is ABOVE tooltip bottom — drop down first, then curve up to target
+      const drop = Math.max(40, Math.min(70, dist * 0.25));
+      cx = sx + hOffset;
       cy = sy + drop;
     }
 
