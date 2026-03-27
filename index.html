@@ -5347,9 +5347,24 @@ function _tutShowStep(){
     return;
   }
 
-  // Regular targeted step
+  // Regular targeted step — poll for target if not yet visible
   const targetEl = _tutResolveTarget(s.target);
-  if(!targetEl){ _tutNext(); return; }
+  if(!targetEl){
+    let frames = 0;
+    const maxFrames = 300; // ~5s at 60fps
+    const poll = function(){
+      frames++;
+      if(_tutResolveTarget(s.target)){
+        requestAnimationFrame(() => _tutShowStep());
+      } else if(frames > maxFrames){
+        _tut.step++; _tutShowStep(); // skip after timeout
+      } else {
+        requestAnimationFrame(poll);
+      }
+    };
+    requestAnimationFrame(poll);
+    return;
+  }
 
   // Scroll target into view if off-screen
   const _vr = targetEl.getBoundingClientRect();
@@ -5364,9 +5379,11 @@ function _tutShowStep(){
     targetEl.classList.add('tut-highlight');
   }
 
-  // Create tooltip
-  const tt = document.createElement('div'); tt.className='tut-tooltip tut-entering'+(isNoBlock?' tut-floating':'');
-  setTimeout(()=>{ tt.classList.remove('tut-entering'); }, 350);
+  // Create tooltip — start invisible with no transitions so the first _track frame
+  // can position it correctly without any flash or animation from (0,0).
+  const tt = document.createElement('div'); tt.className='tut-tooltip'+(isNoBlock?' tut-floating':'');
+  tt.style.opacity = '0';
+  tt.style.transition = 'none';
   let ttHtml = '<div class="tut-tooltip-header"><span class="tut-step-badge">Step '+(_tut.step+1)+' of '+_tut.steps.length+'</span><span class="tut-title">'+s.title+'</span></div>';
   ttHtml += '<div class="tut-tooltip-body">'+s.body;
   if(s.action && s.actionHint) ttHtml += '<div class="tut-action-hint">👆 '+s.actionHint+'</div>';
@@ -5406,13 +5423,24 @@ function _tutShowStep(){
 
   // ── Live tracking loop: tooltip, arrow, spotlight all track the target ──
   const pos = s.position || 'bottom';
-  const arrowFrom = s.arrowFrom || 'bottom'; // 'bottom' (default) or 'right'
+  const arrowFrom = s.arrowFrom || 'bottom';
   let _rafId = 0;
+  let _firstFrame = true; // true until first successful positioning
   const GAP = 16;
 
   function _track(){
     if(!_tut.active || !document.body.contains(tt)) return;
     const tgt = targetEl.getBoundingClientRect();
+
+    // If target is hidden/zero-size, hide tooltip+arrow and keep polling
+    if(tgt.width === 0 || tgt.height === 0){
+      tt.style.opacity = '0';
+      arrowSvg.style.opacity = '0';
+      if(spot) spot.style.opacity = '0';
+      _rafId = requestAnimationFrame(_track);
+      return;
+    }
+
     const ttW = tt.offsetWidth, ttH = tt.offsetHeight;
     const vw = window.innerWidth, vh = window.innerHeight;
 
@@ -5440,14 +5468,25 @@ function _tutShowStep(){
     tt.style.left = ttLeft + 'px';
     tt.style.top = ttTop + 'px';
 
+    // On the first successful frame, make tooltip visible and re-enable transitions
+    if(_firstFrame){
+      _firstFrame = false;
+      // Force the browser to commit the position before enabling transitions
+      void tt.offsetWidth;
+      tt.style.transition = '';
+      tt.style.opacity = '1';
+      arrowSvg.style.opacity = '1';
+      if(spot) spot.style.opacity = '1';
+    }
+
     // ── Arrow origin + destination ──
     let sx, sy, ex, ey;
     if(arrowFrom === 'right'){
-      // Start from right-center of tooltip, end at bottom-center of target
+      // Start from right-center of tooltip, end at top-center of target
       sx = ttLeft + ttW;
       sy = ttTop + ttH / 2;
       ex = tgt.left + tgt.width / 2;
-      ey = tgt.bottom;
+      ey = tgt.top;
     } else {
       // Default: start from bottom-center of tooltip, end at bottom-center of target
       sx = ttLeft + ttW / 2;
@@ -5540,14 +5579,19 @@ function _tutShowStep(){
 
 function _tutResolveTarget(target){
   if(!target) return null;
-  if(typeof target === 'function') return target();
-  // Try each comma-separated selector
+  if(typeof target === 'function'){
+    const el = target();
+    if(!el) return null;
+    const r = el.getBoundingClientRect();
+    return (r.width > 0 && r.height > 0) ? el : null;
+  }
   const selectors = target.split(',').map(s => s.trim());
   for(const sel of selectors){
     try {
       const el = document.querySelector(sel);
-      if(el && el.offsetParent !== null) return el; // visible element
-      if(el) return el;
+      if(!el) continue;
+      const r = el.getBoundingClientRect();
+      if(r.width > 0 && r.height > 0) return el;
     } catch(e){}
   }
   return null;
