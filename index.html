@@ -4201,14 +4201,14 @@ function handleExtensionComp(compData) {
     // No property open — store in a pending queue and notify user
     if (!window._pendingExtensionComps) window._pendingExtensionComps = [];
     window._pendingExtensionComps.push(compData);
-    showToast('Comp received from extension! Open a property to add it.', 'info');
+    showToast('Competitor received from extension! Open a property to add it.', 'info');
     return;
   }
 
   const comps = getComps(r);
   const sectionCount = comps.filter(c => c.rating === (compData.rating || 'competes')).length;
   if (sectionCount >= 10) {
-    showToast('Maximum 10 comps reached for the ' + (compData.rating || 'competes') + ' section.', 'warning');
+    showToast('Maximum 10 competitors reached for the ' + (compData.rating || 'competes') + ' section.', 'warning');
     return;
   }
 
@@ -4218,7 +4218,7 @@ function handleExtensionComp(compData) {
     (compData.airdnaUrl && c.airdnaUrl === compData.airdnaUrl)
   );
   if (isDupe) {
-    showToast('This comp has already been imported.', 'warning');
+    showToast('This competitor has already been imported.', 'warning');
     return;
   }
 
@@ -4244,7 +4244,7 @@ function handleExtensionComp(compData) {
 
   saveData();
   render();
-  showToast('Comp imported from AirDNA! (' + sectionCount + '/10)', 'success');
+  showToast('Competitor imported from AirDNA! (' + sectionCount + '/10)', 'success');
 }
 
 /**
@@ -5308,8 +5308,8 @@ const _tutorialDefs = {
     { waitFor:'#add_property', target:'[onclick*="saveNewRecord"]', title:'Save Your Property', body:'Once your details are filled in, this button saves the property to your pipeline. You can always edit details later from the Property Profile.<br><br><kbd style="background:rgba(99,102,241,.1);border:1px solid var(--border);border-radius:4px;padding:1px 6px;font-size:.72rem;font-family:monospace">Shift + Enter</kbd> Quick save from anywhere in the form', position:'left', noBlock:true, onEnter:function(){ if(!document.querySelector('#add_property')){ openAddModal(); setTimeout(showManualAddForm, 300); } }, onNext:function(){ closeAddModal(true); } },
     { target:'.nav-item[data-view="contacts"]', title:'Contacts', body:'This is your Contacts section — every property you add appears here. You can view them as a table or cards, filter by status, and click any row to open the full Property Profile.<br><br>Click column headers to sort — you can sort by up to two columns at once.', position:'right', onEnter:function(){ closeAddModal(true); switchView('contacts'); }, onNext:function(){ switchView('dashboard'); } },
     { target:'.nav-item[data-view="dashboard"]', title:'Dashboard Overview', body:'The Dashboard is your portfolio command center. Let\'s take a closer look at what\'s here.', position:'right', onEnter:function(){ switchView('dashboard'); } },
-    { target:'.kpi-row, .kpi-card:first-child, .dashboard-kpis', title:'Portfolio KPIs', body:'These cards show your total properties, follow-ups due, meetings scheduled, and pipeline activity at a glance. Stay on top of your deal flow.', position:'bottom', onEnter:function(){ if(currentView!=='dashboard') switchView('dashboard'); }, onNext:function(){ var m = document.getElementById('dashboardMap'); if(m) m.scrollIntoView({behavior:'smooth',block:'center'}); } },
-    { target:'#dashboardMap', title:'Property Map', body:'Your interactive map shows all properties plotted by location. Click any marker to jump to that property\'s profile.<br><br><kbd style="background:rgba(99,102,241,.1);border:1px solid var(--border);border-radius:4px;padding:1px 6px;font-size:.72rem;font-family:monospace">Ctrl + Scroll</kbd> to zoom the map', position:'left', onEnter:function(){ if(currentView!=='dashboard') switchView('dashboard'); var m = document.getElementById('dashboardMap'); if(m) m.scrollIntoView({behavior:'smooth',block:'center'}); } },
+    { target:'.kpi-row, .kpi-card:first-child, .dashboard-kpis', title:'Portfolio KPIs', body:'These cards show your total properties, follow-ups due, meetings scheduled, and pipeline activity at a glance. Stay on top of your deal flow.', position:'bottom', onEnter:function(){ if(currentView!=='dashboard') switchView('dashboard'); }, onNext:function(){ var m = document.getElementById('dashboardMap'); if(m) m.scrollIntoView({behavior:'auto',block:'center'}); } },
+    { target:'#dashboardMap', title:'Property Map', body:'Your interactive map shows all properties plotted by location. Click any marker to jump to that property\'s profile.<br><br><kbd style="background:rgba(99,102,241,.1);border:1px solid var(--border);border-radius:4px;padding:1px 6px;font-size:.72rem;font-family:monospace">Ctrl + Scroll</kbd> to zoom the map', position:'left', onEnter:function(){ if(currentView!=='dashboard') switchView('dashboard'); var m = document.getElementById('dashboardMap'); if(m) m.scrollIntoView({behavior:'auto',block:'center'}); } },
     { target:'.pipeline-funnel, .funnel-section, .pipeline-section, .pipeline-category-tabs', title:'Pipeline Overview', body:'This section shows how your properties are distributed across statuses — from New to Closed. Use it to visualize your deal flow at a glance.', position:'left', onEnter:function(){ if(currentView!=='dashboard') switchView('dashboard'); } },
     { target:'#globalSearch', title:'Search Your CRM', body:'The search bar lets you find any property, contact, or note instantly. It searches across all fields at once.<br><br><kbd style="background:rgba(99,102,241,.1);border:1px solid var(--border);border-radius:4px;padding:1px 6px;font-size:.72rem;font-family:monospace">Ctrl + S</kbd> Jump to search from anywhere', position:'bottom', onEnter:function(){ if(currentView!=='dashboard') switchView('dashboard'); } },
     { target:'.nav-item[data-view="settings"]', title:'Settings & Tutorials', body:'Visit Settings to manage your account, customize your experience, view all keyboard shortcuts, and restart any tutorial walkthrough at any time.<br><br><kbd style="background:rgba(99,102,241,.1);border:1px solid var(--border);border-radius:4px;padding:1px 6px;font-size:.72rem;font-family:monospace">Escape</kbd> Close any popup or modal', position:'right' },
@@ -5317,14 +5317,14 @@ const _tutorialDefs = {
   ],
   basic: [
     { type:'welcome', emoji:'⬆️', title:'Welcome to Basic!', body:'You\'ve unlocked powerful analysis tools! Let\'s walk through the Competitor Analysis and Projected ROI features that are now available on every property.', onNext:function(){ _tutEnsureProfile(); setTimeout(function(){ if(typeof setProfileTab==='function') setProfileTab('analysis'); }, 400); } },
-    { target:'.profile-tab[data-tab="analysis"]', title:'Competitor Analysis', body:'This tab is where you analyze how your property stacks up against the competition. You\'ll add rental comps and see your market positioning.', position:'right', noBlock:true, onEnter:function(){ _tutEnsureProfile(); setTimeout(function(){ if(typeof setProfileTab==='function') setProfileTab('analysis'); }, 400); } },
-    { target:'.comp-table, .calc-section:first-child', title:'Your Comp Table', body:'This is where you add comparable properties (comps) to build your market analysis. Enter nightly rates, occupancy rates, and ratings for each comp. The more comps you add, the more accurate your projections.', position:'left', noBlock:true, onEnter:function(){ if(typeof setProfileTab==='function') setProfileTab('analysis'); } },
-    { target:'.competitive-position, .calc-section-header', title:'Competitive Position', body:'Once you have 3+ comps, RentingRadar calculates your competitive position — showing where you rank in the market and how strong your listing is relative to competitors.', position:'left', noBlock:true, onEnter:function(){ if(typeof setProfileTab==='function') setProfileTab('analysis'); }, onNext:function(){ if(typeof setProfileTab==='function') setProfileTab('calculator'); } },
+    { target:'.profile-tab[data-tab="analysis"]', title:'Competitor Analysis', body:'This tab is where you analyze how your property stacks up against the competition. You\'ll add rental competitors and see your market positioning.', position:'right', noBlock:true, onEnter:function(){ _tutEnsureProfile(); setTimeout(function(){ if(typeof setProfileTab==='function') setProfileTab('analysis'); }, 400); } },
+    { target:'.comp-table, .calc-section:first-child', title:'Your Competitor Table', body:'This is where you add competitors to build your market analysis. Enter nightly rates, occupancy rates, and ratings for each competitor. The more competitors you add, the more accurate your projections.', position:'left', noBlock:true, onEnter:function(){ if(typeof setProfileTab==='function') setProfileTab('analysis'); } },
+    { target:'.competitive-position, .calc-section-header', title:'Competitive Position', body:'Once you have 3+ competitors, RentingRadar calculates your competitive position — showing where you rank in the market and how strong your listing is relative to competitors.', position:'left', noBlock:true, onEnter:function(){ if(typeof setProfileTab==='function') setProfileTab('analysis'); }, onNext:function(){ if(typeof setProfileTab==='function') setProfileTab('calculator'); } },
     { target:'.profile-tab[data-tab="calculator"]', title:'Projected ROI', body:'This tab shows your property\'s projected return on investment with detailed financial analysis.', position:'right', noBlock:true, onEnter:function(){ if(typeof setProfileTab==='function') setProfileTab('calculator'); } },
-    { target:'.kpi-grid, .kpi-card:first-child', title:'Key Performance Indicators', body:'Your KPI cards show projected revenue, annual expenses, monthly net cash flow, and cash-on-cash return — all calculated from your comps and expenses.', position:'left', noBlock:true, onEnter:function(){ if(typeof setProfileTab==='function') setProfileTab('calculator'); } },
+    { target:'.kpi-grid, .kpi-card:first-child', title:'Key Performance Indicators', body:'Your KPI cards show projected revenue, annual expenses, monthly net cash flow, and cash-on-cash return — all calculated from your competitors and expenses.', position:'left', noBlock:true, onEnter:function(){ if(typeof setProfileTab==='function') setProfileTab('calculator'); } },
     { target:'.calc-panel .toggle-btn, [onclick*="setCalcProjMode"], .projection-toggle', title:'Projection Modes', body:'These toggles let you switch between Pessimistic, Realistic, and Optimistic scenarios. Each uses different assumptions based on your competitor data.', position:'left', noBlock:true, onEnter:function(){ if(typeof setProfileTab==='function') setProfileTab('calculator'); } },
     { target:'.deal-temp-card, .calc-section-header[onclick*="dealTemp"], [class*="deal-temp"]', title:'Deal Temperature', body:'Deal Temperature gives you an instant read on whether this property is a Slam-Dunk, has Potential, is Risky, or a No-Go — based on your profit requirements and projected cash flow.', position:'left', noBlock:true, onEnter:function(){ if(typeof setProfileTab==='function') setProfileTab('calculator'); } },
-    { type:'complete', emoji:'📊', title:'Basic Features Unlocked!', body:'You now have access to full competitive analysis and ROI projections. Add at least 3 comps to any property to unlock the full power of these tools. Upgrade to Pro for negotiation tools, AI estimates, and auto-import!' }
+    { type:'complete', emoji:'📊', title:'Basic Features Unlocked!', body:'You now have access to full competitive analysis and ROI projections. Add at least 3 competitors to any property to unlock the full power of these tools. Upgrade to Pro for negotiation tools, AI estimates, and auto-import!' }
   ],
   pro: [
     { type:'welcome', emoji:'🚀', title:'Welcome to Pro!', body:'You\'ve unlocked the full suite! Let\'s explore your new Negotiation Forecasting Tools, AI-powered features, and automatic property importing.', onNext:function(){ _tutEnsureProfile(); setTimeout(function(){ if(typeof setProfileTab==='function') setProfileTab('calculator'); }, 400); } },
@@ -5468,10 +5468,10 @@ function _tutShowStep(){
     return;
   }
 
-  // Scroll target into view if off-screen
+  // Scroll target into view if off-screen (instant for snappy tutorial feel)
   const _vr = targetEl.getBoundingClientRect();
   if(_vr.top < 0 || _vr.bottom > window.innerHeight){
-    targetEl.scrollIntoView({ behavior:'smooth', block:'center' });
+    targetEl.scrollIntoView({ behavior:'auto', block:'center' });
   }
 
   const isNoBlock = !!s.noBlock;
@@ -5582,43 +5582,19 @@ function _tutShowStep(){
       if(spot) spot.style.opacity = '1';
     }
 
-    // ── Arrow: originates from the edge of tooltip FACING the target ──
-    let sx, sy, ex, ey;
-    if(pos === 'left'){
-      // Tooltip is left of target → arrow from right-center of tooltip
-      sx = ttLeft + ttW; sy = ttTop + ttH / 2;
-      ex = tgt.left; ey = tgt.top + tgt.height / 2;
-    } else if(pos === 'right'){
-      // Tooltip is right of target → arrow from left-center of tooltip
-      sx = ttLeft; sy = ttTop + ttH / 2;
-      ex = tgt.right; ey = tgt.top + tgt.height / 2;
-    } else if(pos === 'top'){
-      // Tooltip is above target → arrow from bottom-center of tooltip
-      sx = ttLeft + ttW / 2; sy = ttTop + ttH;
-      ex = tgt.left + tgt.width / 2; ey = tgt.top;
-    } else {
-      // bottom (default) → arrow from top-center of tooltip
-      sx = ttLeft + ttW / 2; sy = ttTop;
-      ex = tgt.left + tgt.width / 2; ey = tgt.bottom;
-    }
+    // ── Arrow: always from bottom-center of tooltip to center of target ──
+    const sx = ttLeft + ttW / 2;
+    const sy = ttTop + ttH;
+    const ex = tgt.left + tgt.width / 2;
+    const ey = tgt.top + tgt.height / 2;
 
     const dx = ex - sx, dy = ey - sy;
     const dist = Math.sqrt(dx * dx + dy * dy);
     const minSwoop = 40;
-    let cx, cy;
-    if(pos === 'left' || pos === 'right'){
-      // Horizontal arrow — swoop vertically
-      const vDir = dy >= 0 ? 1 : -1;
-      const vOffset = Math.abs(dy) < minSwoop ? vDir * minSwoop : dy * 0.45;
-      cx = sx + dx * 0.5;
-      cy = sy + vOffset;
-    } else {
-      // Vertical arrow — swoop horizontally
-      const hDir = dx >= 0 ? 1 : -1;
-      const hOffset = Math.abs(dx) < minSwoop ? hDir * minSwoop : dx * 0.45;
-      cx = sx + hOffset;
-      cy = sy + dy * 0.5;
-    }
+    const swoopDir = dx >= 0 ? 1 : -1;
+    const swoopAmt = Math.abs(dx) < minSwoop ? swoopDir * minSwoop : dx * 0.45;
+    const cx = sx + swoopAmt;
+    const cy = sy + dy * 0.5;
 
     arrowPath.setAttribute('d',
       'M' + sx.toFixed(1) + ',' + sy.toFixed(1) +
@@ -5693,15 +5669,16 @@ function _tutCheckAutoStart(tier, isNewUser){
   _tutLoadSeen();
   if(isNewUser && !_tut.seen.free){
     setTimeout(() => startTutorial('free'), 800);
-  } else if(tier === 'basic' && !_tut.seen.basic){
-    // First time on Basic — wait for profile to be open + disclaimer acknowledged
+  } else if(tier === 'basic' && !_tut.seen.basic && _tut.seen.free){
+    // First time on Basic — only if free tutorial is completed and disclaimer acknowledged
     setTimeout(() => {
-      if(_disclaimerAcknowledged || !requireTier('basic','x')) return; // wait for disclaimer
+      if(!_disclaimerAcknowledged || !requireTier('basic','x')) return;
       startTutorial('basic');
     }, 1200);
-  } else if(tier === 'pro' && !_tut.seen.pro){
+  } else if(tier === 'pro' && !_tut.seen.pro && _tut.seen.basic){
+    // First time on Pro — only if basic tutorial is completed and disclaimer acknowledged
     setTimeout(() => {
-      if(_disclaimerAcknowledged || !requireTier('pro','x')) return;
+      if(!_disclaimerAcknowledged || !requireTier('pro','x')) return;
       startTutorial('pro');
     }, 1200);
   }
@@ -7156,7 +7133,7 @@ function renderCalculatorTab(r){
   const projTagHtml = '<div class="kpi-proj-tag" style="color:'+modeColor+';border-color:'+modeColor+'">'+modeLabel+'</div>';
   const insufficientComps = v.compsCount < 3;
   const nedHtml = '<span style="color:var(--text3);font-size:.78rem;font-style:italic">Not Enough Data</span>';
-  const nedSubHtml = '<span style="color:var(--text3);font-size:.7rem;font-style:italic">Add at least 3 comps in Competitor Analysis</span>';
+  const nedSubHtml = '<span style="color:var(--text3);font-size:.7rem;font-style:italic">Add at least 3 competitors in Competitor Analysis</span>';
 
   // ══════ SECTION VARIABLES ══════
   let kpiHtml = '';
@@ -7179,13 +7156,13 @@ function renderCalculatorTab(r){
     const psDisplay = insufficientComps ? '—' : (ps >= 0 ? '+' : '') + ps.toFixed(2);
     const mpDisplay = insufficientComps ? '—' : ordinal(mp) + ' percentile in market';
 
-    cpHtml += '<div class="calc-section"'+(insufficientComps?' style="opacity:.5"':'')+'><div class="calc-section-header"'+tipAttrs('Competitive Position','How your property compares to the competitive landscape based on the comps you\\x27ve categorized as Loses To, Competes With, and Beats. This directly affects the Position Adjustment percentage applied to your projections.')+'>Competitive Position</div><div class="calc-section-body" style="padding:10px 14px">';
+    cpHtml += '<div class="calc-section"'+(insufficientComps?' style="opacity:.5"':'')+'><div class="calc-section-header"'+tipAttrs('Competitive Position','How your property compares to the competitive landscape based on the competitors you\\x27ve categorized as Loses To, Competes With, and Beats. This directly affects the Position Adjustment percentage applied to your projections.')+'>Competitive Position</div><div class="calc-section-body" style="padding:10px 14px">';
 
     // Position summary
     cpHtml += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">';
-    cpHtml += '<div><div style="font-size:1rem;font-weight:800;color:'+psColor+';cursor:help"'+tipAttrs('Position Rating','Based on how your property compares to comps. Strong (+0.5 to +1.0), Favorable (+0.15 to +0.5), Neutral (-0.15 to +0.15), Challenging (-0.5 to -0.15), Weak (-1.0 to -0.5).',true)+'>'+psLabel+'</div>';
-    cpHtml += '<div style="font-size:.72rem;color:var(--text3);margin-top:2px;cursor:help"'+tipAttrs('Market Percentile','Percentage of the market your property is estimated to outperform. Calculated as (beats + 0.5 × competes) ÷ total comps × 100.',true)+'>'+mpDisplay+'</div></div>';
-    cpHtml += '<div style="text-align:right"><div style="font-size:.68rem;color:var(--text3);text-transform:uppercase;letter-spacing:.3px;cursor:help"'+tipAttrs('Position Score','Score from -1.0 (loses to all) to +1.0 (beats all). Formula: (-1 × loses + 0 × competes + 1 × beats) ÷ total comps.',true)+'>Position Score</div>';
+    cpHtml += '<div><div style="font-size:1rem;font-weight:800;color:'+psColor+';cursor:help"'+tipAttrs('Position Rating','Based on how your property compares to competitors. Strong (+0.5 to +1.0), Favorable (+0.15 to +0.5), Neutral (-0.15 to +0.15), Challenging (-0.5 to -0.15), Weak (-1.0 to -0.5).',true)+'>'+psLabel+'</div>';
+    cpHtml += '<div style="font-size:.72rem;color:var(--text3);margin-top:2px;cursor:help"'+tipAttrs('Market Percentile','Percentage of the market your property is estimated to outperform. Calculated as (beats + 0.5 × competes) ÷ total competitors × 100.',true)+'>'+mpDisplay+'</div></div>';
+    cpHtml += '<div style="text-align:right"><div style="font-size:.68rem;color:var(--text3);text-transform:uppercase;letter-spacing:.3px;cursor:help"'+tipAttrs('Position Score','Score from -1.0 (loses to all) to +1.0 (beats all). Formula: (-1 × loses + 0 × competes + 1 × beats) ÷ total competitors.',true)+'>Position Score</div>';
     cpHtml += '<div style="font-size:1.1rem;font-weight:700;color:'+psColor+'">'+psDisplay+'</div></div>';
     cpHtml += '</div>';
 
@@ -7251,7 +7228,7 @@ function renderCalculatorTab(r){
     cpHtml += '</svg>';
     if(insufficientComps){
       cpHtml += '<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;pointer-events:none">';
-      cpHtml += '<div style="color:var(--text3);font-size:.75rem;font-style:italic">Add at least 3 comps</div>';
+      cpHtml += '<div style="color:var(--text3);font-size:.75rem;font-style:italic">Add at least 3 competitors</div>';
       cpHtml += '</div>';
     }
     cpHtml += '</div>';
@@ -7311,8 +7288,8 @@ function renderCalculatorTab(r){
   kpiHtml += '<div class="calc-kpi"'+tipAttrs('Net Operating Income','Projected revenue minus all operating expenses (co-host, Airbnb fees, cleaning, utilities, etc.). Does not include rent.')+'><div class="kpi-label">Net Operating Income'+projTagHtml+'</div><div class="kpi-monthly">'+(insufficientComps ? '<span style="color:var(--text3)">$—<span class="kpi-per">/mo</span></span>' : fmtMoney(Math.round(kpiNOI))+'<span class="kpi-per">/mo</span>')+'</div><div class="kpi-annual">'+(insufficientComps ? '<span style="color:var(--text3);font-size:.7rem">$—/yr</span>' : fmtMoney(Math.round(kpiAnnualNOI))+'/yr')+'</div></div>';
   const _kpiProfitReq = parseFloat(getAnalysis(r).profitRequirement) || 1000;
   const _prPillLabel = _kpiProfitReq === 1000 ? 'Recommended' : 'Edited ✎';
-  const _prPillColor = _kpiProfitReq === 1000 ? 'color:#10b981;border-color:#10b981' : 'color:#eab308;border-color:#eab308';
-  kpiHtml += '<div class="calc-kpi" style="cursor:pointer;position:relative" onclick="editAnalysisProfitReq(\''+r.id+'\')"'+tipAttrs('Profit Requirement','Your minimum desired monthly net profit. This drives the Deal Temperature thresholds — adjust it here to recalibrate. Default is $1,000/mo.',true)+'><div class="kpi-label">Profit Requirement<div class="kpi-proj-tag" style="'+_prPillColor+'">'+_prPillLabel+'</div></div><div class="kpi-monthly">'+fmtMoney(_kpiProfitReq)+'<span class="kpi-per">/mo</span></div><div class="kpi-annual">'+fmtMoney(_kpiProfitReq*12)+'/yr</div></div>';
+  const _prPillColor = _kpiProfitReq === 1000 ? 'color:#fff;border-color:var(--border)' : 'color:#eab308;border-color:#eab308';
+  kpiHtml += '<div class="calc-kpi" style="cursor:pointer;position:relative" onclick="editAnalysisProfitReq(\''+r.id+'\')"'+tipAttrs('Profit Requirement','Your minimum desired monthly net profit. This drives the Deal Temperature thresholds — adjust it here to recalibrate. Default is $1,000/mo.',true)+'><div class="kpi-label">Profit Requirement<div class="kpi-proj-tag" style="'+_prPillColor+'">'+_prPillLabel+'</div></div><div class="kpi-monthly">'+fmtMoney(_kpiProfitReq)+'<span class="kpi-per">/mo</span> <span style="font-size:.65rem;opacity:.45;margin-left:2px">✏️</span></div><div class="kpi-annual">'+fmtMoney(_kpiProfitReq*12)+'/yr</div></div>';
   kpiHtml += '<div class="calc-kpi"'+tipAttrs('Cash Flow','NOI minus rent, adjusted by Position Adjustment ('+confidencePct+'%). This represents your estimated confidence-discounted take-home profit after all expenses and rent.')+'><div class="kpi-label">Cash Flow'+projTagHtml+'</div><div class="kpi-monthly" style="'+(insufficientComps?'':'color:'+_dtColor)+'">'+(insufficientComps ? '<span style="color:var(--text3)">$—<span class="kpi-per">/mo</span></span>' : fmtMoney(Math.round(kpiMonthlyCF))+'<span class="kpi-per">/mo</span>')+'</div><div class="kpi-annual">'+(insufficientComps ? '<span style="color:var(--text3);font-size:.7rem">$—/yr</span>' : fmtMoney(Math.round(kpiAnnualCF))+'/yr')+'</div></div>';
   kpiHtml += '<div class="calc-kpi"'+tipAttrs('Cash on Cash Return','Adjusted annual cash flow divided by total investment. Uses the confidence-discounted cash flow ('+confidencePct+'% Position Adjustment) to estimate how quickly your investment might pay for itself.')+'><div class="kpi-label">Cash on Cash Return'+projTagHtml+'</div><div class="kpi-monthly" style="'+(insufficientComps?'':'color:'+_dtColor)+'">'+(insufficientComps ? '<span style="color:var(--text3)">—%</span>' : kpiCoC.toFixed(1)+'%')+'</div><div class="kpi-annual">'+(insufficientComps ? '<span style="color:var(--text3);font-size:.7rem">$— invested</span>' : fmtMoney(Math.round(v.totalInvested))+' invested')+'</div></div>';
   kpiHtml += '</div>';
@@ -7364,7 +7341,7 @@ function renderCalculatorTab(r){
     paybackHtml += '<div style="opacity:.5">';
     paybackHtml += '<div style="text-align:center;margin-bottom:10px">';
     paybackHtml += '<div style="font-size:1.1rem;font-weight:800;color:var(--text3)">— years</div>';
-    paybackHtml += '<div style="font-size:.7rem;color:var(--text3);margin-top:1px">Add at least 3 comps to calculate</div>';
+    paybackHtml += '<div style="font-size:.7rem;color:var(--text3);margin-top:1px">Add at least 3 competitors to calculate</div>';
     paybackHtml += '</div>';
     paybackHtml += '<div style="display:flex;justify-content:space-around;margin-bottom:10px;gap:4px">';
     paybackHtml += '<div style="text-align:center"><div style="font-size:.6rem;color:var(--text3);text-transform:uppercase;letter-spacing:.4px">Investment</div><div style="font-size:.78rem;font-weight:700;color:var(--text3)">'+fmtMoney(inv)+'</div></div>';
@@ -7513,12 +7490,12 @@ function renderCalculatorTab(r){
     col.monthlyNet = col.hasData ? Math.round(col.net / 12) : 0;
   });
 
-  pynHtml += '<div class="calc-section"' + (insufficientComps ? ' style="opacity:.5"' : '') + '><div class="calc-section-header"'+tipAttrs('Projected Yearly Net','Estimated annual profit across three scenarios. Each column uses different directional multipliers applied to your comp data, then discounted by your competitive position. Select a column to drive the KPIs, Deal Temperature, and Payback Period. These are projections only — actual results may differ.')+'>Projected Yearly Net</div>';
+  pynHtml += '<div class="calc-section"' + (insufficientComps ? ' style="opacity:.5"' : '') + '><div class="calc-section-header"'+tipAttrs('Projected Yearly Net','Estimated annual profit across three scenarios. Each column uses different directional multipliers applied to your competitor data, then discounted by your competitive position. Select a column to drive the KPIs, Deal Temperature, and Payback Period. These are projections only — actual results may differ.')+'>Projected Yearly Net</div>';
 
   // Clickable column headers — selecting a column drives KPIs, Deal Temp, and Payback
   pynHtml += '<div class="pyn-col-headers">';
   pynHtml += '<div class="pyn-label-spacer"></div>';
-  const colTitles = { optimistic: 'Best-case: Loses To ×0.95, Competes ×1.10, Beats ×1.25 applied to comp revenue. Click to use for KPIs and Deal Temperature.', realistic: 'Weighted estimate: Loses To ×0.85, Competes ×1.00, Beats ×1.15 applied to comp revenue. Click to use for KPIs and Deal Temperature.', pessimistic: 'Conservative: Loses To ×0.75, Competes ×0.90, Beats ×1.05 applied to comp revenue. Click to use for KPIs and Deal Temperature.' };
+  const colTitles = { optimistic: 'Best-case: Loses To ×0.95, Competes ×1.10, Beats ×1.25 applied to competitor revenue. Click to use for KPIs and Deal Temperature.', realistic: 'Weighted estimate: Loses To ×0.85, Competes ×1.00, Beats ×1.15 applied to competitor revenue. Click to use for KPIs and Deal Temperature.', pessimistic: 'Conservative: Loses To ×0.75, Competes ×0.90, Beats ×1.05 applied to competitor revenue. Click to use for KPIs and Deal Temperature.' };
   cols.forEach(col => {
     const isActive = col.key === calcProjMode;
     pynHtml += '<div class="pyn-col-header'+(isActive?' pyn-col-active':'')+'" style="--col-color:'+col.color+';cursor:pointer" onclick="setCalcProjMode(\''+col.key+'\')">';
@@ -7551,7 +7528,7 @@ function renderCalculatorTab(r){
   pynRow('Annual Revenue', col => {
     if(!col.hasData) return noDataHtml;
     return '<span class="calc-display" style="color:var(--text);font-weight:600">'+fmtAcct(col.rev)+'</span>';
-  }, {tip:'Projected annual revenue based on comp nightly rates, occupancy, and days available — adjusted by directional multipliers for each column'});
+  }, {tip:'Projected annual revenue based on competitor nightly rates, occupancy, and days available — adjusted by directional multipliers for each column'});
   pynRow('Annual Expenses', col => {
     if(!col.hasData) return noDataHtml;
     return '<span class="calc-display" style="color:var(--text);font-weight:600">-'+fmtMoney(col.exp)+'</span>';
@@ -7577,7 +7554,7 @@ function renderCalculatorTab(r){
   pynRow('Position Adjustment', col => {
     if(!col.hasData) return noDataHtml;
     return '<span style="font-weight:700;color:'+cpColor+'">'+confidencePct+'%</span>';
-  }, {tip:'Confidence factor based on competitive position score ('+v.positionScore.toFixed(2)+'). Ranges from 55% (loses to all comps) to 100% (beats all comps). Discounts the monthly net to estimate how likely you might be to achieve the projected revenue given your competitive landscape.'});
+  }, {tip:'Confidence factor based on competitive position score ('+v.positionScore.toFixed(2)+'). Ranges from 55% (loses to all competitors) to 100% (beats all competitors). Discounts the monthly net to estimate how likely you might be to achieve the projected revenue given your competitive landscape.'});
   pynRow('Adjusted Monthly Net', col => {
     if(!col.hasData) return noDataHtml;
     const adj = col.adjustedMonthlyNet;
@@ -7599,10 +7576,10 @@ function renderCalculatorTab(r){
   const _dtProfitReq = parseFloat(_dtAn.profitRequirement) || 1000;
   const _dtHalf = Math.round(_dtProfitReq * 0.5);
   const dealTemp = insufficientComps ? null : (dealMonthlyNet >= _dtProfitReq ? 'slam-dunk' : dealMonthlyNet >= _dtHalf ? 'potential' : dealMonthlyNet > 0 ? 'risky' : 'no-go');
-  const dealSource = insufficientComps ? 'Add at least 3 comps in Competitor Analysis' : confidencePct + '% confidence · ' + ordinal(v.marketPercentile) + ' percentile in market';
+  const dealSource = insufficientComps ? 'Add at least 3 competitors in Competitor Analysis' : confidencePct + '% confidence · ' + ordinal(v.marketPercentile) + ' percentile in market';
   const _profReqNote = _dtProfitReq !== 1000 ? ' Calibrated to your '+fmtMoney(_dtProfitReq)+'/mo profit requirement (adjustable in the Competitor Analysis tab).' : ' Calibrated to the default $1,000/mo profit requirement — adjust this in the Competitor Analysis tab under Required Revenue to recalibrate these thresholds.';
   const temps = [
-    { key:'no-go', label:'No-Go', icon:'🚫', color:'#ef4444', desc:'This deal likely loses money after accounting for competitive position.', hint:'After factoring in your competitive positioning against nearby comps, this property may not be able to cover its operating costs — every month held could increase cumulative losses and tie up capital that might be better deployed elsewhere.'+_profReqNote },
+    { key:'no-go', label:'No-Go', icon:'🚫', color:'#ef4444', desc:'This deal likely loses money after accounting for competitive position.', hint:'After factoring in your competitive positioning against nearby competitors, this property may not be able to cover its operating costs — every month held could increase cumulative losses and tie up capital that might be better deployed elsewhere.'+_profReqNote },
     { key:'risky', label:'Risky', icon:'⚠️', color:'#f59e0b', desc:'Thin margins that may leave little room for unexpected costs or vacancies.', hint:'While potentially profitable, margins this thin suggest that a single slow month, unexpected repair, or seasonal vacancy could push the deal into negative territory — consider proceeding only with a strong contingency reserve.'+_profReqNote },
     { key:'potential', label:'Potential', icon:'🔥', color:'#3b82f6', desc:'Solid estimated returns with reasonable margin of safety.', hint:'This property may generate healthy cash flow with enough cushion to help absorb typical vacancy gaps and maintenance surprises, while still potentially delivering a meaningful return on invested capital.'+_profReqNote },
     { key:'slam-dunk', label:'Slam-Dunk', icon:'🏆', color:'#10b981', desc:'Potentially strong returns even after competitive position discount.', hint:'Even after discounting for competitive pressure, this deal may deliver strong monthly cash flow — the kind of margin that should help accelerate payback, could fund portfolio growth, and might better withstand market downturns.'+_profReqNote }
@@ -7755,7 +7732,14 @@ function renderCalculatorTab(r){
   }
 
   // ── NEGOTIATION TOOLS — single card with Rent Adjustment (left) + Rental Concessions (right) ──
-  h += '<div class="calc-section" style="margin-top:0"><div class="calc-section-header"'+tipAttrs('Negotiation Forecasting Tools','Projection-only tools to explore rent and concession scenarios. Changes here do NOT affect your actual property data.')+'>Negotiation Forecasting Tools</div><div class="calc-section-body" style="padding:0">';
+  const _nftProOk = requireTier('pro','Negotiation Forecasting Tools');
+  h += '<div class="calc-section" style="margin-top:0"><div class="calc-section-header"'+tipAttrs('Negotiation Forecasting Tools','Projection-only tools to explore rent and concession scenarios. Changes here do NOT affect your actual property data.')+'>Negotiation Forecasting Tools' + (!_nftProOk ? ' <span style="font-size:.65rem;opacity:.7">🔒</span>' : '') + '</div><div class="calc-section-body" style="padding:0">';
+
+  if(!_nftProOk){
+    h += '<div style="text-align:center;padding:40px 20px"><div style="font-size:2rem;margin-bottom:12px">🔒</div><div style="font-size:.95rem;font-weight:600;color:var(--text);margin-bottom:6px">Pro Feature</div><div style="font-size:.82rem;color:var(--text3);margin-bottom:16px;max-width:320px;margin-left:auto;margin-right:auto">Negotiation Forecasting Tools require the Pro plan. Upgrade to model rent adjustments, rental concessions, and optimize your deal negotiations.</div><button class="btn btn-primary btn-sm" onclick="switchView(\'pricing\')">Upgrade to Pro</button></div>';
+    h += '</div></div>'; // close calc-section-body + calc-section
+    return h;
+  }
 
   // ── Title row with both section names side by side ──
   const _nftModeLabels = {pessimistic:'Pessimistic',realistic:'Realistic',optimistic:'Optimistic'};
@@ -7779,7 +7763,7 @@ function renderCalculatorTab(r){
   h += '<div style="flex:1;min-width:300px;padding:12px 16px;text-align:center;border-right:1px solid var(--border);display:flex;flex-direction:column;justify-content:center">';
 
   if(!_raHasData || !_raRent){
-    h += '<div style="color:var(--text3);font-size:.9rem;padding:18px 0">Set monthly rent and add at least 3 comps to use the dial</div>';
+    h += '<div style="color:var(--text3);font-size:.9rem;padding:18px 0">Set monthly rent and add at least 3 competitors to use the dial</div>';
   } else {
     // Compute zone boundary rents — with safety guards
     function _rentForTarget(target){
@@ -7930,7 +7914,7 @@ function renderCalculatorTab(r){
   h += '<div style="flex:1;min-width:280px;padding:14px 18px">';
 
   if(!_raHasData || _raInv <= 0 || _raAcf <= 0){
-    h += '<div style="color:var(--text3);font-size:.82rem;text-align:center;padding:12px 0">Add at least 3 comps and investment details to see concession comparison</div>';
+    h += '<div style="color:var(--text3);font-size:.82rem;text-align:center;padding:12px 0">Add at least 3 competitors and investment details to see concession comparison</div>';
   } else {
     // Use dial preview rent for concession calcs if available
     const _conRent = _rentDialPreview[r.id] !== undefined ? _rentDialPreview[r.id] : _raRent;
@@ -7960,7 +7944,7 @@ function renderCalculatorTab(r){
     h += '<div style="display:flex;gap:10px;align-items:stretch">';
     h += '<div style="flex:1;background:var(--bg);border-radius:var(--radius);padding:18px 14px;text-align:center;border:1px solid var(--border);display:flex;flex-direction:column;align-items:center;justify-content:center">';
     h += '<div style="font-size:.66rem;text-transform:uppercase;letter-spacing:.4px;color:var(--text3);margin-bottom:10px">Without Concessions</div>';
-    h += '<div style="font-size:1.35rem;font-weight:800;color:var(--num-danger)">'+_fmtPayback(pbBefore)+'</div>';
+    h += '<div style="font-size:1.35rem;font-weight:800;color:var(--text)">'+_fmtPayback(pbBefore)+'</div>';
     h += '<div style="font-size:.72rem;color:var(--text3);margin-top:8px">to break even</div>';
     h += '<div style="font-size:.78rem;color:var(--text3);margin-top:10px;font-weight:600">Investment: '+fmtMoney(_raInv)+'</div>';
     h += '</div>';
@@ -8291,10 +8275,10 @@ function renderAnalysisTab(r){
   const competeRate = totalComps > 0 ? Math.round((competesN / totalComps) * 100) : 0;
   const loseRate = totalComps > 0 ? Math.round((losesN / totalComps) * 100) : 0;
 
-  h += '<div class="an-section"><div class="an-section-hdr"'+tipAttrs('Competitor Strength','A breakdown of how your property compares to your saved comps. Categorize each comp as Loses To, Competes With, or Beats to build your competitive profile. The stacked bar shows the distribution and overall strength of your position in the market.')+'>Competitor Strength</div><div class="an-section-body" style="padding:0;display:flex;flex-direction:column">';
+  h += '<div class="an-section"><div class="an-section-hdr"'+tipAttrs('Competitor Strength','A breakdown of how your property compares to your saved competitors. Categorize each competitor as Loses To, Competes With, or Beats to build your competitive profile. The stacked bar shows the distribution and overall strength of your position in the market.')+'>Competitor Strength</div><div class="an-section-body" style="padding:0;display:flex;flex-direction:column">';
 
   if(totalComps === 0){
-    h += '<div style="flex:1;display:flex;align-items:center;justify-content:center;padding:18px 14px"><div style="color:var(--text3);font-size:.82rem;text-align:center">Add comps to see your competitive strength</div></div>';
+    h += '<div style="flex:1;display:flex;align-items:center;justify-content:center;padding:18px 14px"><div style="color:var(--text3);font-size:.82rem;text-align:center">Add competitors to see your competitive strength</div></div>';
   } else {
     h += '<div class="an-req-bar" style="border:none;border-radius:0;margin:0;flex:1">';
     h += '<div class="an-req-item"><div class="req-label" style="color:#ef4444">Loses To</div><div class="req-val" style="color:#ef4444;font-size:1.3rem">'+losesN+'</div><div class="req-annual">'+loseRate+'%</div></div>';
@@ -8347,7 +8331,7 @@ function renderAnalysisTab(r){
     html += '<div class="comp-section-body">';
 
     if(entries.length === 0){
-      html += '<div class="comp-section-empty">No comparables in this category yet.</div>';
+      html += '<div class="comp-section-empty">No competitors in this category yet.</div>';
     } else {
       html += '<div class="comp-table-wrap"><table class="comp-table">';
       html += '<thead><tr><th>#</th><th>Revenue</th><th>Days</th><th>Occupancy</th><th>Rate</th><th style="min-width:52px">Guests</th><th style="min-width:68px">Bedrooms</th><th style="min-width:46px">Beds</th><th style="min-width:50px">Baths</th><th>Host</th><th>Rating</th><th class="comp-notes-cell">Notes</th><th>Link</th><th></th></tr></thead>';
@@ -8391,7 +8375,7 @@ function renderAnalysisTab(r){
     if(count < 10){
       html += '<div class="comp-add-row">';
       html += '<input type="text" id="compLinkInput_'+category+'" placeholder="Paste Airbnb link here..." onkeydown="if(event.key===\'Enter\'){event.preventDefault();addComp(\''+recId+'\', \''+category+'\')}" />';
-      html += '<button onclick="addComp(\''+recId+'\', \''+category+'\')">+ Add Comp</button>';
+      html += '<button onclick="addComp(\''+recId+'\', \''+category+'\')">+ Add Competitor</button>';
       html += '</div>';
       html += '<div style="text-align:right;font-size:.68rem;color:var(--text3);margin-top:4px">Enter to add</div>';
     }
@@ -8420,7 +8404,7 @@ function addComp(recId, category){
   if(!link){ showAppAlert('Please paste an Airbnb link', {title: 'Validation', icon: '⚠️'}); return }
   const comps = getComps(r);
   const sectionCount = comps.filter(c => c.rating === category).length;
-  if(sectionCount >= 10){ showAppAlert('Maximum 10 comparables per section', {title: 'Limit Reached', icon: '📊'}); return }
+  if(sectionCount >= 10){ showAppAlert('Maximum 10 competitors per section', {title: 'Limit Reached', icon: '📊'}); return }
 
   // Check for duplicate link
   const normalizedNew = _normalizeCompLink(link);
@@ -8431,7 +8415,7 @@ function addComp(recId, category){
   if(dupeInSame){
     // Same category duplicate — alert and clear input
     if(input) input.value = '';
-    showAppAlert('This property has already been added to the <strong>' + (ratingLabels[category] || category) + '</strong> section.', { title: 'Duplicate Comp', icon: '⚠️' });
+    showAppAlert('This property has already been added to the <strong>' + (ratingLabels[category] || category) + '</strong> section.', { title: 'Duplicate Competitor', icon: '⚠️' });
     return;
   }
 
@@ -8440,7 +8424,7 @@ function addComp(recId, category){
     const existingCat = ratingLabels[dupeInOther.rating] || dupeInOther.rating;
     const newCat = ratingLabels[category] || category;
     showAppConfirm('This property is already in the <strong>' + existingCat + '</strong> section. Would you like to move it to <strong>' + newCat + '</strong>, or keep it in both?', {
-      title: 'Duplicate Comp Found',
+      title: 'Duplicate Competitor Found',
       icon: '⚠️',
       confirmText: 'Move to ' + newCat,
       cancelText: 'Keep in Both',
@@ -8477,8 +8461,8 @@ function _doAddComp(r, comps, link, category, input){
 }
 
 function confirmRemoveComp(recId, idx){
-  showAppConfirm('Are you sure you want to remove this comparable?', {
-    title: 'Remove Comparable',
+  showAppConfirm('Are you sure you want to remove this competitor?', {
+    title: 'Remove Competitor',
     icon: '🗑️',
     confirmText: 'Remove',
     confirmClass: 'btn-danger',
@@ -8973,7 +8957,7 @@ function openCompNoteEditor(recId, idx){
     <div class="popup-body">
       ${comp.link ? '<div style="font-size:.78rem;color:var(--text3);margin-bottom:8px"><a href="'+esc(comp.link)+'" target="_blank" style="color:var(--primary)">View Listing</a></div>' : ''}
       ${buildRteToolbarHtml(editorId)}
-      <div class="rte-editor" contenteditable="true" id="${editorId}" data-placeholder="Add notes about this comparable..." style="min-height:180px;font-size:.9rem;padding:10px 12px">${comp.notes || ''}</div>
+      <div class="rte-editor" contenteditable="true" id="${editorId}" data-placeholder="Add notes about this competitor..." style="min-height:180px;font-size:.9rem;padding:10px 12px">${comp.notes || ''}</div>
     </div>
     <div class="popup-footer">
       <span class="hint">Shift+Enter to save</span>
@@ -11164,7 +11148,7 @@ function renderHelp(){
         ${renderHelpAccordion('What are the different pipeline categories?',
           '<strong>New Leads</strong> — Properties you\'re tracking but haven\'t contacted yet (New, No Contact).<br><strong>In Outreach</strong> — Active communication (Messaged, Left Voicemail, Follow Up).<br><strong>Qualified</strong> — Promising prospects (Interested, Meeting).<br><strong>Closed/Lost</strong> — No longer pursuing (HOA Issues, Not Good Fit, Not Interested, Un-Listed).')}
         ${renderHelpAccordion('How does the ROI calculator work?',
-          'Open any property profile and go to the <strong>Projected ROI</strong> tab. Enter the monthly rent, furnishing costs, and expected nightly rate. The calculator projects annual revenue, expenses, net operating income, and cash-on-cash return. Add at least 3 comps in the <strong>Analysis</strong> tab — categorized as Loses To, Competes With, or Beats — to get a weighted revenue projection and deal temperature recommendation.')}
+          'Open any property profile and go to the <strong>Projected ROI</strong> tab. Enter the monthly rent, furnishing costs, and expected nightly rate. The calculator projects annual revenue, expenses, net operating income, and cash-on-cash return. Add at least 3 competitors in the <strong>Analysis</strong> tab — categorized as Loses To, Competes With, or Beats — to get a weighted revenue projection and deal temperature recommendation.')}
         ${renderHelpAccordion('Can I import properties from a spreadsheet?',
           'Yes! Go to <strong>Settings → Data Management → Import CSV</strong> or use the import button on the dashboard. Your CSV should have columns for address, contact name, phone, email, and status. The importer will map your columns automatically.')}
         ${renderHelpAccordion('What\'s the difference between the plans?',
