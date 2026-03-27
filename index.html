@@ -7636,17 +7636,26 @@ function renderCalculatorTab(r){
   if(!_raHasData || !_raRent){
     h += '<div style="color:var(--text3);font-size:.9rem;padding:18px 0">Set monthly rent and add at least 3 comps to use the dial</div>';
   } else {
-    // Compute zone boundary rents
+    // Compute zone boundary rents — with safety guards
     function _rentForTarget(target){
       const col = _raSelectedCol;
+      if(!col || !col.rev || _raConfPct <= 0) return 0;
       const rawMonthly = target * 100 / _raConfPct;
       const rent = (col.rev - col.exp - rawMonthly * 12) / 12;
-      return Math.round(rent);
+      if(!isFinite(rent) || isNaN(rent)) return 0;
+      return Math.max(0, Math.round(rent));
     }
-    const rentSlamDunk = _rentForTarget(_raPR);
-    const rentPotential = _rentForTarget(_raPRHalf);
+    let rentSlamDunk = _rentForTarget(_raPR);
+    let rentPotential = _rentForTarget(_raPRHalf);
     const rentRisky = _rentForTarget(1);
-    const rentNoGo = _rentForTarget(0);
+    let rentNoGo = _rentForTarget(0);
+    // Ensure boundaries are in ascending order (SlamDunk ≤ Potential ≤ NoGo)
+    if(rentPotential < rentSlamDunk) rentPotential = rentSlamDunk;
+    if(rentNoGo < rentPotential) rentNoGo = rentPotential;
+    // Cap all boundaries at current rent
+    rentSlamDunk = Math.min(rentSlamDunk, _raRent);
+    rentPotential = Math.min(rentPotential, _raRent);
+    rentNoGo = Math.min(rentNoGo, _raRent);
 
     // Dial range: $0 (left, best) to current rent (right, worst)
     const dW = 380, dH = 210, dCx = 190, dCy = 185, dR = 145;
@@ -7681,15 +7690,25 @@ function renderCalculatorTab(r){
       { color: '#f59e0b', start: zBoundPotential, end: zBoundNoGo },
       { color: '#ef4444', start: zBoundNoGo, end: 1 }
     ];
-    arcZones.forEach(z => {
-      if(z.end <= z.start) return;
-      const a1 = Math.PI + z.start * Math.PI;
-      const a2 = Math.PI + z.end * Math.PI;
+    // If all zone boundaries are 0 or equal, draw a single full arc in the worst-zone color
+    const _allZonesCollapsed = zBoundSlamDunk <= 0 && zBoundPotential <= 0 && zBoundNoGo <= 0;
+    if(_allZonesCollapsed){
+      const a1 = Math.PI, a2 = 2 * Math.PI;
       const x1 = dCx + dR * Math.cos(a1), y1 = dCy + dR * Math.sin(a1);
       const x2 = dCx + dR * Math.cos(a2), y2 = dCy + dR * Math.sin(a2);
-      const large = (z.end - z.start) > 0.5 ? 1 : 0;
-      h += '<path d="M'+x1.toFixed(1)+','+y1.toFixed(1)+' A'+dR+','+dR+' 0 '+large+',1 '+x2.toFixed(1)+','+y2.toFixed(1)+'" fill="none" stroke="'+z.color+'" stroke-width="28" opacity=".7"/>';
-    });
+      h += '<path d="M'+x1.toFixed(1)+','+y1.toFixed(1)+' A'+dR+','+dR+' 0 1,1 '+x2.toFixed(1)+','+(y2-0.01).toFixed(1)+'" fill="none" stroke="#ef4444" stroke-width="28" opacity=".7"/>';
+    } else {
+      arcZones.forEach(z => {
+        if(z.end <= z.start) return;
+        const a1 = Math.PI + z.start * Math.PI;
+        const a2 = Math.PI + z.end * Math.PI;
+        const x1 = dCx + dR * Math.cos(a1), y1 = dCy + dR * Math.sin(a1);
+        const x2 = dCx + dR * Math.cos(a2), y2 = dCy + dR * Math.sin(a2);
+        const large = (z.end - z.start) > 0.5 ? 1 : 0;
+        if(!isFinite(x1)||!isFinite(y1)||!isFinite(x2)||!isFinite(y2)) return;
+        h += '<path d="M'+x1.toFixed(1)+','+y1.toFixed(1)+' A'+dR+','+dR+' 0 '+large+',1 '+x2.toFixed(1)+','+y2.toFixed(1)+'" fill="none" stroke="'+z.color+'" stroke-width="28" opacity=".7"/>';
+      });
+    }
 
     // Edge labels: $0 at left, current rent at right
     h += '<text x="'+(dCx - dR - 14)+'" y="'+(dCy + 16)+'" text-anchor="start" fill="var(--text)" font-size="11" font-weight="700">$0</text>';
@@ -7698,8 +7717,8 @@ function renderCalculatorTab(r){
     // Interior boundary labels + ticks
     const innerBoundaryPcts = [zBoundSlamDunk, zBoundPotential, zBoundNoGo];
     const innerBoundaryRents = [rentSlamDunk, rentPotential, rentNoGo];
-    innerBoundaryPcts.forEach((pct, i) => {
-      if(pct <= 0.04 || pct >= 0.96) return;
+    if(!_allZonesCollapsed) innerBoundaryPcts.forEach((pct, i) => {
+      if(!isFinite(pct) || pct <= 0.04 || pct >= 0.96) return;
       const angle = Math.PI + pct * Math.PI;
       const lR = dR + 28;
       const lx = dCx + lR * Math.cos(angle);
