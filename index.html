@@ -1196,7 +1196,7 @@ h1 .hero-edit-input{font-size:1.35rem}
 .tut-progress-dot{width:6px;height:6px;border-radius:50%;background:var(--border,#e2e8f0);transition:all .2s}
 .tut-progress-dot.active{background:var(--primary,#6366f1);width:16px;border-radius:3px}
 .tut-progress-dot.done{background:var(--primary,#6366f1);opacity:.4}
-.tut-arrow{position:fixed;z-index:10003;pointer-events:none}
+.tut-arrow{position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:10003;pointer-events:none;overflow:visible}
 .tut-action-hint{display:inline-block;background:var(--primary,#6366f1);color:#fff;font-size:.66rem;font-weight:700;padding:3px 10px;border-radius:12px;margin-top:6px;animation:tutPulse 2s infinite}
 .tut-welcome{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:10003;background:var(--surface,#fff);border-radius:18px;padding:36px 40px;width:440px;max-width:90vw;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.3);pointer-events:auto;animation:tutFadeIn .4s ease}
 .tut-welcome h2{font-size:1.3rem;font-weight:800;color:var(--text,#1e293b);margin:0 0 8px}
@@ -5239,22 +5239,22 @@ const _tutorialDefs = {
     { type:'welcome', emoji:'🏠', title:'Welcome to RentingRadar!', body:'This quick tutorial will walk you through setting up your first property, managing expenses, and navigating your CRM. You\'ll be a pro in no time!' },
     { target:'.nav-item[data-view="dashboard"]', title:'Your Pipeline', body:'This is your main Pipeline view where all your rental arbitrage properties are organized by status. Let\'s start by adding your first property.', position:'right', action:null },
     { target:'[onclick*="openAddModal"]', title:'Add a Property', body:'Click this button to add your first property to the pipeline.', position:'bottom', action:'click', actionHint:'Click "Add Property" to continue' },
-    { waitFor:'#addStep1', delay:600, target:'[onclick*="showManualAddForm"]', title:'Choose Manual Entry', body:'You can import from a URL (Pro feature) or enter details manually. Click Manual Entry to continue.', position:'left', action:'click', actionHint:'Click "Manual Entry"', noBlock:true },
-    { waitFor:'#add_property', delay:600, target:'#add_property', title:'Enter the Address', body:'Type the property address. Our autocomplete will help fill in city, state, and zip automatically.', position:'left', action:'input', actionHint:'Type an address to continue', noBlock:true },
+    { waitFor:'#addStep1', target:'[onclick*="showManualAddForm"]', title:'Choose Manual Entry', body:'You can import from a URL (Pro feature) or enter details manually. Click Manual Entry to continue.', position:'left', action:'click', actionHint:'Click "Manual Entry"', noBlock:true },
+    { waitFor:'#add_property', target:'#add_property', title:'Enter the Address', body:'Type the property address. Our autocomplete will help fill in city, state, and zip automatically.', position:'left', action:'input', actionHint:'Type an address to continue', noBlock:true },
     { waitFor:'#add_property', target:'#addStep2', title:'Add Property Details', body:'Fill in key details like bedrooms, bathrooms, square footage, and monthly rent. The more info you add now, the better your analysis will be later.', position:'left', action:null, noBlock:true },
     { waitFor:'#add_property', target:'[onclick*="saveNewRecord"]', title:'Save Your Property', body:'Click Save to create this property. You can always edit details later from the Property Profile.', position:'left', action:'click', actionHint:'Click "Save" to continue', noBlock:true },
-    { waitFor:'.tab-btn[data-tab="expenses"]', delay:1000, target:'.tab-btn[data-tab="expenses"]', title:'Manage Expenses', body:'Now let\'s look at the Expenses tab. Click here to set up your monthly operating costs like insurance, utilities, and fees.', position:'bottom', action:'click', actionHint:'Click "Expenses" to continue', noBlock:true },
-    { waitFor:'.tab-content[data-tab="expenses"]', delay:500, target:'.tab-content[data-tab="expenses"]', title:'Add Operating Expenses', body:'Enter your estimated monthly costs for each category. These expenses drive your ROI projections and deal temperature analysis. You can use the AI Estimate feature (Pro) or Copy from Property (Basic+) to speed this up.', position:'left', action:null, noBlock:true },
+    { waitFor:'.tab-btn[data-tab="expenses"]', target:'.tab-btn[data-tab="expenses"]', title:'Manage Expenses', body:'Now let\'s look at the Expenses tab. Click here to set up your monthly operating costs like insurance, utilities, and fees.', position:'bottom', action:'click', actionHint:'Click "Expenses" to continue', noBlock:true },
+    { waitFor:'.tab-content[data-tab="expenses"]', target:'.tab-content[data-tab="expenses"]', title:'Add Operating Expenses', body:'Enter your estimated monthly costs for each category. These expenses drive your ROI projections and deal temperature analysis. You can use the AI Estimate feature (Pro) or Copy from Property (Basic+) to speed this up.', position:'left', action:null, noBlock:true },
     { target:'[style*="cursor:help"], [onclick*="showTip"]', title:'Access Tips & Help', body:'See these info indicators? Click any of them throughout the CRM to get helpful tips and explanations about that specific field or feature.', position:'left', action:null, noBlock:true },
     { type:'complete', emoji:'🎉', title:'You\'re All Set!', body:'You now know the basics of RentingRadar. Add more properties, track your pipeline, and explore the Dashboard for portfolio analytics. As you upgrade your plan, new tutorials will introduce advanced features.' }
   ],
   basic: [
     { type:'welcome', emoji:'⬆️', title:'Welcome to Basic!', body:'You\'ve unlocked powerful analysis tools! Let\'s walk through the Competitor Analysis and Projected ROI features that are now available on every property.' },
     { waitFor:'.tab-btn[data-tab="analysis"]', target:'.tab-btn[data-tab="analysis"], [data-tab="analysis"]', title:'Competitor Analysis', body:'Click this tab to see how your property stacks up against the competition. This is where you\'ll add rental comps and analyze market positioning.', position:'bottom', action:'click', actionHint:'Click "Competitor Analysis"', noBlock:true },
-    { waitFor:'.tab-content[data-tab="analysis"]', delay:600, target:'.comp-table, .calc-section:first-child', title:'Your Comp Table', body:'Add comparable properties (comps) to build your market analysis. Enter nightly rates, occupancy rates, and ratings for each comp. The more comps you add, the more accurate your projections.', position:'left', action:null, noBlock:true },
+    { waitFor:'.tab-content[data-tab="analysis"]', target:'.comp-table, .calc-section:first-child', title:'Your Comp Table', body:'Add comparable properties (comps) to build your market analysis. Enter nightly rates, occupancy rates, and ratings for each comp. The more comps you add, the more accurate your projections.', position:'left', action:null, noBlock:true },
     { target:'.competitive-position, .calc-section-header', title:'Competitive Position', body:'Once you have 3+ comps, RentingRadar calculates your competitive position — showing where you rank in the market and how strong your listing is relative to competitors.', position:'left', action:null, noBlock:true },
     { waitFor:'.tab-btn[data-tab="calculator"]', target:'.tab-btn[data-tab="calculator"], [data-tab="calculator"]', title:'Projected ROI', body:'Click here to see your property\'s projected return on investment with detailed financial analysis.', position:'bottom', action:'click', actionHint:'Click "Projected ROI"', noBlock:true },
-    { waitFor:'.tab-content[data-tab="calculator"]', delay:600, target:'.kpi-grid, .kpi-card:first-child', title:'Key Performance Indicators', body:'Your KPI cards show projected revenue, annual expenses, monthly net cash flow, and cash-on-cash return — all calculated from your comps and expenses.', position:'left', action:null, noBlock:true },
+    { waitFor:'.tab-content[data-tab="calculator"]', target:'.kpi-grid, .kpi-card:first-child', title:'Key Performance Indicators', body:'Your KPI cards show projected revenue, annual expenses, monthly net cash flow, and cash-on-cash return — all calculated from your comps and expenses.', position:'left', action:null, noBlock:true },
     { target:'.calc-panel .toggle-btn, [onclick*="setCalcProjMode"], .projection-toggle', title:'Projection Modes', body:'Toggle between Pessimistic, Realistic, and Optimistic scenarios. Each mode uses different assumptions based on your competitor data to show best-case and worst-case outcomes.', position:'left', action:null, noBlock:true },
     { target:'.deal-temp-card, .calc-section-header[onclick*="dealTemp"], [class*="deal-temp"]', title:'Deal Temperature', body:'Deal Temperature gives you an instant read on whether this property is a Slam-Dunk, has Potential, is Risky, or a No-Go — based on your profit requirements and projected cash flow.', position:'left', action:null, noBlock:true },
     { type:'complete', emoji:'📊', title:'Basic Features Unlocked!', body:'You now have access to full competitive analysis and ROI projections. Add at least 3 comps to any property to unlock the full power of these tools. Upgrade to Pro for negotiation tools, AI estimates, and auto-import!' }
@@ -5262,7 +5262,7 @@ const _tutorialDefs = {
   pro: [
     { type:'welcome', emoji:'🚀', title:'Welcome to Pro!', body:'You\'ve unlocked the full suite! Let\'s explore your new Negotiation Forecasting Tools, AI-powered features, and automatic property importing.' },
     { waitFor:'.tab-btn[data-tab="calculator"]', target:'.tab-btn[data-tab="calculator"], [data-tab="calculator"]', title:'Projected ROI', body:'Let\'s start in the Projected ROI tab where your new Negotiation Forecasting Tools live.', position:'bottom', action:'click', actionHint:'Click "Projected ROI"', noBlock:true },
-    { waitFor:'.calc-section-header', delay:600, target:function(){ return document.querySelector('.calc-section-header[onclick*="Negotiation"]') || Array.from(document.querySelectorAll('.calc-section-header')).find(el => el.textContent.includes('Negotiation')); }, title:'Negotiation Forecasting Tools', body:'This is your new negotiation analysis center. It combines Rent Adjustment and Rental Concessions to help you model deal scenarios before negotiating with landlords.', position:'left', action:null, noBlock:true },
+    { waitFor:'.calc-section-header', target:function(){ return document.querySelector('.calc-section-header[onclick*="Negotiation"]') || Array.from(document.querySelectorAll('.calc-section-header')).find(el => el.textContent.includes('Negotiation')); }, title:'Negotiation Forecasting Tools', body:'This is your new negotiation analysis center. It combines Rent Adjustment and Rental Concessions to help you model deal scenarios before negotiating with landlords.', position:'left', action:null, noBlock:true },
     { target:function(){ return document.querySelector('[id^="rentDial_"]') || document.querySelector('svg[id^="rentDial"]'); }, title:'Rent Adjustment Dial', body:'Drag this dial or click the rent amount to explore what monthly rent would make this deal attractive. The color zones show your deal temperature at each rent level. This is projection-only — it won\'t change your actual data.', position:'left', action:null, noBlock:true },
     { target:function(){ var el = document.querySelector('[onclick*="editConcessionWeeks"]'); return el ? el.closest('div[style*="flex-direction:column"]') : null; }, title:'Rental Concessions', body:'Model weeks of free rent you could negotiate. See how concessions reduce your upfront investment and accelerate your break-even timeline. The chart below shows the impact at each week level.', position:'left', action:null, noBlock:true },
     { target:function(){ return document.querySelector('[onclick*="aiEstimate"], [onclick*="AI Estimate"], .btn-primary[onclick*="ai"]') || Array.from(document.querySelectorAll('.btn')).find(el => el.textContent.includes('AI') && el.textContent.includes('Estimate')); }, title:'AI-Powered Estimates', body:'Pro unlocks AI Expense Estimates. Click this to have our AI analyze your market and property type to suggest realistic operating expenses — saving you hours of research.', position:'left', action:null, noBlock:true },
@@ -5313,34 +5313,23 @@ function _tutShowStep(){
   if(!_tut.active || _tut.step >= _tut.steps.length) { _tutEnd(); return; }
   const s = _tut.steps[_tut.step];
 
-  // Handle delay (wait for DOM to update)
-  if(s.delay && !s._delayDone){
-    s._delayDone = true;
-    setTimeout(() => _tutShowStep(), s.delay);
-    // Show backdrop while waiting
-    const bd = document.createElement('div'); bd.className='tut-backdrop'; document.body.appendChild(bd);
+  // ── waitFor: fast RAF-based polling for element to appear (no fixed delay) ──
+  if(s.waitFor && !document.querySelector(s.waitFor)){
+    let frames = 0;
+    const maxFrames = 240; // ~4s at 60fps
+    const poll = function(){
+      frames++;
+      if(document.querySelector(s.waitFor)){
+        // Element appeared — render step on next frame for one clean paint
+        requestAnimationFrame(() => _tutShowStep());
+      } else if(frames > maxFrames){
+        _tutNext(); // skip if never appears
+      } else {
+        requestAnimationFrame(poll);
+      }
+    };
+    requestAnimationFrame(poll);
     return;
-  }
-
-  // Handle waitFor (wait for element to appear)
-  if(s.waitFor){
-    const waitEl = document.querySelector(s.waitFor);
-    if(!waitEl){
-      // Poll for element
-      let attempts = 0;
-      const poll = setInterval(() => {
-        attempts++;
-        if(document.querySelector(s.waitFor)){
-          clearInterval(poll);
-          setTimeout(() => _tutShowStep(), s.delay || 200);
-        } else if(attempts > 40){ // 4 seconds timeout
-          clearInterval(poll);
-          _tutNext(); // skip step if element never appears
-        }
-      }, 100);
-      const bd = document.createElement('div'); bd.className='tut-backdrop'; document.body.appendChild(bd);
-      return;
-    }
   }
 
   // Welcome/Complete screens
@@ -5361,24 +5350,18 @@ function _tutShowStep(){
   const targetEl = _tutResolveTarget(s.target);
   if(!targetEl){ _tutNext(); return; }
 
-  const isNoBlock = !!s.noBlock; // non-blocking mode: no backdrop/spotlight, page stays interactive
-
-  if(!isNoBlock){
-    // Create backdrop
-    const bd = document.createElement('div'); bd.className='tut-backdrop'; bd.style.background='transparent'; document.body.appendChild(bd);
-
-    // Spotlight on target
-    const rect0 = targetEl.getBoundingClientRect();
-    const pad = 8;
-    const spot = document.createElement('div'); spot.className='tut-spotlight';
-    spot.style.cssText = 'left:'+(rect0.left-pad)+'px;top:'+(rect0.top-pad)+'px;width:'+(rect0.width+pad*2)+'px;height:'+(rect0.height+pad*2)+'px';
-    document.body.appendChild(spot);
-
-    // Highlight target
-    targetEl.classList.add('tut-highlight');
+  // Scroll target into view if off-screen
+  const _vr = targetEl.getBoundingClientRect();
+  if(_vr.top < 0 || _vr.bottom > window.innerHeight){
+    targetEl.scrollIntoView({ behavior:'smooth', block:'center' });
   }
 
-  const rect = targetEl.getBoundingClientRect();
+  const isNoBlock = !!s.noBlock;
+
+  if(!isNoBlock){
+    const bd = document.createElement('div'); bd.className='tut-backdrop'; bd.style.background='transparent'; document.body.appendChild(bd);
+    targetEl.classList.add('tut-highlight');
+  }
 
   // Create tooltip
   const tt = document.createElement('div'); tt.className='tut-tooltip tut-entering'+(isNoBlock?' tut-floating':'');
@@ -5387,11 +5370,9 @@ function _tutShowStep(){
   ttHtml += '<div class="tut-tooltip-body">'+s.body;
   if(s.action && s.actionHint) ttHtml += '<div class="tut-action-hint">👆 '+s.actionHint+'</div>';
   ttHtml += '</div>';
-  // Progress dots
   ttHtml += '<div class="tut-progress">';
   _tut.steps.forEach((_, i) => { ttHtml += '<div class="tut-progress-dot'+(i<_tut.step?' done':'')+(i===_tut.step?' active':'')+'"></div>'; });
   ttHtml += '</div>';
-  // Footer
   ttHtml += '<div class="tut-tooltip-footer"><span class="tut-skip" onclick="_tutConfirmClose()">Close tutorial</span><div class="tut-btns">';
   if(_tut.step > 0) ttHtml += '<button class="tut-btn tut-btn-secondary" onclick="_tutPrev()">← Back</button>';
   if(!s.action) ttHtml += '<button class="tut-btn tut-btn-primary" onclick="_tutNext()">Next →</button>';
@@ -5399,19 +5380,108 @@ function _tutShowStep(){
   tt.innerHTML = ttHtml;
   document.body.appendChild(tt);
 
-  // Position tooltip
-  _tutPositionTooltip(tt, rect, s.position || 'bottom');
+  // Create SVG for arrow (lives in DOM, updated by the tracking loop)
+  const arrowSvg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+  arrowSvg.className.baseVal = 'tut-arrow';
+  const arrowDefs = document.createElementNS('http://www.w3.org/2000/svg','defs');
+  arrowDefs.innerHTML = '<marker id="tutAH" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto" markerUnits="userSpaceOnUse"><polygon points="0,0.8 9,4 0,7.2" fill="rgba(255,255,255,.92)"/></marker>';
+  arrowSvg.appendChild(arrowDefs);
+  const arrowLine = document.createElementNS('http://www.w3.org/2000/svg','line');
+  arrowLine.setAttribute('stroke','rgba(255,255,255,.85)');
+  arrowLine.setAttribute('stroke-width','1.5');
+  arrowLine.setAttribute('stroke-linecap','round');
+  arrowLine.setAttribute('marker-end','url(#tutAH)');
+  arrowSvg.appendChild(arrowLine);
+  document.body.appendChild(arrowSvg);
 
-  // Draw curved arrow from tooltip to target
-  _tutDrawArrow(tt, rect, s.position || 'bottom');
+  // Spotlight element (if not noBlock)
+  let spot = null;
+  if(!isNoBlock){
+    spot = document.createElement('div'); spot.className='tut-spotlight';
+    document.body.appendChild(spot);
+  }
 
-  // If action required, listen for it
+  // ── Live tracking loop: keeps tooltip, arrow, and spotlight locked to target ──
+  const pos = s.position || 'bottom';
+  let _rafId = 0;
+  const GAP = 14; // space between tooltip edge and target edge
+  const ARROW_PAD = 3; // pull arrow end away from target edge slightly
+
+  function _track(){
+    if(!_tut.active || !document.body.contains(tt)) return;
+    const tgt = targetEl.getBoundingClientRect();
+    const ttW = tt.offsetWidth, ttH = tt.offsetHeight;
+    const vw = window.innerWidth, vh = window.innerHeight;
+
+    // ── Position tooltip relative to target ──
+    let ttLeft, ttTop;
+    switch(pos){
+      case 'right':
+        ttLeft = tgt.right + GAP;
+        ttTop = tgt.top + tgt.height/2 - ttH/2;
+        break;
+      case 'left':
+        ttLeft = tgt.left - ttW - GAP;
+        ttTop = tgt.top + tgt.height/2 - ttH/2;
+        break;
+      case 'top':
+        ttLeft = tgt.left + tgt.width/2 - ttW/2;
+        ttTop = tgt.top - ttH - GAP;
+        break;
+      default: // bottom
+        ttLeft = tgt.left + tgt.width/2 - ttW/2;
+        ttTop = tgt.bottom + GAP;
+    }
+    // Clamp to viewport
+    ttLeft = Math.max(8, Math.min(vw - ttW - 8, ttLeft));
+    ttTop = Math.max(8, Math.min(vh - ttH - 8, ttTop));
+    tt.style.left = ttLeft + 'px';
+    tt.style.top = ttTop + 'px';
+
+    // ── Compute arrow endpoints: from tooltip edge → target edge ──
+    const tCx = tgt.left + tgt.width/2, tCy = tgt.top + tgt.height/2;
+    let sx, sy, ex, ey;
+    switch(pos){
+      case 'right': // tooltip is RIGHT of target
+        sx = ttLeft;           sy = ttTop + ttH/2;
+        ex = tgt.right + ARROW_PAD; ey = tCy;
+        break;
+      case 'left': // tooltip is LEFT of target
+        sx = ttLeft + ttW;     sy = ttTop + ttH/2;
+        ex = tgt.left - ARROW_PAD;  ey = tCy;
+        break;
+      case 'top': // tooltip is ABOVE target
+        sx = ttLeft + ttW/2;   sy = ttTop + ttH;
+        ex = tCx;              ey = tgt.top - ARROW_PAD;
+        break;
+      default: // tooltip is BELOW target
+        sx = ttLeft + ttW/2;   sy = ttTop;
+        ex = tCx;              ey = tgt.bottom + ARROW_PAD;
+    }
+    arrowLine.setAttribute('x1', sx.toFixed(1));
+    arrowLine.setAttribute('y1', sy.toFixed(1));
+    arrowLine.setAttribute('x2', ex.toFixed(1));
+    arrowLine.setAttribute('y2', ey.toFixed(1));
+
+    // ── Update spotlight ──
+    if(spot){
+      const sp = 8;
+      spot.style.cssText = 'left:'+(tgt.left-sp)+'px;top:'+(tgt.top-sp)+'px;width:'+(tgt.width+sp*2)+'px;height:'+(tgt.height+sp*2)+'px';
+    }
+
+    _rafId = requestAnimationFrame(_track);
+  }
+  // Kick off tracking
+  _rafId = requestAnimationFrame(_track);
+  _tut._cleanup.push(() => { cancelAnimationFrame(_rafId); });
+
+  // ── Action listeners ──
   if(s.action === 'click'){
     const actionTarget = s.actionTarget ? document.querySelector(s.actionTarget) : targetEl;
     if(actionTarget){
       const handler = function(e){
         actionTarget.removeEventListener('click', handler, true);
-        setTimeout(() => _tutNext(), 150);
+        _tutNext();
       };
       actionTarget.addEventListener('click', handler, true);
       _tut._cleanup.push(() => { try { actionTarget.removeEventListener('click', handler, true); } catch(e){} });
@@ -5420,7 +5490,7 @@ function _tutShowStep(){
     const handler = function(e){
       if(e.target.value && e.target.value.length > 2){
         targetEl.removeEventListener('input', handler);
-        setTimeout(() => _tutNext(), 500);
+        setTimeout(() => _tutNext(), 300);
       }
     };
     targetEl.addEventListener('input', handler);
@@ -5443,109 +5513,7 @@ function _tutResolveTarget(target){
   return null;
 }
 
-function _tutPositionTooltip(tt, targetRect, pos){
-  const pad = 16;
-  const ttRect = tt.getBoundingClientRect();
-  let left, top;
-  switch(pos){
-    case 'right':
-      left = targetRect.right + pad + 20;
-      top = targetRect.top + targetRect.height/2 - ttRect.height/2;
-      break;
-    case 'left':
-      left = targetRect.left - ttRect.width - pad - 20;
-      top = targetRect.top + targetRect.height/2 - ttRect.height/2;
-      break;
-    case 'top':
-      left = targetRect.left + targetRect.width/2 - ttRect.width/2;
-      top = targetRect.top - ttRect.height - pad - 20;
-      break;
-    default: // bottom
-      left = targetRect.left + targetRect.width/2 - ttRect.width/2;
-      top = targetRect.bottom + pad + 20;
-  }
-  // Clamp within viewport
-  left = Math.max(10, Math.min(window.innerWidth - ttRect.width - 10, left));
-  top = Math.max(10, Math.min(window.innerHeight - ttRect.height - 10, top));
-  tt.style.left = left+'px';
-  tt.style.top = top+'px';
-}
-
-function _tutDrawArrow(tt, targetRect, pos){
-  const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
-  svg.className.baseVal = 'tut-arrow';
-  svg.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;z-index:10003;overflow:visible';
-
-  const ttRect = tt.getBoundingClientRect();
-  const tCx = targetRect.left + targetRect.width/2, tCy = targetRect.top + targetRect.height/2;
-
-  // Arrow starts from the tooltip edge facing the target, ends at target edge
-  let sx, sy, ex, ey;
-  switch(pos){
-    case 'right': // tooltip is to the RIGHT of target → arrow from left edge of tooltip to target right edge
-      sx = ttRect.left;
-      sy = ttRect.top + ttRect.height/2;
-      ex = targetRect.right + 4;
-      ey = tCy;
-      break;
-    case 'left': // tooltip is to the LEFT → arrow from right edge to target left edge
-      sx = ttRect.right;
-      sy = ttRect.top + ttRect.height/2;
-      ex = targetRect.left - 4;
-      ey = tCy;
-      break;
-    case 'top': // tooltip is ABOVE → arrow from bottom edge to target top edge
-      sx = ttRect.left + ttRect.width/2;
-      sy = ttRect.bottom;
-      ex = tCx;
-      ey = targetRect.top - 4;
-      break;
-    default: // 'bottom' — tooltip is BELOW → arrow from top edge to target bottom edge
-      sx = ttRect.left + ttRect.width/2;
-      sy = ttRect.top;
-      ex = tCx;
-      ey = targetRect.bottom + 4;
-  }
-
-  const dx = ex - sx, dy = ey - sy;
-  const dist = Math.sqrt(dx*dx + dy*dy);
-  if(dist < 20) return; // too close, skip arrow
-
-  // Smooth cubic bezier with a gentle curve offset perpendicular to the line
-  const isHoriz = (pos === 'left' || pos === 'right');
-  const curveMag = Math.min(30, dist * 0.15);
-  let cp1x, cp1y, cp2x, cp2y;
-  if(isHoriz){
-    cp1x = sx + dx * 0.33;
-    cp1y = sy - curveMag;
-    cp2x = sx + dx * 0.66;
-    cp2y = ey - curveMag;
-  } else {
-    cp1x = sx + curveMag;
-    cp1y = sy + dy * 0.33;
-    cp2x = ex + curveMag;
-    cp2y = sy + dy * 0.66;
-  }
-
-  // Build crisp path
-  const d = 'M'+sx.toFixed(1)+','+sy.toFixed(1)+' C'+cp1x.toFixed(1)+','+cp1y.toFixed(1)+' '+cp2x.toFixed(1)+','+cp2y.toFixed(1)+' '+ex.toFixed(1)+','+ey.toFixed(1);
-
-  const defs = document.createElementNS('http://www.w3.org/2000/svg','defs');
-  // Clean triangular arrowhead, orient auto-start-reverse so it always points forward
-  defs.innerHTML = '<marker id="tutAH" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0.5 L7,3 L0,5.5" fill="none" stroke="rgba(255,255,255,.9)" stroke-width="1.2" stroke-linejoin="round"/></marker>';
-
-  const path = document.createElementNS('http://www.w3.org/2000/svg','path');
-  path.setAttribute('d', d);
-  path.setAttribute('fill','none');
-  path.setAttribute('stroke','rgba(255,255,255,.8)');
-  path.setAttribute('stroke-width','1.5');
-  path.setAttribute('stroke-linecap','round');
-  path.setAttribute('marker-end','url(#tutAH)');
-
-  svg.appendChild(defs);
-  svg.appendChild(path);
-  document.body.appendChild(svg);
-}
+// _tutPositionTooltip and _tutDrawArrow are handled by the live _track() RAF loop inside _tutShowStep
 
 function _tutNext(){
   _tut.step++;
