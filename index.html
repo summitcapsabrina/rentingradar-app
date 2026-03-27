@@ -5242,7 +5242,8 @@ const _tutorialDefs = {
     { waitFor:'#addStep1', target:'[onclick*="showManualAddForm"]', title:'Choose Manual Entry', body:'You can import from a URL (Pro feature) or enter details manually. Click Manual Entry to continue.', position:'left', action:'click', actionHint:'Click "Manual Entry"', noBlock:true },
     { waitFor:'#add_property', target:'#add_property', title:'Enter the Address', body:'Type a property address and select one from the dropdown. Don\'t have one in mind? Just pick any address for practice — you can always delete it later!', position:'left', action:'addressSelect', actionHint:'Type an address and select from the dropdown', noBlock:true },
     { waitFor:'#add_beds', target:function(){ var el = document.getElementById('add_beds'); return el ? el.closest('.field-row') : null; }, title:'Add Property Details', body:'Fill in any of the property details here — beds, baths, square footage, and rent. Don\'t worry about getting everything perfect now; you can always update these later.', position:'left', action:null, noBlock:true },
-    { waitFor:'#add_property', target:'[onclick*="saveNewRecord"]', title:'Save Your Property', body:'Click Save to create this property. You can always edit details later from the Property Profile.', position:'left', action:'click', actionHint:'Click "Save" to continue', noBlock:true },
+    { waitFor:'#add_link2', target:'#add_link2', title:'Add the Listing Link', body:'Paste the listing URL here if you have one. This links back to the original listing so you can reference it anytime from the Property Profile.', position:'left', action:null, noBlock:true },
+    { waitFor:'#add_property', target:'[onclick*="saveNewRecord"]', title:'Save Your Property', body:'Click Save to create this property. You can always edit details later from the Property Profile.', position:'left', action:'click', actionHint:'Click "Save" to continue', arrowFrom:'right', noBlock:true },
     { waitFor:'.tab-btn[data-tab="expenses"]', target:'.tab-btn[data-tab="expenses"]', title:'Manage Expenses', body:'Now let\'s look at the Expenses tab. Click here to set up your monthly operating costs like insurance, utilities, and fees.', position:'bottom', action:'click', actionHint:'Click "Expenses" to continue', noBlock:true },
     { waitFor:'.tab-content[data-tab="expenses"]', target:'.tab-content[data-tab="expenses"]', title:'Add Operating Expenses', body:'Enter your estimated monthly costs for each category. These expenses drive your ROI projections and deal temperature analysis. You can use the AI Estimate feature (Pro) or Copy from Property (Basic+) to speed this up.', position:'left', action:null, noBlock:true },
     { target:'[style*="cursor:help"], [onclick*="showTip"]', title:'Access Tips & Help', body:'See these info indicators? Click any of them throughout the CRM to get helpful tips and explanations about that specific field or feature.', position:'left', action:null, noBlock:true },
@@ -5405,6 +5406,7 @@ function _tutShowStep(){
 
   // ── Live tracking loop: tooltip, arrow, spotlight all track the target ──
   const pos = s.position || 'bottom';
+  const arrowFrom = s.arrowFrom || 'bottom'; // 'bottom' (default) or 'right'
   let _rafId = 0;
   const GAP = 16;
 
@@ -5414,7 +5416,7 @@ function _tutShowStep(){
     const ttW = tt.offsetWidth, ttH = tt.offsetHeight;
     const vw = window.innerWidth, vh = window.innerHeight;
 
-    // ── Position tooltip relative to target (unchanged logic) ──
+    // ── Position tooltip relative to target ──
     let ttLeft, ttTop;
     switch(pos){
       case 'right':
@@ -5438,32 +5440,45 @@ function _tutShowStep(){
     tt.style.left = ttLeft + 'px';
     tt.style.top = ttTop + 'px';
 
-    // ── Arrow: always starts at bottom-center of tooltip, swoops to bottom-center of target ──
-    const sx = ttLeft + ttW / 2;
-    const sy = ttTop + ttH;      // bottom edge of tooltip
-    const ex = tgt.left + tgt.width / 2;
-    const ey = tgt.bottom;
+    // ── Arrow origin: from tooltip edge, destination: target edge ──
+    let sx, sy, ex, ey;
+    if(arrowFrom === 'right'){
+      // Start from right-center of tooltip, end at top-center of target
+      sx = ttLeft + ttW;
+      sy = ttTop + ttH / 2;
+      ex = tgt.left + tgt.width / 2;
+      ey = tgt.top;
+    } else {
+      // Default: start from bottom-center of tooltip, end at bottom-center of target
+      sx = ttLeft + ttW / 2;
+      sy = ttTop + ttH;
+      ex = tgt.left + tgt.width / 2;
+      ey = tgt.bottom;
+    }
 
     // Quadratic bezier control point — swoop the arrow so it never overlaps the tooltip.
-    // The control point is always pushed below the tooltip bottom and offset horizontally
-    // so the curve bows outward with a visible swoop, even when nearly vertically aligned.
     const dx = ex - sx, dy = ey - sy;
     const dist = Math.sqrt(dx * dx + dy * dy);
-    // Guarantee a minimum horizontal offset so the curve is never a straight line
-    const minSwoop = 50;
-    const hDir = dx >= 0 ? 1 : -1;
-    const hOffset = Math.abs(dx) < minSwoop ? hDir * minSwoop : dx * 0.45;
 
     let cx, cy;
-    if(dy >= 0){
-      // Target is below or level with tooltip bottom — gentle downward swoop
-      cx = sx + hOffset;
-      cy = sy + Math.max(40, dy * 0.5);
+    if(arrowFrom === 'right'){
+      // Swoop rightward then down/up to target top
+      const vSwoop = Math.max(30, Math.abs(dy) * 0.3);
+      cx = sx + Math.max(40, Math.abs(dx) * 0.4);
+      cy = sy + (dy >= 0 ? vSwoop : -vSwoop);
     } else {
-      // Target is ABOVE tooltip bottom — drop down first, then curve up to target
-      const drop = Math.max(40, Math.min(70, dist * 0.25));
-      cx = sx + hOffset;
-      cy = sy + drop;
+      // Default bottom swoop logic
+      const minSwoop = 50;
+      const hDir = dx >= 0 ? 1 : -1;
+      const hOffset = Math.abs(dx) < minSwoop ? hDir * minSwoop : dx * 0.45;
+      if(dy >= 0){
+        cx = sx + hOffset;
+        cy = sy + Math.max(40, dy * 0.5);
+      } else {
+        const drop = Math.max(40, Math.min(70, dist * 0.25));
+        cx = sx + hOffset;
+        cy = sy + drop;
+      }
     }
 
     arrowPath.setAttribute('d',
