@@ -303,6 +303,8 @@ textarea{resize:vertical;min-height:80px}
 table{width:100%;border-collapse:collapse}
 thead{background:var(--bg)}
 th{text-align:left;padding:10px 14px;font-size:.78rem;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.3px;white-space:nowrap;border-bottom:1px solid var(--border);cursor:pointer;user-select:none}
+th .sort-ph{opacity:0;transition:opacity .15s}
+th:hover .sort-ph{opacity:.5}
 th:hover{color:var(--text)}
 td{padding:10px 14px;border-bottom:1px solid var(--border);font-size:.9rem;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 tr.clickable{cursor:pointer;transition:background .1s}
@@ -1353,6 +1355,7 @@ let currentView = 'dashboard';
 let searchQuery = '';
 let filterStatus = 'All';
 let contactsViewMode = 'table';
+let contactsSortCols = []; // [{col:'property',dir:'asc'},...] max 2
 let previousView = 'dashboard';
 let currentProfileId = null;
 let pipelineCategory = 'prospects'; // 'prospects', 'outreach', 'qualified', 'lost'
@@ -2587,9 +2590,24 @@ function renderContacts(){
     </div>`;
 }
 
+function _sortIcon(col){
+  for(var i = 0; i < contactsSortCols.length; i++){
+    if(contactsSortCols[i].col === col){
+      var arrow = contactsSortCols[i].dir === 'asc' ? '▲' : '▼';
+      var badge = contactsSortCols.length > 1 ? '<span style="font-size:.55rem;margin-left:1px;opacity:.7">'+(i+1)+'</span>' : '';
+      return '<span style="color:var(--primary);margin-left:4px;font-size:.6rem">'+arrow+badge+'</span>';
+    }
+  }
+  return 'sort-ph'; // placeholder flag — _sortTh will render the hover span
+}
+function _sortTh(label, col){
+  var icon = _sortIcon(col);
+  return '<th onclick="toggleContactsSort(\''+col+'\')">'+label+(icon === 'sort-ph' ? '<span class="sort-ph" style="color:var(--text3);margin-left:4px;font-size:.55rem">▲</span>' : icon)+'</th>';
+}
 function renderContactsTable(items){
-  return `<div style="overflow-x:auto"><table>
-    <thead><tr><th>Property</th><th>Name</th><th>Phone</th><th>Email</th><th>Status</th><th>Follow Up</th><th>Date</th><th>Listing</th></tr></thead>
+  var clearBtn = contactsSortCols.length > 0 ? '<span onclick="clearContactsSort()" style="font-size:.7rem;color:var(--primary);cursor:pointer;margin-left:8px;text-decoration:underline;white-space:nowrap">Clear sort</span>' : '';
+  return `<div style="overflow-x:auto">${clearBtn ? '<div style="display:flex;justify-content:flex-end;padding:2px 8px 4px">'+clearBtn+'</div>' : ''}<table>
+    <thead><tr>${_sortTh('Property','property')}${_sortTh('Name','name')}${_sortTh('Phone','phone')}${_sortTh('Email','email')}${_sortTh('Status','status')}${_sortTh('Follow Up','followup')}${_sortTh('Date','date')}<th>Listing</th></tr></thead>
     <tbody>${items.length ? items.map(r => {
       const fu = getFollowUpStatus(r);
       return `<tr class="clickable" onclick="openDetail('${r.id}')">
@@ -4606,15 +4624,60 @@ function getFiltered(){
   let list = records;
   if(filterStatus && filterStatus !== 'All') list = list.filter(r => r.status === filterStatus);
   if(searchQuery){
-    // Match all words in the query against any field on the record
     const words = searchQuery.split(/\s+/).filter(w => w.length > 0);
     list = list.filter(r => {
       const blob = [r.property, r.name, r.phone, r.email, r.note, r.status].filter(Boolean).join(' ').toLowerCase();
       return words.every(w => blob.includes(w));
     });
   }
+  // Multi-column sorting (up to 2)
+  if(contactsSortCols.length > 0){
+    list = list.slice().sort(function(a, b){
+      for(var i = 0; i < contactsSortCols.length; i++){
+        var sc = contactsSortCols[i];
+        var va = _getSortVal(a, sc.col);
+        var vb = _getSortVal(b, sc.col);
+        var cmp = 0;
+        if(va < vb) cmp = -1; else if(va > vb) cmp = 1;
+        if(cmp !== 0) return sc.dir === 'asc' ? cmp : -cmp;
+      }
+      return 0;
+    });
+  }
   return list;
 }
+function _getSortVal(r, col){
+  switch(col){
+    case 'property': return (r.property||'').toLowerCase();
+    case 'name': return (r.name||'').toLowerCase();
+    case 'phone': return (r.phone||'');
+    case 'email': return (r.email||'').toLowerCase();
+    case 'status': return (r.status||'');
+    case 'followup': return r.followUpDate||'9999';
+    case 'date': return r.date||'';
+    default: return '';
+  }
+}
+function toggleContactsSort(col){
+  var existing = -1;
+  for(var i = 0; i < contactsSortCols.length; i++){
+    if(contactsSortCols[i].col === col){ existing = i; break; }
+  }
+  if(existing >= 0){
+    // Cycle: asc → desc → remove
+    if(contactsSortCols[existing].dir === 'asc'){
+      contactsSortCols[existing].dir = 'desc';
+    } else {
+      contactsSortCols.splice(existing, 1);
+    }
+  } else {
+    // Add new sort column (max 2)
+    if(contactsSortCols.length >= 2) contactsSortCols.shift(); // drop oldest
+    contactsSortCols.push({col:col, dir:'asc'});
+  }
+  render();
+}
+function clearContactsSort(){ contactsSortCols = []; render(); }
 
 /* ===== EXPORT ===== */
 function exportData(format){
@@ -5243,11 +5306,12 @@ const _tutorialDefs = {
     { waitFor:'#add_beds', target:function(){ var el = document.getElementById('add_beds'); return el ? el.closest('.field-row') : null; }, title:'Add Property Details', body:'Here you can enter beds, baths, square footage, and rent. You can always update these later from the Property Profile.', position:'left', noBlock:true, onEnter:function(){ if(!document.querySelector('#add_beds')){ openAddModal(); setTimeout(showManualAddForm, 300); } } },
     { waitFor:'#add_link2', target:'#add_link2', title:'Add the Listing Link', body:'This field is for the listing URL. It links back to the original listing so you can reference it anytime.', position:'left', noBlock:true, onEnter:function(){ if(!document.querySelector('#add_link2')){ openAddModal(); setTimeout(showManualAddForm, 300); } } },
     { waitFor:'#add_property', target:'[onclick*="saveNewRecord"]', title:'Save Your Property', body:'Once your details are filled in, this button saves the property to your pipeline. You can always edit details later from the Property Profile.<br><br><kbd style="background:rgba(99,102,241,.1);border:1px solid var(--border);border-radius:4px;padding:1px 6px;font-size:.72rem;font-family:monospace">Shift + Enter</kbd> Quick save from anywhere in the form', position:'left', noBlock:true, onEnter:function(){ if(!document.querySelector('#add_property')){ openAddModal(); setTimeout(showManualAddForm, 300); } }, onNext:function(){ closeAddModal(true); } },
-    { target:'.nav-item[data-view="contacts"]', title:'Your Pipeline', body:'After saving, your properties appear here in the Pipeline. Click any property card to open its full profile — with expenses, competitor analysis, projected ROI, and more.<br><br><kbd style="background:rgba(99,102,241,.1);border:1px solid var(--border);border-radius:4px;padding:1px 6px;font-size:.72rem;font-family:monospace">Ctrl + S</kbd> Jump to the search bar anytime', position:'right', onEnter:function(){ closeAddModal(true); switchView('contacts'); }, onNext:function(){ switchView('dashboard'); } },
-    { target:'.nav-item[data-view="dashboard"]', title:'Dashboard Overview', body:'The Dashboard is your portfolio command center — total properties, upcoming follow-ups, meetings, and recent activity all in one place. Let\'s take a closer look.', position:'right', onEnter:function(){ switchView('dashboard'); } },
+    { target:'.nav-item[data-view="contacts"]', title:'Contacts', body:'This is your Contacts section — every property you add appears here. You can view them as a table or cards, filter by status, and click any row to open the full Property Profile.<br><br>Click column headers to sort — you can sort by up to two columns at once.', position:'right', onEnter:function(){ closeAddModal(true); switchView('contacts'); }, onNext:function(){ switchView('dashboard'); } },
+    { target:'.nav-item[data-view="dashboard"]', title:'Dashboard Overview', body:'The Dashboard is your portfolio command center. Let\'s take a closer look at what\'s here.', position:'right', onEnter:function(){ switchView('dashboard'); } },
     { target:'.kpi-row, .kpi-card:first-child, .dashboard-kpis', title:'Portfolio KPIs', body:'These cards show your total properties, follow-ups due, meetings scheduled, and pipeline activity at a glance. Stay on top of your deal flow.', position:'bottom', onEnter:function(){ if(currentView!=='dashboard') switchView('dashboard'); } },
     { target:'#dashboardMap, .map-container, [id*="map"]', title:'Property Map', body:'Your interactive map shows all properties plotted by location. Click any marker to jump to that property\'s profile.<br><br><kbd style="background:rgba(99,102,241,.1);border:1px solid var(--border);border-radius:4px;padding:1px 6px;font-size:.72rem;font-family:monospace">Ctrl + Scroll</kbd> to zoom the map', position:'bottom', onEnter:function(){ if(currentView!=='dashboard') switchView('dashboard'); } },
     { target:'.pipeline-funnel, .funnel-section, .pipeline-section, .pipeline-category-tabs', title:'Pipeline Overview', body:'This section shows how your properties are distributed across statuses — from New to Closed. Use it to visualize your deal flow at a glance.', position:'top', onEnter:function(){ if(currentView!=='dashboard') switchView('dashboard'); } },
+    { target:'#globalSearch', title:'Search Your CRM', body:'The search bar lets you find any property, contact, or note instantly. It searches across all fields at once.<br><br><kbd style="background:rgba(99,102,241,.1);border:1px solid var(--border);border-radius:4px;padding:1px 6px;font-size:.72rem;font-family:monospace">Ctrl + S</kbd> Jump to search from anywhere', position:'bottom', onEnter:function(){ if(currentView!=='dashboard') switchView('dashboard'); } },
     { target:'.nav-item[data-view="settings"]', title:'Settings & Tutorials', body:'Visit Settings to manage your account, customize your experience, view all keyboard shortcuts, and restart any tutorial walkthrough at any time.<br><br><kbd style="background:rgba(99,102,241,.1);border:1px solid var(--border);border-radius:4px;padding:1px 6px;font-size:.72rem;font-family:monospace">Escape</kbd> Close any popup or modal', position:'right' },
     { type:'complete', emoji:'🎉', title:'You\'re All Set!', body:'You now know the basics of RentingRadar! Add your first property, explore the Dashboard, and check out your Pipeline. As you upgrade your plan, new tutorials will introduce advanced features like Competitor Analysis, Projected ROI, and Negotiation Tools.' }
   ],
@@ -7652,20 +7716,20 @@ function renderCalculatorTab(r){
   // ── Title row with both section names side by side ──
   const _nftModeLabels = {pessimistic:'Pessimistic',realistic:'Realistic',optimistic:'Optimistic'};
   const _nftModeColors = {pessimistic:'var(--num-danger)',realistic:'var(--num-computed)',optimistic:'var(--num-success)'};
-  const _nftPillsHtml = (function(){ let p='<div style="display:flex;justify-content:center;gap:6px">'; ['pessimistic','realistic','optimistic'].forEach(m => { const active = m === calcProjMode; p += '<span style="font-size:.6rem;padding:2px 8px;border-radius:10px;font-weight:600;letter-spacing:.3px;'+(active?'background:'+_nftModeColors[m]+';color:#fff':'color:var(--text3);border:1px solid var(--border)')+'">'+_nftModeLabels[m]+'</span>'; }); p += '</div>'; return p; })();
+  const _nftPillsHtml = (function(){ let p='<div style="display:flex;justify-content:center;gap:8px">'; ['pessimistic','realistic','optimistic'].forEach(m => { const active = m === calcProjMode; p += '<span style="font-size:.72rem;padding:4px 12px;border-radius:12px;font-weight:600;letter-spacing:.3px;'+(active?'background:'+_nftModeColors[m]+';color:#fff':'color:var(--text3);border:1px solid var(--border)')+'">'+_nftModeLabels[m]+'</span>'; }); p += '</div>'; return p; })();
 
-  h += '<div style="display:flex;flex-wrap:wrap;border-bottom:1px solid var(--border)">';
-  h += '<div style="flex:1;min-width:300px;padding:14px 16px 10px;text-align:center;border-right:1px solid var(--border)">';
+  h += '<div style="display:flex;flex-wrap:wrap">';
+  h += '<div style="flex:1;min-width:300px;padding:14px 16px 14px;text-align:center;border-right:1px solid var(--border)">';
   h += '<div class="nft-title-row" style="font-size:.82rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;display:inline-flex;align-items:center;gap:5px;cursor:help"'+tipAttrs('Rent Adjustment','Drag the dial or click the amount to explore what rent would make this deal attractive. This is a projection tool — it does NOT change the actual rent.',true)+'>Rent Adjustment<span class="nft-hint-q">?</span></div>';
-  h += '<div style="margin-top:8px">' + _nftPillsHtml + '</div>';
+  h += '<div style="margin-top:14px">' + _nftPillsHtml + '</div>';
   h += '</div>';
-  h += '<div style="flex:1;min-width:280px;padding:14px 16px 10px;text-align:center">';
+  h += '<div style="flex:1;min-width:280px;padding:14px 16px 14px;text-align:center">';
   h += '<div class="nft-title-row" style="font-size:.82rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;display:inline-flex;align-items:center;gap:5px;cursor:help"'+tipAttrs('Rental Concessions','Negotiate free rent weeks to reduce your upfront investment and accelerate break-even. 6–8 weeks is a common target for rental arbitrage.',true)+'>Rental Concessions<span class="nft-hint-q">?</span></div>';
-  h += '<div style="margin-top:8px">' + _nftPillsHtml + '</div>';
+  h += '<div style="margin-top:14px">' + _nftPillsHtml + '</div>';
   h += '</div>';
   h += '</div>'; // end title row
 
-  h += '<div style="display:flex;flex-wrap:wrap;height:480px;overflow:hidden">';
+  h += '<div style="display:flex;flex-wrap:wrap;height:480px;overflow:hidden;border-top:1px solid var(--border)">';
 
   // ════════════ LEFT HALF: Rent Adjustment ════════════
   h += '<div style="flex:1;min-width:300px;padding:12px 16px;text-align:center;border-right:1px solid var(--border);display:flex;flex-direction:column;justify-content:center">';
@@ -7837,11 +7901,11 @@ function renderCalculatorTab(r){
     const pbAfter = _calcPayback(adjInvB, _conAnnualCF);
     const savedMonths = pbBefore !== null && pbAfter !== null ? Math.round((pbBefore - pbAfter) * 12) : 0;
 
-    // Weeks selector
+    // Weeks selector — inline: − [X weeks] +
     h += '<div style="display:flex;flex-direction:column;align-items:center;margin-bottom:16px">';
-    h += '<div onclick="editConcessionWeeks(\''+r.id+'\')" style="cursor:pointer;background:var(--primary);color:#fff;padding:5px 18px;border-radius:20px;font-size:.9rem;font-weight:700;white-space:nowrap">'+conW+' week'+(conW!==1?'s':'')+'</div>';
-    h += '<div style="display:flex;gap:8px;margin-top:8px">';
+    h += '<div style="display:flex;align-items:center;gap:8px">';
     h += '<button class="btn btn-secondary" style="padding:4px 14px;font-size:.8rem;min-width:34px;font-weight:700'+(conW<=0?';opacity:.35;pointer-events:none':'')+'" onclick="adjustConcessionWeeks(\''+r.id+'\',-1)">−</button>';
+    h += '<div onclick="editConcessionWeeks(\''+r.id+'\')" style="cursor:pointer;background:var(--primary);color:#fff;padding:5px 18px;border-radius:20px;font-size:.9rem;font-weight:700;white-space:nowrap">'+conW+' week'+(conW!==1?'s':'')+'</div>';
     h += '<button class="btn btn-secondary" style="padding:4px 14px;font-size:.8rem;min-width:34px;font-weight:700'+(conW>=12?';opacity:.35;pointer-events:none':'')+'" onclick="adjustConcessionWeeks(\''+r.id+'\',1)">+</button>';
     h += '</div>';
     const _savColor = savedMonths > 0 ? '#10b981' : 'var(--text3)';
