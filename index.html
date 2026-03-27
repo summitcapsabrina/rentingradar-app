@@ -1170,6 +1170,42 @@ h1 .hero-edit-input{font-size:1.35rem}
 .comp-note-popup .popup-body{padding:16px 18px;flex:1;overflow-y:auto}
 .comp-note-popup .popup-footer{padding:12px 18px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
 .comp-note-popup .popup-footer .hint{font-size:.7rem;color:var(--text3)}
+
+/* ── Tutorial Walkthrough System ── */
+.tut-overlay{position:fixed;inset:0;z-index:10000;pointer-events:none}
+.tut-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:10000;pointer-events:auto;transition:opacity .3s}
+.tut-spotlight{position:absolute;z-index:10001;border-radius:8px;box-shadow:0 0 0 9999px rgba(0,0,0,.55);pointer-events:none;transition:all .35s ease}
+.tut-highlight{position:relative !important;z-index:10002 !important;pointer-events:auto !important}
+.tut-tooltip{position:fixed;z-index:10003;background:var(--surface,#fff);border:1px solid var(--border,#e2e8f0);border-radius:14px;padding:0;width:340px;max-width:90vw;box-shadow:0 12px 40px rgba(0,0,0,.25);pointer-events:auto;animation:tutFadeIn .3s ease}
+.tut-tooltip-header{display:flex;align-items:center;gap:10px;padding:16px 18px 8px}
+.tut-tooltip-header .tut-step-badge{background:var(--primary,#6366f1);color:#fff;font-size:.65rem;font-weight:700;padding:3px 10px;border-radius:20px;white-space:nowrap;letter-spacing:.3px}
+.tut-tooltip-header .tut-title{font-size:.95rem;font-weight:700;color:var(--text,#1e293b);flex:1}
+.tut-tooltip-body{padding:6px 18px 14px;font-size:.82rem;color:var(--text2,#64748b);line-height:1.55}
+.tut-tooltip-footer{display:flex;align-items:center;justify-content:space-between;padding:10px 18px 14px;border-top:1px solid var(--border,#e2e8f0)}
+.tut-tooltip-footer .tut-skip{font-size:.72rem;color:var(--text3,#94a3b8);cursor:pointer;font-weight:500;padding:6px 0}
+.tut-tooltip-footer .tut-skip:hover{color:var(--text,#1e293b)}
+.tut-tooltip-footer .tut-btns{display:flex;gap:8px}
+.tut-btn{padding:7px 18px;border-radius:8px;font-size:.78rem;font-weight:600;cursor:pointer;border:none;transition:all .15s}
+.tut-btn-primary{background:var(--primary,#6366f1);color:#fff}.tut-btn-primary:hover{filter:brightness(1.1)}
+.tut-btn-secondary{background:var(--bg,#f1f5f9);color:var(--text,#1e293b);border:1px solid var(--border,#e2e8f0)}.tut-btn-secondary:hover{background:var(--border,#e2e8f0)}
+.tut-progress{display:flex;gap:4px;justify-content:center;padding:0 18px 12px}
+.tut-progress-dot{width:6px;height:6px;border-radius:50%;background:var(--border,#e2e8f0);transition:all .2s}
+.tut-progress-dot.active{background:var(--primary,#6366f1);width:18px;border-radius:3px}
+.tut-progress-dot.done{background:var(--primary,#6366f1);opacity:.4}
+.tut-arrow{position:fixed;z-index:10003;pointer-events:none}
+.tut-action-hint{display:inline-block;background:var(--primary,#6366f1);color:#fff;font-size:.68rem;font-weight:700;padding:3px 10px;border-radius:12px;margin-top:8px;animation:tutPulse 2s infinite}
+.tut-welcome{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:10003;background:var(--surface,#fff);border-radius:18px;padding:36px 40px;width:440px;max-width:90vw;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.3);pointer-events:auto;animation:tutFadeIn .4s ease}
+.tut-welcome h2{font-size:1.3rem;font-weight:800;color:var(--text,#1e293b);margin:0 0 8px}
+.tut-welcome p{font-size:.88rem;color:var(--text2,#64748b);line-height:1.6;margin:0 0 22px}
+.tut-welcome .tut-emoji{font-size:2.4rem;margin-bottom:14px}
+.tut-close-confirm{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:10005;background:var(--surface,#fff);border-radius:14px;padding:28px 32px;width:380px;max-width:90vw;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.35);pointer-events:auto}
+.tut-close-confirm h3{font-size:1rem;font-weight:700;margin:0 0 8px;color:var(--text,#1e293b)}
+.tut-close-confirm p{font-size:.82rem;color:var(--text2,#64748b);margin:0 0 18px;line-height:1.5}
+.tut-close-confirm .tut-btns{display:flex;gap:10px;justify-content:center}
+@keyframes tutFadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@keyframes tutPulse{0%,100%{opacity:1}50%{opacity:.5}}
+.tut-welcome{animation:tutFadeIn .4s ease}
+.tut-close-confirm{animation:tutFadeIn .25s ease}
 </style>
 <!-- Firebase SDK -->
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
@@ -1398,6 +1434,8 @@ function switchView(view){
   if(!_handlingPopstate) history.pushState({ view: view, profileId: null }, '', '#' + view);
   saveViewState();
   render();
+  // Auto-trigger dashboard tutorial on first visit
+  if(view === 'dashboard' && _authDataLoaded && !_tut.active) _tutCheckDashboard();
 }
 
 function saveViewState(){
@@ -5142,6 +5180,11 @@ function setTier(tier){
   if(wasFree && tier !== 'free' && !_disclaimerAcknowledged){
     setTimeout(() => showDisclaimerOverlay(), 400);
   }
+  // Trigger tier tutorial for upgrades (e.g. Basic→Pro) when disclaimer already done
+  const prevTier = wasFree ? 'free' : currentTier;
+  if(!wasFree && tier !== 'free' && _disclaimerAcknowledged && _authDataLoaded){
+    _tutCheckAutoStart(tier, false);
+  }
   updateTierUI();
   render();
 }
@@ -5169,6 +5212,367 @@ function tierGateHtml(minTier, featureName, description){
     <div class="tg-desc">${description||''}</div>
     <button class="btn btn-primary btn-sm" onclick="switchView('pricing')">Upgrade Plan</button>
   </div>`;
+}
+
+// ===== TUTORIAL WALKTHROUGH SYSTEM =====
+const _tut = { active:false, name:null, step:0, steps:[], seen:{}, _cleanup:[], _confirmOpen:false };
+
+function _tutLoadSeen(){
+  try { _tut.seen = JSON.parse(localStorage.getItem('rr_tutorials_seen')||'{}'); } catch(e){ _tut.seen={}; }
+}
+function _tutSaveSeen(){
+  try { localStorage.setItem('rr_tutorials_seen', JSON.stringify(_tut.seen)); } catch(e){}
+  try {
+    const u = firebase.auth().currentUser;
+    if(u && db) db.collection('users').doc(u.uid).update({ tutorialsSeen: _tut.seen }).catch(()=>{});
+  } catch(e){}
+}
+function _tutLoadSeenFromFirestore(data){
+  if(data && data.tutorialsSeen) { _tut.seen = data.tutorialsSeen; try { localStorage.setItem('rr_tutorials_seen', JSON.stringify(_tut.seen)); } catch(e){} }
+}
+
+// ── Step Definitions ──
+const _tutorialDefs = {
+  free: [
+    { type:'welcome', emoji:'🏠', title:'Welcome to RentingRadar!', body:'This quick tutorial will walk you through setting up your first property, managing expenses, and navigating your CRM. You\'ll be a pro in no time!' },
+    { target:'.nav-item[data-view="dashboard"]', title:'Your Pipeline', body:'This is your main Pipeline view where all your rental arbitrage properties are organized by status. Let\'s start by adding your first property.', position:'right', action:null },
+    { target:'.header-actions .btn-primary, .toolbar .btn-primary, [onclick*="openAddModal"]', title:'Add a Property', body:'Click this button to add your first property to the pipeline.', position:'bottom', action:'click', actionHint:'Click "Add Property" to continue' },
+    { waitFor:'#addPropertyModal .multi-editor, .add-modal', delay:500, target:'.add-modal [onclick*="showManualAddForm"], .multi-editor [onclick*="showManualAddForm"], .manual-entry-btn', title:'Choose Manual Entry', body:'You can import from a URL (Pro feature) or enter details manually. Click Manual Entry to continue.', position:'bottom', action:'click', actionHint:'Click "Manual Entry"' },
+    { waitFor:'#manualAddressInput, input[placeholder*="address" i]', delay:400, target:'#manualAddressInput, input[placeholder*="address" i]', title:'Enter the Address', body:'Type the property address. Our autocomplete will help fill in city, state, and zip automatically.', position:'bottom', action:'input', actionHint:'Type an address to continue' },
+    { waitFor:'#manualAddressInput, input[placeholder*="address" i]', target:'#manualRent, input[placeholder*="rent" i], .manual-form-fields', title:'Add Property Details', body:'Fill in key details like bedrooms, bathrooms, square footage, and monthly rent. The more info you add now, the better your analysis will be later.', position:'bottom', action:null },
+    { waitFor:'#manualAddressInput', target:'[onclick*="saveNewRecord"], .manual-save-btn, .multi-editor .btn-primary:last-child', title:'Save Your Property', body:'Click Save to create this property. You can always edit details later from the Property Profile.', position:'top', action:'click', actionHint:'Click "Save" to continue' },
+    { waitFor:'.tab-btn[data-tab="expenses"], [data-tab="expenses"]', delay:800, target:'.tab-btn[data-tab="expenses"], [data-tab="expenses"]', title:'Manage Expenses', body:'Now let\'s look at the Expenses tab. Click here to set up your monthly operating costs like insurance, utilities, and fees.', position:'bottom', action:'click', actionHint:'Click "Expenses" to continue' },
+    { waitFor:'.tab-content[data-tab="expenses"]', delay:400, target:'.tab-content[data-tab="expenses"] .calc-field:first-child, .tab-content[data-tab="expenses"] input:first-of-type', title:'Add Operating Expenses', body:'Enter your estimated monthly costs for each category. These expenses drive your ROI projections and deal temperature analysis. You can use the AI Estimate feature (Pro) or Copy from Property (Basic+) to speed this up.', position:'right', action:null },
+    { target:'[style*="cursor:help"], [onclick*="showTip"]', title:'Access Tips & Help', body:'See these info indicators? Click any of them throughout the CRM to get helpful tips and explanations about that specific field or feature.', position:'bottom', action:'click', actionHint:'Click a tip to try it' },
+    { type:'complete', emoji:'🎉', title:'You\'re All Set!', body:'You now know the basics of RentingRadar. Add more properties, track your pipeline, and explore the Dashboard for portfolio analytics. As you upgrade your plan, new tutorials will introduce advanced features.' }
+  ],
+  basic: [
+    { type:'welcome', emoji:'⬆️', title:'Welcome to Basic!', body:'You\'ve unlocked powerful analysis tools! Let\'s walk through the Competitor Analysis and Projected ROI features that are now available on every property.' },
+    { waitFor:'.tab-btn[data-tab="analysis"]', target:'.tab-btn[data-tab="analysis"], [data-tab="analysis"]', title:'Competitor Analysis', body:'Click this tab to see how your property stacks up against the competition. This is where you\'ll add rental comps and analyze market positioning.', position:'bottom', action:'click', actionHint:'Click "Competitor Analysis"' },
+    { waitFor:'.tab-content[data-tab="analysis"]', delay:600, target:'.comp-table, .calc-section:first-child', title:'Your Comp Table', body:'Add comparable properties (comps) to build your market analysis. Enter nightly rates, occupancy rates, and ratings for each comp. The more comps you add, the more accurate your projections.', position:'bottom', action:null },
+    { target:'.competitive-position, .calc-section-header', title:'Competitive Position', body:'Once you have 3+ comps, RentingRadar calculates your competitive position — showing where you rank in the market and how strong your listing is relative to competitors.', position:'bottom', action:null },
+    { waitFor:'.tab-btn[data-tab="calculator"]', target:'.tab-btn[data-tab="calculator"], [data-tab="calculator"]', title:'Projected ROI', body:'Click here to see your property\'s projected return on investment with detailed financial analysis.', position:'bottom', action:'click', actionHint:'Click "Projected ROI"' },
+    { waitFor:'.tab-content[data-tab="calculator"]', delay:600, target:'.kpi-grid, .kpi-card:first-child', title:'Key Performance Indicators', body:'Your KPI cards show projected revenue, annual expenses, monthly net cash flow, and cash-on-cash return — all calculated from your comps and expenses.', position:'bottom', action:null },
+    { target:'.calc-panel .toggle-btn, [onclick*="setCalcProjMode"], .projection-toggle', title:'Projection Modes', body:'Toggle between Pessimistic, Realistic, and Optimistic scenarios. Each mode uses different assumptions based on your competitor data to show best-case and worst-case outcomes.', position:'bottom', action:null },
+    { target:'.deal-temp-card, .calc-section-header[onclick*="dealTemp"], [class*="deal-temp"]', title:'Deal Temperature', body:'Deal Temperature gives you an instant read on whether this property is a Slam-Dunk, has Potential, is Risky, or a No-Go — based on your profit requirements and projected cash flow.', position:'top', action:null },
+    { type:'complete', emoji:'📊', title:'Basic Features Unlocked!', body:'You now have access to full competitive analysis and ROI projections. Add at least 3 comps to any property to unlock the full power of these tools. Upgrade to Pro for negotiation tools, AI estimates, and auto-import!' }
+  ],
+  pro: [
+    { type:'welcome', emoji:'🚀', title:'Welcome to Pro!', body:'You\'ve unlocked the full suite! Let\'s explore your new Negotiation Forecasting Tools, AI-powered features, and automatic property importing.' },
+    { waitFor:'.tab-btn[data-tab="calculator"]', target:'.tab-btn[data-tab="calculator"], [data-tab="calculator"]', title:'Projected ROI', body:'Let\'s start in the Projected ROI tab where your new Negotiation Forecasting Tools live.', position:'bottom', action:'click', actionHint:'Click "Projected ROI"' },
+    { waitFor:'.calc-section-header', delay:600, target:function(){ return document.querySelector('.calc-section-header[onclick*="Negotiation"]') || Array.from(document.querySelectorAll('.calc-section-header')).find(el => el.textContent.includes('Negotiation')); }, title:'Negotiation Forecasting Tools', body:'This is your new negotiation analysis center. It combines Rent Adjustment and Rental Concessions to help you model deal scenarios before negotiating with landlords.', position:'bottom', action:null },
+    { target:function(){ return document.querySelector('[id^="rentDial_"]') || document.querySelector('svg[id^="rentDial"]'); }, title:'Rent Adjustment Dial', body:'Drag this dial or click the rent amount to explore what monthly rent would make this deal attractive. The color zones show your deal temperature at each rent level. This is projection-only — it won\'t change your actual data.', position:'right', action:null },
+    { target:function(){ var el = document.querySelector('[onclick*="editConcessionWeeks"]'); return el ? el.closest('div[style*="flex-direction:column"]') : null; }, title:'Rental Concessions', body:'Model weeks of free rent you could negotiate. See how concessions reduce your upfront investment and accelerate your break-even timeline. The chart below shows the impact at each week level.', position:'left', action:null },
+    { target:function(){ return document.querySelector('[onclick*="aiEstimate"], [onclick*="AI Estimate"], .btn-primary[onclick*="ai"]') || Array.from(document.querySelectorAll('.btn')).find(el => el.textContent.includes('AI') && el.textContent.includes('Estimate')); }, title:'AI-Powered Estimates', body:'Pro unlocks AI Expense Estimates. Click this to have our AI analyze your market and property type to suggest realistic operating expenses — saving you hours of research.', position:'bottom', action:null },
+    { target:function(){ return document.querySelector('[onclick*="openAddModal"]'); }, title:'Auto-Import Properties', body:'Pro also unlocks automatic property importing via the RentingRadar Chrome Extension. Paste any Apartments.com, Zillow, or other listing URL and the extension extracts all property details automatically.', position:'bottom', action:null },
+    { type:'complete', emoji:'🏆', title:'Pro Features Unlocked!', body:'You now have the full RentingRadar toolkit. Use Negotiation Forecasting to model scenarios, AI Estimates for faster setup, and Auto-Import to build your pipeline at speed. Happy deal hunting!' }
+  ],
+  dashboard: [
+    { type:'welcome', emoji:'📈', title:'Your Dashboard', body:'Welcome to the Dashboard! This is your portfolio command center. Let\'s take a quick tour of what\'s here.' },
+    { target:'.kpi-row, .kpi-card:first-child, .dashboard-kpis', title:'Portfolio KPIs', body:'These cards show your total properties, follow-ups due, meetings scheduled, and pipeline activity at a glance. Stay on top of your deal flow.', position:'bottom', action:null },
+    { target:'#dashboardMap, .map-container, [id*="map"]', title:'Property Map', body:'Your interactive map shows all properties plotted by location. Click any marker to jump to that property\'s profile.', position:'bottom', action:null },
+    { target:'.pipeline-funnel, .funnel-section, .pipeline-section', title:'Pipeline Overview', body:'See how your properties are distributed across statuses — from New to Closed. Drag and drop properties between categories to update their status.', position:'top', action:null },
+    { type:'complete', emoji:'✅', title:'Dashboard Tour Complete!', body:'You can always restart this tutorial from Settings. Now go explore — add properties, track your deals, and build your rental arbitrage portfolio!' }
+  ]
+};
+
+// ── Tutorial Engine ──
+function startTutorial(name){
+  if(!_tutorialDefs[name]) return;
+  _tutCleanup();
+  _tut.active = true;
+  _tut.name = name;
+  _tut.step = 0;
+  _tut.steps = _tutorialDefs[name];
+  _tutShowStep();
+}
+
+function _tutCleanup(){
+  _tut._cleanup.forEach(fn => { try{fn();}catch(e){} });
+  _tut._cleanup = [];
+  document.querySelectorAll('.tut-highlight').forEach(el => el.classList.remove('tut-highlight'));
+  const els = document.querySelectorAll('.tut-backdrop,.tut-tooltip,.tut-spotlight,.tut-arrow,.tut-welcome,.tut-close-confirm,.tut-overlay');
+  els.forEach(el => el.remove());
+  _tut._confirmOpen = false;
+}
+
+function _tutEnd(){
+  _tutCleanup();
+  _tut.active = false;
+  _tut.seen[_tut.name] = true;
+  _tutSaveSeen();
+  _tut.name = null;
+  _tut.step = 0;
+  _tut.steps = [];
+}
+
+function _tutShowStep(){
+  _tutCleanup();
+  if(!_tut.active || _tut.step >= _tut.steps.length) { _tutEnd(); return; }
+  const s = _tut.steps[_tut.step];
+
+  // Handle delay (wait for DOM to update)
+  if(s.delay && !s._delayDone){
+    s._delayDone = true;
+    setTimeout(() => _tutShowStep(), s.delay);
+    // Show backdrop while waiting
+    const bd = document.createElement('div'); bd.className='tut-backdrop'; document.body.appendChild(bd);
+    return;
+  }
+
+  // Handle waitFor (wait for element to appear)
+  if(s.waitFor){
+    const waitEl = document.querySelector(s.waitFor);
+    if(!waitEl){
+      // Poll for element
+      let attempts = 0;
+      const poll = setInterval(() => {
+        attempts++;
+        if(document.querySelector(s.waitFor)){
+          clearInterval(poll);
+          setTimeout(() => _tutShowStep(), s.delay || 200);
+        } else if(attempts > 40){ // 4 seconds timeout
+          clearInterval(poll);
+          _tutNext(); // skip step if element never appears
+        }
+      }, 100);
+      const bd = document.createElement('div'); bd.className='tut-backdrop'; document.body.appendChild(bd);
+      return;
+    }
+  }
+
+  // Welcome/Complete screens
+  if(s.type === 'welcome' || s.type === 'complete'){
+    const bd = document.createElement('div'); bd.className='tut-backdrop'; document.body.appendChild(bd);
+    bd.addEventListener('click', function(e){ e.stopPropagation(); });
+    const w = document.createElement('div'); w.className='tut-welcome';
+    w.innerHTML = '<div class="tut-emoji">'+(s.emoji||'👋')+'</div><h2>'+s.title+'</h2><p>'+s.body+'</p>'
+      + '<div style="display:flex;gap:10px;justify-content:center">'
+      + (s.type==='welcome' ? '<button class="tut-btn tut-btn-secondary" onclick="_tutConfirmClose()">Skip Tutorial</button><button class="tut-btn tut-btn-primary" onclick="_tutNext()">Let\'s Go →</button>'
+        : '<button class="tut-btn tut-btn-primary" onclick="_tutEnd()">Finish Tutorial</button>')
+      + '</div>';
+    document.body.appendChild(w);
+    return;
+  }
+
+  // Regular targeted step
+  const targetEl = _tutResolveTarget(s.target);
+  if(!targetEl){ _tutNext(); return; }
+
+  // Create backdrop
+  const bd = document.createElement('div'); bd.className='tut-backdrop'; bd.style.background='transparent'; document.body.appendChild(bd);
+
+  // Spotlight on target
+  const rect = targetEl.getBoundingClientRect();
+  const pad = 8;
+  const spot = document.createElement('div'); spot.className='tut-spotlight';
+  spot.style.cssText = 'left:'+(rect.left-pad)+'px;top:'+(rect.top-pad)+'px;width:'+(rect.width+pad*2)+'px;height:'+(rect.height+pad*2)+'px';
+  document.body.appendChild(spot);
+
+  // Highlight target
+  targetEl.classList.add('tut-highlight');
+
+  // Create tooltip
+  const tt = document.createElement('div'); tt.className='tut-tooltip';
+  let ttHtml = '<div class="tut-tooltip-header"><span class="tut-step-badge">Step '+(_tut.step+1)+' of '+_tut.steps.length+'</span><span class="tut-title">'+s.title+'</span></div>';
+  ttHtml += '<div class="tut-tooltip-body">'+s.body;
+  if(s.action && s.actionHint) ttHtml += '<div class="tut-action-hint">👆 '+s.actionHint+'</div>';
+  ttHtml += '</div>';
+  // Progress dots
+  ttHtml += '<div class="tut-progress">';
+  _tut.steps.forEach((_, i) => { ttHtml += '<div class="tut-progress-dot'+(i<_tut.step?' done':'')+(i===_tut.step?' active':'')+'"></div>'; });
+  ttHtml += '</div>';
+  // Footer
+  ttHtml += '<div class="tut-tooltip-footer"><span class="tut-skip" onclick="_tutConfirmClose()">Close tutorial</span><div class="tut-btns">';
+  if(_tut.step > 0) ttHtml += '<button class="tut-btn tut-btn-secondary" onclick="_tutPrev()">← Back</button>';
+  if(!s.action) ttHtml += '<button class="tut-btn tut-btn-primary" onclick="_tutNext()">Next →</button>';
+  ttHtml += '</div></div>';
+  tt.innerHTML = ttHtml;
+  document.body.appendChild(tt);
+
+  // Position tooltip
+  _tutPositionTooltip(tt, rect, s.position || 'bottom');
+
+  // Draw curved arrow from tooltip to target
+  _tutDrawArrow(tt, rect, s.position || 'bottom');
+
+  // If action required, listen for it
+  if(s.action === 'click'){
+    const actionTarget = s.actionTarget ? document.querySelector(s.actionTarget) : targetEl;
+    if(actionTarget){
+      const handler = function(e){
+        actionTarget.removeEventListener('click', handler, true);
+        setTimeout(() => _tutNext(), 150);
+      };
+      actionTarget.addEventListener('click', handler, true);
+      _tut._cleanup.push(() => { try { actionTarget.removeEventListener('click', handler, true); } catch(e){} });
+    }
+  } else if(s.action === 'input'){
+    const handler = function(e){
+      if(e.target.value && e.target.value.length > 2){
+        targetEl.removeEventListener('input', handler);
+        setTimeout(() => _tutNext(), 500);
+      }
+    };
+    targetEl.addEventListener('input', handler);
+    _tut._cleanup.push(() => { try { targetEl.removeEventListener('input', handler); } catch(e){} });
+  }
+}
+
+function _tutResolveTarget(target){
+  if(!target) return null;
+  if(typeof target === 'function') return target();
+  // Try each comma-separated selector
+  const selectors = target.split(',').map(s => s.trim());
+  for(const sel of selectors){
+    try {
+      const el = document.querySelector(sel);
+      if(el && el.offsetParent !== null) return el; // visible element
+      if(el) return el;
+    } catch(e){}
+  }
+  return null;
+}
+
+function _tutPositionTooltip(tt, targetRect, pos){
+  const pad = 16;
+  const ttRect = tt.getBoundingClientRect();
+  let left, top;
+  switch(pos){
+    case 'right':
+      left = targetRect.right + pad + 20;
+      top = targetRect.top + targetRect.height/2 - ttRect.height/2;
+      break;
+    case 'left':
+      left = targetRect.left - ttRect.width - pad - 20;
+      top = targetRect.top + targetRect.height/2 - ttRect.height/2;
+      break;
+    case 'top':
+      left = targetRect.left + targetRect.width/2 - ttRect.width/2;
+      top = targetRect.top - ttRect.height - pad - 20;
+      break;
+    default: // bottom
+      left = targetRect.left + targetRect.width/2 - ttRect.width/2;
+      top = targetRect.bottom + pad + 20;
+  }
+  // Clamp within viewport
+  left = Math.max(10, Math.min(window.innerWidth - ttRect.width - 10, left));
+  top = Math.max(10, Math.min(window.innerHeight - ttRect.height - 10, top));
+  tt.style.left = left+'px';
+  tt.style.top = top+'px';
+}
+
+function _tutDrawArrow(tt, targetRect, pos){
+  const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+  svg.className.baseVal = 'tut-arrow';
+  svg.setAttribute('width', window.innerWidth);
+  svg.setAttribute('height', window.innerHeight);
+  svg.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;z-index:10003';
+
+  const ttRect = tt.getBoundingClientRect();
+  let sx, sy, ex, ey;
+  const tCx = targetRect.left + targetRect.width/2, tCy = targetRect.top + targetRect.height/2;
+
+  switch(pos){
+    case 'right':
+      sx = ttRect.left + 4; sy = ttRect.top + ttRect.height/2;
+      ex = targetRect.right + 10; ey = tCy;
+      break;
+    case 'left':
+      sx = ttRect.right - 4; sy = ttRect.top + ttRect.height/2;
+      ex = targetRect.left - 10; ey = tCy;
+      break;
+    case 'top':
+      sx = ttRect.left + ttRect.width/2; sy = ttRect.bottom - 4;
+      ex = tCx; ey = targetRect.top - 10;
+      break;
+    default:
+      sx = ttRect.left + ttRect.width/2; sy = ttRect.top + 4;
+      ex = tCx; ey = targetRect.bottom + 10;
+  }
+
+  // Curved path
+  const mx = (sx+ex)/2, my = (sy+ey)/2;
+  const curve = pos==='right'||pos==='left' ? 'Q '+(mx)+','+(sy)+' ' : 'Q '+(sx)+','+(my)+' ';
+  const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+  path.setAttribute('d', 'M '+sx+','+sy+' '+curve+ex+','+ey);
+  path.setAttribute('fill','none');
+  path.setAttribute('stroke','#6366f1');
+  path.setAttribute('stroke-width','2.5');
+  path.setAttribute('stroke-dasharray','6,4');
+  path.setAttribute('marker-end','url(#tutArrowHead)');
+
+  const defs = document.createElementNS('http://www.w3.org/2000/svg','defs');
+  defs.innerHTML = '<marker id="tutArrowHead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#6366f1"/></marker>';
+  svg.appendChild(defs);
+  svg.appendChild(path);
+  document.body.appendChild(svg);
+}
+
+function _tutNext(){
+  _tut.step++;
+  _tutShowStep();
+}
+function _tutPrev(){
+  if(_tut.step > 0) _tut.step--;
+  _tutShowStep();
+}
+
+function _tutConfirmClose(){
+  if(_tut._confirmOpen) return;
+  _tut._confirmOpen = true;
+  const c = document.createElement('div'); c.className='tut-close-confirm';
+  c.innerHTML = '<h3>Close Tutorial?</h3><p>You can restart this tutorial anytime from <strong>Settings → Tutorial Walkthrough</strong>.</p>'
+    + '<div class="tut-btns"><button class="tut-btn tut-btn-secondary" onclick="_tutCancelClose()">Continue Tutorial</button>'
+    + '<button class="tut-btn tut-btn-primary" style="background:#ef4444" onclick="_tutEnd()">Close</button></div>';
+  // Add a backdrop behind the confirm
+  const cb = document.createElement('div'); cb.className='tut-backdrop'; cb.id='tutConfirmBackdrop'; cb.style.zIndex='10004'; document.body.appendChild(cb);
+  c.style.zIndex='10005';
+  document.body.appendChild(c);
+}
+function _tutCancelClose(){
+  _tut._confirmOpen = false;
+  const cb = document.getElementById('tutConfirmBackdrop'); if(cb) cb.remove();
+  document.querySelectorAll('.tut-close-confirm').forEach(el => el.remove());
+}
+
+// ── Auto-trigger Logic ──
+function _tutCheckAutoStart(tier, isNewUser){
+  _tutLoadSeen();
+  if(isNewUser && !_tut.seen.free){
+    setTimeout(() => startTutorial('free'), 800);
+  } else if(tier === 'basic' && !_tut.seen.basic){
+    // First time on Basic — wait for profile to be open + disclaimer acknowledged
+    setTimeout(() => {
+      if(_disclaimerAcknowledged || !requireTier('basic','x')) return; // wait for disclaimer
+      startTutorial('basic');
+    }, 1200);
+  } else if(tier === 'pro' && !_tut.seen.pro){
+    setTimeout(() => {
+      if(_disclaimerAcknowledged || !requireTier('pro','x')) return;
+      startTutorial('pro');
+    }, 1200);
+  }
+}
+
+function _tutCheckDashboard(){
+  _tutLoadSeen();
+  if(!_tut.seen.dashboard && !_tut.active){
+    setTimeout(() => startTutorial('dashboard'), 600);
+  }
+}
+
+// Called from Settings to restart a tutorial
+function restartTutorial(name){
+  if(name === 'all'){
+    _tut.seen = {};
+    _tutSaveSeen();
+    showAppAlert('All tutorials reset! They will appear on your next visit to each section.', {title:'Tutorials Reset', icon:'🔄'});
+  } else {
+    delete _tut.seen[name];
+    _tutSaveSeen();
+    startTutorial(name);
+  }
 }
 
 // ===== DISCLAIMER ACKNOWLEDGMENT =====
@@ -5368,6 +5772,8 @@ function showDisclaimerOverlay(opts){
       const anEl = document.querySelector('.tab-content[data-tab="analysis"]');
       if(anEl){ const rec = records.find(x=>x.id===currentProfileId); if(rec) anEl.innerHTML = renderAnalysisTab(rec); }
       if(currentView === 'settings') render();
+      // Trigger tier tutorial after disclaimer acknowledged
+      if(currentTier !== 'free') _tutCheckAutoStart(currentTier, false);
     });
 
     // beforeunload warning while unacknowledged
@@ -5648,17 +6054,26 @@ firebase.auth().onAuthStateChanged(async (user) => {
       });
       _disclaimerAcknowledged = false;
       setTier('free');
+      // New user — trigger free tutorial after data loads
+      await loadDataFromFirestore(user.uid);
+      _authDataLoaded = true;
+      _tutCheckAutoStart('free', true);
     } else {
       const data = userDoc.data();
       // Load disclaimer state BEFORE setting tier (so setTier doesn't re-trigger overlay)
       _disclaimerAcknowledged = !!data.disclaimerAcknowledged;
       _disclaimerVersion = data.disclaimerVersion || 0;
       if(data.disclaimerAcknowledgedAt && data.disclaimerAcknowledgedAt.toDate){ _disclaimerAcknowledgedAt = data.disclaimerAcknowledgedAt.toDate().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'}); }
+      _tutLoadSeenFromFirestore(data);
       if(data.tier) setTier(data.tier);
+      // Load user's property data from Firestore
+      await loadDataFromFirestore(user.uid);
+      _authDataLoaded = true;
+      // Check if tier tutorial needed (only after disclaimer flow)
+      if(data.tier && data.tier !== 'free' && _disclaimerAcknowledged){
+        _tutCheckAutoStart(data.tier, false);
+      }
     }
-    // Load user's property data from Firestore
-    await loadDataFromFirestore(user.uid);
-    _authDataLoaded = true;
   } else {
     setUser(null);
     _currentUid = null;
@@ -10480,6 +10895,33 @@ function renderSettings(){
       </div>
     </div>
 
+    <!-- TUTORIAL WALKTHROUGH -->
+    <div class="settings-section">
+      <div class="settings-section-header"><h3>🎓 Tutorial Walkthrough</h3></div>
+      <div class="settings-section-body">
+        <div class="settings-row">
+          <div class="settings-row-left"><div class="sr-label">Getting Started (Free)</div><div class="sr-desc">Add properties, manage expenses, and navigate the CRM</div></div>
+          <div class="settings-row-right"><button class="btn btn-secondary btn-sm" onclick="restartTutorial('free')">${_tut.seen.free ? '↻ Restart' : '▶ Start'}</button></div>
+        </div>
+        <div class="settings-row">
+          <div class="settings-row-left"><div class="sr-label">Analysis & ROI (Basic)</div><div class="sr-desc">Competitor Analysis and Projected ROI features</div></div>
+          <div class="settings-row-right"><button class="btn btn-secondary btn-sm" ${requireTier('basic','Tutorial') ? '' : 'disabled style="opacity:.4"'} onclick="restartTutorial('basic')">${_tut.seen.basic ? '↻ Restart' : '▶ Start'}</button></div>
+        </div>
+        <div class="settings-row">
+          <div class="settings-row-left"><div class="sr-label">Pro Features</div><div class="sr-desc">Negotiation tools, AI estimates, and auto-import</div></div>
+          <div class="settings-row-right"><button class="btn btn-secondary btn-sm" ${requireTier('pro','Tutorial') ? '' : 'disabled style="opacity:.4"'} onclick="restartTutorial('pro')">${_tut.seen.pro ? '↻ Restart' : '▶ Start'}</button></div>
+        </div>
+        <div class="settings-row">
+          <div class="settings-row-left"><div class="sr-label">Dashboard Tour</div><div class="sr-desc">Portfolio KPIs, map, and pipeline overview</div></div>
+          <div class="settings-row-right"><button class="btn btn-secondary btn-sm" onclick="restartTutorial('dashboard')">${_tut.seen.dashboard ? '↻ Restart' : '▶ Start'}</button></div>
+        </div>
+        <div class="settings-row">
+          <div class="settings-row-left"><div class="sr-label">Reset All Tutorials</div><div class="sr-desc">Clear tutorial history so they auto-trigger again</div></div>
+          <div class="settings-row-right"><button class="btn btn-secondary btn-sm" onclick="restartTutorial('all')">Reset All</button></div>
+        </div>
+      </div>
+    </div>
+
     <!-- IMPORT & EXPORT -->
     <div class="settings-section">
       <div class="settings-section-header"><h3>📁 Data Management</h3></div>
@@ -10825,6 +11267,7 @@ function performReset(){
 
 /* ===== INIT ===== */
 loadTier();
+_tutLoadSeen();
 checkCheckoutReturn();
 initTheme();
 initSidebar();
