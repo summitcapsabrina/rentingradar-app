@@ -1200,7 +1200,6 @@ h1 .hero-edit-input{font-size:1.35rem}
 .tut-progress-dot{width:5px;height:5px;border-radius:50%;background:var(--border,#e2e8f0);transition:all .2s}
 .tut-progress-dot.active{background:var(--primary,#6366f1);width:12px;border-radius:3px}
 .tut-progress-dot.done{background:var(--primary,#6366f1);opacity:.4}
-.tut-arrow{position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:10003;pointer-events:none;overflow:visible}
 .tut-welcome{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:10003;background:var(--surface,#fff);border-radius:18px;padding:36px 40px;width:440px;max-width:90vw;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.3);pointer-events:auto;animation:tutWelcomeIn .35s ease}
 .tut-welcome h2{font-size:1.3rem;font-weight:800;color:var(--text,#1e293b);margin:0 0 8px}
 .tut-welcome p{font-size:.88rem;color:var(--text2,#64748b);line-height:1.6;margin:0 0 22px}
@@ -5385,7 +5384,7 @@ function _tutCleanup(){
   _tut._cleanup.forEach(fn => { try{fn();}catch(e){} });
   _tut._cleanup = [];
   document.querySelectorAll('.tut-highlight').forEach(el => el.classList.remove('tut-highlight'));
-  const els = document.querySelectorAll('.tut-backdrop,.tut-tooltip,.tut-spotlight,.tut-arrow,.tut-welcome,.tut-close-confirm,.tut-overlay');
+  const els = document.querySelectorAll('.tut-backdrop,.tut-tooltip,.tut-spotlight,.tut-welcome,.tut-close-confirm,.tut-overlay');
   els.forEach(el => el.remove());
   _tut._confirmOpen = false;
 }
@@ -5502,22 +5501,6 @@ function _tutShowStep(){
   tt.innerHTML = ttHtml;
   document.body.appendChild(tt);
 
-  // Create SVG for arrow — quadratic bezier curve, always from tooltip bottom-center
-  const arrowSvg = document.createElementNS('http://www.w3.org/2000/svg','svg');
-  arrowSvg.className.baseVal = 'tut-arrow';
-  const arrowDefs = document.createElementNS('http://www.w3.org/2000/svg','defs');
-  // Solid white filled arrowhead, larger and clearly visible
-  arrowDefs.innerHTML = '<marker id="tutAH" markerWidth="14" markerHeight="10" refX="13" refY="5" orient="auto" markerUnits="userSpaceOnUse"><polygon points="0,1 13,5 0,9" fill="#fff"/></marker>';
-  arrowSvg.appendChild(arrowDefs);
-  const arrowPath = document.createElementNS('http://www.w3.org/2000/svg','path');
-  arrowPath.setAttribute('fill','none');
-  arrowPath.setAttribute('stroke','#fff');
-  arrowPath.setAttribute('stroke-width','2');
-  arrowPath.setAttribute('stroke-linecap','round');
-  arrowPath.setAttribute('marker-end','url(#tutAH)');
-  arrowSvg.appendChild(arrowPath);
-  document.body.appendChild(arrowSvg);
-
   // Spotlight element (if not noBlock)
   let spot = null;
   if(!isNoBlock){
@@ -5538,7 +5521,6 @@ function _tutShowStep(){
     // If target is hidden/zero-size, hide tooltip+arrow and keep polling
     if(tgt.width === 0 || tgt.height === 0){
       tt.style.opacity = '0';
-      arrowSvg.style.opacity = '0';
       if(spot) spot.style.opacity = '0';
       _rafId = requestAnimationFrame(_track);
       return;
@@ -5578,29 +5560,8 @@ function _tutShowStep(){
       void tt.offsetWidth;
       tt.style.transition = '';
       tt.style.opacity = '1';
-      arrowSvg.style.opacity = '1';
       if(spot) spot.style.opacity = '1';
     }
-
-    // ── Arrow: always from bottom-center of tooltip to center of target ──
-    const sx = ttLeft + ttW / 2;
-    const sy = ttTop + ttH;
-    const ex = tgt.left + tgt.width / 2;
-    const ey = tgt.top + tgt.height / 2;
-
-    const dx = ex - sx, dy = ey - sy;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    const minSwoop = 40;
-    const swoopDir = dx >= 0 ? 1 : -1;
-    const swoopAmt = Math.abs(dx) < minSwoop ? swoopDir * minSwoop : dx * 0.45;
-    const cx = sx + swoopAmt;
-    const cy = sy + dy * 0.5;
-
-    arrowPath.setAttribute('d',
-      'M' + sx.toFixed(1) + ',' + sy.toFixed(1) +
-      ' Q' + cx.toFixed(1) + ',' + cy.toFixed(1) +
-      ' ' + ex.toFixed(1) + ',' + ey.toFixed(1)
-    );
 
     // ── Update spotlight ──
     if(spot){
