@@ -5474,42 +5474,74 @@ function _tutPositionTooltip(tt, targetRect, pos){
 function _tutDrawArrow(tt, targetRect, pos){
   const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
   svg.className.baseVal = 'tut-arrow';
-  svg.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;z-index:10003';
+  svg.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;z-index:10003;overflow:visible';
 
   const ttRect = tt.getBoundingClientRect();
   const tCx = targetRect.left + targetRect.width/2, tCy = targetRect.top + targetRect.height/2;
 
-  // Arrow always starts from the bottom-center of the tooltip
-  const sx = ttRect.left + ttRect.width / 2;
-  const sy = ttRect.bottom;
-  // Arrow ends at the center of the target element
-  const ex = tCx, ey = tCy;
+  // Arrow starts from the tooltip edge facing the target, ends at target edge
+  let sx, sy, ex, ey;
+  switch(pos){
+    case 'right': // tooltip is to the RIGHT of target → arrow from left edge of tooltip to target right edge
+      sx = ttRect.left;
+      sy = ttRect.top + ttRect.height/2;
+      ex = targetRect.right + 4;
+      ey = tCy;
+      break;
+    case 'left': // tooltip is to the LEFT → arrow from right edge to target left edge
+      sx = ttRect.right;
+      sy = ttRect.top + ttRect.height/2;
+      ex = targetRect.left - 4;
+      ey = tCy;
+      break;
+    case 'top': // tooltip is ABOVE → arrow from bottom edge to target top edge
+      sx = ttRect.left + ttRect.width/2;
+      sy = ttRect.bottom;
+      ex = tCx;
+      ey = targetRect.top - 4;
+      break;
+    default: // 'bottom' — tooltip is BELOW → arrow from top edge to target bottom edge
+      sx = ttRect.left + ttRect.width/2;
+      sy = ttRect.top;
+      ex = tCx;
+      ey = targetRect.bottom + 4;
+  }
 
-  // Pencil-style: slight hand-drawn wobble via cubic bezier with offset control points
   const dx = ex - sx, dy = ey - sy;
   const dist = Math.sqrt(dx*dx + dy*dy);
-  const wobble = Math.min(25, dist * 0.12);
-  // Control points curve downward first then sweep up to target
-  const cp1x = sx + wobble * 0.8;
-  const cp1y = sy + Math.abs(dy) * 0.4 + 15;
-  const cp2x = ex - wobble * 0.6;
-  const cp2y = ey - Math.abs(dy) * 0.1;
+  if(dist < 20) return; // too close, skip arrow
 
-  const path = document.createElementNS('http://www.w3.org/2000/svg','path');
-  path.setAttribute('d', 'M '+sx.toFixed(1)+','+sy.toFixed(1)+' C '+cp1x.toFixed(1)+','+cp1y.toFixed(1)+' '+cp2x.toFixed(1)+','+cp2y.toFixed(1)+' '+ex.toFixed(1)+','+ey.toFixed(1));
-  path.setAttribute('fill','none');
-  path.setAttribute('stroke','#fff');
-  path.setAttribute('stroke-width','2');
-  path.setAttribute('stroke-linecap','round');
-  path.setAttribute('stroke-linejoin','round');
-  path.setAttribute('marker-end','url(#tutArrowW)');
-  path.setAttribute('opacity','.85');
-  // Slight pencil-style roughness via filter
-  path.setAttribute('filter','url(#tutPencil)');
+  // Smooth cubic bezier with a gentle curve offset perpendicular to the line
+  const isHoriz = (pos === 'left' || pos === 'right');
+  const curveMag = Math.min(30, dist * 0.15);
+  let cp1x, cp1y, cp2x, cp2y;
+  if(isHoriz){
+    cp1x = sx + dx * 0.33;
+    cp1y = sy - curveMag;
+    cp2x = sx + dx * 0.66;
+    cp2y = ey - curveMag;
+  } else {
+    cp1x = sx + curveMag;
+    cp1y = sy + dy * 0.33;
+    cp2x = ex + curveMag;
+    cp2y = sy + dy * 0.66;
+  }
+
+  // Build crisp path
+  const d = 'M'+sx.toFixed(1)+','+sy.toFixed(1)+' C'+cp1x.toFixed(1)+','+cp1y.toFixed(1)+' '+cp2x.toFixed(1)+','+cp2y.toFixed(1)+' '+ex.toFixed(1)+','+ey.toFixed(1);
 
   const defs = document.createElementNS('http://www.w3.org/2000/svg','defs');
-  defs.innerHTML = '<marker id="tutArrowW" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0.5, 9 3.5, 0 6.5" fill="#fff" opacity=".9"/></marker>'
-    + '<filter id="tutPencil" x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="turbulence" baseFrequency="0.04" numOctaves="4" result="noise" seed="2"/><feDisplacementMap in="SourceGraphic" in2="noise" scale="1.5" xChannelSelector="R" yChannelSelector="G"/></filter>';
+  // Clean triangular arrowhead, orient auto-start-reverse so it always points forward
+  defs.innerHTML = '<marker id="tutAH" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0.5 L7,3 L0,5.5" fill="none" stroke="rgba(255,255,255,.9)" stroke-width="1.2" stroke-linejoin="round"/></marker>';
+
+  const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+  path.setAttribute('d', d);
+  path.setAttribute('fill','none');
+  path.setAttribute('stroke','rgba(255,255,255,.8)');
+  path.setAttribute('stroke-width','1.5');
+  path.setAttribute('stroke-linecap','round');
+  path.setAttribute('marker-end','url(#tutAH)');
+
   svg.appendChild(defs);
   svg.appendChild(path);
   document.body.appendChild(svg);
