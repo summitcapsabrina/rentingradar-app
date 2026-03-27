@@ -1196,9 +1196,9 @@ h1 .hero-edit-input{font-size:1.35rem}
 .tut-btn{padding:6px 16px;border-radius:8px;font-size:.76rem;font-weight:600;cursor:pointer;border:none;transition:all .15s}
 .tut-btn-primary{background:var(--primary,#6366f1);color:#fff}.tut-btn-primary:hover{filter:brightness(1.1)}
 .tut-btn-secondary{background:var(--bg,#f1f5f9);color:var(--text,#1e293b);border:1px solid var(--border,#e2e8f0)}.tut-btn-secondary:hover{background:var(--border,#e2e8f0)}
-.tut-progress{display:flex;gap:3px;justify-content:center;padding:0 16px 10px}
-.tut-progress-dot{width:6px;height:6px;border-radius:50%;background:var(--border,#e2e8f0);transition:all .2s}
-.tut-progress-dot.active{background:var(--primary,#6366f1);width:16px;border-radius:3px}
+.tut-progress{display:flex;gap:2px;justify-content:center;padding:0 16px 10px;flex-wrap:wrap}
+.tut-progress-dot{width:5px;height:5px;border-radius:50%;background:var(--border,#e2e8f0);transition:all .2s}
+.tut-progress-dot.active{background:var(--primary,#6366f1);width:12px;border-radius:3px}
 .tut-progress-dot.done{background:var(--primary,#6366f1);opacity:.4}
 .tut-arrow{position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:10003;pointer-events:none;overflow:visible}
 .tut-welcome{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:10003;background:var(--surface,#fff);border-radius:18px;padding:36px 40px;width:440px;max-width:90vw;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.3);pointer-events:auto;animation:tutWelcomeIn .35s ease}
@@ -5308,19 +5308,19 @@ const _tutorialDefs = {
     { waitFor:'#add_property', target:'[onclick*="saveNewRecord"]', title:'Save Your Property', body:'Once your details are filled in, this button saves the property to your pipeline. You can always edit details later from the Property Profile.<br><br><kbd style="background:rgba(99,102,241,.1);border:1px solid var(--border);border-radius:4px;padding:1px 6px;font-size:.72rem;font-family:monospace">Shift + Enter</kbd> Quick save from anywhere in the form', position:'left', noBlock:true, onEnter:function(){ if(!document.querySelector('#add_property')){ openAddModal(); setTimeout(showManualAddForm, 300); } }, onNext:function(){ closeAddModal(true); } },
     { target:'.nav-item[data-view="contacts"]', title:'Contacts', body:'This is your Contacts section — every property you add appears here. You can view them as a table or cards, filter by status, and click any row to open the full Property Profile.<br><br>Click column headers to sort — you can sort by up to two columns at once.', position:'right', onEnter:function(){ closeAddModal(true); switchView('contacts'); }, onNext:function(){ switchView('dashboard'); } },
     { target:'.nav-item[data-view="dashboard"]', title:'Dashboard Overview', body:'The Dashboard is your portfolio command center. Let\'s take a closer look at what\'s here.', position:'right', onEnter:function(){ switchView('dashboard'); } },
-    { target:'.kpi-row, .kpi-card:first-child, .dashboard-kpis', title:'Portfolio KPIs', body:'These cards show your total properties, follow-ups due, meetings scheduled, and pipeline activity at a glance. Stay on top of your deal flow.', position:'bottom', onEnter:function(){ if(currentView!=='dashboard') switchView('dashboard'); } },
-    { target:'#dashboardMap, .map-container, [id*="map"]', title:'Property Map', body:'Your interactive map shows all properties plotted by location. Click any marker to jump to that property\'s profile.<br><br><kbd style="background:rgba(99,102,241,.1);border:1px solid var(--border);border-radius:4px;padding:1px 6px;font-size:.72rem;font-family:monospace">Ctrl + Scroll</kbd> to zoom the map', position:'bottom', onEnter:function(){ if(currentView!=='dashboard') switchView('dashboard'); } },
-    { target:'.pipeline-funnel, .funnel-section, .pipeline-section, .pipeline-category-tabs', title:'Pipeline Overview', body:'This section shows how your properties are distributed across statuses — from New to Closed. Use it to visualize your deal flow at a glance.', position:'top', onEnter:function(){ if(currentView!=='dashboard') switchView('dashboard'); } },
+    { target:'.kpi-row, .kpi-card:first-child, .dashboard-kpis', title:'Portfolio KPIs', body:'These cards show your total properties, follow-ups due, meetings scheduled, and pipeline activity at a glance. Stay on top of your deal flow.', position:'bottom', onEnter:function(){ if(currentView!=='dashboard') switchView('dashboard'); }, onNext:function(){ var m = document.getElementById('dashboardMap'); if(m) m.scrollIntoView({behavior:'smooth',block:'center'}); } },
+    { target:'#dashboardMap', title:'Property Map', body:'Your interactive map shows all properties plotted by location. Click any marker to jump to that property\'s profile.<br><br><kbd style="background:rgba(99,102,241,.1);border:1px solid var(--border);border-radius:4px;padding:1px 6px;font-size:.72rem;font-family:monospace">Ctrl + Scroll</kbd> to zoom the map', position:'left', onEnter:function(){ if(currentView!=='dashboard') switchView('dashboard'); var m = document.getElementById('dashboardMap'); if(m) m.scrollIntoView({behavior:'smooth',block:'center'}); } },
+    { target:'.pipeline-funnel, .funnel-section, .pipeline-section, .pipeline-category-tabs', title:'Pipeline Overview', body:'This section shows how your properties are distributed across statuses — from New to Closed. Use it to visualize your deal flow at a glance.', position:'left', onEnter:function(){ if(currentView!=='dashboard') switchView('dashboard'); } },
     { target:'#globalSearch', title:'Search Your CRM', body:'The search bar lets you find any property, contact, or note instantly. It searches across all fields at once.<br><br><kbd style="background:rgba(99,102,241,.1);border:1px solid var(--border);border-radius:4px;padding:1px 6px;font-size:.72rem;font-family:monospace">Ctrl + S</kbd> Jump to search from anywhere', position:'bottom', onEnter:function(){ if(currentView!=='dashboard') switchView('dashboard'); } },
     { target:'.nav-item[data-view="settings"]', title:'Settings & Tutorials', body:'Visit Settings to manage your account, customize your experience, view all keyboard shortcuts, and restart any tutorial walkthrough at any time.<br><br><kbd style="background:rgba(99,102,241,.1);border:1px solid var(--border);border-radius:4px;padding:1px 6px;font-size:.72rem;font-family:monospace">Escape</kbd> Close any popup or modal', position:'right' },
     { type:'complete', emoji:'🎉', title:'You\'re All Set!', body:'You now know the basics of RentingRadar! Add your first property, explore the Dashboard, and check out your Pipeline. As you upgrade your plan, new tutorials will introduce advanced features like Competitor Analysis, Projected ROI, and Negotiation Tools.' }
   ],
   basic: [
     { type:'welcome', emoji:'⬆️', title:'Welcome to Basic!', body:'You\'ve unlocked powerful analysis tools! Let\'s walk through the Competitor Analysis and Projected ROI features that are now available on every property.', onNext:function(){ _tutEnsureProfile(); setTimeout(function(){ if(typeof setProfileTab==='function') setProfileTab('analysis'); }, 400); } },
-    { target:'.profile-tab[data-tab="analysis"]', title:'Competitor Analysis', body:'This tab is where you analyze how your property stacks up against the competition. You\'ll add rental comps and see your market positioning.', position:'bottom', noBlock:true, onEnter:function(){ _tutEnsureProfile(); setTimeout(function(){ if(typeof setProfileTab==='function') setProfileTab('analysis'); }, 400); } },
+    { target:'.profile-tab[data-tab="analysis"]', title:'Competitor Analysis', body:'This tab is where you analyze how your property stacks up against the competition. You\'ll add rental comps and see your market positioning.', position:'right', noBlock:true, onEnter:function(){ _tutEnsureProfile(); setTimeout(function(){ if(typeof setProfileTab==='function') setProfileTab('analysis'); }, 400); } },
     { target:'.comp-table, .calc-section:first-child', title:'Your Comp Table', body:'This is where you add comparable properties (comps) to build your market analysis. Enter nightly rates, occupancy rates, and ratings for each comp. The more comps you add, the more accurate your projections.', position:'left', noBlock:true, onEnter:function(){ if(typeof setProfileTab==='function') setProfileTab('analysis'); } },
     { target:'.competitive-position, .calc-section-header', title:'Competitive Position', body:'Once you have 3+ comps, RentingRadar calculates your competitive position — showing where you rank in the market and how strong your listing is relative to competitors.', position:'left', noBlock:true, onEnter:function(){ if(typeof setProfileTab==='function') setProfileTab('analysis'); }, onNext:function(){ if(typeof setProfileTab==='function') setProfileTab('calculator'); } },
-    { target:'.profile-tab[data-tab="calculator"]', title:'Projected ROI', body:'This tab shows your property\'s projected return on investment with detailed financial analysis.', position:'bottom', noBlock:true, onEnter:function(){ if(typeof setProfileTab==='function') setProfileTab('calculator'); } },
+    { target:'.profile-tab[data-tab="calculator"]', title:'Projected ROI', body:'This tab shows your property\'s projected return on investment with detailed financial analysis.', position:'right', noBlock:true, onEnter:function(){ if(typeof setProfileTab==='function') setProfileTab('calculator'); } },
     { target:'.kpi-grid, .kpi-card:first-child', title:'Key Performance Indicators', body:'Your KPI cards show projected revenue, annual expenses, monthly net cash flow, and cash-on-cash return — all calculated from your comps and expenses.', position:'left', noBlock:true, onEnter:function(){ if(typeof setProfileTab==='function') setProfileTab('calculator'); } },
     { target:'.calc-panel .toggle-btn, [onclick*="setCalcProjMode"], .projection-toggle', title:'Projection Modes', body:'These toggles let you switch between Pessimistic, Realistic, and Optimistic scenarios. Each uses different assumptions based on your competitor data.', position:'left', noBlock:true, onEnter:function(){ if(typeof setProfileTab==='function') setProfileTab('calculator'); } },
     { target:'.deal-temp-card, .calc-section-header[onclick*="dealTemp"], [class*="deal-temp"]', title:'Deal Temperature', body:'Deal Temperature gives you an instant read on whether this property is a Slam-Dunk, has Potential, is Risky, or a No-Go — based on your profit requirements and projected cash flow.', position:'left', noBlock:true, onEnter:function(){ if(typeof setProfileTab==='function') setProfileTab('calculator'); } },
@@ -5328,18 +5328,40 @@ const _tutorialDefs = {
   ],
   pro: [
     { type:'welcome', emoji:'🚀', title:'Welcome to Pro!', body:'You\'ve unlocked the full suite! Let\'s explore your new Negotiation Forecasting Tools, AI-powered features, and automatic property importing.', onNext:function(){ _tutEnsureProfile(); setTimeout(function(){ if(typeof setProfileTab==='function') setProfileTab('calculator'); }, 400); } },
-    { target:'.profile-tab[data-tab="calculator"]', title:'Projected ROI', body:'Your Negotiation Forecasting Tools live inside the Projected ROI tab. Let\'s take a look.', position:'bottom', noBlock:true, onEnter:function(){ _tutEnsureProfile(); setTimeout(function(){ if(typeof setProfileTab==='function') setProfileTab('calculator'); }, 400); } },
+    { target:'.profile-tab[data-tab="calculator"]', title:'Projected ROI', body:'Your Negotiation Forecasting Tools live inside the Projected ROI tab. Let\'s take a look.', position:'right', noBlock:true, onEnter:function(){ _tutEnsureProfile(); setTimeout(function(){ if(typeof setProfileTab==='function') setProfileTab('calculator'); }, 400); } },
     { target:function(){ return document.querySelector('.calc-section-header[onclick*="Negotiation"]') || Array.from(document.querySelectorAll('.calc-section-header')).find(function(el){ return el.textContent.includes('Negotiation'); }); }, title:'Negotiation Forecasting Tools', body:'This is your negotiation analysis center. It combines Rent Adjustment and Rental Concessions to help you model deal scenarios before negotiating with landlords.', position:'left', noBlock:true, onEnter:function(){ if(typeof setProfileTab==='function') setProfileTab('calculator'); } },
     { target:function(){ return document.querySelector('[id^="rentDial_"]') || document.querySelector('svg[id^="rentDial"]'); }, title:'Rent Adjustment Dial', body:'This dial lets you explore what monthly rent would make a deal attractive. The color zones show your deal temperature at each rent level. It\'s projection-only — it won\'t change your actual data.', position:'left', noBlock:true, onEnter:function(){ if(typeof setProfileTab==='function') setProfileTab('calculator'); } },
     { target:function(){ var el = document.querySelector('[onclick*="editConcessionWeeks"]'); return el ? el.closest('div[style*="flex-direction:column"]') : null; }, title:'Rental Concessions', body:'This section lets you model weeks of free rent you could negotiate. See how concessions reduce your upfront investment and accelerate your break-even timeline.', position:'left', noBlock:true, onEnter:function(){ if(typeof setProfileTab==='function') setProfileTab('calculator'); }, onNext:function(){ if(typeof setProfileTab==='function') setProfileTab('expenses'); } },
-    { target:'.profile-tab[data-tab="expenses"]', title:'AI-Powered Estimates', body:'Pro unlocks AI Expense Estimates on the Expenses tab. Our AI analyzes your market and property type to suggest realistic operating expenses — saving you hours of research.', position:'bottom', noBlock:true, onEnter:function(){ if(typeof setProfileTab==='function') setProfileTab('expenses'); }, onNext:function(){ if(currentView==='profile') switchView('contacts'); } },
-    { target:function(){ return document.querySelector('[onclick*="openAddModal"]'); }, title:'Auto-Import Properties', body:'Pro also unlocks automatic property importing via the RentingRadar Chrome Extension. Paste any listing URL and the extension extracts all property details automatically.', position:'bottom', onEnter:function(){ if(currentView==='profile') switchView('contacts'); } },
+    { target:'.profile-tab[data-tab="expenses"]', title:'AI-Powered Estimates', body:'Pro unlocks AI Expense Estimates on the Expenses tab. Our AI analyzes your market and property type to suggest realistic operating expenses — saving you hours of research.', position:'right', noBlock:true, onEnter:function(){ if(typeof setProfileTab==='function') setProfileTab('expenses'); }, onNext:function(){ if(currentView==='profile') switchView('contacts'); } },
+    { target:function(){ return document.querySelector('[onclick*="openAddModal"]'); }, title:'Auto-Import Properties', body:'Pro also unlocks automatic property importing via the RentingRadar Chrome Extension. Paste any listing URL and the extension extracts all property details automatically.', position:'left', onEnter:function(){ if(currentView==='profile') switchView('contacts'); } },
     { type:'complete', emoji:'🏆', title:'Pro Features Unlocked!', body:'You now have the full RentingRadar toolkit. Use Negotiation Forecasting to model scenarios, AI Estimates for faster setup, and Auto-Import to build your pipeline at speed. Happy deal hunting!' }
   ],
   dashboard: [] // Dashboard tour is now part of the free tutorial
 };
 
 // ── Tutorial Helpers ──
+// Cumulative step numbering across all tutorials
+function _tutGlobalStep(){
+  var order = ['free','basic','pro'];
+  var offset = 0;
+  for(var i = 0; i < order.length; i++){
+    var def = _tutorialDefs[order[i]];
+    if(!def || !def.length) continue;
+    if(order[i] === _tut.name) return { current: offset + _tut.step + 1, total: _tutGlobalTotal() };
+    offset += def.length;
+  }
+  return { current: _tut.step + 1, total: _tut.steps.length };
+}
+function _tutGlobalTotal(){
+  var order = ['free','basic','pro'];
+  var total = 0;
+  for(var i = 0; i < order.length; i++){
+    var def = _tutorialDefs[order[i]];
+    if(def && def.length) total += def.length;
+  }
+  return total;
+}
+
 // Opens the first available property profile so tab-based tutorials have a target
 function _tutEnsureProfile(){
   if(currentView === 'profile' && currentProfileId) return; // already on a profile
@@ -5464,10 +5486,15 @@ function _tutShowStep(){
   const tt = document.createElement('div'); tt.className='tut-tooltip'+(isNoBlock?' tut-floating':'');
   tt.style.opacity = '0';
   tt.style.transition = 'none';
-  let ttHtml = '<div class="tut-tooltip-header"><span class="tut-step-badge">Step '+(_tut.step+1)+' of '+_tut.steps.length+'</span><span class="tut-title">'+s.title+'</span><button class="tut-close-x" onclick="_tutConfirmClose()" title="Close tutorial">&times;</button></div>';
+  var _gs = _tutGlobalStep();
+  let ttHtml = '<div class="tut-tooltip-header"><span class="tut-step-badge">Step '+_gs.current+' of '+_gs.total+'</span><span class="tut-title">'+s.title+'</span><button class="tut-close-x" onclick="_tutConfirmClose()" title="Close tutorial">&times;</button></div>';
   ttHtml += '<div class="tut-tooltip-body">'+s.body+'</div>';
   ttHtml += '<div class="tut-progress">';
-  _tut.steps.forEach((_, i) => { ttHtml += '<div class="tut-progress-dot'+(i<_tut.step?' done':'')+(i===_tut.step?' active':'')+'"></div>'; });
+  var _gtotal = _tutGlobalTotal();
+  var _gcurrent = _gs.current - 1; // zero-based global index
+  for(var _gi = 0; _gi < _gtotal; _gi++){
+    ttHtml += '<div class="tut-progress-dot'+(_gi<_gcurrent?' done':'')+(_gi===_gcurrent?' active':'')+'"></div>';
+  }
   ttHtml += '</div>';
   ttHtml += '<div class="tut-tooltip-footer"><span class="tut-skip" onclick="_tutConfirmClose()">Cancel tutorial</span><div class="tut-btns">';
   ttHtml += '<button class="tut-btn tut-btn-primary" onclick="_tutNext()">Next →</button>';
@@ -5555,25 +5582,42 @@ function _tutShowStep(){
       if(spot) spot.style.opacity = '1';
     }
 
-    // ── Arrow: bottom-center of tooltip → bottom-center of target ──
-    const sx = ttLeft + ttW / 2;
-    const sy = ttTop + ttH;
-    const ex = tgt.left + tgt.width / 2;
-    const ey = tgt.bottom;
+    // ── Arrow: originates from the edge of tooltip FACING the target ──
+    let sx, sy, ex, ey;
+    if(pos === 'left'){
+      // Tooltip is left of target → arrow from right-center of tooltip
+      sx = ttLeft + ttW; sy = ttTop + ttH / 2;
+      ex = tgt.left; ey = tgt.top + tgt.height / 2;
+    } else if(pos === 'right'){
+      // Tooltip is right of target → arrow from left-center of tooltip
+      sx = ttLeft; sy = ttTop + ttH / 2;
+      ex = tgt.right; ey = tgt.top + tgt.height / 2;
+    } else if(pos === 'top'){
+      // Tooltip is above target → arrow from bottom-center of tooltip
+      sx = ttLeft + ttW / 2; sy = ttTop + ttH;
+      ex = tgt.left + tgt.width / 2; ey = tgt.top;
+    } else {
+      // bottom (default) → arrow from top-center of tooltip
+      sx = ttLeft + ttW / 2; sy = ttTop;
+      ex = tgt.left + tgt.width / 2; ey = tgt.bottom;
+    }
 
     const dx = ex - sx, dy = ey - sy;
     const dist = Math.sqrt(dx * dx + dy * dy);
-    const minSwoop = 50;
-    const hDir = dx >= 0 ? 1 : -1;
-    const hOffset = Math.abs(dx) < minSwoop ? hDir * minSwoop : dx * 0.45;
+    const minSwoop = 40;
     let cx, cy;
-    if(dy >= 0){
-      cx = sx + hOffset;
-      cy = sy + Math.max(40, dy * 0.5);
+    if(pos === 'left' || pos === 'right'){
+      // Horizontal arrow — swoop vertically
+      const vDir = dy >= 0 ? 1 : -1;
+      const vOffset = Math.abs(dy) < minSwoop ? vDir * minSwoop : dy * 0.45;
+      cx = sx + dx * 0.5;
+      cy = sy + vOffset;
     } else {
-      const drop = Math.max(40, Math.min(70, dist * 0.25));
+      // Vertical arrow — swoop horizontally
+      const hDir = dx >= 0 ? 1 : -1;
+      const hOffset = Math.abs(dx) < minSwoop ? hDir * minSwoop : dx * 0.45;
       cx = sx + hOffset;
-      cy = sy + drop;
+      cy = sy + dy * 0.5;
     }
 
     arrowPath.setAttribute('d',
