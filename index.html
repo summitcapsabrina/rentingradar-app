@@ -5240,7 +5240,7 @@ const _tutorialDefs = {
     { type:'welcome', emoji:'🏠', title:'Welcome to RentingRadar!', body:'This quick tutorial will walk you through setting up your first property, managing expenses, and navigating your CRM. You\'ll be a pro in no time!' },
     { target:'[onclick*="openAddModal"]', title:'Add a Property', body:'Click this button to add your first property to the pipeline.', position:'left', action:'click', actionHint:'Click "Add Property" to continue' },
     { waitFor:'#addStep1', target:'[onclick*="showManualAddForm"]', title:'Choose Manual Entry', body:'You can import from a URL (Pro feature) or enter details manually. Click Manual Entry to continue.', position:'left', action:'click', actionHint:'Click "Manual Entry"', noBlock:true },
-    { waitFor:'#add_property', target:'#add_property', title:'Enter the Address', body:'Type the property address. Our autocomplete will help fill in city, state, and zip automatically.', position:'left', action:'input', actionHint:'Type an address to continue', noBlock:true },
+    { waitFor:'#add_property', target:'#add_property', title:'Enter the Address', body:'Type a property address and select one from the dropdown. Don\'t have one in mind? Just pick any address for practice — you can always delete it later!', position:'left', action:'addressSelect', actionHint:'Type an address and select from the dropdown', noBlock:true },
     { waitFor:'#add_property', target:'#addStep2', title:'Add Property Details', body:'Fill in key details like bedrooms, bathrooms, square footage, and monthly rent. The more info you add now, the better your analysis will be later.', position:'left', action:null, noBlock:true },
     { waitFor:'#add_property', target:'[onclick*="saveNewRecord"]', title:'Save Your Property', body:'Click Save to create this property. You can always edit details later from the Property Profile.', position:'left', action:'click', actionHint:'Click "Save" to continue', noBlock:true },
     { waitFor:'.tab-btn[data-tab="expenses"]', target:'.tab-btn[data-tab="expenses"]', title:'Manage Expenses', body:'Now let\'s look at the Expenses tab. Click here to set up your monthly operating costs like insurance, utilities, and fees.', position:'bottom', action:'click', actionHint:'Click "Expenses" to continue', noBlock:true },
@@ -5503,6 +5503,20 @@ function _tutShowStep(){
     };
     targetEl.addEventListener('input', handler);
     _tut._cleanup.push(() => { try { targetEl.removeEventListener('input', handler); } catch(e){} });
+  } else if(s.action === 'addressSelect'){
+    // Wait for user to pick from autocomplete — detected when #add_city gets filled
+    const cityEl = document.getElementById('add_city');
+    let _addrPollId = 0;
+    const addrPoll = function(){
+      if(!_tut.active) return;
+      if(cityEl && cityEl.value && cityEl.value.trim().length > 0){
+        _tutNext();
+        return;
+      }
+      _addrPollId = requestAnimationFrame(addrPoll);
+    };
+    _addrPollId = requestAnimationFrame(addrPoll);
+    _tut._cleanup.push(() => { cancelAnimationFrame(_addrPollId); });
   }
 }
 
