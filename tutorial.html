@@ -398,11 +398,28 @@ function allStepsCompleted(){
 function completeStep(){
   if(completed.has(currentStep)) return; // Already completed
   completed.add(currentStep);
-  renderStep();
-  // If all steps completed, show congratulations
+  // If all steps now completed, show congratulations
   if(allStepsCompleted()){
+    renderStep();
     closeTutorial();
+    return;
   }
+  // Auto-advance to next uncompleted step
+  goToNextUncompleted();
+}
+
+function goToNextUncompleted(){
+  // Search forward from current step, wrapping around
+  for(let i = 1; i <= TUTORIAL_STEPS.length; i++){
+    const idx = (currentStep + i) % TUTORIAL_STEPS.length;
+    if(!completed.has(idx)){
+      currentStep = idx;
+      renderStep();
+      return;
+    }
+  }
+  // Fallback (shouldn't reach here since allStepsCompleted is checked first)
+  renderStep();
 }
 
 function nextStep(){
