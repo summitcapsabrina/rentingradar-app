@@ -7714,9 +7714,9 @@ function renderCalculatorTab(r){
         const a2 = Math.PI + z.end * Math.PI;
         const x1 = dCx + dR * Math.cos(a1), y1 = dCy + dR * Math.sin(a1);
         const x2 = dCx + dR * Math.cos(a2), y2 = dCy + dR * Math.sin(a2);
-        const large = (z.end - z.start) > 0.5 ? 1 : 0;
         if(!isFinite(x1)||!isFinite(y1)||!isFinite(x2)||!isFinite(y2)) return;
-        h += '<path d="M'+x1.toFixed(1)+','+y1.toFixed(1)+' A'+dR+','+dR+' 0 '+large+',1 '+x2.toFixed(1)+','+y2.toFixed(1)+'" fill="none" stroke="'+z.color+'" stroke-width="28" opacity=".7"/>';
+        // large-arc-flag is always 0: our full dial is a 180° semicircle, so no single zone can exceed 180°
+        h += '<path d="M'+x1.toFixed(1)+','+y1.toFixed(1)+' A'+dR+','+dR+' 0 0,1 '+x2.toFixed(1)+','+y2.toFixed(1)+'" fill="none" stroke="'+z.color+'" stroke-width="28" opacity=".7"/>';
       });
     }
 
