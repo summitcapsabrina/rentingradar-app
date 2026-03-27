@@ -1437,8 +1437,7 @@ function switchView(view){
   if(!_handlingPopstate) history.pushState({ view: view, profileId: null }, '', '#' + view);
   saveViewState();
   render();
-  // Auto-trigger dashboard tutorial on first visit
-  if(view === 'dashboard' && _authDataLoaded && !_tut.active) _tutCheckDashboard();
+  // Dashboard tour is now part of the free tutorial
 }
 
 function saveViewState(){
@@ -5237,16 +5236,19 @@ function _tutLoadSeenFromFirestore(data){
 // ── Step Definitions ──
 const _tutorialDefs = {
   free: [
-    { type:'welcome', emoji:'🏠', title:'Welcome to RentingRadar!', body:'This quick tutorial will walk you through the CRM — from adding a property to navigating your pipeline. Let\'s get started!' },
+    { type:'welcome', emoji:'🏠', title:'Welcome to RentingRadar!', body:'This quick tutorial will walk you through the CRM — from adding a property to navigating your Dashboard and Pipeline. Let\'s get started!' },
     { target:'[onclick*="openAddModal"]', title:'Add a Property', body:'This button opens the Add Property form. You\'ll use it to add rental arbitrage properties to your pipeline.', position:'left', onEnter:function(){ openAddModal(); }, onNext:function(){ if(!document.querySelector('#addStep1')) openAddModal(); } },
     { waitFor:'#addStep1', target:'[onclick*="showManualAddForm"]', title:'Choose Manual Entry', body:'You can import from a URL (Pro feature) or enter details manually. Manual Entry lets you fill in property info by hand.', position:'left', noBlock:true, onEnter:function(){ if(!document.querySelector('#addStep1')) openAddModal(); }, onNext:function(){ showManualAddForm(); } },
-    { waitFor:'#add_property', target:'#add_property', title:'Enter the Address', body:'This is where you type a property address. The autocomplete dropdown fills in city, state, and zip automatically.', position:'left', noBlock:true, onEnter:function(){ if(!document.querySelector('#add_property')){ openAddModal(); setTimeout(showManualAddForm, 300); } } },
+    { waitFor:'#add_property', target:'#add_property', title:'Enter the Address', body:'This is where you type a property address. The autocomplete dropdown fills in city, state, and zip automatically.<br><br><kbd style="background:rgba(99,102,241,.1);border:1px solid var(--border);border-radius:4px;padding:1px 6px;font-size:.72rem;font-family:monospace">↑ ↓</kbd> Navigate suggestions &nbsp; <kbd style="background:rgba(99,102,241,.1);border:1px solid var(--border);border-radius:4px;padding:1px 6px;font-size:.72rem;font-family:monospace">Enter</kbd> Select', position:'left', noBlock:true, onEnter:function(){ if(!document.querySelector('#add_property')){ openAddModal(); setTimeout(showManualAddForm, 300); } } },
     { waitFor:'#add_beds', target:function(){ var el = document.getElementById('add_beds'); return el ? el.closest('.field-row') : null; }, title:'Add Property Details', body:'Here you can enter beds, baths, square footage, and rent. You can always update these later from the Property Profile.', position:'left', noBlock:true, onEnter:function(){ if(!document.querySelector('#add_beds')){ openAddModal(); setTimeout(showManualAddForm, 300); } } },
     { waitFor:'#add_link2', target:'#add_link2', title:'Add the Listing Link', body:'This field is for the listing URL. It links back to the original listing so you can reference it anytime.', position:'left', noBlock:true, onEnter:function(){ if(!document.querySelector('#add_link2')){ openAddModal(); setTimeout(showManualAddForm, 300); } } },
-    { waitFor:'#add_property', target:'[onclick*="saveNewRecord"]', title:'Save Your Property', body:'Once your details are filled in, this button saves the property to your pipeline. You can always edit details later from the Property Profile.', position:'left', noBlock:true, onEnter:function(){ if(!document.querySelector('#add_property')){ openAddModal(); setTimeout(showManualAddForm, 300); } }, onNext:function(){ closeAddModal(true); } },
-    { target:'.nav-item[data-view="contacts"]', title:'Your Pipeline', body:'After saving, your properties appear here in the Pipeline. Click any property card to open its full profile — with expenses, competitor analysis, projected ROI, and more.', position:'right', onEnter:function(){ closeAddModal(true); switchView('contacts'); }, onNext:function(){ switchView('dashboard'); } },
-    { target:'.nav-item[data-view="dashboard"]', title:'Dashboard Overview', body:'The Dashboard gives you a bird\'s-eye view of your entire portfolio — total properties, upcoming follow-ups, meetings, and recent activity all in one place.', position:'right', onEnter:function(){ switchView('dashboard'); } },
-    { target:'.nav-item[data-view="settings"]', title:'Settings & Tutorials', body:'Visit Settings to manage your account, customize your experience, and restart any tutorial walkthrough at any time.', position:'right' },
+    { waitFor:'#add_property', target:'[onclick*="saveNewRecord"]', title:'Save Your Property', body:'Once your details are filled in, this button saves the property to your pipeline. You can always edit details later from the Property Profile.<br><br><kbd style="background:rgba(99,102,241,.1);border:1px solid var(--border);border-radius:4px;padding:1px 6px;font-size:.72rem;font-family:monospace">Shift + Enter</kbd> Quick save from anywhere in the form', position:'left', noBlock:true, onEnter:function(){ if(!document.querySelector('#add_property')){ openAddModal(); setTimeout(showManualAddForm, 300); } }, onNext:function(){ closeAddModal(true); } },
+    { target:'.nav-item[data-view="contacts"]', title:'Your Pipeline', body:'After saving, your properties appear here in the Pipeline. Click any property card to open its full profile — with expenses, competitor analysis, projected ROI, and more.<br><br><kbd style="background:rgba(99,102,241,.1);border:1px solid var(--border);border-radius:4px;padding:1px 6px;font-size:.72rem;font-family:monospace">Ctrl + S</kbd> Jump to the search bar anytime', position:'right', onEnter:function(){ closeAddModal(true); switchView('contacts'); }, onNext:function(){ switchView('dashboard'); } },
+    { target:'.nav-item[data-view="dashboard"]', title:'Dashboard Overview', body:'The Dashboard is your portfolio command center — total properties, upcoming follow-ups, meetings, and recent activity all in one place. Let\'s take a closer look.', position:'right', onEnter:function(){ switchView('dashboard'); } },
+    { target:'.kpi-row, .kpi-card:first-child, .dashboard-kpis', title:'Portfolio KPIs', body:'These cards show your total properties, follow-ups due, meetings scheduled, and pipeline activity at a glance. Stay on top of your deal flow.', position:'bottom', onEnter:function(){ if(currentView!=='dashboard') switchView('dashboard'); } },
+    { target:'#dashboardMap, .map-container, [id*="map"]', title:'Property Map', body:'Your interactive map shows all properties plotted by location. Click any marker to jump to that property\'s profile.<br><br><kbd style="background:rgba(99,102,241,.1);border:1px solid var(--border);border-radius:4px;padding:1px 6px;font-size:.72rem;font-family:monospace">Ctrl + Scroll</kbd> to zoom the map', position:'bottom', onEnter:function(){ if(currentView!=='dashboard') switchView('dashboard'); } },
+    { target:'.pipeline-funnel, .funnel-section, .pipeline-section, .pipeline-category-tabs', title:'Pipeline Overview', body:'This section shows how your properties are distributed across statuses — from New to Closed. Use it to visualize your deal flow at a glance.', position:'top', onEnter:function(){ if(currentView!=='dashboard') switchView('dashboard'); } },
+    { target:'.nav-item[data-view="settings"]', title:'Settings & Tutorials', body:'Visit Settings to manage your account, customize your experience, view all keyboard shortcuts, and restart any tutorial walkthrough at any time.<br><br><kbd style="background:rgba(99,102,241,.1);border:1px solid var(--border);border-radius:4px;padding:1px 6px;font-size:.72rem;font-family:monospace">Escape</kbd> Close any popup or modal', position:'right' },
     { type:'complete', emoji:'🎉', title:'You\'re All Set!', body:'You now know the basics of RentingRadar! Add your first property, explore the Dashboard, and check out your Pipeline. As you upgrade your plan, new tutorials will introduce advanced features like Competitor Analysis, Projected ROI, and Negotiation Tools.' }
   ],
   basic: [
@@ -5270,13 +5272,7 @@ const _tutorialDefs = {
     { target:function(){ return document.querySelector('[onclick*="openAddModal"]'); }, title:'Auto-Import Properties', body:'Pro also unlocks automatic property importing via the RentingRadar Chrome Extension. Paste any listing URL and the extension extracts all property details automatically.', position:'bottom', onEnter:function(){ if(currentView==='profile') switchView('contacts'); } },
     { type:'complete', emoji:'🏆', title:'Pro Features Unlocked!', body:'You now have the full RentingRadar toolkit. Use Negotiation Forecasting to model scenarios, AI Estimates for faster setup, and Auto-Import to build your pipeline at speed. Happy deal hunting!' }
   ],
-  dashboard: [
-    { type:'welcome', emoji:'📈', title:'Your Dashboard', body:'Welcome to the Dashboard! This is your portfolio command center. Let\'s take a quick tour of what\'s here.' },
-    { target:'.kpi-row, .kpi-card:first-child, .dashboard-kpis', title:'Portfolio KPIs', body:'These cards show your total properties, follow-ups due, meetings scheduled, and pipeline activity at a glance. Stay on top of your deal flow.', position:'bottom' },
-    { target:'#dashboardMap, .map-container, [id*="map"]', title:'Property Map', body:'Your interactive map shows all properties plotted by location. Click any marker to jump to that property\'s profile.', position:'bottom' },
-    { target:'.pipeline-funnel, .funnel-section, .pipeline-section', title:'Pipeline Overview', body:'This section shows how your properties are distributed across statuses — from New to Closed. Use it to visualize your deal flow at a glance.', position:'top' },
-    { type:'complete', emoji:'✅', title:'Dashboard Tour Complete!', body:'You can always restart this tutorial from Settings. Now go explore — add properties, track your deals, and build your rental arbitrage portfolio!' }
-  ]
+  dashboard: [] // Dashboard tour is now part of the free tutorial
 };
 
 // ── Tutorial Helpers ──
@@ -5600,13 +5596,6 @@ function _tutCheckAutoStart(tier, isNewUser){
       if(_disclaimerAcknowledged || !requireTier('pro','x')) return;
       startTutorial('pro');
     }, 1200);
-  }
-}
-
-function _tutCheckDashboard(){
-  _tutLoadSeen();
-  if(!_tut.seen.dashboard && !_tut.active){
-    setTimeout(() => startTutorial('dashboard'), 600);
   }
 }
 
@@ -10967,7 +10956,7 @@ function renderSettings(){
       <div class="settings-section-header"><h3>🎓 Tutorial Walkthrough</h3></div>
       <div class="settings-section-body">
         <div class="settings-row">
-          <div class="settings-row-left"><div class="sr-label">${_tut.seen.free ? '<span style="color:#22c55e;margin-right:6px">✓</span>' : ''}Getting Started (Free)</div><div class="sr-desc">Add properties, manage expenses, and navigate the CRM</div></div>
+          <div class="settings-row-left"><div class="sr-label">${_tut.seen.free ? '<span style="color:#22c55e;margin-right:6px">✓</span>' : ''}Getting Started (Free)</div><div class="sr-desc">Add properties, navigate the Pipeline, Dashboard tour, and keyboard shortcuts</div></div>
           <div class="settings-row-right"><button class="btn btn-secondary btn-sm" onclick="restartTutorial('free')">${_tut.seen.free ? '↻ Restart' : '▶ Start'}</button></div>
         </div>
         <div class="settings-row">
@@ -10977,10 +10966,6 @@ function renderSettings(){
         <div class="settings-row">
           <div class="settings-row-left"><div class="sr-label">${_tut.seen.pro ? '<span style="color:#22c55e;margin-right:6px">✓</span>' : ''}Pro Features</div><div class="sr-desc">Negotiation tools, AI estimates, and auto-import</div></div>
           <div class="settings-row-right"><button class="btn btn-secondary btn-sm" ${requireTier('pro','Tutorial') ? '' : 'disabled style="opacity:.4"'} onclick="restartTutorial('pro')">${_tut.seen.pro ? '↻ Restart' : '▶ Start'}</button></div>
-        </div>
-        <div class="settings-row">
-          <div class="settings-row-left"><div class="sr-label">${_tut.seen.dashboard ? '<span style="color:#22c55e;margin-right:6px">✓</span>' : ''}Dashboard Tour</div><div class="sr-desc">Portfolio KPIs, map, and pipeline overview</div></div>
-          <div class="settings-row-right"><button class="btn btn-secondary btn-sm" onclick="restartTutorial('dashboard')">${_tut.seen.dashboard ? '↻ Restart' : '▶ Start'}</button></div>
         </div>
         <div class="settings-row">
           <div class="settings-row-left"><div class="sr-label">Reset All Tutorials</div><div class="sr-desc">Clear tutorial history so they auto-trigger again</div></div>
