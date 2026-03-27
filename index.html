@@ -1176,40 +1176,36 @@ h1 .hero-edit-input{font-size:1.35rem}
 .tut-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:10000;pointer-events:auto;transition:opacity .3s}
 .tut-spotlight{position:absolute;z-index:10001;border-radius:8px;box-shadow:0 0 0 9999px rgba(0,0,0,.55);pointer-events:none;transition:all .35s ease}
 .tut-highlight{position:relative !important;z-index:10002 !important;pointer-events:auto !important}
-.tut-noblock .tut-backdrop{display:none !important}
-.tut-noblock .tut-spotlight{display:none !important}
-.tut-tooltip.tut-floating{z-index:10003;box-shadow:0 12px 40px rgba(0,0,0,.35),0 0 0 3px var(--primary,#6366f1);animation:tutFloat 2s ease-in-out infinite alternate}
-@keyframes tutFloat{from{transform:translateY(0)}to{transform:translateY(-4px)}}
-.tut-tooltip{position:fixed;z-index:10003;background:var(--surface,#fff);border:1px solid var(--border,#e2e8f0);border-radius:14px;padding:0;width:340px;max-width:90vw;box-shadow:0 12px 40px rgba(0,0,0,.25);pointer-events:auto;animation:tutFadeIn .3s ease}
-.tut-tooltip-header{display:flex;align-items:center;gap:10px;padding:16px 18px 8px}
-.tut-tooltip-header .tut-step-badge{background:var(--primary,#6366f1);color:#fff;font-size:.65rem;font-weight:700;padding:3px 10px;border-radius:20px;white-space:nowrap;letter-spacing:.3px}
-.tut-tooltip-header .tut-title{font-size:.95rem;font-weight:700;color:var(--text,#1e293b);flex:1}
-.tut-tooltip-body{padding:6px 18px 14px;font-size:.82rem;color:var(--text2,#64748b);line-height:1.55}
-.tut-tooltip-footer{display:flex;align-items:center;justify-content:space-between;padding:10px 18px 14px;border-top:1px solid var(--border,#e2e8f0)}
-.tut-tooltip-footer .tut-skip{font-size:.72rem;color:var(--text3,#94a3b8);cursor:pointer;font-weight:500;padding:6px 0}
+.tut-tooltip{position:fixed;z-index:10003;background:var(--surface,#fff);border:1px solid var(--border,#e2e8f0);border-radius:14px;padding:0;width:320px;max-width:85vw;box-shadow:0 12px 40px rgba(0,0,0,.25);pointer-events:auto;transition:left .35s ease,top .35s ease,opacity .25s ease}
+.tut-tooltip.tut-floating{box-shadow:0 12px 40px rgba(0,0,0,.35),0 0 0 3px var(--primary,#6366f1)}
+.tut-tooltip.tut-entering{animation:tutFadeIn .3s ease}
+.tut-tooltip-header{display:flex;align-items:center;gap:10px;padding:14px 16px 6px}
+.tut-tooltip-header .tut-step-badge{background:var(--primary,#6366f1);color:#fff;font-size:.62rem;font-weight:700;padding:3px 9px;border-radius:20px;white-space:nowrap;letter-spacing:.3px}
+.tut-tooltip-header .tut-title{font-size:.9rem;font-weight:700;color:var(--text,#1e293b);flex:1}
+.tut-tooltip-body{padding:4px 16px 12px;font-size:.8rem;color:var(--text2,#64748b);line-height:1.5}
+.tut-tooltip-footer{display:flex;align-items:center;justify-content:space-between;padding:8px 16px 12px;border-top:1px solid var(--border,#e2e8f0)}
+.tut-tooltip-footer .tut-skip{font-size:.7rem;color:var(--text3,#94a3b8);cursor:pointer;font-weight:500;padding:4px 0}
 .tut-tooltip-footer .tut-skip:hover{color:var(--text,#1e293b)}
-.tut-tooltip-footer .tut-btns{display:flex;gap:8px}
-.tut-btn{padding:7px 18px;border-radius:8px;font-size:.78rem;font-weight:600;cursor:pointer;border:none;transition:all .15s}
+.tut-tooltip-footer .tut-btns{display:flex;gap:6px}
+.tut-btn{padding:6px 16px;border-radius:8px;font-size:.76rem;font-weight:600;cursor:pointer;border:none;transition:all .15s}
 .tut-btn-primary{background:var(--primary,#6366f1);color:#fff}.tut-btn-primary:hover{filter:brightness(1.1)}
 .tut-btn-secondary{background:var(--bg,#f1f5f9);color:var(--text,#1e293b);border:1px solid var(--border,#e2e8f0)}.tut-btn-secondary:hover{background:var(--border,#e2e8f0)}
-.tut-progress{display:flex;gap:4px;justify-content:center;padding:0 18px 12px}
+.tut-progress{display:flex;gap:3px;justify-content:center;padding:0 16px 10px}
 .tut-progress-dot{width:6px;height:6px;border-radius:50%;background:var(--border,#e2e8f0);transition:all .2s}
-.tut-progress-dot.active{background:var(--primary,#6366f1);width:18px;border-radius:3px}
+.tut-progress-dot.active{background:var(--primary,#6366f1);width:16px;border-radius:3px}
 .tut-progress-dot.done{background:var(--primary,#6366f1);opacity:.4}
 .tut-arrow{position:fixed;z-index:10003;pointer-events:none}
-.tut-action-hint{display:inline-block;background:var(--primary,#6366f1);color:#fff;font-size:.68rem;font-weight:700;padding:3px 10px;border-radius:12px;margin-top:8px;animation:tutPulse 2s infinite}
+.tut-action-hint{display:inline-block;background:var(--primary,#6366f1);color:#fff;font-size:.66rem;font-weight:700;padding:3px 10px;border-radius:12px;margin-top:6px;animation:tutPulse 2s infinite}
 .tut-welcome{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:10003;background:var(--surface,#fff);border-radius:18px;padding:36px 40px;width:440px;max-width:90vw;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.3);pointer-events:auto;animation:tutFadeIn .4s ease}
 .tut-welcome h2{font-size:1.3rem;font-weight:800;color:var(--text,#1e293b);margin:0 0 8px}
 .tut-welcome p{font-size:.88rem;color:var(--text2,#64748b);line-height:1.6;margin:0 0 22px}
 .tut-welcome .tut-emoji{font-size:2.4rem;margin-bottom:14px}
-.tut-close-confirm{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:10005;background:var(--surface,#fff);border-radius:14px;padding:28px 32px;width:380px;max-width:90vw;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.35);pointer-events:auto}
+.tut-close-confirm{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:10005;background:var(--surface,#fff);border-radius:14px;padding:28px 32px;width:380px;max-width:90vw;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.35);pointer-events:auto;animation:tutFadeIn .25s ease}
 .tut-close-confirm h3{font-size:1rem;font-weight:700;margin:0 0 8px;color:var(--text,#1e293b)}
 .tut-close-confirm p{font-size:.82rem;color:var(--text2,#64748b);margin:0 0 18px;line-height:1.5}
 .tut-close-confirm .tut-btns{display:flex;gap:10px;justify-content:center}
 @keyframes tutFadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 @keyframes tutPulse{0%,100%{opacity:1}50%{opacity:.5}}
-.tut-welcome{animation:tutFadeIn .4s ease}
-.tut-close-confirm{animation:tutFadeIn .25s ease}
 </style>
 <!-- Firebase SDK -->
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
@@ -5240,13 +5236,13 @@ const _tutorialDefs = {
   free: [
     { type:'welcome', emoji:'🏠', title:'Welcome to RentingRadar!', body:'This quick tutorial will walk you through setting up your first property, managing expenses, and navigating your CRM. You\'ll be a pro in no time!' },
     { target:'.nav-item[data-view="dashboard"]', title:'Your Pipeline', body:'This is your main Pipeline view where all your rental arbitrage properties are organized by status. Let\'s start by adding your first property.', position:'right', action:null },
-    { target:'.header-actions .btn-primary, .toolbar .btn-primary, [onclick*="openAddModal"]', title:'Add a Property', body:'Click this button to add your first property to the pipeline.', position:'bottom', action:'click', actionHint:'Click "Add Property" to continue' },
-    { waitFor:'#addStep1, #addModalBody', delay:500, target:'.import-option:last-child, [onclick*="showManualAddForm"]', title:'Choose Manual Entry', body:'You can import from a URL (Pro feature) or enter details manually. Click Manual Entry to continue.', position:'left', action:'click', actionHint:'Click "Manual Entry"', noBlock:true },
-    { waitFor:'#manualAddressInput', delay:400, target:'#manualAddressInput', title:'Enter the Address', body:'Type the property address. Our autocomplete will help fill in city, state, and zip automatically.', position:'left', action:'input', actionHint:'Type an address to continue', noBlock:true },
-    { waitFor:'#manualAddressInput', target:'#addModalBody', title:'Add Property Details', body:'Fill in key details like bedrooms, bathrooms, square footage, and monthly rent. The more info you add now, the better your analysis will be later.', position:'left', action:null, noBlock:true },
-    { waitFor:'#manualAddressInput', target:'[onclick*="saveNewRecord"]', title:'Save Your Property', body:'Click Save to create this property. You can always edit details later from the Property Profile.', position:'left', action:'click', actionHint:'Click "Save" to continue', noBlock:true },
-    { waitFor:'.tab-btn[data-tab="expenses"], [data-tab="expenses"]', delay:800, target:'.tab-btn[data-tab="expenses"], [data-tab="expenses"]', title:'Manage Expenses', body:'Now let\'s look at the Expenses tab. Click here to set up your monthly operating costs like insurance, utilities, and fees.', position:'bottom', action:'click', actionHint:'Click "Expenses" to continue', noBlock:true },
-    { waitFor:'.tab-content[data-tab="expenses"]', delay:400, target:'.tab-content[data-tab="expenses"]', title:'Add Operating Expenses', body:'Enter your estimated monthly costs for each category. These expenses drive your ROI projections and deal temperature analysis. You can use the AI Estimate feature (Pro) or Copy from Property (Basic+) to speed this up.', position:'left', action:null, noBlock:true },
+    { target:'[onclick*="openAddModal"]', title:'Add a Property', body:'Click this button to add your first property to the pipeline.', position:'bottom', action:'click', actionHint:'Click "Add Property" to continue' },
+    { waitFor:'#addStep1', delay:600, target:'[onclick*="showManualAddForm"]', title:'Choose Manual Entry', body:'You can import from a URL (Pro feature) or enter details manually. Click Manual Entry to continue.', position:'left', action:'click', actionHint:'Click "Manual Entry"', noBlock:true },
+    { waitFor:'#add_property', delay:600, target:'#add_property', title:'Enter the Address', body:'Type the property address. Our autocomplete will help fill in city, state, and zip automatically.', position:'left', action:'input', actionHint:'Type an address to continue', noBlock:true },
+    { waitFor:'#add_property', target:'#addStep2', title:'Add Property Details', body:'Fill in key details like bedrooms, bathrooms, square footage, and monthly rent. The more info you add now, the better your analysis will be later.', position:'left', action:null, noBlock:true },
+    { waitFor:'#add_property', target:'[onclick*="saveNewRecord"]', title:'Save Your Property', body:'Click Save to create this property. You can always edit details later from the Property Profile.', position:'left', action:'click', actionHint:'Click "Save" to continue', noBlock:true },
+    { waitFor:'.tab-btn[data-tab="expenses"]', delay:1000, target:'.tab-btn[data-tab="expenses"]', title:'Manage Expenses', body:'Now let\'s look at the Expenses tab. Click here to set up your monthly operating costs like insurance, utilities, and fees.', position:'bottom', action:'click', actionHint:'Click "Expenses" to continue', noBlock:true },
+    { waitFor:'.tab-content[data-tab="expenses"]', delay:500, target:'.tab-content[data-tab="expenses"]', title:'Add Operating Expenses', body:'Enter your estimated monthly costs for each category. These expenses drive your ROI projections and deal temperature analysis. You can use the AI Estimate feature (Pro) or Copy from Property (Basic+) to speed this up.', position:'left', action:null, noBlock:true },
     { target:'[style*="cursor:help"], [onclick*="showTip"]', title:'Access Tips & Help', body:'See these info indicators? Click any of them throughout the CRM to get helpful tips and explanations about that specific field or feature.', position:'left', action:null, noBlock:true },
     { type:'complete', emoji:'🎉', title:'You\'re All Set!', body:'You now know the basics of RentingRadar. Add more properties, track your pipeline, and explore the Dashboard for portfolio analytics. As you upgrade your plan, new tutorials will introduce advanced features.' }
   ],
@@ -5383,7 +5379,8 @@ function _tutShowStep(){
   const rect = targetEl.getBoundingClientRect();
 
   // Create tooltip
-  const tt = document.createElement('div'); tt.className='tut-tooltip'+(isNoBlock?' tut-floating':'');
+  const tt = document.createElement('div'); tt.className='tut-tooltip tut-entering'+(isNoBlock?' tut-floating':'');
+  setTimeout(()=>{ tt.classList.remove('tut-entering'); }, 350);
   let ttHtml = '<div class="tut-tooltip-header"><span class="tut-step-badge">Step '+(_tut.step+1)+' of '+_tut.steps.length+'</span><span class="tut-title">'+s.title+'</span></div>';
   ttHtml += '<div class="tut-tooltip-body">'+s.body;
   if(s.action && s.actionHint) ttHtml += '<div class="tut-action-hint">👆 '+s.actionHint+'</div>';
@@ -5475,45 +5472,42 @@ function _tutPositionTooltip(tt, targetRect, pos){
 function _tutDrawArrow(tt, targetRect, pos){
   const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
   svg.className.baseVal = 'tut-arrow';
-  svg.setAttribute('width', window.innerWidth);
-  svg.setAttribute('height', window.innerHeight);
   svg.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;z-index:10003';
 
   const ttRect = tt.getBoundingClientRect();
-  let sx, sy, ex, ey;
   const tCx = targetRect.left + targetRect.width/2, tCy = targetRect.top + targetRect.height/2;
 
-  switch(pos){
-    case 'right':
-      sx = ttRect.left + 4; sy = ttRect.top + ttRect.height/2;
-      ex = targetRect.right + 10; ey = tCy;
-      break;
-    case 'left':
-      sx = ttRect.right - 4; sy = ttRect.top + ttRect.height/2;
-      ex = targetRect.left - 10; ey = tCy;
-      break;
-    case 'top':
-      sx = ttRect.left + ttRect.width/2; sy = ttRect.bottom - 4;
-      ex = tCx; ey = targetRect.top - 10;
-      break;
-    default:
-      sx = ttRect.left + ttRect.width/2; sy = ttRect.top + 4;
-      ex = tCx; ey = targetRect.bottom + 10;
-  }
+  // Arrow always starts from the bottom-center of the tooltip
+  const sx = ttRect.left + ttRect.width / 2;
+  const sy = ttRect.bottom;
+  // Arrow ends at the center of the target element
+  const ex = tCx, ey = tCy;
 
-  // Curved path
-  const mx = (sx+ex)/2, my = (sy+ey)/2;
-  const curve = pos==='right'||pos==='left' ? 'Q '+(mx)+','+(sy)+' ' : 'Q '+(sx)+','+(my)+' ';
+  // Pencil-style: slight hand-drawn wobble via cubic bezier with offset control points
+  const dx = ex - sx, dy = ey - sy;
+  const dist = Math.sqrt(dx*dx + dy*dy);
+  const wobble = Math.min(25, dist * 0.12);
+  // Control points curve downward first then sweep up to target
+  const cp1x = sx + wobble * 0.8;
+  const cp1y = sy + Math.abs(dy) * 0.4 + 15;
+  const cp2x = ex - wobble * 0.6;
+  const cp2y = ey - Math.abs(dy) * 0.1;
+
   const path = document.createElementNS('http://www.w3.org/2000/svg','path');
-  path.setAttribute('d', 'M '+sx+','+sy+' '+curve+ex+','+ey);
+  path.setAttribute('d', 'M '+sx.toFixed(1)+','+sy.toFixed(1)+' C '+cp1x.toFixed(1)+','+cp1y.toFixed(1)+' '+cp2x.toFixed(1)+','+cp2y.toFixed(1)+' '+ex.toFixed(1)+','+ey.toFixed(1));
   path.setAttribute('fill','none');
-  path.setAttribute('stroke','#6366f1');
-  path.setAttribute('stroke-width','2.5');
-  path.setAttribute('stroke-dasharray','6,4');
-  path.setAttribute('marker-end','url(#tutArrowHead)');
+  path.setAttribute('stroke','#fff');
+  path.setAttribute('stroke-width','2');
+  path.setAttribute('stroke-linecap','round');
+  path.setAttribute('stroke-linejoin','round');
+  path.setAttribute('marker-end','url(#tutArrowW)');
+  path.setAttribute('opacity','.85');
+  // Slight pencil-style roughness via filter
+  path.setAttribute('filter','url(#tutPencil)');
 
   const defs = document.createElementNS('http://www.w3.org/2000/svg','defs');
-  defs.innerHTML = '<marker id="tutArrowHead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#6366f1"/></marker>';
+  defs.innerHTML = '<marker id="tutArrowW" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0.5, 9 3.5, 0 6.5" fill="#fff" opacity=".9"/></marker>'
+    + '<filter id="tutPencil" x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="turbulence" baseFrequency="0.04" numOctaves="4" result="noise" seed="2"/><feDisplacementMap in="SourceGraphic" in2="noise" scale="1.5" xChannelSelector="R" yChannelSelector="G"/></filter>';
   svg.appendChild(defs);
   svg.appendChild(path);
   document.body.appendChild(svg);
@@ -10929,19 +10923,19 @@ function renderSettings(){
       <div class="settings-section-header"><h3>🎓 Tutorial Walkthrough</h3></div>
       <div class="settings-section-body">
         <div class="settings-row">
-          <div class="settings-row-left"><div class="sr-label">Getting Started (Free)</div><div class="sr-desc">Add properties, manage expenses, and navigate the CRM</div></div>
+          <div class="settings-row-left"><div class="sr-label">${_tut.seen.free ? '<span style="color:#22c55e;margin-right:6px">✓</span>' : ''}Getting Started (Free)</div><div class="sr-desc">Add properties, manage expenses, and navigate the CRM</div></div>
           <div class="settings-row-right"><button class="btn btn-secondary btn-sm" onclick="restartTutorial('free')">${_tut.seen.free ? '↻ Restart' : '▶ Start'}</button></div>
         </div>
         <div class="settings-row">
-          <div class="settings-row-left"><div class="sr-label">Analysis & ROI (Basic)</div><div class="sr-desc">Competitor Analysis and Projected ROI features</div></div>
+          <div class="settings-row-left"><div class="sr-label">${_tut.seen.basic ? '<span style="color:#22c55e;margin-right:6px">✓</span>' : ''}Analysis & ROI (Basic)</div><div class="sr-desc">Competitor Analysis and Projected ROI features</div></div>
           <div class="settings-row-right"><button class="btn btn-secondary btn-sm" ${requireTier('basic','Tutorial') ? '' : 'disabled style="opacity:.4"'} onclick="restartTutorial('basic')">${_tut.seen.basic ? '↻ Restart' : '▶ Start'}</button></div>
         </div>
         <div class="settings-row">
-          <div class="settings-row-left"><div class="sr-label">Pro Features</div><div class="sr-desc">Negotiation tools, AI estimates, and auto-import</div></div>
+          <div class="settings-row-left"><div class="sr-label">${_tut.seen.pro ? '<span style="color:#22c55e;margin-right:6px">✓</span>' : ''}Pro Features</div><div class="sr-desc">Negotiation tools, AI estimates, and auto-import</div></div>
           <div class="settings-row-right"><button class="btn btn-secondary btn-sm" ${requireTier('pro','Tutorial') ? '' : 'disabled style="opacity:.4"'} onclick="restartTutorial('pro')">${_tut.seen.pro ? '↻ Restart' : '▶ Start'}</button></div>
         </div>
         <div class="settings-row">
-          <div class="settings-row-left"><div class="sr-label">Dashboard Tour</div><div class="sr-desc">Portfolio KPIs, map, and pipeline overview</div></div>
+          <div class="settings-row-left"><div class="sr-label">${_tut.seen.dashboard ? '<span style="color:#22c55e;margin-right:6px">✓</span>' : ''}Dashboard Tour</div><div class="sr-desc">Portfolio KPIs, map, and pipeline overview</div></div>
           <div class="settings-row-right"><button class="btn btn-secondary btn-sm" onclick="restartTutorial('dashboard')">${_tut.seen.dashboard ? '↻ Restart' : '▶ Start'}</button></div>
         </div>
         <div class="settings-row">
