@@ -79,7 +79,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text)}
 .tut-info-text{flex:1}
 .tut-info-text h3{font-size:.9rem;font-weight:600;margin-bottom:3px}
 .tut-info-text p{font-size:.8rem;color:var(--text2);line-height:1.5}
-.tut-nav-btns{display:flex;gap:8px;flex-shrink:0}
+.tut-nav-btns{display:flex;gap:8px;flex-shrink:0;align-items:center}
 
 /* Buttons */
 .tut-btn{display:inline-flex;align-items:center;gap:6px;padding:8px 18px;border-radius:var(--radius);font-weight:500;font-size:.82rem;cursor:pointer;transition:all .15s;border:none;font-family:var(--font)}
@@ -88,9 +88,15 @@ body{font-family:var(--font);background:var(--bg);color:var(--text)}
 .tut-btn-secondary{background:transparent;color:var(--text2);border:1px solid var(--border)}
 .tut-btn-secondary:hover{color:var(--text);border-color:rgba(255,255,255,.15)}
 .tut-btn:disabled{opacity:.35;cursor:not-allowed}
+.tut-btn-complete{background:#34d399;color:#fff;padding:8px 20px;font-weight:600}
+.tut-btn-complete:hover{background:#2bc48a}
+.tut-btn-complete.completed{background:rgba(52,211,153,.15);color:#34d399;cursor:default}
 
-/* Keyboard hints */
-.tut-kbd{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:20px;padding:0 5px;background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:3px;font-size:.65rem;color:var(--text3);font-family:var(--font);margin-left:4px}
+/* Arrow nav buttons */
+.tut-arrow-btn{width:36px;height:36px;display:flex;align-items:center;justify-content:center;border-radius:var(--radius);cursor:pointer;transition:all .15s;border:1px solid var(--border);background:transparent;color:var(--text2);font-size:1rem;flex-shrink:0}
+.tut-arrow-btn:hover{color:var(--text);border-color:rgba(255,255,255,.15);background:rgba(255,255,255,.04)}
+.tut-arrow-btn:disabled{opacity:.25;cursor:not-allowed}
+.tut-arrow-btn svg{width:16px;height:16px;fill:currentColor}
 
 /* ===== FULLSCREEN MODE ===== */
 .tut-player.fullscreen .tut-sidebar{display:none}
@@ -159,8 +165,13 @@ body{font-family:var(--font);background:var(--bg);color:var(--text)}
         <p id="tutInfoDesc">Learn the basics of RentingRadar.</p>
       </div>
       <div class="tut-nav-btns">
-        <button class="tut-btn tut-btn-secondary" id="tutPrev" onclick="prevStep()">← Back <span class="tut-kbd">←</span></button>
-        <button class="tut-btn tut-btn-primary" id="tutNext" onclick="nextStep()">Next → <span class="tut-kbd">→</span></button>
+        <button class="tut-arrow-btn" id="tutPrev" onclick="prevStep()" title="Back">
+          <svg viewBox="0 0 24 24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+        </button>
+        <button class="tut-arrow-btn" id="tutNext" onclick="nextStep()" title="Next">
+          <svg viewBox="0 0 24 24"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
+        </button>
+        <button class="tut-btn tut-btn-complete" id="tutComplete" onclick="completeStep()">Complete</button>
       </div>
     </div>
   </div>
@@ -189,7 +200,7 @@ const TUTORIAL_STEPS = [
   { chapter:0, image:'03-add-property-step1.webp', title:'Add a Property', desc:'Click the "+ Add Property" button to start adding a new rental. You can import from AirDNA using the browser extension, or enter details manually.', highlight:null, tier:'free' },
   { chapter:0, image:'04-add-property-step2.webp', title:'Enter Property Details', desc:'Fill in the address, bedroom/bathroom count, asking rent, and listing link. All fields help RentingRadar calculate accurate projections for your deal.', highlight:null, tier:'free' },
   { chapter:0, image:'02-contacts.webp', title:'Contacts Manager', desc:'The Contacts view organizes all your landlords, property managers, and agents. Track status, phone, email, and notes for each contact in one place.', highlight:null, tier:'free' },
-  { chapter:0, image:'02-contacts.webp', title:'Contact Status Tracking', desc:'Each contact has a status — Interested, Contacted, Follow Up, Not Interested, or Signed. Use these to manage your outreach pipeline effectively.', highlight:{x:65,y:0,w:13,h:100}, tier:'free' },
+  { chapter:0, image:'02-contacts.webp', title:'Contact Status Tracking', desc:'Each contact has a status — Interested, Contacted, Follow Up, Not Interested, or Signed. Use these to manage your outreach pipeline effectively.', highlight:{x:72,y:20,w:11,h:75}, tier:'free' },
 
   // ─── Chapter 2: Navigating Your CRM (Steps 8–14) ───
   { chapter:1, image:'01-dashboard.webp', title:'Pipeline Overview', desc:'The pipeline section groups your properties by stage — Researching, Contacted, Negotiating, Under Contract, and Active. Drag properties between stages or click to open their profile.', highlight:{x:14.5,y:9,w:85,h:38}, tier:'free' },
@@ -240,16 +251,17 @@ const IMAGE_BASE = 'tutorials/';
 
 // ===== STATE =====
 let currentStep = 0;
-let visited = new Set();
+let visited = new Set();    // Steps the user has navigated to
+let completed = new Set();  // Steps the user has explicitly marked complete
 let started = false;
 
 // ===== PROGRESS PERSISTENCE =====
 function saveProgress(){
-  const data = { step: currentStep, visited: Array.from(visited), ts: Date.now() };
+  const data = { step: currentStep, visited: Array.from(visited), completed: Array.from(completed), ts: Date.now() };
   try { localStorage.setItem('rr_tutorial_progress', JSON.stringify(data)); } catch(e){}
   // Notify parent CRM of progress update
   if(window.parent !== window){
-    window.parent.postMessage({ type:'tutorialProgress', step: currentStep, total: TUTORIAL_STEPS.length, visited: data.visited }, '*');
+    window.parent.postMessage({ type:'tutorialProgress', step: currentStep, total: TUTORIAL_STEPS.length, completed: data.completed, completedCount: completed.size }, '*');
   }
 }
 function loadProgress(){
@@ -287,8 +299,8 @@ function renderSidebar(){
     ch.steps.forEach(si => {
       const s = TUTORIAL_STEPS[si];
       const activeClass = si === currentStep ? ' active' : '';
-      const visitedClass = visited.has(si) && si !== currentStep ? ' visited' : '';
-      html += '<div class="tut-step-item'+activeClass+visitedClass+'" onclick="goToStep('+si+')" data-step="'+si+'">';
+      const completedClass = completed.has(si) && si !== currentStep ? ' visited' : '';
+      html += '<div class="tut-step-item'+activeClass+completedClass+'" onclick="goToStep('+si+')" data-step="'+si+'">';
       html += '<span class="step-dot"></span> '+s.title;
       html += '</div>';
     });
@@ -344,16 +356,23 @@ function renderStep(){
 
   // Nav buttons
   document.getElementById('tutPrev').disabled = currentStep === 0;
-  const nextBtn = document.getElementById('tutNext');
-  if(currentStep === TUTORIAL_STEPS.length - 1){
-    nextBtn.innerHTML = 'Finish ✓';
+  document.getElementById('tutNext').disabled = currentStep === TUTORIAL_STEPS.length - 1;
+
+  // Complete button state
+  const completeBtn = document.getElementById('tutComplete');
+  if(completed.has(currentStep)){
+    completeBtn.classList.add('completed');
+    completeBtn.innerHTML = '✓ Completed';
   } else {
-    nextBtn.innerHTML = 'Next → <span class="tut-kbd">→</span>';
+    completeBtn.classList.remove('completed');
+    completeBtn.innerHTML = 'Complete';
   }
 
-  // Progress
-  const pct = ((currentStep + 1) / TUTORIAL_STEPS.length * 100).toFixed(1);
+  // Progress — based on completed steps
+  const pct = (completed.size / TUTORIAL_STEPS.length * 100).toFixed(1);
   document.getElementById('tutProgressFill').style.width = pct + '%';
+  // Turn progress bar green when all completed
+  document.getElementById('tutProgressFill').style.background = allStepsCompleted() ? '#34d399' : '';
 
   // Sidebar update
   renderSidebar();
@@ -369,13 +388,29 @@ function renderStep(){
 }
 
 // ===== NAVIGATION =====
+function allStepsCompleted(){
+  for(let i = 0; i < TUTORIAL_STEPS.length; i++){
+    if(!completed.has(i)) return false;
+  }
+  return true;
+}
+
+function completeStep(){
+  if(completed.has(currentStep)) return; // Already completed
+  completed.add(currentStep);
+  renderStep();
+  // If all steps completed, show congratulations
+  if(allStepsCompleted()){
+    closeTutorial();
+  }
+}
+
 function nextStep(){
   if(currentStep < TUTORIAL_STEPS.length - 1){
     currentStep++;
     renderStep();
-  } else {
-    closeTutorial();
   }
+  // Never auto-close — user must click Complete on every step
 }
 
 function prevStep(){
@@ -402,17 +437,24 @@ function startTutorial(resumeStep){
 }
 
 function closeTutorial(){
-  const completed = currentStep >= TUTORIAL_STEPS.length - 1;
-  if(completed) clearProgress(); // Clear saved progress on full completion
+  const isFullyCompleted = allStepsCompleted();
+  if(isFullyCompleted) clearProgress(); // Clear saved progress on full completion
   // If embedded in CRM, dispatch event; otherwise go back
   if(window.parent !== window){
-    window.parent.postMessage({ type:'tutorialClose', seen: Array.from(visited), completed: completed, lastStep: currentStep }, '*');
+    window.parent.postMessage({ type:'tutorialClose', seen: Array.from(visited), completed: isFullyCompleted, completedSteps: Array.from(completed), lastStep: currentStep }, '*');
   } else if(window._tutorialCloseCallback){
     window._tutorialCloseCallback();
   } else {
-    // Standalone — show completion
-    document.getElementById('tutWelcome').innerHTML = '<div class="tut-welcome-card"><div class="tut-emoji">🎉</div><h2>Tutorial Complete!</h2><p>You\'ve explored all the features of RentingRadar. You can revisit this tutorial anytime from Settings.</p><div style="display:flex;gap:10px;justify-content:center"><button class="tut-btn tut-btn-primary" onclick="location.reload()">Restart</button></div></div>';
-    document.getElementById('tutWelcome').style.display = 'flex';
+    // Standalone — show completion or exit
+    if(isFullyCompleted){
+      document.getElementById('tutWelcome').innerHTML = '<div class="tut-welcome-card"><div class="tut-emoji">🎉</div><h2>Tutorial Complete!</h2><p>You\'ve completed all the features of RentingRadar. You can revisit this tutorial anytime from Settings.</p><div style="display:flex;gap:10px;justify-content:center"><button class="tut-btn tut-btn-primary" onclick="location.reload()">Restart</button></div></div>';
+      document.getElementById('tutWelcome').style.display = 'flex';
+    } else {
+      // Not fully completed — save progress and show exit message
+      saveProgress();
+      document.getElementById('tutWelcome').innerHTML = '<div class="tut-welcome-card"><div class="tut-emoji">📖</div><h2>Progress Saved</h2><p>You\'ve completed ' + completed.size + ' of ' + TUTORIAL_STEPS.length + ' steps. Come back anytime to pick up where you left off.</p><div style="display:flex;gap:10px;justify-content:center"><button class="tut-btn tut-btn-primary" onclick="location.reload()">OK</button></div></div>';
+      document.getElementById('tutWelcome').style.display = 'flex';
+    }
   }
 }
 
@@ -434,8 +476,9 @@ document.addEventListener('keydown', function(e){
     if(e.key === 'Enter'){ startTutorial(); e.preventDefault(); }
     return;
   }
-  if(e.key === 'ArrowRight' || e.key === ' '){ nextStep(); e.preventDefault(); }
+  if(e.key === 'ArrowRight'){ nextStep(); e.preventDefault(); }
   else if(e.key === 'ArrowLeft'){ prevStep(); e.preventDefault(); }
+  else if(e.key === 'Enter' || e.key === ' '){ completeStep(); e.preventDefault(); }
   else if(e.key === 'Escape'){ closeTutorial(); e.preventDefault(); }
   else if(e.key === 'f' || e.key === 'F'){ toggleFullscreen(); e.preventDefault(); }
 });
@@ -448,10 +491,15 @@ renderSidebar();
 const _savedProgress = loadProgress();
 const params = new URLSearchParams(location.search);
 
+function restoreProgressSets(data){
+  if(data.visited) data.visited.forEach(v => visited.add(v));
+  if(data.completed) data.completed.forEach(v => completed.add(v));
+}
+
 if(params.get('autostart') === '1'){
   // Auto-start: resume from saved progress if any, otherwise start fresh
   if(_savedProgress && _savedProgress.step > 0){
-    _savedProgress.visited.forEach(v => visited.add(v));
+    restoreProgressSets(_savedProgress);
     startTutorial(_savedProgress.step);
   } else {
     startTutorial();
@@ -462,19 +510,19 @@ if(params.get('autostart') === '1'){
   startTutorial(0);
 } else if(_savedProgress && _savedProgress.step > 0){
   // Show welcome with resume option
-  const pct = Math.round((_savedProgress.step + 1) / TUTORIAL_STEPS.length * 100);
+  const completedCount = _savedProgress.completed ? _savedProgress.completed.length : 0;
+  const pct = Math.round(completedCount / TUTORIAL_STEPS.length * 100);
   const welcomeCard = document.querySelector('.tut-welcome-card');
   if(welcomeCard){
     welcomeCard.innerHTML = '<div class="tut-emoji">📖</div>'
       + '<h2>Welcome Back!</h2>'
-      + '<p>You were on step ' + (_savedProgress.step + 1) + ' of ' + TUTORIAL_STEPS.length + ' (' + pct + '% complete). Pick up where you left off or start over.</p>'
+      + '<p>You\'ve completed ' + completedCount + ' of ' + TUTORIAL_STEPS.length + ' steps (' + pct + '%). Pick up where you left off or start over.</p>'
       + '<div style="display:flex;gap:10px;justify-content:center">'
       + '<button class="tut-btn tut-btn-secondary" onclick="closeTutorial()">Skip</button>'
       + '<button class="tut-btn tut-btn-secondary" onclick="clearProgress();startTutorial(0)">Start Over</button>'
       + '<button class="tut-btn tut-btn-primary" onclick="startTutorial('+_savedProgress.step+')">Resume →</button>'
       + '</div>';
-    // Restore visited set
-    _savedProgress.visited.forEach(v => visited.add(v));
+    restoreProgressSets(_savedProgress);
   }
 }
 </script>
