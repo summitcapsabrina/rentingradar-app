@@ -5438,11 +5438,11 @@ function _tutShowStep(){
     tt.style.left = ttLeft + 'px';
     tt.style.top = ttTop + 'px';
 
-    // ── Arrow: always starts at bottom-center of tooltip, swoops to target center ──
+    // ── Arrow: always starts at bottom-center of tooltip, swoops to bottom-center of target ──
     const sx = ttLeft + ttW / 2;
     const sy = ttTop + ttH;      // bottom edge of tooltip
     const ex = tgt.left + tgt.width / 2;
-    const ey = tgt.top + tgt.height / 2;
+    const ey = tgt.bottom;
 
     // Quadratic bezier control point — swoop the arrow so it never overlaps the tooltip.
     // The control point is always pushed below the tooltip bottom and offset horizontally
