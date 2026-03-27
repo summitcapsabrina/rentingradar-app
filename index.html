@@ -737,6 +737,8 @@ h1 .hero-edit-input{font-size:1.35rem}
 .calc-section{margin-bottom:16px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
 .calc-section-header{font-size:.78rem;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:.5px;padding:8px 12px;background:rgba(99,129,250,.06);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px}
 .calc-section-body{padding:6px 12px}
+.nft-hint-q{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;border:1.5px solid var(--text3);font-size:.6rem;color:var(--text3);opacity:0;transition:opacity .2s;font-weight:700;line-height:1;flex-shrink:0}
+.nft-title-row:hover .nft-hint-q{opacity:1}
 .calc-row{display:flex;align-items:center;justify-content:space-between;padding:4px 0;gap:8px}
 .calc-row+.calc-row{border-top:1px solid rgba(148,163,184,.06)}
 .calc-row.total-row{border-top:2px solid var(--border);padding-top:6px;margin-top:2px}
@@ -7619,16 +7621,16 @@ function renderCalculatorTab(r){
   // ── Title row with both section names side by side ──
   const _nftModeLabels = {pessimistic:'Pessimistic',realistic:'Realistic',optimistic:'Optimistic'};
   const _nftModeColors = {pessimistic:'var(--num-danger)',realistic:'var(--num-computed)',optimistic:'var(--num-success)'};
-  const _nftPillsHtml = (function(){ let p='<div style="display:flex;justify-content:center;gap:6px;margin-top:4px">'; ['pessimistic','realistic','optimistic'].forEach(m => { const active = m === calcProjMode; p += '<span style="font-size:.6rem;padding:2px 8px;border-radius:10px;font-weight:600;letter-spacing:.3px;'+(active?'background:'+_nftModeColors[m]+';color:#fff':'color:var(--text3);border:1px solid var(--border)')+'">'+_nftModeLabels[m]+'</span>'; }); p += '</div>'; return p; })();
+  const _nftPillsHtml = (function(){ let p='<div style="display:flex;justify-content:center;gap:6px">'; ['pessimistic','realistic','optimistic'].forEach(m => { const active = m === calcProjMode; p += '<span style="font-size:.6rem;padding:2px 8px;border-radius:10px;font-weight:600;letter-spacing:.3px;'+(active?'background:'+_nftModeColors[m]+';color:#fff':'color:var(--text3);border:1px solid var(--border)')+'">'+_nftModeLabels[m]+'</span>'; }); p += '</div>'; return p; })();
 
   h += '<div style="display:flex;flex-wrap:wrap;border-bottom:1px solid var(--border)">';
   h += '<div style="flex:1;min-width:300px;padding:14px 16px 10px;text-align:center;border-right:1px solid var(--border)">';
-  h += '<div style="font-size:.82rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.4px"'+tipAttrs('Rent Adjustment','Drag the dial or click the amount to explore what rent would make this deal attractive. This is a projection tool — it does NOT change the actual rent.')+'>Rent Adjustment</div>';
-  h += _nftPillsHtml;
+  h += '<div class="nft-title-row" style="font-size:.82rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;display:inline-flex;align-items:center;gap:5px;cursor:help"'+tipAttrs('Rent Adjustment','Drag the dial or click the amount to explore what rent would make this deal attractive. This is a projection tool — it does NOT change the actual rent.',true)+'>Rent Adjustment<span class="nft-hint-q">?</span></div>';
+  h += '<div style="margin-top:8px">' + _nftPillsHtml + '</div>';
   h += '</div>';
   h += '<div style="flex:1;min-width:280px;padding:14px 16px 10px;text-align:center">';
-  h += '<div style="font-size:.82rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.4px"'+tipAttrs('Rental Concessions','Negotiate free rent weeks to reduce your upfront investment and accelerate break-even. 6–8 weeks is a common target for rental arbitrage.')+'>Rental Concessions</div>';
-  h += _nftPillsHtml;
+  h += '<div class="nft-title-row" style="font-size:.82rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;display:inline-flex;align-items:center;gap:5px;cursor:help"'+tipAttrs('Rental Concessions','Negotiate free rent weeks to reduce your upfront investment and accelerate break-even. 6–8 weeks is a common target for rental arbitrage.',true)+'>Rental Concessions<span class="nft-hint-q">?</span></div>';
+  h += '<div style="margin-top:8px">' + _nftPillsHtml + '</div>';
   h += '</div>';
   h += '</div>'; // end title row
 
