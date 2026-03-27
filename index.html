@@ -1197,7 +1197,6 @@ h1 .hero-edit-input{font-size:1.35rem}
 .tut-progress-dot.active{background:var(--primary,#6366f1);width:16px;border-radius:3px}
 .tut-progress-dot.done{background:var(--primary,#6366f1);opacity:.4}
 .tut-arrow{position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:10003;pointer-events:none;overflow:visible}
-.tut-action-hint{display:inline-block;background:var(--primary,#6366f1);color:#fff;font-size:.66rem;font-weight:700;padding:3px 10px;border-radius:12px;margin-top:6px;animation:tutPulse 2s infinite}
 .tut-welcome{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:10003;background:var(--surface,#fff);border-radius:18px;padding:36px 40px;width:440px;max-width:90vw;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.3);pointer-events:auto;animation:tutWelcomeIn .35s ease}
 .tut-welcome h2{font-size:1.3rem;font-weight:800;color:var(--text,#1e293b);margin:0 0 8px}
 .tut-welcome p{font-size:.88rem;color:var(--text2,#64748b);line-height:1.6;margin:0 0 22px}
@@ -1208,7 +1207,6 @@ h1 .hero-edit-input{font-size:1.35rem}
 .tut-close-confirm .tut-btns{display:flex;gap:10px;justify-content:center}
 @keyframes tutFadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 @keyframes tutWelcomeIn{from{opacity:0;transform:translate(-50%,-50%) scale(.95)}to{opacity:1;transform:translate(-50%,-50%) scale(1)}}
-@keyframes tutPulse{0%,100%{opacity:1}50%{opacity:.5}}
 </style>
 <!-- Firebase SDK -->
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
@@ -5237,37 +5235,37 @@ function _tutLoadSeenFromFirestore(data){
 // ── Step Definitions ──
 const _tutorialDefs = {
   free: [
-    { type:'welcome', emoji:'🏠', title:'Welcome to RentingRadar!', body:'This quick tutorial will walk you through setting up your first property, managing expenses, and navigating your CRM. You\'ll be a pro in no time!' },
-    { target:'[onclick*="openAddModal"]', title:'Add a Property', body:'Click this button to add your first property to the pipeline.', position:'left', action:'click', actionHint:'Click "Add Property" to continue' },
-    { waitFor:'#addStep1', target:'[onclick*="showManualAddForm"]', title:'Choose Manual Entry', body:'You can import from a URL (Pro feature) or enter details manually. Click Manual Entry to continue.', position:'left', action:'click', actionHint:'Click "Manual Entry"', noBlock:true },
-    { waitFor:'#add_property', target:'#add_property', title:'Enter the Address', body:'Type a property address and select one from the dropdown. Don\'t have one in mind? Just pick any address for practice — you can always delete it later!', position:'left', action:'addressSelect', actionHint:'Type an address and select from the dropdown', noBlock:true },
-    { waitFor:'#add_beds', target:function(){ var el = document.getElementById('add_beds'); return el ? el.closest('.field-row') : null; }, title:'Add Property Details', body:'Fill in any of the property details here — beds, baths, square footage, and rent. Don\'t worry about getting everything perfect now; you can always update these later.', position:'left', action:null, noBlock:true },
-    { waitFor:'#add_link2', target:'#add_link2', title:'Add the Listing Link', body:'Paste the listing URL here if you have one. This links back to the original listing so you can reference it anytime from the Property Profile.', position:'left', action:null, noBlock:true },
-    { waitFor:'#add_property', target:'[onclick*="saveNewRecord"]', title:'Save Your Property', body:'Click Save to create this property. You can always edit details later from the Property Profile.', position:'left', action:'click', actionHint:'Click "Save" to continue', arrowFrom:'right', noBlock:true },
-    { waitFor:'.tab-btn[data-tab="expenses"]', target:'.tab-btn[data-tab="expenses"]', title:'Manage Expenses', body:'Now let\'s look at the Expenses tab. Click here to set up your monthly operating costs like insurance, utilities, and fees.', position:'bottom', action:'click', actionHint:'Click "Expenses" to continue', noBlock:true },
-    { waitFor:'.tab-content[data-tab="expenses"]', target:'.tab-content[data-tab="expenses"]', title:'Add Operating Expenses', body:'Enter your estimated monthly costs for each category. These expenses drive your ROI projections and deal temperature analysis. You can use the AI Estimate feature (Pro) or Copy from Property (Basic+) to speed this up.', position:'left', action:null, noBlock:true },
-    { target:'[style*="cursor:help"], [onclick*="showTip"]', title:'Access Tips & Help', body:'See these info indicators? Click any of them throughout the CRM to get helpful tips and explanations about that specific field or feature.', position:'left', action:null, noBlock:true },
+    { type:'welcome', emoji:'🏠', title:'Welcome to RentingRadar!', body:'This quick tutorial will walk you through adding a property, managing expenses, and navigating your CRM. You\'ll be a pro in no time!' },
+    { target:'[onclick*="openAddModal"]', title:'Add a Property', body:'This button opens the Add Property form. You\'ll use it to add rental arbitrage properties to your pipeline.', position:'left', onEnter:function(){ openAddModal(); } },
+    { waitFor:'#addStep1', target:'[onclick*="showManualAddForm"]', title:'Choose Manual Entry', body:'You can import from a URL (Pro feature) or enter details manually. Manual Entry lets you fill in property info by hand.', position:'left', noBlock:true, onEnter:function(){ if(!document.querySelector('#addStep1')) openAddModal(); } },
+    { waitFor:'#add_property', target:'#add_property', title:'Enter the Address', body:'Type a property address here and select from the autocomplete dropdown. City, state, and zip fill in automatically.', position:'left', noBlock:true, onEnter:function(){ if(!document.querySelector('#add_property')){ openAddModal(); setTimeout(showManualAddForm, 300); } } },
+    { waitFor:'#add_beds', target:function(){ var el = document.getElementById('add_beds'); return el ? el.closest('.field-row') : null; }, title:'Add Property Details', body:'Fill in any of the property details here — beds, baths, square footage, and rent. You can always update these later from the Property Profile.', position:'left', noBlock:true, onEnter:function(){ if(!document.querySelector('#add_beds')){ openAddModal(); setTimeout(showManualAddForm, 300); } } },
+    { waitFor:'#add_link2', target:'#add_link2', title:'Add the Listing Link', body:'Paste the listing URL here if you have one. This links back to the original listing so you can reference it anytime.', position:'left', noBlock:true, onEnter:function(){ if(!document.querySelector('#add_link2')){ openAddModal(); setTimeout(showManualAddForm, 300); } } },
+    { waitFor:'#add_property', target:'[onclick*="saveNewRecord"]', title:'Save Your Property', body:'When you\'re ready, click Save to create the property. You can always edit details later from the Property Profile.', position:'left', noBlock:true, onEnter:function(){ if(!document.querySelector('#add_property')){ openAddModal(); setTimeout(showManualAddForm, 300); } } },
+    { target:'.tab-btn[data-tab="expenses"], .profile-tab[data-tab="expenses"]', title:'Manage Expenses', body:'The Expenses tab is where you set up monthly operating costs like insurance, utilities, and fees. These drive your ROI projections.', position:'bottom', noBlock:true, onEnter:function(){ if(typeof setProfileTab==='function') setProfileTab('expenses'); } },
+    { target:'.tab-content[data-tab="expenses"], .profile-tab-content[data-tab="expenses"]', title:'Add Operating Expenses', body:'Enter your estimated monthly costs for each category. These expenses feed into your deal temperature and projected ROI analysis. Use AI Estimate (Pro) or Copy from Property (Basic+) to speed this up.', position:'left', noBlock:true, onEnter:function(){ if(typeof setProfileTab==='function') setProfileTab('expenses'); } },
+    { target:'[style*="cursor:help"], [onclick*="showTip"]', title:'Access Tips & Help', body:'See these info indicators throughout the CRM? Click any of them to get helpful tips and explanations about that specific field or feature.', position:'left', noBlock:true },
     { type:'complete', emoji:'🎉', title:'You\'re All Set!', body:'You now know the basics of RentingRadar. Add more properties, track your pipeline, and explore the Dashboard for portfolio analytics. As you upgrade your plan, new tutorials will introduce advanced features.' }
   ],
   basic: [
     { type:'welcome', emoji:'⬆️', title:'Welcome to Basic!', body:'You\'ve unlocked powerful analysis tools! Let\'s walk through the Competitor Analysis and Projected ROI features that are now available on every property.' },
-    { waitFor:'.tab-btn[data-tab="analysis"]', target:'.tab-btn[data-tab="analysis"], [data-tab="analysis"]', title:'Competitor Analysis', body:'Click this tab to see how your property stacks up against the competition. This is where you\'ll add rental comps and analyze market positioning.', position:'bottom', action:'click', actionHint:'Click "Competitor Analysis"', noBlock:true },
-    { waitFor:'.tab-content[data-tab="analysis"]', target:'.comp-table, .calc-section:first-child', title:'Your Comp Table', body:'Add comparable properties (comps) to build your market analysis. Enter nightly rates, occupancy rates, and ratings for each comp. The more comps you add, the more accurate your projections.', position:'left', action:null, noBlock:true },
-    { target:'.competitive-position, .calc-section-header', title:'Competitive Position', body:'Once you have 3+ comps, RentingRadar calculates your competitive position — showing where you rank in the market and how strong your listing is relative to competitors.', position:'left', action:null, noBlock:true },
-    { waitFor:'.tab-btn[data-tab="calculator"]', target:'.tab-btn[data-tab="calculator"], [data-tab="calculator"]', title:'Projected ROI', body:'Click here to see your property\'s projected return on investment with detailed financial analysis.', position:'bottom', action:'click', actionHint:'Click "Projected ROI"', noBlock:true },
-    { waitFor:'.tab-content[data-tab="calculator"]', target:'.kpi-grid, .kpi-card:first-child', title:'Key Performance Indicators', body:'Your KPI cards show projected revenue, annual expenses, monthly net cash flow, and cash-on-cash return — all calculated from your comps and expenses.', position:'left', action:null, noBlock:true },
-    { target:'.calc-panel .toggle-btn, [onclick*="setCalcProjMode"], .projection-toggle', title:'Projection Modes', body:'Toggle between Pessimistic, Realistic, and Optimistic scenarios. Each mode uses different assumptions based on your competitor data to show best-case and worst-case outcomes.', position:'left', action:null, noBlock:true },
-    { target:'.deal-temp-card, .calc-section-header[onclick*="dealTemp"], [class*="deal-temp"]', title:'Deal Temperature', body:'Deal Temperature gives you an instant read on whether this property is a Slam-Dunk, has Potential, is Risky, or a No-Go — based on your profit requirements and projected cash flow.', position:'left', action:null, noBlock:true },
+    { target:'.tab-btn[data-tab="analysis"], .profile-tab[data-tab="analysis"]', title:'Competitor Analysis', body:'This tab is where you analyze how your property stacks up against the competition. You\'ll add rental comps and see your market positioning.', position:'bottom', noBlock:true, onEnter:function(){ if(typeof setProfileTab==='function') setProfileTab('analysis'); } },
+    { target:'.comp-table, .calc-section:first-child', title:'Your Comp Table', body:'Add comparable properties (comps) to build your market analysis. Enter nightly rates, occupancy rates, and ratings for each comp. The more comps you add, the more accurate your projections.', position:'left', noBlock:true, onEnter:function(){ if(typeof setProfileTab==='function') setProfileTab('analysis'); } },
+    { target:'.competitive-position, .calc-section-header', title:'Competitive Position', body:'Once you have 3+ comps, RentingRadar calculates your competitive position — showing where you rank in the market and how strong your listing is relative to competitors.', position:'left', noBlock:true },
+    { target:'.tab-btn[data-tab="calculator"], .profile-tab[data-tab="calculator"]', title:'Projected ROI', body:'This tab shows your property\'s projected return on investment with detailed financial analysis.', position:'bottom', noBlock:true, onEnter:function(){ if(typeof setProfileTab==='function') setProfileTab('calculator'); } },
+    { target:'.kpi-grid, .kpi-card:first-child', title:'Key Performance Indicators', body:'Your KPI cards show projected revenue, annual expenses, monthly net cash flow, and cash-on-cash return — all calculated from your comps and expenses.', position:'left', noBlock:true, onEnter:function(){ if(typeof setProfileTab==='function') setProfileTab('calculator'); } },
+    { target:'.calc-panel .toggle-btn, [onclick*="setCalcProjMode"], .projection-toggle', title:'Projection Modes', body:'Toggle between Pessimistic, Realistic, and Optimistic scenarios. Each mode uses different assumptions based on your competitor data to show best-case and worst-case outcomes.', position:'left', noBlock:true },
+    { target:'.deal-temp-card, .calc-section-header[onclick*="dealTemp"], [class*="deal-temp"]', title:'Deal Temperature', body:'Deal Temperature gives you an instant read on whether this property is a Slam-Dunk, has Potential, is Risky, or a No-Go — based on your profit requirements and projected cash flow.', position:'left', noBlock:true },
     { type:'complete', emoji:'📊', title:'Basic Features Unlocked!', body:'You now have access to full competitive analysis and ROI projections. Add at least 3 comps to any property to unlock the full power of these tools. Upgrade to Pro for negotiation tools, AI estimates, and auto-import!' }
   ],
   pro: [
     { type:'welcome', emoji:'🚀', title:'Welcome to Pro!', body:'You\'ve unlocked the full suite! Let\'s explore your new Negotiation Forecasting Tools, AI-powered features, and automatic property importing.' },
-    { waitFor:'.tab-btn[data-tab="calculator"]', target:'.tab-btn[data-tab="calculator"], [data-tab="calculator"]', title:'Projected ROI', body:'Let\'s start in the Projected ROI tab where your new Negotiation Forecasting Tools live.', position:'bottom', action:'click', actionHint:'Click "Projected ROI"', noBlock:true },
-    { waitFor:'.calc-section-header', target:function(){ return document.querySelector('.calc-section-header[onclick*="Negotiation"]') || Array.from(document.querySelectorAll('.calc-section-header')).find(el => el.textContent.includes('Negotiation')); }, title:'Negotiation Forecasting Tools', body:'This is your new negotiation analysis center. It combines Rent Adjustment and Rental Concessions to help you model deal scenarios before negotiating with landlords.', position:'left', action:null, noBlock:true },
-    { target:function(){ return document.querySelector('[id^="rentDial_"]') || document.querySelector('svg[id^="rentDial"]'); }, title:'Rent Adjustment Dial', body:'Drag this dial or click the rent amount to explore what monthly rent would make this deal attractive. The color zones show your deal temperature at each rent level. This is projection-only — it won\'t change your actual data.', position:'left', action:null, noBlock:true },
-    { target:function(){ var el = document.querySelector('[onclick*="editConcessionWeeks"]'); return el ? el.closest('div[style*="flex-direction:column"]') : null; }, title:'Rental Concessions', body:'Model weeks of free rent you could negotiate. See how concessions reduce your upfront investment and accelerate your break-even timeline. The chart below shows the impact at each week level.', position:'left', action:null, noBlock:true },
-    { target:function(){ return document.querySelector('[onclick*="aiEstimate"], [onclick*="AI Estimate"], .btn-primary[onclick*="ai"]') || Array.from(document.querySelectorAll('.btn')).find(el => el.textContent.includes('AI') && el.textContent.includes('Estimate')); }, title:'AI-Powered Estimates', body:'Pro unlocks AI Expense Estimates. Click this to have our AI analyze your market and property type to suggest realistic operating expenses — saving you hours of research.', position:'left', action:null, noBlock:true },
-    { target:function(){ return document.querySelector('[onclick*="openAddModal"]'); }, title:'Auto-Import Properties', body:'Pro also unlocks automatic property importing via the RentingRadar Chrome Extension. Paste any Apartments.com, Zillow, or other listing URL and the extension extracts all property details automatically.', position:'bottom', action:null },
+    { target:'.tab-btn[data-tab="calculator"], .profile-tab[data-tab="calculator"]', title:'Projected ROI', body:'Your Negotiation Forecasting Tools live inside the Projected ROI tab. Let\'s take a look.', position:'bottom', noBlock:true, onEnter:function(){ if(typeof setProfileTab==='function') setProfileTab('calculator'); } },
+    { target:function(){ return document.querySelector('.calc-section-header[onclick*="Negotiation"]') || Array.from(document.querySelectorAll('.calc-section-header')).find(el => el.textContent.includes('Negotiation')); }, title:'Negotiation Forecasting Tools', body:'This is your negotiation analysis center. It combines Rent Adjustment and Rental Concessions to help you model deal scenarios before negotiating with landlords.', position:'left', noBlock:true, onEnter:function(){ if(typeof setProfileTab==='function') setProfileTab('calculator'); } },
+    { target:function(){ return document.querySelector('[id^="rentDial_"]') || document.querySelector('svg[id^="rentDial"]'); }, title:'Rent Adjustment Dial', body:'Click the rent amount or drag the dial to explore what monthly rent would make this deal attractive. The color zones show your deal temperature at each rent level. This is projection-only — it won\'t change your actual data.', position:'left', noBlock:true },
+    { target:function(){ var el = document.querySelector('[onclick*="editConcessionWeeks"]'); return el ? el.closest('div[style*="flex-direction:column"]') : null; }, title:'Rental Concessions', body:'Model weeks of free rent you could negotiate. See how concessions reduce your upfront investment and accelerate your break-even timeline. The chart below shows the impact at each week level.', position:'left', noBlock:true },
+    { target:function(){ return document.querySelector('[onclick*="aiEstimate"], [onclick*="AI Estimate"], .btn-primary[onclick*="ai"]') || Array.from(document.querySelectorAll('.btn')).find(el => el.textContent.includes('AI') && el.textContent.includes('Estimate')); }, title:'AI-Powered Estimates', body:'Pro unlocks AI Expense Estimates. Click this to have our AI analyze your market and property type to suggest realistic operating expenses — saving you hours of research.', position:'left', noBlock:true },
+    { target:function(){ return document.querySelector('[onclick*="openAddModal"]'); }, title:'Auto-Import Properties', body:'Pro also unlocks automatic property importing via the RentingRadar Chrome Extension. Paste any listing URL and the extension extracts all property details automatically.', position:'bottom' },
     { type:'complete', emoji:'🏆', title:'Pro Features Unlocked!', body:'You now have the full RentingRadar toolkit. Use Negotiation Forecasting to model scenarios, AI Estimates for faster setup, and Auto-Import to build your pipeline at speed. Happy deal hunting!' }
   ],
   dashboard: [
@@ -5333,6 +5331,12 @@ function _tutShowStep(){
     return;
   }
 
+  // ── Auto-navigate: run onEnter to open modals/tabs as needed ──
+  if(s.onEnter && !s._onEnterDone){
+    s._onEnterDone = true;
+    try { s.onEnter(); } catch(e){}
+  }
+
   // Welcome/Complete screens
   if(s.type === 'welcome' || s.type === 'complete'){
     const bd = document.createElement('div'); bd.className='tut-backdrop'; document.body.appendChild(bd);
@@ -5385,15 +5389,13 @@ function _tutShowStep(){
   tt.style.opacity = '0';
   tt.style.transition = 'none';
   let ttHtml = '<div class="tut-tooltip-header"><span class="tut-step-badge">Step '+(_tut.step+1)+' of '+_tut.steps.length+'</span><span class="tut-title">'+s.title+'</span></div>';
-  ttHtml += '<div class="tut-tooltip-body">'+s.body;
-  if(s.action && s.actionHint) ttHtml += '<div class="tut-action-hint">👆 '+s.actionHint+'</div>';
-  ttHtml += '</div>';
+  ttHtml += '<div class="tut-tooltip-body">'+s.body+'</div>';
   ttHtml += '<div class="tut-progress">';
   _tut.steps.forEach((_, i) => { ttHtml += '<div class="tut-progress-dot'+(i<_tut.step?' done':'')+(i===_tut.step?' active':'')+'"></div>'; });
   ttHtml += '</div>';
   ttHtml += '<div class="tut-tooltip-footer"><span class="tut-skip" onclick="_tutConfirmClose()">Close tutorial</span><div class="tut-btns">';
   if(_tut.step > 0) ttHtml += '<button class="tut-btn tut-btn-secondary" onclick="_tutPrev()">← Back</button>';
-  if(!s.action) ttHtml += '<button class="tut-btn tut-btn-primary" onclick="_tutNext()">Next →</button>';
+  ttHtml += '<button class="tut-btn tut-btn-primary" onclick="_tutNext()">Next →</button>';
   ttHtml += '</div></div>';
   tt.innerHTML = ttHtml;
   document.body.appendChild(tt);
@@ -5423,7 +5425,6 @@ function _tutShowStep(){
 
   // ── Live tracking loop: tooltip, arrow, spotlight all track the target ──
   const pos = s.position || 'bottom';
-  const arrowFrom = s.arrowFrom || 'bottom';
   let _rafId = 0;
   let _firstFrame = true; // true until first successful positioning
   const GAP = 16;
@@ -5479,48 +5480,25 @@ function _tutShowStep(){
       if(spot) spot.style.opacity = '1';
     }
 
-    // ── Arrow origin + destination ──
-    let sx, sy, ex, ey;
-    if(arrowFrom === 'right'){
-      // Start from right-center of tooltip, end at top-center of target
-      sx = ttLeft + ttW;
-      sy = ttTop + ttH / 2;
-      ex = tgt.left + tgt.width / 2;
-      ey = tgt.top;
-    } else {
-      // Default: start from bottom-center of tooltip, end at bottom-center of target
-      sx = ttLeft + ttW / 2;
-      sy = ttTop + ttH;
-      ex = tgt.left + tgt.width / 2;
-      ey = tgt.bottom;
-    }
+    // ── Arrow: bottom-center of tooltip → bottom-center of target ──
+    const sx = ttLeft + ttW / 2;
+    const sy = ttTop + ttH;
+    const ex = tgt.left + tgt.width / 2;
+    const ey = tgt.bottom;
 
-    // Quadratic bezier control point — mirror of the bottom swoop, rotated for 'right' origin
     const dx = ex - sx, dy = ey - sy;
     const dist = Math.sqrt(dx * dx + dy * dy);
-
+    const minSwoop = 50;
+    const hDir = dx >= 0 ? 1 : -1;
+    const hOffset = Math.abs(dx) < minSwoop ? hDir * minSwoop : dx * 0.45;
     let cx, cy;
-    if(arrowFrom === 'right'){
-      // Same swoop logic as bottom, but axes swapped: push control point rightward
-      // (away from tooltip) with a guaranteed minimum, just like bottom pushes downward
-      const minSwoop = 50;
-      const vDir = dy >= 0 ? 1 : -1;
-      const vOffset = Math.abs(dy) < minSwoop ? vDir * minSwoop : dy * 0.45;
-      cx = sx + Math.max(40, dx * 0.5);
-      cy = sy + vOffset;
+    if(dy >= 0){
+      cx = sx + hOffset;
+      cy = sy + Math.max(40, dy * 0.5);
     } else {
-      // Default bottom swoop logic
-      const minSwoop = 50;
-      const hDir = dx >= 0 ? 1 : -1;
-      const hOffset = Math.abs(dx) < minSwoop ? hDir * minSwoop : dx * 0.45;
-      if(dy >= 0){
-        cx = sx + hOffset;
-        cy = sy + Math.max(40, dy * 0.5);
-      } else {
-        const drop = Math.max(40, Math.min(70, dist * 0.25));
-        cx = sx + hOffset;
-        cy = sy + drop;
-      }
+      const drop = Math.max(40, Math.min(70, dist * 0.25));
+      cx = sx + hOffset;
+      cy = sy + drop;
     }
 
     arrowPath.setAttribute('d',
@@ -5540,41 +5518,6 @@ function _tutShowStep(){
   _rafId = requestAnimationFrame(_track);
   _tut._cleanup.push(() => { cancelAnimationFrame(_rafId); });
 
-  // ── Action listeners ──
-  if(s.action === 'click'){
-    const actionTarget = s.actionTarget ? document.querySelector(s.actionTarget) : targetEl;
-    if(actionTarget){
-      const handler = function(e){
-        actionTarget.removeEventListener('click', handler, true);
-        _tutNext();
-      };
-      actionTarget.addEventListener('click', handler, true);
-      _tut._cleanup.push(() => { try { actionTarget.removeEventListener('click', handler, true); } catch(e){} });
-    }
-  } else if(s.action === 'input'){
-    const handler = function(e){
-      if(e.target.value && e.target.value.length > 2){
-        targetEl.removeEventListener('input', handler);
-        setTimeout(() => _tutNext(), 300);
-      }
-    };
-    targetEl.addEventListener('input', handler);
-    _tut._cleanup.push(() => { try { targetEl.removeEventListener('input', handler); } catch(e){} });
-  } else if(s.action === 'addressSelect'){
-    // Wait for user to pick from autocomplete — detected when #add_city gets filled
-    const cityEl = document.getElementById('add_city');
-    let _addrPollId = 0;
-    const addrPoll = function(){
-      if(!_tut.active) return;
-      if(cityEl && cityEl.value && cityEl.value.trim().length > 0){
-        _tutNext();
-        return;
-      }
-      _addrPollId = requestAnimationFrame(addrPoll);
-    };
-    _addrPollId = requestAnimationFrame(addrPoll);
-    _tut._cleanup.push(() => { cancelAnimationFrame(_addrPollId); });
-  }
 }
 
 function _tutResolveTarget(target){
@@ -5604,7 +5547,11 @@ function _tutNext(){
   _tutShowStep();
 }
 function _tutPrev(){
-  if(_tut.step > 0) _tut.step--;
+  if(_tut.step <= 0) return;
+  // Reset onEnterDone flags so navigation works when revisiting steps
+  if(_tut.steps[_tut.step]) _tut.steps[_tut.step]._onEnterDone = false;
+  _tut.step--;
+  if(_tut.steps[_tut.step]) _tut.steps[_tut.step]._onEnterDone = false;
   _tutShowStep();
 }
 
