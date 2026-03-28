@@ -6340,7 +6340,7 @@ function setCalcProjMode(mode){
 
 /* ===== CALCULATOR TAB ===== */
 const CALC_DEFAULTS = {
-  applicationFees:0, securityDeposit:0, firstLastRent:0,
+  applicationFees:0, securityDeposit:0, firstMonthRent:0, lastMonthRent:0,
   additionalFee1:0, additionalFee2:0, costPerBR:0,
   extraCommonSpaces:0, costPerExtraSpace:0,
   avgDailyRate:0, estOccupancyRate:0,
@@ -6355,6 +6355,12 @@ function getCalc(r){
   if(!r.details) r.details = {};
   if(!r.details.calculator) r.details.calculator = {};
   const c = r.details.calculator;
+  // Migrate legacy firstLastRent → split into firstMonthRent + lastMonthRent
+  if(c.firstLastRent && !c.firstMonthRent && !c.lastMonthRent){
+    c.firstMonthRent = c.firstLastRent;
+    c.lastMonthRent = 0;
+    delete c.firstLastRent;
+  }
   for(const [k,v] of Object.entries(CALC_DEFAULTS)){
     if(c[k] === undefined || c[k] === null) c[k] = v;
   }
@@ -6427,7 +6433,7 @@ function calcComputeAll(r){
   const br = parseInt(pd.bedrooms) || 0;
   const monthlyRent = parseFloat(pd.monthlyRent) || 0;
   const furnishCost = (br * c.costPerBR) + (c.extraCommonSpaces * c.costPerExtraSpace);
-  const totalInvested = c.applicationFees + c.securityDeposit + c.firstLastRent + c.additionalFee1 + c.additionalFee2 + furnishCost;
+  const totalInvested = c.applicationFees + c.securityDeposit + c.firstMonthRent + c.lastMonthRent + c.additionalFee1 + c.additionalFee2 + furnishCost;
   // Pull ADR and occupancy from Analysis comps (only comps with actual values)
   const comps = (r.details && r.details.comps) ? r.details.comps : [];
   const compsWithRate = comps.filter(x => parseFloat(x.nightlyRate) > 0);
@@ -6541,14 +6547,15 @@ function renderExpensesTab(r){
   h += '<div class="calc-section"><div class="calc-section-header">Investment Details</div><div class="calc-section-body">';
   h += cRow('Application Fees', cInput('applicationFees', c.applicationFees), {tip:'Fees paid to apply for the rental property — typically non-refundable and charged per application.'});
   h += cRow('Security Deposit', cInput('securityDeposit', c.securityDeposit), {tip:'Refundable deposit held by the landlord to cover potential damages. Usually equal to one month\\x27s rent.'});
-  h += cRow('First & Last Month Rent', cInput('firstLastRent', c.firstLastRent), {hint:'if required up front', tip:'Some landlords require both the first and last month\\x27s rent upfront before move-in. Enter the total if applicable.'});
+  h += cRow('First Month Rent', cInput('firstMonthRent', c.firstMonthRent), {hint:'if required up front', tip:'Some landlords require the first month\\x27s rent upfront before move-in. Enter the amount if applicable.'});
+  h += cRow('Last Month Rent', cInput('lastMonthRent', c.lastMonthRent), {hint:'if required up front', tip:'Some landlords also require the last month\\x27s rent upfront. Enter the amount if applicable — leave at $0 if not required.'});
   h += cRow('Additional Fee #1', cInput('additionalFee1', c.additionalFee1), {tip:'Any other upfront cost not covered above — pet deposits, key fees, move-in fees, etc.'});
   h += cRow('Additional Fee #2', cInput('additionalFee2', c.additionalFee2), {tip:'A second additional upfront cost if needed.'});
   h += cRow('Est. Cost Per Bedroom', cInput('costPerBR', c.costPerBR), {hint:'incl. common spaces', tip:'Estimated cost to furnish each bedroom plus the shared living areas (living room, kitchen, etc.). Multiplied by the number of bedrooms to calculate total furnishing cost.'});
   h += cRow('# Extra Common Spaces', cInput('extraCommonSpaces', c.extraCommonSpaces, {noDollar:true}), {hint:'patios, bonus rooms', tip:'Additional spaces beyond the standard common areas that need furnishing — patios, bonus rooms, dens, lofts, etc.'});
   h += cRow('Cost Per Extra Space', cInput('costPerExtraSpace', c.costPerExtraSpace), {tip:'Estimated cost to furnish each extra common space listed above.'});
   h += cRow('Est. Cost to Furnish', cDisplay(fmtAcct(v.furnishCost), {computed:true}), {tip:'Calculated automatically: (Cost Per Bedroom × Number of Bedrooms) + (Extra Common Spaces × Cost Per Extra Space).'});
-  h += cRow('Total Money Invested', cDisplay(fmtAcct(v.totalInvested), {computed:true}), {total:true, tip:'Sum of all upfront costs: Application Fees + Security Deposit + First & Last Month Rent + Additional Fees + Furnishing Cost. This is your total capital outlay before generating any revenue.'});
+  h += cRow('Total Money Invested', cDisplay(fmtAcct(v.totalInvested), {computed:true}), {total:true, tip:'Sum of all upfront costs: Application Fees + Security Deposit + First Month Rent + Last Month Rent + Additional Fees + Furnishing Cost. This is your total capital outlay before generating any revenue.'});
   h += '</div></div>';
   h += '</div>';
 
