@@ -5799,6 +5799,10 @@ const FIREBASE_CONFIG = {
 const firebaseApp = firebase.initializeApp(FIREBASE_CONFIG);
 const db = firebase.firestore();
 
+// Check if user arrived via ?tutorial=1 (from website "Try the Interactive Tutorial" link)
+let _launchTutorialAfterAuth = new URLSearchParams(window.location.search).get('tutorial') === '1';
+if(_launchTutorialAfterAuth){ history.replaceState(null, '', window.location.pathname); } // Clean URL
+
 // Listen for auth state changes
 let _authDataLoaded = false;
 firebase.auth().onAuthStateChanged(async (user) => {
@@ -5837,7 +5841,8 @@ firebase.auth().onAuthStateChanged(async (user) => {
       // New user — trigger free tutorial after data loads
       await loadDataFromFirestore(user.uid);
       _authDataLoaded = true;
-      _tutCheckAutoStart('free', true);
+      if(_launchTutorialAfterAuth){ _launchTutorialAfterAuth = false; setTimeout(() => openTutorialSlideshow(true), 600); }
+      else { _tutCheckAutoStart('free', true); }
     } else {
       const data = userDoc.data();
       // Load disclaimer state BEFORE setting tier (so setTier doesn't re-trigger overlay)
@@ -5849,8 +5854,9 @@ firebase.auth().onAuthStateChanged(async (user) => {
       // Load user's property data from Firestore
       await loadDataFromFirestore(user.uid);
       _authDataLoaded = true;
+      if(_launchTutorialAfterAuth){ _launchTutorialAfterAuth = false; setTimeout(() => openTutorialSlideshow(true), 600); }
       // Check if tier tutorial needed (only after disclaimer flow)
-      if(data.tier && data.tier !== 'free' && _disclaimerAcknowledged){
+      else if(data.tier && data.tier !== 'free' && _disclaimerAcknowledged){
         _tutCheckAutoStart(data.tier, false);
       }
     }

@@ -136,20 +136,11 @@ body{font-family:var(--font);background:var(--bg);color:var(--text)}
 .tut-step-item.visited .step-dot{display:none}
 .tut-step-item.visited .step-check{display:block;color:#34d399}
 
-/* ===== AUTH LOGIN SCREEN ===== */
-.tut-auth-overlay{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:300}
-.tut-auth-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:40px;max-width:420px;text-align:center;animation:tutWelcomeFade .3s ease}
-.tut-auth-card h2{font-size:1.3rem;font-weight:700;margin-bottom:8px;color:var(--text)}
-.tut-auth-card p{font-size:.88rem;color:var(--text2);line-height:1.6;margin-bottom:24px}
-.tut-google-btn{display:inline-flex;align-items:center;gap:10px;padding:10px 24px;border-radius:var(--radius);font-weight:600;font-size:.9rem;cursor:pointer;transition:all .15s;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:var(--font)}
-.tut-google-btn:hover{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.15)}
-.tut-google-btn img{width:20px;height:20px}
 </style>
 <!-- Firebase SDKs -->
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-<script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
 
@@ -206,20 +197,8 @@ body{font-family:var(--font);background:var(--bg);color:var(--text)}
   </div>
 </div>
 
-<!-- AUTH OVERLAY (shown when not signed in) -->
-<div class="tut-auth-overlay" id="tutAuthOverlay">
-  <div class="tut-auth-card">
-    <div style="font-size:3rem;margin-bottom:16px">🔒</div>
-    <h2>Sign In to Start the Tutorial</h2>
-    <p>Sign in with your Google account to save your tutorial progress. Your progress will sync with the RentingRadar app.</p>
-    <button class="tut-google-btn" onclick="signInWithGoogle()">
-      <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google"> Sign in with Google
-    </button>
-  </div>
-</div>
-
 <!-- WELCOME OVERLAY -->
-<div class="tut-welcome-overlay" id="tutWelcome" style="display:none">
+<div class="tut-welcome-overlay" id="tutWelcome">
   <div class="tut-welcome-card">
     <div class="tut-emoji">🏠</div>
     <h2>Welcome to RentingRadar!</h2>
@@ -308,50 +287,26 @@ const firebaseApp = firebase.initializeApp(FIREBASE_CONFIG);
 const db = firebase.firestore();
 let _currentUser = null;
 
-const GIS_CLIENT_ID = '622768449810-s72d56u4fherfif72the4cffb8epk1ml.apps.googleusercontent.com';
-
-function signInWithGoogle(){
-  if(window.google && window.google.accounts && window.google.accounts.oauth2){
-    try {
-      const tokenClient = google.accounts.oauth2.initTokenClient({
-        client_id: GIS_CLIENT_ID,
-        scope: 'openid email profile',
-        prompt: 'select_account',
-        callback: function(tokenResponse){
-          if(tokenResponse && tokenResponse.access_token){
-            var credential = firebase.auth.GoogleAuthProvider.credential(null, tokenResponse.access_token);
-            firebase.auth().signInWithCredential(credential).catch(function(err){
-              console.error('Firebase credential error:', err);
-            });
-          }
-        },
-        error_callback: function(err){
-          console.error('Google sign-in error:', err);
+// Detect authenticated user (auth handled by parent app)
+firebase.auth().onAuthStateChanged(function(user){
+  _currentUser = user || null;
+  renderUserSection();
+  // If user just signed in and we have Firestore progress, merge it
+  if(user && !started){
+    loadProgressFromFirestore().then(function(fbProgress){
+      if(fbProgress){
+        var localProgress = loadProgress();
+        var localCount = (localProgress && localProgress.completed) ? localProgress.completed.length : 0;
+        var fbCount = (fbProgress && fbProgress.completed) ? fbProgress.completed.length : 0;
+        if(fbCount > localCount){
+          // Firestore has more progress — update local sets
+          restoreProgressSets(fbProgress);
+          if(started) renderStep();
         }
-      });
-      tokenClient.requestAccessToken();
-    } catch(e){
-      console.error('GIS init error:', e);
-      signInWithGoogleLegacy();
-    }
-  } else {
-    signInWithGoogleLegacy();
+      }
+    });
   }
-}
-
-function signInWithGoogleLegacy(){
-  var provider = new firebase.auth.GoogleAuthProvider();
-  provider.setCustomParameters({ prompt: 'select_account' });
-  firebase.auth().signInWithPopup(provider).catch(function(err){
-    console.error('Auth error:', err);
-    if(err.code === 'auth/popup-blocked'){
-      firebase.auth().signInWithRedirect(provider);
-    }
-  });
-}
-
-// Handle redirect result (fallback)
-firebase.auth().getRedirectResult().catch(function(){});
+});
 
 function renderUserSection(){
   const el = document.getElementById('tutUserSection');
@@ -691,36 +646,9 @@ function initWithProgress(savedProgress){
   }
 }
 
-// ===== AUTH GATE =====
-// If embedded in CRM iframe, skip auth (CRM is already authenticated)
-if(window.parent !== window){
-  // Embedded mode — hide auth, proceed directly
-  document.getElementById('tutAuthOverlay').style.display = 'none';
-  const _savedProgress = loadProgress();
-  initWithProgress(_savedProgress);
-} else {
-  // Standalone mode — require Google sign-in
-  firebase.auth().onAuthStateChanged(function(user){
-    if(user){
-      _currentUser = user;
-      document.getElementById('tutAuthOverlay').style.display = 'none';
-      renderUserSection();
-      // Load progress: merge localStorage + Firestore, prefer whichever has more progress
-      const localProgress = loadProgress();
-      loadProgressFromFirestore().then(function(firestoreProgress){
-        var best = localProgress;
-        var localCount = (localProgress && localProgress.completed) ? localProgress.completed.length : 0;
-        var fbCount = (firestoreProgress && firestoreProgress.completed) ? firestoreProgress.completed.length : 0;
-        if(fbCount > localCount) best = firestoreProgress;
-        initWithProgress(best);
-      });
-    } else {
-      _currentUser = null;
-      document.getElementById('tutAuthOverlay').style.display = 'flex';
-      document.getElementById('tutWelcome').style.display = 'none';
-    }
-  });
-}
+// ===== INIT TUTORIAL =====
+const _savedProgress = loadProgress();
+initWithProgress(_savedProgress);
 </script>
 </body>
 </html>
