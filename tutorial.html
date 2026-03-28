@@ -121,7 +121,34 @@ body{font-family:var(--font);background:var(--bg);color:var(--text)}
 .tut-welcome-card .tut-emoji{font-size:3rem;margin-bottom:16px}
 .tut-welcome-card h2{font-size:1.3rem;font-weight:700;margin-bottom:8px}
 .tut-welcome-card p{font-size:.88rem;color:var(--text2);line-height:1.6;margin-bottom:24px}
+
+/* ===== USER PROFILE (sidebar bottom) ===== */
+.tut-sidebar-user{padding:12px 14px;border-top:1px solid var(--sidebar-border)}
+.tut-sidebar-user .tut-su-profile{display:flex;align-items:center;gap:10px;padding:6px;border-radius:var(--radius)}
+.tut-sidebar-user .tut-su-avatar{width:32px;height:32px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:700;color:#fff;background:var(--primary)}
+.tut-sidebar-user .tut-su-avatar img{width:32px;height:32px;border-radius:50%;object-fit:cover}
+.tut-sidebar-user .tut-su-info{flex:1;min-width:0;overflow:hidden}
+.tut-sidebar-user .tut-su-name{font-size:.82rem;font-weight:600;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tut-sidebar-user .tut-su-tier{display:inline-block;font-size:.6rem;padding:1px 7px;border-radius:4px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;background:rgba(99,129,250,.12);color:#818cf8;margin-top:2px}
+
+/* ===== COMPLETED CHECKMARKS ===== */
+.tut-step-item .step-check{display:none;width:14px;height:14px;flex-shrink:0}
+.tut-step-item.visited .step-dot{display:none}
+.tut-step-item.visited .step-check{display:block;color:#34d399}
+
+/* ===== AUTH LOGIN SCREEN ===== */
+.tut-auth-overlay{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:300}
+.tut-auth-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:40px;max-width:420px;text-align:center;animation:tutWelcomeFade .3s ease}
+.tut-auth-card h2{font-size:1.3rem;font-weight:700;margin-bottom:8px;color:var(--text)}
+.tut-auth-card p{font-size:.88rem;color:var(--text2);line-height:1.6;margin-bottom:24px}
+.tut-google-btn{display:inline-flex;align-items:center;gap:10px;padding:10px 24px;border-radius:var(--radius);font-weight:600;font-size:.9rem;cursor:pointer;transition:all .15s;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:var(--font)}
+.tut-google-btn:hover{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.15)}
+.tut-google-btn img{width:20px;height:20px}
 </style>
+<!-- Firebase SDKs -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 </head>
 <body>
 
@@ -136,6 +163,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text)}
       <div class="tut-progress-bar"><div class="tut-progress-fill" id="tutProgressFill" style="width:0%"></div></div>
     </div>
     <div class="tut-chapters" id="tutChapters"></div>
+    <div class="tut-sidebar-user" id="tutUserSection"></div>
   </div>
 
   <!-- MOBILE BACKDROP -->
@@ -177,8 +205,20 @@ body{font-family:var(--font);background:var(--bg);color:var(--text)}
   </div>
 </div>
 
+<!-- AUTH OVERLAY (shown when not signed in) -->
+<div class="tut-auth-overlay" id="tutAuthOverlay">
+  <div class="tut-auth-card">
+    <div style="font-size:3rem;margin-bottom:16px">🔒</div>
+    <h2>Sign In to Start the Tutorial</h2>
+    <p>Sign in with your Google account to save your tutorial progress. Your progress will sync with the RentingRadar app.</p>
+    <button class="tut-google-btn" onclick="signInWithGoogle()">
+      <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google"> Sign in with Google
+    </button>
+  </div>
+</div>
+
 <!-- WELCOME OVERLAY -->
-<div class="tut-welcome-overlay" id="tutWelcome">
+<div class="tut-welcome-overlay" id="tutWelcome" style="display:none">
   <div class="tut-welcome-card">
     <div class="tut-emoji">🏠</div>
     <h2>Welcome to RentingRadar!</h2>
@@ -254,6 +294,40 @@ let visited = new Set();    // Steps the user has navigated to
 let completed = new Set();  // Steps the user has explicitly marked complete
 let started = false;
 
+// ===== FIREBASE SETUP =====
+const FIREBASE_CONFIG = {
+  apiKey: 'AIzaSyAiWI-bB-HxFmvgiFSIuYLtFnv7BniFlQk',
+  authDomain: 'rentingradar.firebaseapp.com',
+  projectId: 'rentingradar',
+  storageBucket: 'rentingradar.firebasestorage.app',
+  messagingSenderId: '622768449810',
+  appId: '1:622768449810:web:fde8ec3ba25a70643d2bcb'
+};
+const firebaseApp = firebase.initializeApp(FIREBASE_CONFIG);
+const db = firebase.firestore();
+let _currentUser = null;
+
+function signInWithGoogle(){
+  const provider = new firebase.auth.GoogleAuthProvider();
+  firebase.auth().signInWithPopup(provider).catch(function(err){
+    console.error('Auth error:', err);
+  });
+}
+
+function renderUserSection(){
+  const el = document.getElementById('tutUserSection');
+  if(!el || !_currentUser) { if(el) el.innerHTML = ''; return; }
+  const initials = _currentUser.displayName ? _currentUser.displayName.split(' ').map(w=>w[0]).join('').toUpperCase().substring(0,2) : '?';
+  el.innerHTML = '<div class="tut-su-profile">'
+    + (_currentUser.photoURL
+      ? '<div class="tut-su-avatar"><img src="'+_currentUser.photoURL+'" alt=""></div>'
+      : '<div class="tut-su-avatar">'+initials+'</div>')
+    + '<div class="tut-su-info">'
+    + '<div class="tut-su-name">'+ (_currentUser.displayName||'User') +'</div>'
+    + '<div class="tut-su-tier">Tutorial</div>'
+    + '</div></div>';
+}
+
 // ===== PROGRESS PERSISTENCE =====
 function saveProgress(){
   const data = { step: currentStep, visited: Array.from(visited), completed: Array.from(completed), ts: Date.now() };
@@ -262,6 +336,24 @@ function saveProgress(){
   if(window.parent !== window){
     window.parent.postMessage({ type:'tutorialProgress', step: currentStep, total: TUTORIAL_STEPS.length, completed: data.completed, completedCount: completed.size }, '*');
   }
+  // Sync to Firestore
+  saveProgressToFirestore();
+}
+function saveProgressToFirestore(){
+  if(!_currentUser || !db) return;
+  const tutData = {
+    tutorialsSeen: {
+      tutStep: currentStep,
+      tutTotal: TUTORIAL_STEPS.length,
+      tutCompletedCount: completed.size,
+      tutCompletedSteps: Array.from(completed),
+      slideshow: allStepsCompleted() || false
+    }
+  };
+  db.collection('users').doc(_currentUser.uid).update(tutData).catch(function(){
+    // If doc doesn't exist, set it
+    db.collection('users').doc(_currentUser.uid).set(tutData, {merge:true}).catch(function(){});
+  });
 }
 function loadProgress(){
   try {
@@ -269,6 +361,22 @@ function loadProgress(){
     if(!raw) return null;
     return JSON.parse(raw);
   } catch(e){ return null; }
+}
+function loadProgressFromFirestore(){
+  if(!_currentUser || !db) return Promise.resolve(null);
+  return db.collection('users').doc(_currentUser.uid).get().then(function(doc){
+    if(!doc.exists) return null;
+    const data = doc.data();
+    if(!data.tutorialsSeen) return null;
+    const ts = data.tutorialsSeen;
+    if(ts.tutCompletedSteps && ts.tutCompletedSteps.length > 0){
+      return { step: ts.tutStep || 0, completed: ts.tutCompletedSteps, visited: ts.tutCompletedSteps };
+    }
+    if(typeof ts.tutStep === 'number' && ts.tutStep > 0){
+      return { step: ts.tutStep, completed: [], visited: [] };
+    }
+    return null;
+  }).catch(function(){ return null; });
 }
 function clearProgress(){
   try { localStorage.removeItem('rr_tutorial_progress'); } catch(e){}
@@ -300,7 +408,7 @@ function renderSidebar(){
       const activeClass = si === currentStep ? ' active' : '';
       const completedClass = completed.has(si) && si !== currentStep ? ' visited' : '';
       html += '<div class="tut-step-item'+activeClass+completedClass+'" onclick="goToStep('+si+')" data-step="'+si+'">';
-      html += '<span class="step-dot"></span> '+s.title;
+      html += '<span class="step-dot"></span><svg class="step-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> '+s.title;
       html += '</div>';
     });
     html += '</div></div>';
@@ -455,6 +563,8 @@ function startTutorial(resumeStep){
 function closeTutorial(){
   const isFullyCompleted = allStepsCompleted();
   if(isFullyCompleted) clearProgress(); // Clear saved progress on full completion
+  // Always sync final state to Firestore
+  saveProgressToFirestore();
   // If embedded in CRM, dispatch event; otherwise go back
   if(window.parent !== window){
     window.parent.postMessage({ type:'tutorialClose', seen: Array.from(visited), completed: isFullyCompleted, completedSteps: Array.from(completed), lastStep: currentStep }, '*');
@@ -463,12 +573,12 @@ function closeTutorial(){
   } else {
     // Standalone — show completion or exit
     if(isFullyCompleted){
-      document.getElementById('tutWelcome').innerHTML = '<div class="tut-welcome-card"><div class="tut-emoji">🎉</div><h2>Tutorial Complete!</h2><p>You\'ve completed all the features of RentingRadar. You can revisit this tutorial anytime from Settings.</p><div style="display:flex;gap:10px;justify-content:center"><button class="tut-btn tut-btn-primary" onclick="location.reload()">Restart</button></div></div>';
+      document.getElementById('tutWelcome').innerHTML = '<div class="tut-welcome-card"><div class="tut-emoji">🎉</div><h2>Tutorial Complete!</h2><p>You\'ve completed all the features of RentingRadar. Your progress has been saved and will show up in the app.</p><div style="display:flex;gap:10px;justify-content:center"><button class="tut-btn tut-btn-primary" onclick="location.reload()">Restart</button></div></div>';
       document.getElementById('tutWelcome').style.display = 'flex';
     } else {
       // Not fully completed — save progress and show exit message
       saveProgress();
-      document.getElementById('tutWelcome').innerHTML = '<div class="tut-welcome-card"><div class="tut-emoji">📖</div><h2>Progress Saved</h2><p>You\'ve completed ' + completed.size + ' of ' + TUTORIAL_STEPS.length + ' steps. Come back anytime to pick up where you left off.</p><div style="display:flex;gap:10px;justify-content:center"><button class="tut-btn tut-btn-primary" onclick="location.reload()">OK</button></div></div>';
+      document.getElementById('tutWelcome').innerHTML = '<div class="tut-welcome-card"><div class="tut-emoji">📖</div><h2>Progress Saved</h2><p>You\'ve completed ' + completed.size + ' of ' + TUTORIAL_STEPS.length + ' steps. Your progress is saved and will sync with the app.</p><div style="display:flex;gap:10px;justify-content:center"><button class="tut-btn tut-btn-primary" onclick="location.reload()">OK</button></div></div>';
       document.getElementById('tutWelcome').style.display = 'flex';
     }
   }
@@ -503,8 +613,6 @@ document.addEventListener('keydown', function(e){
 preloadImages();
 renderSidebar();
 
-// Check for saved progress
-const _savedProgress = loadProgress();
 const params = new URLSearchParams(location.search);
 
 function restoreProgressSets(data){
@@ -512,34 +620,67 @@ function restoreProgressSets(data){
   if(data.completed) data.completed.forEach(v => completed.add(v));
 }
 
-if(params.get('autostart') === '1'){
-  // Auto-start: resume from saved progress if any, otherwise start fresh
-  if(_savedProgress && _savedProgress.step > 0){
-    restoreProgressSets(_savedProgress);
-    startTutorial(_savedProgress.step);
+function initWithProgress(savedProgress){
+  if(params.get('autostart') === '1'){
+    if(savedProgress && savedProgress.step > 0){
+      restoreProgressSets(savedProgress);
+      startTutorial(savedProgress.step);
+    } else {
+      startTutorial();
+    }
+  } else if(params.get('restart') === '1'){
+    clearProgress();
+    startTutorial(0);
+  } else if(savedProgress && (savedProgress.step > 0 || (savedProgress.completed && savedProgress.completed.length > 0))){
+    const completedCount = savedProgress.completed ? savedProgress.completed.length : 0;
+    const pct = Math.round(completedCount / TUTORIAL_STEPS.length * 100);
+    const welcomeCard = document.querySelector('.tut-welcome-card');
+    if(welcomeCard){
+      welcomeCard.innerHTML = '<div class="tut-emoji">📖</div>'
+        + '<h2>Welcome Back!</h2>'
+        + '<p>You\'ve completed ' + completedCount + ' of ' + TUTORIAL_STEPS.length + ' steps (' + pct + '%). Pick up where you left off or start over.</p>'
+        + '<div style="display:flex;gap:10px;justify-content:center">'
+        + '<button class="tut-btn tut-btn-secondary" onclick="closeTutorial()">Skip</button>'
+        + '<button class="tut-btn tut-btn-secondary" onclick="clearProgress();startTutorial(0)">Start Over</button>'
+        + '<button class="tut-btn tut-btn-primary" onclick="startTutorial('+savedProgress.step+')">Resume →</button>'
+        + '</div>';
+      restoreProgressSets(savedProgress);
+    }
+    document.getElementById('tutWelcome').style.display = 'flex';
   } else {
-    startTutorial();
+    document.getElementById('tutWelcome').style.display = 'flex';
   }
-} else if(params.get('restart') === '1'){
-  // Explicit restart: clear progress and start fresh
-  clearProgress();
-  startTutorial(0);
-} else if(_savedProgress && _savedProgress.step > 0){
-  // Show welcome with resume option
-  const completedCount = _savedProgress.completed ? _savedProgress.completed.length : 0;
-  const pct = Math.round(completedCount / TUTORIAL_STEPS.length * 100);
-  const welcomeCard = document.querySelector('.tut-welcome-card');
-  if(welcomeCard){
-    welcomeCard.innerHTML = '<div class="tut-emoji">📖</div>'
-      + '<h2>Welcome Back!</h2>'
-      + '<p>You\'ve completed ' + completedCount + ' of ' + TUTORIAL_STEPS.length + ' steps (' + pct + '%). Pick up where you left off or start over.</p>'
-      + '<div style="display:flex;gap:10px;justify-content:center">'
-      + '<button class="tut-btn tut-btn-secondary" onclick="closeTutorial()">Skip</button>'
-      + '<button class="tut-btn tut-btn-secondary" onclick="clearProgress();startTutorial(0)">Start Over</button>'
-      + '<button class="tut-btn tut-btn-primary" onclick="startTutorial('+_savedProgress.step+')">Resume →</button>'
-      + '</div>';
-    restoreProgressSets(_savedProgress);
-  }
+}
+
+// ===== AUTH GATE =====
+// If embedded in CRM iframe, skip auth (CRM is already authenticated)
+if(window.parent !== window){
+  // Embedded mode — hide auth, proceed directly
+  document.getElementById('tutAuthOverlay').style.display = 'none';
+  const _savedProgress = loadProgress();
+  initWithProgress(_savedProgress);
+} else {
+  // Standalone mode — require Google sign-in
+  firebase.auth().onAuthStateChanged(function(user){
+    if(user){
+      _currentUser = user;
+      document.getElementById('tutAuthOverlay').style.display = 'none';
+      renderUserSection();
+      // Load progress: merge localStorage + Firestore, prefer whichever has more progress
+      const localProgress = loadProgress();
+      loadProgressFromFirestore().then(function(firestoreProgress){
+        var best = localProgress;
+        var localCount = (localProgress && localProgress.completed) ? localProgress.completed.length : 0;
+        var fbCount = (firestoreProgress && firestoreProgress.completed) ? firestoreProgress.completed.length : 0;
+        if(fbCount > localCount) best = firestoreProgress;
+        initWithProgress(best);
+      });
+    } else {
+      _currentUser = null;
+      document.getElementById('tutAuthOverlay').style.display = 'flex';
+      document.getElementById('tutWelcome').style.display = 'none';
+    }
+  });
 }
 </script>
 </body>
