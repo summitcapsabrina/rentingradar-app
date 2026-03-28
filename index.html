@@ -1071,9 +1071,6 @@ h1 .hero-edit-input{font-size:1.35rem}
 .settings-profile-info .sp-name{font-size:1.05rem;font-weight:600}
 .settings-profile-info .sp-email{font-size:.82rem;color:var(--text2)}
 .settings-profile-info .sp-role{font-size:.7rem;color:var(--primary);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-top:2px}
-.billing-history{width:100%;border-collapse:collapse;font-size:.82rem;margin-top:10px}
-.billing-history th{text-align:left;font-size:.7rem;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.3px;padding:6px 0;border-bottom:1px solid var(--border)}
-.billing-history td{padding:8px 0;border-bottom:1px solid var(--border);color:var(--text2)}
 .danger-zone{border-color:rgba(239,68,68,.3)}
 .danger-zone .settings-section-header{background:rgba(239,68,68,.06)}
 .danger-zone .settings-section-header h3{color:var(--danger)}
@@ -10635,12 +10632,8 @@ function renderSettings(){
           <div class="settings-row-right"><span class="tier-badge ${t.badge}" style="font-size:.75rem;padding:3px 10px">${t.name} ${t.monthly > 0 ? '— $'+t.monthly.toFixed(2)+'/mo' : ''}</span></div>
         </div>
         <div class="settings-row">
-          <div class="settings-row-left"><div class="sr-label">Payment Method</div><div class="sr-desc">Card on file for subscription billing</div></div>
-          <div class="settings-row-right"><div class="settings-value">${t.monthly > 0 ? 'Visa •••• 4242' : 'None — free plan'}</div></div>
-        </div>
-        <div class="settings-row">
-          <div class="settings-row-left"><div class="sr-label">Next Billing Date</div><div class="sr-desc">When your next payment is due</div></div>
-          <div class="settings-row-right"><div class="settings-value">${t.monthly > 0 ? 'Apr 18, 2026' : '—'}</div></div>
+          <div class="settings-row-left"><div class="sr-label">Manage Billing</div><div class="sr-desc">${t.monthly > 0 ? 'View invoices, update payment method, and manage your subscription' : 'Upgrade to a paid plan to access billing management'}</div></div>
+          <div class="settings-row-right">${t.monthly > 0 ? '<a href="https://billing.stripe.com/p/login/fZu9AVddNb6s9iZfKu77O00" target="_blank" class="btn btn-secondary btn-sm" style="display:inline-flex;align-items:center;gap:5px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg> Open Stripe Portal</a>' : '<span style="font-size:.8rem;color:var(--text3)">—</span>'}</div>
         </div>
         ${currentTier !== 'free' ? `<div class="settings-row" style="flex-wrap:wrap">
           <div class="settings-row-left">
@@ -10651,18 +10644,6 @@ function renderSettings(){
           </div>
           <div class="settings-row-right"><button class="btn btn-secondary btn-sm" onclick="showDisclaimerOverlay()">${needsDisclaimer() ? 'Acknowledge' : 'Review'}</button></div>
         </div>` : ''}
-        <div style="margin-top:12px">
-          <div class="sr-label" style="font-size:.78rem;font-weight:600;color:var(--text3);margin-bottom:8px">BILLING HISTORY</div>
-          <table class="billing-history">
-            <thead><tr><th>Date</th><th>Description</th><th style="text-align:right">Amount</th><th style="text-align:right">Status</th></tr></thead>
-            <tbody>
-              ${t.monthly > 0 ? `
-              <tr><td>Mar 18, 2026</td><td>${t.name} Plan — Monthly</td><td style="text-align:right">$${t.monthly.toFixed(2)}</td><td style="text-align:right;color:var(--success)">Paid</td></tr>
-              <tr><td>Feb 18, 2026</td><td>${t.name} Plan — Monthly</td><td style="text-align:right">$${t.monthly.toFixed(2)}</td><td style="text-align:right;color:var(--success)">Paid</td></tr>
-              ` : '<tr><td colspan="4" style="color:var(--text3);text-align:center;padding:12px 0">No billing history — free plan</td></tr>'}
-            </tbody>
-          </table>
-        </div>
       </div>
     </div>
 
