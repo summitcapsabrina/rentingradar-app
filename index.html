@@ -5387,6 +5387,22 @@ function restartTutorial(name){
   }
 }
 
+function confirmTutorialRestart(){
+  var completedCount = typeof _tut.seen.tutCompletedCount === 'number' ? _tut.seen.tutCompletedCount : 0;
+  var total = _tut.seen.tutTotal || 31;
+  showAppConfirm('You\'ve completed ' + completedCount + ' of ' + total + ' steps. Restarting will begin the tutorial from the beginning, but your progress is still saved.', {
+    title: 'Restart Tutorial?', icon: '↻', confirmText: 'Restart', cancelText: 'Cancel',
+    onConfirm: function(){ openTutorialSlideshow(false, true); }
+  });
+}
+
+function confirmTutorialReset(){
+  showAppConfirm('This will clear all your tutorial progress. The tutorial will auto-trigger again on your next login.', {
+    title: 'Reset Tutorial Progress?', icon: '⚠️', confirmText: 'Reset', cancelText: 'Cancel', confirmClass: 'btn-danger',
+    onConfirm: function(){ restartTutorial('all'); }
+  });
+}
+
 // ===== DISCLAIMER ACKNOWLEDGMENT =====
 let _disclaimerAcknowledged = false;
 let _disclaimerOverlayOpen = false;
@@ -10775,15 +10791,15 @@ function renderSettings(){
           </div>
           <div class="settings-row-right" style="display:flex;gap:6px">
             ${(function(){
-              if(_tut.seen.slideshow) return '<button class="btn btn-secondary btn-sm" onclick="openTutorialSlideshow(false, true)">↻ Replay</button>';
-              if((typeof _tut.seen.tutCompletedCount === 'number' && _tut.seen.tutCompletedCount > 0) || (typeof _tut.seen.tutStep === 'number' && _tut.seen.tutStep > 0)) return '<button class="btn btn-secondary btn-sm" onclick="openTutorialSlideshow(false, true)">↻ Restart</button><button class="btn btn-primary btn-sm" onclick="openTutorialSlideshow(true)">▶ Resume</button>';
+              if(_tut.seen.slideshow) return '<button class="btn btn-secondary btn-sm" onclick="confirmTutorialRestart()">↻ Replay</button>';
+              if((typeof _tut.seen.tutCompletedCount === 'number' && _tut.seen.tutCompletedCount > 0) || (typeof _tut.seen.tutStep === 'number' && _tut.seen.tutStep > 0)) return '<button class="btn btn-secondary btn-sm" onclick="confirmTutorialRestart()">↻ Restart</button><button class="btn btn-primary btn-sm" onclick="openTutorialSlideshow(true)">▶ Resume</button>';
               return '<button class="btn btn-primary btn-sm" onclick="openTutorialSlideshow(true)">▶ Start Tutorial</button>';
             })()}
           </div>
         </div>
         <div class="settings-row">
           <div class="settings-row-left"><div class="sr-label">Reset Tutorial</div><div class="sr-desc">Clear tutorial progress so it auto-triggers again for new sessions</div></div>
-          <div class="settings-row-right"><button class="btn btn-secondary btn-sm" onclick="restartTutorial('all')">Reset</button></div>
+          <div class="settings-row-right"><button class="btn btn-secondary btn-sm" onclick="confirmTutorialReset()">Reset</button></div>
         </div>
       </div>
     </div>
