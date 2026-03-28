@@ -98,6 +98,11 @@ body{font-family:var(--font);background:var(--bg);color:var(--text)}
 .tut-arrow-btn:disabled{opacity:.25;cursor:not-allowed}
 .tut-arrow-btn svg{width:16px;height:16px;fill:currentColor}
 
+/* Uncomplete button */
+.tut-uncomplete-btn{width:36px;height:36px;display:flex;align-items:center;justify-content:center;border-radius:var(--radius);cursor:pointer;transition:all .15s;border:1px solid var(--border);background:transparent;color:var(--text3);flex-shrink:0}
+.tut-uncomplete-btn:hover{color:#f87171;border-color:rgba(248,113,113,.4);background:rgba(248,113,113,.08)}
+.tut-uncomplete-btn svg{width:16px;height:16px}
+
 /* ===== FULLSCREEN MODE ===== */
 .tut-player.fullscreen .tut-sidebar{display:none}
 .tut-player.fullscreen .tut-img-container img{max-height:calc(100vh - 180px)}
@@ -201,6 +206,9 @@ body{font-family:var(--font);background:var(--bg);color:var(--text)}
         </button>
         <button class="tut-arrow-btn" id="tutNext" onclick="nextStep()" title="Next">
           <svg viewBox="0 0 24 24"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
+        </button>
+        <button class="tut-uncomplete-btn" id="tutUncomplete" onclick="uncompleteStep()" title="Un-mark as completed" style="display:none">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 15L3 9l6-6"/><path d="M3 9h12a6 6 0 0 1 0 12h-3"/></svg>
         </button>
         <button class="tut-btn tut-btn-complete" id="tutComplete" onclick="completeStep()">Complete</button>
       </div>
@@ -411,7 +419,7 @@ function renderSidebar(){
     ch.steps.forEach(si => {
       const s = TUTORIAL_STEPS[si];
       const activeClass = si === currentStep ? ' active' : '';
-      const completedClass = completed.has(si) && si !== currentStep ? ' visited' : '';
+      const completedClass = completed.has(si) ? ' visited' : '';
       html += '<div class="tut-step-item'+activeClass+completedClass+'" onclick="goToStep('+si+')" data-step="'+si+'">';
       html += '<span class="step-dot"></span><svg class="step-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> '+s.title;
       html += '</div>';
@@ -472,12 +480,15 @@ function renderStep(){
 
   // Complete button state
   const completeBtn = document.getElementById('tutComplete');
+  const uncompleteBtn = document.getElementById('tutUncomplete');
   if(completed.has(currentStep)){
     completeBtn.classList.add('completed');
     completeBtn.innerHTML = '✓ Completed';
+    if(uncompleteBtn) uncompleteBtn.style.display = 'flex';
   } else {
     completeBtn.classList.remove('completed');
     completeBtn.innerHTML = 'Complete';
+    if(uncompleteBtn) uncompleteBtn.style.display = 'none';
   }
 
   // Progress — based on completed steps
@@ -505,6 +516,17 @@ function allStepsCompleted(){
     if(!completed.has(i)) return false;
   }
   return true;
+}
+
+function uncompleteStep(){
+  if(!completed.has(currentStep)) return;
+  completed.delete(currentStep);
+  renderStep();
+  saveProgressToFirestore();
+  // Notify parent of progress update
+  if(window.parent !== window){
+    window.parent.postMessage({ type:'tutorialProgress', step: currentStep, total: TUTORIAL_STEPS.length, completedCount: completed.size }, '*');
+  }
 }
 
 function completeStep(){
