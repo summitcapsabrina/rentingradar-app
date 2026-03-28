@@ -5867,6 +5867,8 @@ firebase.auth().onAuthStateChanged(async (user) => {
     records = [];
     render();
     hideLoadingOverlay();
+    // Auto-trigger Google sign-in for unauthenticated visitors
+    _autoTriggerSignIn();
   }
 });
 let currentUser = null;
@@ -5933,6 +5935,55 @@ firebase.auth().getRedirectResult().then(function(result){
     console.error('Redirect login error:', err.code, err.message);
   }
 });
+
+// Auto-trigger sign-in for unauthenticated visitors; redirect to website if declined
+let _autoSignInTriggered = false;
+function _autoTriggerSignIn(){
+  if(_autoSignInTriggered) return;
+  _autoSignInTriggered = true;
+  // Wait for GIS to load, then trigger sign-in
+  function tryGIS(){
+    if(window.google && window.google.accounts && window.google.accounts.oauth2){
+      try {
+        const tokenClient = google.accounts.oauth2.initTokenClient({
+          client_id: GIS_CLIENT_ID,
+          scope: 'openid email profile',
+          prompt: 'select_account',
+          callback: function(tokenResponse){
+            if(tokenResponse && tokenResponse.access_token){
+              var credential = firebase.auth.GoogleAuthProvider.credential(null, tokenResponse.access_token);
+              firebase.auth().signInWithCredential(credential).then(function(result){
+                setUser(result.user);
+              }).catch(function(err){
+                console.error('Auto sign-in credential error:', err);
+                window.location.href = 'https://rentingradar.com';
+              });
+            }
+          },
+          error_callback: function(err){
+            // User closed popup or declined — redirect to website
+            window.location.href = 'https://rentingradar.com';
+          }
+        });
+        tokenClient.requestAccessToken();
+      } catch(e){
+        // GIS failed — try legacy popup, redirect on failure
+        var provider = new firebase.auth.GoogleAuthProvider();
+        provider.setCustomParameters({ prompt: 'select_account' });
+        firebase.auth().signInWithPopup(provider).then(function(result){
+          setUser(result.user);
+        }).catch(function(){
+          window.location.href = 'https://rentingradar.com';
+        });
+      }
+    } else {
+      // GIS not loaded yet — retry shortly
+      setTimeout(tryGIS, 200);
+    }
+  }
+  // Small delay to let the page render before popup
+  setTimeout(tryGIS, 300);
+}
 
 function handleSignOut(){
   firebase.auth().signOut().then(() => {
