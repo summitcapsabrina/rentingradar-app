@@ -497,6 +497,13 @@ function allStepsCompleted(){
 }
 
 function completeStep(){
+  if(!_currentUser){
+    // Not signed in — notify parent to show auth gate
+    if(window.parent !== window){
+      window.parent.postMessage({type:'tutorialRequireAuth'}, '*');
+    }
+    return;
+  }
   if(completed.has(currentStep)) return; // Already completed
   completed.add(currentStep);
   // If all steps now completed, show congratulations
