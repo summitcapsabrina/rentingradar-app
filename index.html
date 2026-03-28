@@ -4261,6 +4261,7 @@ function checkPendingExtensionComps() {
 }
 
 function openAddModal(){
+  if(!_currentUid) return; // Must be signed in
   const modal = document.getElementById('detailModal');
   const panel = document.getElementById('detailPanel');
   panel.innerHTML = `
@@ -5980,9 +5981,22 @@ function handleSignOut(){
   });
 }
 
+// Cross-domain cookie helpers — share auth state with rentingradar.com
+function setRRCookie(user){
+  try {
+    if(user){
+      const val = encodeURIComponent(JSON.stringify({ name: user.displayName||'User', photo: user.photoURL||'' }));
+      document.cookie = 'rr_user=' + val + ';domain=.rentingradar.com;path=/;max-age=31536000;SameSite=Lax;Secure';
+    } else {
+      document.cookie = 'rr_user=;domain=.rentingradar.com;path=/;max-age=0;SameSite=Lax;Secure';
+    }
+  } catch(e){}
+}
+
 function setUser(user){
   currentUser = user ? { name:user.displayName||'User', email:user.email||'', photo:user.photoURL||null } : null;
   try { localStorage.setItem('rr_user', JSON.stringify(currentUser)) } catch(e){}
+  setRRCookie(user);
   renderUserSection();
 }
 

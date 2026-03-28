@@ -136,6 +136,17 @@ body{font-family:var(--font);background:var(--bg);color:var(--text)}
 .tut-step-item.visited .step-dot{display:none}
 .tut-step-item.visited .step-check{display:block;color:#34d399}
 
+/* ===== CLOSE CONFIRMATION ===== */
+.tut-confirm-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;display:flex;align-items:center;justify-content:center;animation:tutConfirmFade .15s ease}
+@keyframes tutConfirmFade{from{opacity:0}to{opacity:1}}
+.tut-confirm-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.35);max-width:360px;width:90vw;padding:24px 24px 18px;text-align:center;animation:tutConfirmSlide .2s ease}
+@keyframes tutConfirmSlide{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+.tut-confirm-card .tcc-icon{font-size:2rem;margin-bottom:10px}
+.tut-confirm-card .tcc-title{font-size:1rem;font-weight:700;color:var(--text);margin-bottom:6px}
+.tut-confirm-card .tcc-desc{font-size:.82rem;color:var(--text2);line-height:1.55;margin-bottom:20px}
+.tut-confirm-actions{display:flex;gap:8px;justify-content:center}
+.tut-confirm-actions .tut-btn{min-width:100px}
+
 </style>
 <!-- Firebase SDKs -->
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
@@ -554,8 +565,16 @@ function startTutorial(resumeStep){
   renderStep();
 }
 
-function closeTutorial(){
+function closeTutorial(confirmed){
   const isFullyCompleted = allStepsCompleted();
+  // If not fully completed and not yet confirmed, show confirmation
+  if(!isFullyCompleted && !confirmed){
+    showCloseConfirm();
+    return;
+  }
+  // Remove any confirm overlay
+  var ex = document.getElementById('tutConfirmOverlay');
+  if(ex) ex.remove();
   if(isFullyCompleted) clearProgress(); // Clear saved progress on full completion
   // Always sync final state to Firestore
   saveProgressToFirestore();
@@ -576,6 +595,24 @@ function closeTutorial(){
       document.getElementById('tutWelcome').style.display = 'flex';
     }
   }
+}
+
+function showCloseConfirm(){
+  // Remove any existing confirm overlay
+  var ex = document.getElementById('tutConfirmOverlay');
+  if(ex) ex.remove();
+  var overlay = document.createElement('div');
+  overlay.className = 'tut-confirm-overlay';
+  overlay.id = 'tutConfirmOverlay';
+  overlay.innerHTML = '<div class="tut-confirm-card">'
+    + '<div class="tcc-icon">📖</div>'
+    + '<div class="tcc-title">Leave the tutorial?</div>'
+    + '<div class="tcc-desc">Your progress is saved — you can pick up where you left off anytime from <strong>Settings</strong> in the app.</div>'
+    + '<div class="tut-confirm-actions">'
+    + '<button class="tut-btn tut-btn-secondary" onclick="document.getElementById(\'tutConfirmOverlay\').remove()">Keep Going</button>'
+    + '<button class="tut-btn tut-btn-primary" onclick="closeTutorial(true)">Leave Tutorial</button>'
+    + '</div></div>';
+  document.body.appendChild(overlay);
 }
 
 // ===== FULLSCREEN =====
