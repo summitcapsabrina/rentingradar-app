@@ -5270,7 +5270,7 @@ function _tutLoadSeenFromFirestore(data){
 
 // ── Slideshow Tutorial (replaces interactive tutorial) ──
 // Track tutorial progress for Settings UI
-let _tutProgress = { step:0, total:32, pct:0 };
+let _tutProgress = { step:0, total:31, pct:0 };
 
 function openTutorialSlideshow(autostart, restart){
   // Remove any existing slideshow
@@ -5347,7 +5347,7 @@ function restartTutorial(name){
     _tut.seen = {};
     _tutSaveSeen();
     try { localStorage.removeItem('rr_tutorial_progress'); } catch(e){}
-    _tutProgress = { step:0, total:32, pct:0 };
+    _tutProgress = { step:0, total:31, pct:0 };
     showAppAlert('Tutorial reset! It will auto-trigger on your next login.', {title:'Tutorial Reset', icon:'🔄'});
     if(currentView === 'settings') render();
   } else {
@@ -10717,7 +10717,7 @@ function renderSettings(){
             <div class="sr-label">${_tut.seen.slideshow ? '<span style="color:#22c55e;margin-right:6px">✓</span>Complete CRM Tutorial' : (typeof _tut.seen.tutCompletedCount === 'number' && _tut.seen.tutCompletedCount > 0 ? 'CRM Tutorial — In Progress' : 'Complete CRM Tutorial')}</div>
             <div class="sr-desc">32-step guided tour covering all features — Free, Basic, and Pro tiers (about 5 minutes)</div>
             ${(function(){
-              var pct = _tut.seen.slideshow ? 100 : (typeof _tut.seen.tutCompletedCount === 'number' && _tut.seen.tutCompletedCount > 0 ? Math.round(_tut.seen.tutCompletedCount / (_tut.seen.tutTotal || 32) * 100) : 0);
+              var pct = _tut.seen.slideshow ? 100 : (typeof _tut.seen.tutCompletedCount === 'number' && _tut.seen.tutCompletedCount > 0 ? Math.round(_tut.seen.tutCompletedCount / (_tut.seen.tutTotal || 31) * 100) : 0);
               if(pct > 0) return '<div style="margin-top:6px;display:flex;align-items:center;gap:8px"><div style="flex:1;height:4px;background:var(--border);border-radius:2px;overflow:hidden"><div style="height:100%;background:#34d399;border-radius:2px;width:' + pct + '%;transition:width .3s"></div></div><span style="font-size:.7rem;color:var(--text3);white-space:nowrap">' + pct + '%</span></div>';
               return '';
             })()}

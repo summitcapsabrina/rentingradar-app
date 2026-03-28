@@ -145,7 +145,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text)}
   <div class="tut-main">
     <div class="tut-topbar">
       <button class="tut-close-btn tut-menu-btn" onclick="toggleSidebar(true)" title="Chapters" style="display:none">☰</button>
-      <div class="step-counter">Step <span id="tutStepNum">1</span> of <span id="tutStepTotal">32</span></div>
+      <div class="step-counter">Step <span id="tutStepNum">1</span> of <span id="tutStepTotal">31</span></div>
       <div class="step-title" id="tutStepTitle">Welcome</div>
       <div class="tier-badge" id="tutTierBadge"></div>
       <button class="tut-close-btn" onclick="toggleFullscreen()" title="Toggle fullscreen">⛶</button>
@@ -193,16 +193,15 @@ body{font-family:var(--font);background:var(--bg);color:var(--text)}
 <script>
 // ===== TUTORIAL DATA =====
 const TUTORIAL_STEPS = [
-  // ─── Chapter 1: Getting Started (Steps 1–7) ───
+  // ─── Chapter 1: Getting Started (Steps 1–6) ───
   { chapter:0, image:'01-dashboard.webp', title:'Your Dashboard', desc:'This is your main Dashboard — the command center of RentingRadar. From here you can see all your properties, KPIs, pipeline stages, and the property map at a glance.', highlight:null, tier:'free' },
   { chapter:0, image:'01-dashboard.webp', title:'Sidebar Navigation', desc:'The sidebar lets you switch between Dashboard, Contacts, and Settings views. Your current plan and user profile appear at the bottom.', highlight:{x:0,y:0,w:14.3,h:100}, tier:'free' },
-  { chapter:0, image:'01-dashboard.webp', title:'Portfolio KPIs', desc:'These cards show your key metrics — total properties, average monthly revenue, occupancy rate, and estimated annual ROI. The profit requirement (with the pencil icon) is editable.', highlight:{x:14.5,y:7,w:85,h:19}, tier:'free' },
   { chapter:0, image:'03-add-property-step1.webp', title:'Add a Property', desc:'Click the "+ Add Property" button to start adding a new rental. You can import from AirDNA using the browser extension, or enter details manually.', highlight:null, tier:'free' },
   { chapter:0, image:'04-add-property-step2.webp', title:'Enter Property Details', desc:'Fill in the address, bedroom/bathroom count, asking rent, and listing link. All fields help RentingRadar calculate accurate projections for your deal.', highlight:null, tier:'free' },
   { chapter:0, image:'02-contacts.webp', title:'Contacts Manager', desc:'The Contacts view organizes all your landlords, property managers, and agents. Track status, phone, email, and notes for each contact in one place.', highlight:null, tier:'free' },
   { chapter:0, image:'02-contacts.webp', title:'Contact Status Tracking', desc:'Each contact has a status — Interested, Contacted, Follow Up, Not Interested, or Signed. Use these to manage your outreach pipeline effectively.', highlight:{x:72,y:20,w:11,h:75}, tier:'free' },
 
-  // ─── Chapter 2: Navigating Your CRM (Steps 8–14) ───
+  // ─── Chapter 2: Navigating Your CRM (Steps 7–13) ───
   { chapter:1, image:'01-dashboard.webp', title:'Pipeline Overview', desc:'The pipeline section groups your properties by stage — Researching, Contacted, Negotiating, Under Contract, and Active. Drag properties between stages or click to open their profile.', highlight:{x:14.5,y:9,w:85,h:38}, tier:'free' },
   { chapter:1, image:'01-dashboard.webp', title:'Property Map', desc:'The interactive map plots all your properties geographically. Hover over markers to see quick details, or click to jump directly to a property profile.', highlight:{x:14.5,y:47,w:85,h:45}, tier:'free' },
   { chapter:1, image:'01-dashboard.webp', title:'Search Your CRM', desc:'Use the search bar in the header to instantly find any property by address, city, or notes. Results update as you type with fuzzy matching.', highlight:{x:25,y:0,w:28,h:6.5}, tier:'free' },
@@ -211,40 +210,40 @@ const TUTORIAL_STEPS = [
   { chapter:1, image:'05-property-profile.webp', title:'Activity Log', desc:'Log calls, texts, emails, and notes with the Activity Log. Every interaction is timestamped so you have a full history of every property conversation.', highlight:{x:55,y:31,w:44,h:47}, tier:'free' },
   { chapter:1, image:'10-settings.webp', title:'Settings & Customization', desc:'Visit Settings to manage your account, choose a theme or accent color, view all keyboard shortcuts, and access this tutorial anytime.', highlight:null, tier:'free' },
 
-  // ─── Chapter 3: Competitor Analysis — Basic (Steps 15–19) ───
+  // ─── Chapter 3: Competitor Analysis — Basic (Steps 14–18) ───
   { chapter:2, image:'06-competitor-analysis.webp', title:'Competitor Analysis Tab', desc:'The Competitors tab lets you benchmark your property against nearby listings. Properties are sorted into three categories based on how they compare to yours.', highlight:null, tier:'basic' },
   { chapter:2, image:'06-competitor-analysis.webp', title:'Competitive Categories', desc:'Competitors are organized into "Loses To" (better than yours), "Competes With" (similar), and "Beats" (yours is better). This gives you a clear competitive position.', highlight:{x:0,y:20,w:100,h:30}, tier:'basic' },
   { chapter:2, image:'06-competitor-analysis.webp', title:'Add Competitors', desc:'Click "+ Add Competitor" to manually add a comparable listing, or use the browser extension to auto-import from AirDNA and other listing sites.', highlight:{x:0,y:12,w:100,h:7}, tier:'basic' },
   { chapter:2, image:'06-competitor-analysis.webp', title:'Competitive Position Score', desc:'RentingRadar calculates a Competitive Position percentage that shows where your property stands in the local market. Higher is better.', highlight:{x:60,y:7,w:40,h:5}, tier:'basic' },
   { chapter:2, image:'06-competitor-analysis.webp', title:'Competitor Details', desc:'Each competitor entry shows nightly rate, bedroom count, rating, reviews, and a link to the original listing. Add notes to track any observations.', highlight:{x:0,y:52,w:100,h:48}, tier:'basic' },
 
-  // ─── Chapter 4: Projected ROI — Basic (Steps 20–24) ───
+  // ─── Chapter 4: Projected ROI — Basic (Steps 19–23) ───
   { chapter:3, image:'07-projected-roi.webp', title:'Projected ROI Tab', desc:'The Projected ROI tab is your financial command center. See monthly cash flow projections, break-even timelines, and key investment metrics at a glance.', highlight:null, tier:'basic' },
   { chapter:3, image:'07-projected-roi.webp', title:'ROI KPI Cards', desc:'Four key metrics are displayed at the top: Monthly Cash Flow, Cash-on-Cash Return, Net Operating Income, and Capitalization Rate. All update in real-time as you adjust inputs.', highlight:{x:0,y:8,w:100,h:16}, tier:'basic' },
   { chapter:3, image:'07-projected-roi.webp', title:'Projection Modes', desc:'Toggle between Conservative, Moderate, and Aggressive projection modes to stress-test your deal under different market scenarios.', highlight:{x:0,y:25,w:100,h:7}, tier:'basic' },
   { chapter:3, image:'07-projected-roi.webp', title:'Deal Temperature', desc:'The Deal Temperature gauge rates your property from Cold to Hot based on all available data — financials, competition, and market conditions. Use it as a quick go/no-go indicator.', highlight:{x:0,y:64,w:50,h:36}, tier:'basic' },
   { chapter:3, image:'07-projected-roi.webp', title:'Payback Period', desc:'See how long it will take to recoup your initial investment. The "With Concessions" and "Without Concessions" views show how negotiating affects your timeline.', highlight:{x:50,y:64,w:50,h:36}, tier:'basic' },
 
-  // ─── Chapter 5: Pro Negotiation Tools (Steps 25–29) ───
+  // ─── Chapter 5: Pro Negotiation Tools (Steps 24–28) ───
   { chapter:4, image:'08-negotiation-tools.webp', title:'Negotiation Forecasting Tools', desc:'Pro users get access to powerful negotiation forecasting. The Rent Adjustment dial and Rental Concessions panels let you model different negotiation outcomes before making an offer.', highlight:null, tier:'pro' },
   { chapter:4, image:'08-negotiation-tools.webp', title:'Rent Adjustment Dial', desc:'Drag the dial to simulate different rent amounts. Watch how monthly cash flow, ROI, and deal temperature change in real-time. Find the sweet spot for your negotiation.', highlight:{x:0,y:10,w:50,h:55}, tier:'pro' },
   { chapter:4, image:'08-negotiation-tools.webp', title:'Rental Concessions', desc:'Model common concessions like free months, reduced security deposit, or included utilities. See the impact on your break-even timeline and overall ROI instantly.', highlight:{x:50,y:10,w:50,h:55}, tier:'pro' },
   { chapter:4, image:'08-negotiation-tools.webp', title:'Negotiation Summary', desc:'The bottom panel summarizes your negotiation scenario — total savings, adjusted cash flow, and a recommended strategy based on your competitive position and market data.', highlight:{x:0,y:66,w:100,h:34}, tier:'pro' },
   { chapter:4, image:'09-expenses.webp', title:'Expenses Breakdown', desc:'The Expenses tab gives you a detailed breakdown of all costs — furnishing, utilities, cleaning, maintenance, and platform fees. Edit any line item to match your actual expenses.', highlight:null, tier:'pro' },
 
-  // ─── Chapter 6: Pro Power Features (Steps 30–32) ───
+  // ─── Chapter 6: Pro Power Features (Steps 29–31) ───
   { chapter:5, image:'09-expenses.webp', title:'AI Expense Estimates', desc:'Click "Get AI Estimate" to auto-populate expense estimates based on your property\'s location, size, and comparable listings. Save hours of research with one click.', highlight:{x:60,y:7,w:40,h:6}, tier:'pro' },
   { chapter:5, image:'10-settings.webp', title:'Themes & Accent Colors', desc:'Personalize your CRM with dark or light mode, and choose from multiple accent colors — default blue, crimson flame, ocean depths, or emerald forest.', highlight:{x:14.5,y:20,w:85,h:30}, tier:'pro' },
   { chapter:5, image:'10-settings.webp', title:'Keyboard Shortcuts', desc:'Power users can navigate the entire CRM with keyboard shortcuts. Press "?" anywhere to see the full list, or check them in Settings. You\'re now ready to master RentingRadar!', highlight:{x:14.5,y:52,w:85,h:25}, tier:'pro' },
 ];
 
 const CHAPTERS = [
-  { title:'Getting Started', tier:'free', steps:[0,1,2,3,4,5,6] },
-  { title:'Navigating Your CRM', tier:'free', steps:[7,8,9,10,11,12,13] },
-  { title:'Competitor Analysis', tier:'basic', steps:[14,15,16,17,18] },
-  { title:'Projected ROI', tier:'basic', steps:[19,20,21,22,23] },
-  { title:'Negotiation Tools', tier:'pro', steps:[24,25,26,27,28] },
-  { title:'Power Features', tier:'pro', steps:[29,30,31] },
+  { title:'Getting Started', tier:'free', steps:[0,1,2,3,4,5] },
+  { title:'Navigating Your CRM', tier:'free', steps:[6,7,8,9,10,11,12] },
+  { title:'Competitor Analysis', tier:'basic', steps:[13,14,15,16,17] },
+  { title:'Projected ROI', tier:'basic', steps:[18,19,20,21,22] },
+  { title:'Negotiation Tools', tier:'pro', steps:[23,24,25,26,27] },
+  { title:'Power Features', tier:'pro', steps:[28,29,30] },
 ];
 
 const IMAGE_BASE = 'tutorials/';
