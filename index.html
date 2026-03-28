@@ -641,20 +641,14 @@ tr.clickable:hover{background:var(--primary-light)}
 .login-btn{display:flex;align-items:center;gap:6px;padding:6px 14px;border-radius:var(--radius);font-size:.8rem;font-weight:500;background:var(--surface);border:1px solid var(--border);color:var(--text);cursor:pointer;transition:all .15s}
 .login-btn:hover{border-color:var(--primary);color:var(--primary)}
 .login-btn svg{width:16px;height:16px;flex-shrink:0}
-/* Auth gate overlay for unauthenticated users */
-.auth-gate-overlay{position:fixed;inset:0;z-index:9998;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.55);backdrop-filter:blur(3px)}
-.auth-gate-overlay.visible{display:flex}
-.auth-gate-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:32px 36px;max-width:400px;text-align:center;animation:authGateFade .2s ease}
-@keyframes authGateFade{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:scale(1)}}
-.auth-gate-card h3{font-size:1.1rem;font-weight:700;margin-bottom:6px;color:var(--text)}
-.auth-gate-card p{font-size:.85rem;color:var(--text2);line-height:1.5;margin-bottom:20px}
-.auth-gate-card .login-btn{width:100%;justify-content:center;padding:10px 14px;font-size:.88rem;font-weight:600}
-.auth-gate-card .auth-gate-dismiss{margin-top:10px;font-size:.75rem;color:var(--text3);cursor:pointer;border:none;background:none;font-family:var(--font)}
-.auth-gate-card .auth-gate-dismiss:hover{color:var(--text2)}
-/* Preview banner for unauthenticated users */
-.auth-preview-banner{display:none;background:var(--primary);color:#fff;text-align:center;padding:8px 16px;font-size:.8rem;font-weight:500;z-index:100;position:relative}
-.auth-preview-banner a{color:#fff;text-decoration:underline;cursor:pointer;font-weight:700}
-body.preview-mode .auth-preview-banner{display:block}
+/* Inline sign-in prompt (rendered inside content area) */
+.auth-signin-prompt{text-align:center;padding:80px 24px 40px;max-width:420px;margin:0 auto}
+.auth-signin-prompt .asp-icon{font-size:2.8rem;margin-bottom:16px}
+.auth-signin-prompt .asp-title{font-size:1.2rem;font-weight:700;color:var(--text);margin-bottom:8px}
+.auth-signin-prompt .asp-desc{font-size:.85rem;color:var(--text2);line-height:1.6;margin-bottom:24px}
+.auth-signin-prompt .login-btn{width:100%;justify-content:center;padding:11px 14px;font-size:.88rem;font-weight:600}
+.auth-signin-prompt .asp-browse{display:block;margin-top:12px;font-size:.75rem;color:var(--text3);cursor:pointer;border:none;background:none;font-family:var(--font)}
+.auth-signin-prompt .asp-browse:hover{color:var(--text2)}
 .user-menu{position:absolute;top:100%;right:0;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 8px 24px rgba(0,0,0,.25);min-width:200px;z-index:300;display:none;overflow:hidden}
 .user-menu.open{display:block}
 .user-menu-header{padding:12px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
@@ -1214,21 +1208,7 @@ h1 .hero-edit-input{font-size:1.35rem}
 </div>
 <style>@keyframes appSpin{to{transform:rotate(360deg)}}</style>
 <!-- Auth gate overlay -->
-<div class="auth-gate-overlay" id="authGateOverlay">
-  <div class="auth-gate-card">
-    <h3>Sign in to continue</h3>
-    <p>Sign in with your Google account to use RentingRadar. It's free to get started.</p>
-    <button class="login-btn" onclick="handleGoogleLogin();hideAuthGate()">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-      <span>Sign in with Google</span>
-    </button>
-    <button class="auth-gate-dismiss" onclick="hideAuthGate()">Continue browsing</button>
-  </div>
-</div>
-
 <div class="app">
-  <!-- Preview banner for unauthenticated users -->
-  <div class="auth-preview-banner" id="authPreviewBanner">You're in preview mode. <a onclick="showAuthGate()">Sign in</a> to start tracking properties.</div>
   <!-- SIDEBAR -->
   <aside class="sidebar">
     <div class="sidebar-brand">
@@ -1463,10 +1443,32 @@ function restoreViewState(){
   } catch(e){}
 }
 
+function renderSignInPrompt(forTutorial){
+  const icon = forTutorial ? '🎓' : '🔒';
+  const title = forTutorial ? 'Sign in to start the tutorial' : 'Sign in to get started';
+  const desc = forTutorial
+    ? 'Sign in with your Google account to access the interactive tutorial. Your progress will be saved automatically.'
+    : 'Sign in with your Google account to start tracking properties. It\'s free to get started.';
+  return `<div class="auth-signin-prompt">
+    <div class="asp-icon">${icon}</div>
+    <div class="asp-title">${title}</div>
+    <div class="asp-desc">${desc}</div>
+    <button class="login-btn" onclick="handleGoogleLogin()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      <span>Sign in with Google</span>
+    </button>
+  </div>`;
+}
+
 function render(){
   closeInlineStatusDD();
   const area = document.getElementById('contentArea');
   area.style.paddingTop = currentView === 'profile' ? '0' : '';
+  // If not signed in, show inline sign-in prompt
+  if(!_currentUid){
+    area.innerHTML = renderSignInPrompt(_launchTutorialAfterAuth);
+    return;
+  }
   switch(currentView){
     case 'dashboard':
       if(_savedMapState && _savedMapState.filter){ _mapFilter = _savedMapState.filter; }
@@ -5328,10 +5330,6 @@ function openTutorialSlideshow(autostart, restart){
       _tut.seen.tutCompletedCount = e.data.completedCount || 0;
       _tutSaveSeen();
     }
-    if(e.data.type === 'tutorialRequireAuth'){
-      showAuthGate();
-      return;
-    }
     if(e.data.type === 'tutorialClose'){
       closeTutorialSlideshow();
       if(e.data.completed){
@@ -5840,7 +5838,6 @@ if(_launchTutorialAfterAuth){ history.replaceState(null, '', window.location.pat
 let _authDataLoaded = false;
 firebase.auth().onAuthStateChanged(async (user) => {
   if(user){
-    exitPreviewMode();
     setUser(user);
     // If this is a token refresh for the same user, skip full reload to avoid
     // destroying any open editors or typed content
@@ -5900,7 +5897,6 @@ firebase.auth().onAuthStateChanged(async (user) => {
     _authDataLoaded = false;
     records = [];
     render();
-    enterPreviewMode();
     hideLoadingOverlay();
   }
 });
@@ -5983,61 +5979,6 @@ function handleSignOut(){
     render();
   });
 }
-
-// ===== AUTH GATE / PREVIEW MODE =====
-function showAuthGate(){
-  document.getElementById('authGateOverlay').classList.add('visible');
-}
-function hideAuthGate(){
-  document.getElementById('authGateOverlay').classList.remove('visible');
-}
-function requireAuth(){
-  if(_currentUid) return true;
-  showAuthGate();
-  return false;
-}
-// Enable preview mode (unauthenticated browsing)
-function enterPreviewMode(){
-  document.body.classList.add('preview-mode');
-}
-// Disable preview mode (user signed in)
-function exitPreviewMode(){
-  document.body.classList.remove('preview-mode');
-  hideAuthGate();
-}
-// Global click interceptor — blocks interactive elements when not signed in
-document.addEventListener('click', function(e){
-  if(_currentUid) return; // Signed in, allow everything
-  const target = e.target.closest('button, input, textarea, select, [contenteditable], .btn, .btn-primary, .btn-secondary, .action-btn, .dropdown-btn, .toggle, .chip');
-  if(!target) return; // Not an interactive element
-  // Allow auth-related elements to pass through
-  if(target.closest('.auth-gate-overlay') || target.closest('.auth-gate-card') || target.closest('#authPreviewBanner')) return;
-  if(target.closest('.login-btn') || target.classList.contains('login-btn')) return;
-  // Allow sidebar navigation (users can browse views)
-  if(target.closest('.sidebar-nav') || target.closest('.nav-item')) return;
-  // Allow sidebar toggle
-  if(target.closest('.sidebar-toggle')) return;
-  // Allow global search (read-only browsing)
-  if(target.closest('.header-search')) return;
-  // Block everything else — show auth gate
-  e.preventDefault();
-  e.stopPropagation();
-  showAuthGate();
-}, true); // capture phase so we intercept before handlers
-// Also intercept focus on inputs/textareas when not signed in
-document.addEventListener('focus', function(e){
-  if(_currentUid) return;
-  const target = e.target;
-  if(target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable){
-    // Allow search bar
-    if(target.closest('.header-search')) return;
-    // Allow auth-related
-    if(target.closest('.auth-gate-overlay')) return;
-    e.preventDefault();
-    target.blur();
-    showAuthGate();
-  }
-}, true);
 
 function setUser(user){
   currentUser = user ? { name:user.displayName||'User', email:user.email||'', photo:user.photoURL||null } : null;
