@@ -1191,6 +1191,7 @@ h1 .hero-edit-input{font-size:1.35rem}
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-functions-compat.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <!-- MapLibre GL JS for interactive maps -->
 <link href="https://unpkg.com/maplibre-gl@4.1.1/dist/maplibre-gl.css" rel="stylesheet">
@@ -5203,13 +5204,10 @@ function checkCsvAccess(){
   return true;
 }
 
-// Stripe checkout URLs
-const STRIPE_LINKS = {
-  basic_monthly: 'https://buy.stripe.com/7sY6oJ7Tt1vS52J8i277O05',
-  basic_yearly:  'https://buy.stripe.com/fZueVf0r17Ug9iZbue77O02',
-  pro_monthly:   'https://buy.stripe.com/9B63cx3DddeAdzf1TE77O06',
-  pro_yearly:    'https://buy.stripe.com/14AeVfb5F4I40Mt2XI77O04'
-};
+// Firebase Cloud Functions for Stripe billing
+const _functions = firebase.functions();
+// Uncomment the line below for local emulator testing:
+// _functions.useEmulator('localhost', 5001);
 
 let billingPeriod = 'yearly'; // default to yearly to show savings
 
@@ -5750,35 +5748,102 @@ function renderPricingCard(tier, opts){
   </div>`;
 }
 
-function handleUpgrade(tier){
-  const linkKey = tier + '_' + billingPeriod;
-  const link = STRIPE_LINKS[linkKey];
-  if(link && link.startsWith('http')){
-    // Redirect in same tab — Stripe will send them back after payment
-    window.location.href = link;
-  } else {
-    // Stripe not configured yet — activate directly for testing
-    setTier(tier);
+async function handleUpgrade(tier){
+  try {
+    showToast('Preparing checkout...', 'info', 3000);
+    const createCheckoutSession = _functions.httpsCallable('createCheckoutSession');
+    const result = await createCheckoutSession({ tier: tier, period: billingPeriod });
+    if(result.data && result.data.url){
+      window.location.href = result.data.url;
+    } else {
+      showAppAlert('Could not create checkout session. Please try again.', {title: 'Checkout Error', icon: '❌'});
+    }
+  } catch(err){
+    console.error('Checkout error:', err);
+    showAppAlert('Checkout failed: ' + (err.message || 'Unknown error'), {title: 'Checkout Error', icon: '❌'});
+  }
+}
+
+async function openStripePortal(){
+  try {
+    showToast('Opening billing portal...', 'info', 3000);
+    const createPortalSession = _functions.httpsCallable('createPortalSession');
+    const result = await createPortalSession();
+    if(result.data && result.data.url){
+      window.open(result.data.url, '_blank');
+      // When user returns from portal tab, sync their subscription status
+      var portalSyncHandler = function(){
+        if(!document.hidden){
+          document.removeEventListener('visibilitychange', portalSyncHandler);
+          setTimeout(function(){
+            var syncSub = _functions.httpsCallable('syncSubscription');
+            syncSub().then(function(res){
+              if(res.data && res.data.changed){
+                setTier(res.data.tier);
+                showToast('Subscription updated!', 'success', 3000);
+                render();
+              }
+            }).catch(function(e){ console.warn('Portal sync failed:', e); });
+          }, 1000);
+        }
+      };
+      document.addEventListener('visibilitychange', portalSyncHandler);
+    } else {
+      showAppAlert('Could not open billing portal. Please try again.', {title: 'Portal Error', icon: '❌'});
+    }
+  } catch(err){
+    console.error('Portal error:', err);
+    showAppAlert(err.message || 'Could not open billing portal.', {title: 'Portal Error', icon: '❌'});
   }
 }
 
 // On page load, check if Stripe redirected back after successful checkout
-// Stripe Payment Links should be configured to redirect to:
-//   https://app.rentingradar.com?checkout=success&plan=basic  (or plan=pro)
+// Calls verifyCheckout Cloud Function to verify payment with Stripe and update Firestore
 function checkCheckoutReturn(){
   const params = new URLSearchParams(window.location.search);
   const checkoutStatus = params.get('checkout');
-  const plan = params.get('plan');
-  if(checkoutStatus === 'success' && plan && TIERS[plan]){
-    // Clean the URL so a page refresh doesn't re-trigger
+  const sessionId = params.get('session_id');
+  if(checkoutStatus === 'success' && sessionId){
+    // Clean the URL immediately
     const cleanUrl = window.location.origin + window.location.pathname;
     window.history.replaceState({}, document.title, cleanUrl);
-    // Activate the plan — setTier will trigger disclaimer overlay for new paid users
-    setTier(plan);
-    switchView('pricing');
-    setTimeout(() => {
-      showToast('Welcome to ' + TIERS[plan].name + '! Please review the disclaimer to unlock all features.', 'success', 6000);
-    }, 300);
+    showToast('Payment successful! Activating your plan...', 'success', 5000);
+    // Wait for auth to be ready, then verify with Stripe via Cloud Function
+    var unsubVerify = firebase.auth().onAuthStateChanged(function(user){
+      unsubVerify();
+      if(user){
+        var verifyCheckout = _functions.httpsCallable('verifyCheckout');
+        verifyCheckout({ sessionId: sessionId }).then(function(result){
+          if(result.data && result.data.tier){
+            setTier(result.data.tier);
+            showToast('Plan upgraded to ' + result.data.tier.charAt(0).toUpperCase() + result.data.tier.slice(1) + '!', 'success', 4000);
+            switchView('pricing');
+          }
+        }).catch(function(err){
+          console.error('Verify checkout error:', err);
+          showAppAlert('Your payment was received but we had trouble activating your plan. Please refresh the page or contact support.', {title:'Activation Issue', icon:'⚠️'});
+        });
+      }
+    });
+  } else if(checkoutStatus === 'success' && !sessionId){
+    // Fallback: no session ID in URL, try reading from Firestore
+    const cleanUrl = window.location.origin + window.location.pathname;
+    window.history.replaceState({}, document.title, cleanUrl);
+    showToast('Payment successful! Activating your plan...', 'success', 5000);
+    setTimeout(function(){
+      var user = firebase.auth().currentUser;
+      if(user){
+        db.collection('users').doc(user.uid).get().then(function(doc){
+          if(doc.exists && doc.data().tier){
+            setTier(doc.data().tier);
+            switchView('pricing');
+          }
+        });
+      }
+    }, 2000);
+  } else if(checkoutStatus === 'cancelled'){
+    const cleanUrl = window.location.origin + window.location.pathname;
+    window.history.replaceState({}, document.title, cleanUrl);
   }
 }
 
@@ -5904,6 +5969,22 @@ firebase.auth().onAuthStateChanged(async (user) => {
       else if(data.tier && data.tier !== 'free' && _disclaimerAcknowledged){
         _tutCheckAutoStart(data.tier, false);
       }
+      // Sync subscription status with Stripe in the background
+      // Covers: renewals, failed payments, cancellations, plan changes
+      if(data.stripeSubscriptionId || data.stripeCustomerId){
+        try {
+          var syncSub = _functions.httpsCallable('syncSubscription');
+          syncSub().then(function(result){
+            if(result.data && result.data.changed){
+              setTier(result.data.tier);
+              if(result.data.tier === 'free' && data.tier !== 'free'){
+                showToast('Your subscription status has changed. You are now on the Free plan.', 'info', 6000);
+              } else if(result.data.subscriptionStatus === 'past_due'){
+                showToast('Your last payment failed. Please update your payment method.', 'warning', 8000);
+              }
+            }
+          }).catch(function(e){ console.warn('Subscription sync failed:', e); });
+        } catch(e){ /* sync failed silently */ }
     }
   } else {
     setUser(null);
@@ -10633,7 +10714,7 @@ function renderSettings(){
         </div>
         <div class="settings-row">
           <div class="settings-row-left"><div class="sr-label">Manage Billing</div><div class="sr-desc">${t.monthly > 0 ? 'View invoices, update payment method, and manage your subscription' : 'Upgrade to a paid plan to access billing management'}</div></div>
-          <div class="settings-row-right">${t.monthly > 0 ? '<a href="https://billing.stripe.com/p/login/fZu9AVddNb6s9iZfKu77O00" target="_blank" class="btn btn-secondary btn-sm" style="display:inline-flex;align-items:center;gap:5px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg> Open Stripe Portal</a>' : '<span style="font-size:.8rem;color:var(--text3)">—</span>'}</div>
+          <div class="settings-row-right">${t.monthly > 0 ? '<button class="btn btn-secondary btn-sm" style="display:inline-flex;align-items:center;gap:5px" onclick="openStripePortal()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg> Open Stripe Portal</button>' : '<span style="font-size:.8rem;color:var(--text3)">—</span>'}</div>
         </div>
         ${currentTier !== 'free' ? `<div class="settings-row" style="flex-wrap:wrap">
           <div class="settings-row-left">
