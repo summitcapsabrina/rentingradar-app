@@ -6167,8 +6167,10 @@ function handleEmailSignIn(){
     setUser(result.user);
   }).catch(function(err){
     setAuthLoading(false);
-    if(err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential'){
-      showAuthError('Invalid email or password. Please try again.');
+    if(err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential'){
+      showAuthError('Incorrect password. If you previously signed in with Google, try "Continue with Google" below or use "Forgot password?" to set a password.');
+    } else if(err.code === 'auth/user-not-found'){
+      showAuthError('No account found with this email. Check your spelling or sign up for a new account.');
     } else if(err.code === 'auth/too-many-requests'){
       showAuthError('Too many failed attempts. Please try again later or reset your password.');
     } else if(err.code === 'auth/invalid-email'){
@@ -6198,7 +6200,7 @@ function handleEmailSignUp(){
   }).catch(function(err){
     setAuthLoading(false);
     if(err.code === 'auth/email-already-in-use'){
-      showAuthError('An account with this email already exists. Try signing in instead.');
+      showAuthError('An account with this email already exists. If you signed up with Google, use "Continue with Google" to sign in.');
     } else if(err.code === 'auth/invalid-email'){
       showAuthError('Please enter a valid email address.');
     } else if(err.code === 'auth/weak-password'){
