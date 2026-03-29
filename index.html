@@ -5916,6 +5916,7 @@ if(_launchTutorialAfterAuth){ history.replaceState(null, '', window.location.pat
 // Listen for auth state changes
 let _authDataLoaded = false;
 firebase.auth().onAuthStateChanged(async (user) => {
+  try {
   if(user){
     setUser(user);
     // If this is a token refresh for the same user, skip full reload to avoid
@@ -5993,6 +5994,10 @@ firebase.auth().onAuthStateChanged(async (user) => {
     _authDataLoaded = false;
     records = [];
     render();
+    hideLoadingOverlay();
+  }
+  } catch(authErr){
+    console.error('Auth state handler error:', authErr);
     hideLoadingOverlay();
   }
 });
