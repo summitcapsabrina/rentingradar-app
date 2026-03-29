@@ -650,6 +650,41 @@ tr.clickable:hover{background:var(--primary-light)}
 .auth-signin-prompt .login-btn{width:100%;justify-content:center;padding:11px 14px;font-size:.88rem;font-weight:600}
 .auth-signin-prompt .asp-browse{display:block;margin-top:12px;font-size:.75rem;color:var(--text3);cursor:pointer;border:none;background:none;font-family:var(--font)}
 .auth-signin-prompt .asp-browse:hover{color:var(--text2)}
+/* Auth Modal */
+.auth-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:none;align-items:center;justify-content:center;backdrop-filter:blur(4px)}
+.auth-modal-overlay.open{display:flex}
+.auth-modal{background:var(--surface);border:1px solid var(--border);border-radius:16px;width:400px;max-width:92vw;padding:36px 32px 32px;position:relative;box-shadow:0 24px 80px rgba(0,0,0,.5);animation:authFadeIn .2s ease}
+@keyframes authFadeIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+.auth-modal-close{position:absolute;top:12px;right:12px;width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:8px;border:none;background:none;color:var(--text3);cursor:pointer;font-size:18px;transition:all .15s}
+.auth-modal-close:hover{background:var(--bg);color:var(--text)}
+.auth-modal-logo{text-align:center;margin-bottom:6px;font-size:1.5rem}
+.auth-modal-title{text-align:center;font-size:1.15rem;font-weight:700;color:var(--text);margin-bottom:4px}
+.auth-modal-subtitle{text-align:center;font-size:.82rem;color:var(--text3);margin-bottom:24px}
+.auth-modal-error{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);color:#ef4444;font-size:.8rem;padding:10px 14px;border-radius:8px;margin-bottom:16px;display:none;line-height:1.4}
+.auth-modal-success{background:rgba(52,211,153,.1);border:1px solid rgba(52,211,153,.2);color:#34d399;font-size:.8rem;padding:10px 14px;border-radius:8px;margin-bottom:16px;display:none;line-height:1.4}
+.auth-field{margin-bottom:14px}
+.auth-field label{display:block;font-size:.78rem;font-weight:600;color:var(--text2);margin-bottom:5px;text-transform:uppercase;letter-spacing:.3px}
+.auth-field input{width:100%;padding:10px 14px;border:1px solid var(--border);border-radius:var(--radius);font-size:.9rem;background:var(--bg);color:var(--text);font-family:inherit;transition:border-color .15s;box-sizing:border-box}
+.auth-field input:focus{border-color:var(--primary);outline:none;box-shadow:0 0 0 2px rgba(99,129,250,.15)}
+.auth-field input::placeholder{color:var(--text3)}
+.auth-field-pw{position:relative}
+.auth-field-pw input{padding-right:44px}
+.auth-pw-toggle{position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--text3);cursor:pointer;font-size:.75rem;font-weight:600;padding:2px 4px}
+.auth-pw-toggle:hover{color:var(--text)}
+.auth-forgot{text-align:right;margin-top:-8px;margin-bottom:16px}
+.auth-forgot a{font-size:.78rem;color:var(--primary);cursor:pointer;text-decoration:none}
+.auth-forgot a:hover{text-decoration:underline}
+.auth-submit{width:100%;padding:11px;border-radius:var(--radius);border:none;font-size:.9rem;font-weight:600;cursor:pointer;transition:all .15s;font-family:inherit;background:var(--primary);color:#fff}
+.auth-submit:hover{background:var(--primary-hover);box-shadow:0 4px 16px var(--primary-glow)}
+.auth-submit:disabled{opacity:.5;cursor:not-allowed}
+.auth-divider{display:flex;align-items:center;gap:14px;margin:22px 0;color:var(--text3);font-size:.78rem}
+.auth-divider::before,.auth-divider::after{content:'';flex:1;height:1px;background:var(--border)}
+.auth-social-btn{width:100%;padding:10px 14px;border-radius:var(--radius);border:1px solid var(--border);font-size:.88rem;font-weight:600;cursor:pointer;transition:all .15s;font-family:inherit;background:var(--bg);color:var(--text);display:flex;align-items:center;justify-content:center;gap:10px}
+.auth-social-btn:hover{border-color:var(--primary);color:var(--primary);background:rgba(99,129,250,.04)}
+.auth-social-btn svg{width:18px;height:18px;flex-shrink:0}
+.auth-switch{text-align:center;margin-top:20px;font-size:.82rem;color:var(--text3)}
+.auth-switch a{color:var(--primary);cursor:pointer;font-weight:600;text-decoration:none}
+.auth-switch a:hover{text-decoration:underline}
 .user-menu{position:absolute;top:100%;right:0;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 8px 24px rgba(0,0,0,.25);min-width:200px;z-index:300;display:none;overflow:hidden}
 .user-menu.open{display:block}
 .user-menu-header{padding:12px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
@@ -1247,7 +1282,7 @@ h1 .hero-edit-input{font-size:1.35rem}
       </div>
     </nav>
     <div class="sidebar-user" id="userSection">
-      <button class="login-btn" onclick="handleGoogleLogin()" style="width:100%;justify-content:center">
+      <button class="login-btn" onclick="showAuthModal('signin')" style="width:100%;justify-content:center">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
         <span>Sign In</span>
       </button>
@@ -1308,6 +1343,14 @@ h1 .hero-edit-input{font-size:1.35rem}
 <div class="modal-overlay" id="detailModal">
   <div class="modal-panel" id="detailPanel"></div>
 </div>
+<!-- AUTH MODAL -->
+<div class="auth-modal-overlay" id="authModal" onclick="if(event.target===this)closeAuthModal()">
+  <div class="auth-modal">
+    <button class="auth-modal-close" onclick="closeAuthModal()">&times;</button>
+    <div id="authModalContent"></div>
+  </div>
+</div>
+
 <div class="comp-note-overlay" id="compNoteOverlay" onclick="if(event.target===this)closeCompNotePopup()">
   <div class="comp-note-popup" id="compNotePopup"></div>
 </div>
@@ -1446,15 +1489,15 @@ function renderSignInPrompt(forTutorial){
   const icon = forTutorial ? '🎓' : '🔒';
   const title = forTutorial ? 'Sign in to start the tutorial' : 'Sign in to get started';
   const desc = forTutorial
-    ? 'Sign in with your Google account to access the interactive tutorial. Your progress will be saved automatically.'
-    : 'Sign in with your Google account to start tracking properties. It\'s free to get started.';
+    ? 'Sign in to access the interactive tutorial. Your progress will be saved automatically.'
+    : 'Sign in to start tracking properties. It\'s free to get started.';
   return `<div class="auth-signin-prompt">
     <div class="asp-icon">${icon}</div>
     <div class="asp-title">${title}</div>
     <div class="asp-desc">${desc}</div>
-    <button class="login-btn" onclick="handleGoogleLogin()">
+    <button class="login-btn" onclick="showAuthModal('signin')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-      <span>Sign in with Google</span>
+      <span>Sign In</span>
     </button>
   </div>`;
 }
@@ -6032,6 +6075,162 @@ firebase.auth().onAuthStateChanged(async (user) => {
 });
 let currentUser = null;
 
+// ===== AUTH MODAL =====
+var _authModalView = 'signin'; // 'signin', 'signup', 'reset'
+
+function showAuthModal(view){
+  _authModalView = view || 'signin';
+  renderAuthModal();
+  document.getElementById('authModal').classList.add('open');
+}
+
+function closeAuthModal(){
+  document.getElementById('authModal').classList.remove('open');
+}
+
+function renderAuthModal(){
+  var el = document.getElementById('authModalContent');
+  if(!el) return;
+
+  const googleSvg = '<svg viewBox="0 0 24 24" width="18" height="18"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>';
+
+  if(_authModalView === 'signin'){
+    el.innerHTML = `
+      <div class="auth-modal-logo">🏠</div>
+      <div class="auth-modal-title">Welcome back</div>
+      <div class="auth-modal-subtitle">Sign in to your RentingRadar account</div>
+      <div class="auth-modal-error" id="authError"></div>
+      <div class="auth-field"><label>Email</label><input type="email" id="authEmail" placeholder="you@example.com" autocomplete="email" onkeydown="if(event.key==='Enter')document.getElementById('authPassword').focus()"></div>
+      <div class="auth-field"><label>Password</label><div class="auth-field-pw"><input type="password" id="authPassword" placeholder="Your password" autocomplete="current-password" onkeydown="if(event.key==='Enter')handleEmailSignIn()"><button class="auth-pw-toggle" onclick="toggleAuthPw(this)" type="button">Show</button></div></div>
+      <div class="auth-forgot"><a onclick="showAuthModal('reset')">Forgot password?</a></div>
+      <button class="auth-submit" onclick="handleEmailSignIn()" id="authSubmitBtn">Sign In</button>
+      <div class="auth-divider">or</div>
+      <button class="auth-social-btn" onclick="closeAuthModal();handleGoogleLogin()">${googleSvg} Continue with Google</button>
+      <div class="auth-switch">Don't have an account? <a onclick="showAuthModal('signup')">Sign Up</a></div>`;
+  } else if(_authModalView === 'signup'){
+    el.innerHTML = `
+      <div class="auth-modal-logo">🏠</div>
+      <div class="auth-modal-title">Create your account</div>
+      <div class="auth-modal-subtitle">Start tracking properties for free</div>
+      <div class="auth-modal-error" id="authError"></div>
+      <div class="auth-field"><label>Full Name</label><input type="text" id="authName" placeholder="Your name" autocomplete="name" onkeydown="if(event.key==='Enter')document.getElementById('authEmail').focus()"></div>
+      <div class="auth-field"><label>Email</label><input type="email" id="authEmail" placeholder="you@example.com" autocomplete="email" onkeydown="if(event.key==='Enter')document.getElementById('authPassword').focus()"></div>
+      <div class="auth-field"><label>Password</label><div class="auth-field-pw"><input type="password" id="authPassword" placeholder="At least 6 characters" autocomplete="new-password" onkeydown="if(event.key==='Enter')document.getElementById('authPasswordConfirm').focus()"><button class="auth-pw-toggle" onclick="toggleAuthPw(this)" type="button">Show</button></div></div>
+      <div class="auth-field"><label>Confirm Password</label><div class="auth-field-pw"><input type="password" id="authPasswordConfirm" placeholder="Confirm your password" autocomplete="new-password" onkeydown="if(event.key==='Enter')handleEmailSignUp()"><button class="auth-pw-toggle" onclick="toggleAuthPw(this)" type="button">Show</button></div></div>
+      <button class="auth-submit" onclick="handleEmailSignUp()" id="authSubmitBtn">Create Account</button>
+      <div class="auth-divider">or</div>
+      <button class="auth-social-btn" onclick="closeAuthModal();handleGoogleLogin()">${googleSvg} Continue with Google</button>
+      <div class="auth-switch">Already have an account? <a onclick="showAuthModal('signin')">Sign In</a></div>`;
+  } else if(_authModalView === 'reset'){
+    el.innerHTML = `
+      <div class="auth-modal-logo">🔑</div>
+      <div class="auth-modal-title">Reset your password</div>
+      <div class="auth-modal-subtitle">Enter your email and we'll send you a reset link</div>
+      <div class="auth-modal-error" id="authError"></div>
+      <div class="auth-modal-success" id="authSuccess"></div>
+      <div class="auth-field"><label>Email</label><input type="email" id="authEmail" placeholder="you@example.com" autocomplete="email" onkeydown="if(event.key==='Enter')handlePasswordReset()"></div>
+      <button class="auth-submit" onclick="handlePasswordReset()" id="authSubmitBtn">Send Reset Link</button>
+      <div class="auth-switch" style="margin-top:16px"><a onclick="showAuthModal('signin')">← Back to Sign In</a></div>`;
+  }
+}
+
+function toggleAuthPw(btn){
+  var input = btn.previousElementSibling;
+  if(input.type === 'password'){ input.type = 'text'; btn.textContent = 'Hide'; }
+  else { input.type = 'password'; btn.textContent = 'Show'; }
+}
+
+function showAuthError(msg){
+  var el = document.getElementById('authError');
+  if(el){ el.textContent = msg; el.style.display = 'block'; }
+}
+
+function clearAuthError(){
+  var el = document.getElementById('authError');
+  if(el){ el.textContent = ''; el.style.display = 'none'; }
+}
+
+function setAuthLoading(loading){
+  var btn = document.getElementById('authSubmitBtn');
+  if(btn) btn.disabled = loading;
+}
+
+function handleEmailSignIn(){
+  clearAuthError();
+  var email = (document.getElementById('authEmail').value || '').trim();
+  var password = document.getElementById('authPassword').value || '';
+  if(!email){ showAuthError('Please enter your email address.'); return; }
+  if(!password){ showAuthError('Please enter your password.'); return; }
+  setAuthLoading(true);
+  firebase.auth().signInWithEmailAndPassword(email, password).then(function(result){
+    closeAuthModal();
+    setUser(result.user);
+  }).catch(function(err){
+    setAuthLoading(false);
+    if(err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential'){
+      showAuthError('Invalid email or password. Please try again.');
+    } else if(err.code === 'auth/too-many-requests'){
+      showAuthError('Too many failed attempts. Please try again later or reset your password.');
+    } else if(err.code === 'auth/invalid-email'){
+      showAuthError('Please enter a valid email address.');
+    } else {
+      showAuthError(err.message);
+    }
+  });
+}
+
+function handleEmailSignUp(){
+  clearAuthError();
+  var name = (document.getElementById('authName').value || '').trim();
+  var email = (document.getElementById('authEmail').value || '').trim();
+  var password = document.getElementById('authPassword').value || '';
+  var confirm = document.getElementById('authPasswordConfirm').value || '';
+  if(!name){ showAuthError('Please enter your name.'); return; }
+  if(!email){ showAuthError('Please enter your email address.'); return; }
+  if(password.length < 6){ showAuthError('Password must be at least 6 characters.'); return; }
+  if(password !== confirm){ showAuthError('Passwords do not match.'); return; }
+  setAuthLoading(true);
+  firebase.auth().createUserWithEmailAndPassword(email, password).then(function(result){
+    return result.user.updateProfile({ displayName: name }).then(function(){
+      closeAuthModal();
+      setUser(result.user);
+    });
+  }).catch(function(err){
+    setAuthLoading(false);
+    if(err.code === 'auth/email-already-in-use'){
+      showAuthError('An account with this email already exists. Try signing in instead.');
+    } else if(err.code === 'auth/invalid-email'){
+      showAuthError('Please enter a valid email address.');
+    } else if(err.code === 'auth/weak-password'){
+      showAuthError('Password is too weak. Please use at least 6 characters.');
+    } else {
+      showAuthError(err.message);
+    }
+  });
+}
+
+function handlePasswordReset(){
+  clearAuthError();
+  var successEl = document.getElementById('authSuccess');
+  if(successEl) successEl.style.display = 'none';
+  var email = (document.getElementById('authEmail').value || '').trim();
+  if(!email){ showAuthError('Please enter your email address.'); return; }
+  setAuthLoading(true);
+  firebase.auth().sendPasswordResetEmail(email).then(function(){
+    setAuthLoading(false);
+    if(successEl){ successEl.textContent = 'Reset link sent! Check your inbox (and spam folder) for an email from RentingRadar.'; successEl.style.display = 'block'; }
+  }).catch(function(err){
+    setAuthLoading(false);
+    if(err.code === 'auth/user-not-found'){
+      showAuthError('No account found with this email address.');
+    } else if(err.code === 'auth/invalid-email'){
+      showAuthError('Please enter a valid email address.');
+    } else {
+      showAuthError(err.message);
+    }
+  });
+}
+
 // Google Identity Services — bypasses Firebase __/auth/handler completely
 const GIS_CLIENT_ID = '622768449810-s72d56u4fherfif72the4cffb8epk1ml.apps.googleusercontent.com';
 
@@ -6164,7 +6363,7 @@ function renderUserSection(){
         <div class="user-menu-item" onclick="handleSignOut()" style="color:var(--danger)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg> Sign Out</div>
       </div>`;
   } else {
-    section.innerHTML = `<button class="login-btn" onclick="handleGoogleLogin()" style="width:100%;justify-content:center"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> <span>Sign In</span></button>`;
+    section.innerHTML = `<button class="login-btn" onclick="showAuthModal('signin')" style="width:100%;justify-content:center"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> <span>Sign In</span></button>`;
   }
 }
 
