@@ -4280,35 +4280,11 @@ function openAddModal(){
   panel.innerHTML = `
     <div class="modal-header"><h2>Add New Property</h2><button class="modal-close" onclick="closeAddModal()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>
     <div class="modal-body" id="addModalBody">
-      <div id="addStep1">
-        <div style="text-align:center;margin-bottom:20px">
-          <div style="font-size:1.8rem;margin-bottom:8px">🏠</div>
-          <div style="font-size:1rem;font-weight:600;margin-bottom:4px">Property Data Import</div>
-          <div style="font-size:.82rem;color:var(--text2)">Paste a listing URL to auto-extract all property details, or enter everything manually.</div>
-        </div>
-        <div class="field-group">
-          <label class="field-label">Listing URL</label>
-          <input id="add_link" type="url" placeholder="https://www.apartments.com/..." oninput="updateAddImportUI()" style="font-size:1rem;padding:10px 14px">
-          <div id="add_platform_badge" style="margin-top:6px"></div>
-        </div>
-        <div id="add_server_status" style="margin:12px 0;font-size:.78rem;padding:8px 12px;border-radius:var(--radius)"></div>
-        <div class="import-options" style="margin-bottom:16px">
-          <div class="import-option" id="addAutoBtn" onclick="handleAutoImportClick()" style="opacity:.5;pointer-events:none">
-            <div class="io-icon">🤖</div>
-            <div class="io-title">Auto Import</div>
-            <div class="io-desc">${requireTier('pro','Auto Import') ? 'Extracts all property details from the listing automatically' : '<span class=\"tier-badge tier-pro\">PRO</span> Upgrade to unlock automatic data extraction'}</div>
-          </div>
-          <div class="import-option" onclick="showManualAddForm()">
-            <div class="io-icon">✏️</div>
-            <div class="io-title">Manual Entry</div>
-            <div class="io-desc">Fill in property details by hand</div>
-          </div>
-        </div>
-      </div>
-      <div id="addStep2" style="display:none"></div>
+      <div id="addStep1" style="display:none"></div>
+      <div id="addStep2"></div>
     </div>`;
   modal.classList.add('open');
-  checkExtension().then(h => updateAddServerStatus(h));
+  showManualAddForm();
 }
 
 function closeAddModal(force){
@@ -5702,25 +5678,19 @@ function renderPricing(){
           'Property analysis',
           'ROI calculator',
         ],
-        disabled: [
-          'Automatic data extraction via extension',
-          'AI-powered extraction',
-        ],
+        disabled: [],
         desc: 'Unlock analysis tools, themes, and data import/export for serious prospecting.'
       })}
       ${renderPricingCard('pro', {
         features: [
           'Unlimited properties',
           'Everything in Basic',
-          'Automatic data extraction via extension',
-          'AI-powered data extraction',
           'Advanced property analysis',
           '.xlsx import & export',
-          'Extension + AI engine setup walkthrough',
           'Priority feature requests',
         ],
         disabled: [],
-        desc: 'Full power — AI extracts every detail and calculates your projected returns.'
+        desc: 'Full power — unlimited properties with advanced analysis and data export.'
       })}
     </div>
 
@@ -5729,8 +5699,6 @@ function renderPricing(){
       <button class="btn btn-secondary btn-sm" style="color:var(--text3)" onclick="showAppConfirm('You will lose access to paid features.', {title: 'Downgrade to Free?', icon: '⚠️', confirmText: 'Downgrade', confirmClass: 'btn-danger', onConfirm: () => setTier('free')})">Downgrade to Free</button>
     </div>` : ''}
 
-    ${currentTier === 'pro' ? renderExtensionSetup() : ''}
-    ${currentTier === 'pro' ? renderOllamaSetup() : ''}
   </div>`;
 }
 
@@ -10945,14 +10913,6 @@ function renderSettings(){
           <div class="settings-row-right"><button class="btn btn-secondary btn-sm" onclick="exportData('csv')">Export</button></div>
         </div>
         <div class="settings-row">
-          <div class="settings-row-left"><div class="sr-label">Extension Status</div><div class="sr-desc">RentingRadar Importer for automatic data extraction</div></div>
-          <div class="settings-row-right"><div class="settings-value" style="color:${extensionReady?'var(--success)':'var(--text3)'}">${extensionReady?'✓ Connected':'Not detected'}</div></div>
-        </div>
-        <div class="settings-row">
-          <div class="settings-row-left"><div class="sr-label">AI Engine Status</div><div class="sr-desc">Local AI for enhanced property data extraction</div></div>
-          <div class="settings-row-right"><div class="settings-value" style="color:${extensionHealth?.model?'var(--success)':extensionHealth?.ollama?'var(--warning)':'var(--text3)'}">${extensionHealth?.model?'✓ Ready':extensionHealth?.ollama?'⚠ No model':'Not detected'}</div></div>
-        </div>
-        <div class="settings-row">
           <div class="settings-row-left"><div class="sr-label">Properties in Database</div><div class="sr-desc">Total records stored locally</div></div>
           <div class="settings-row-right"><div class="settings-value" style="font-weight:600;color:var(--text)">${records.length}</div></div>
         </div>
@@ -11018,7 +10978,7 @@ function renderHelp(){
         ${renderHelpAccordion('Can I import properties from a spreadsheet?',
           'Yes! Go to <strong>Settings → Data Management → Import CSV</strong> or use the import button on the dashboard. Your CSV should have columns for address, contact name, phone, email, and status. The importer will map your columns automatically.')}
         ${renderHelpAccordion('What\'s the difference between the plans?',
-          '<strong>Free</strong> — Up to 15 properties, pipeline view, contact management, follow-up reminders, and expense tracking.<br><strong>Basic</strong> — Up to 50 properties, plus CSV import/export, dark mode & themes, property analysis, and ROI calculator.<br><strong>Pro</strong> — Unlimited properties, plus automatic data extraction via Chrome extension, AI-powered extraction, and priority feature requests.')}
+          '<strong>Free</strong> — Up to 15 properties, pipeline view, contact management, follow-up reminders, and expense tracking.<br><strong>Basic</strong> — Up to 50 properties, plus CSV import/export, dark mode & themes, property analysis, and ROI calculator.<br><strong>Pro</strong> — Unlimited properties, advanced property analysis, .xlsx import & export, and priority feature requests.')}
         ${renderHelpAccordion('How do follow-up reminders work?',
           'Set a follow-up date on any property (in the Contact & Status card or when adding a property). You\'ll see upcoming follow-ups on your dashboard and receive browser notifications when they\'re due. Make sure notifications are enabled in <strong>Settings → Notifications</strong>.')}
       </div>
@@ -11036,8 +10996,6 @@ function renderHelp(){
           '1. Make sure you\'re signed in — data syncs to your account via the cloud.<br>2. Check if your browser\'s local storage is full (try clearing old site data).<br>3. If you see data on one device but not another, make sure you\'re signed into the same Google account on both.')}
         ${renderHelpAccordion('Notifications aren\'t appearing',
           '1. Go to <strong>Settings → Notifications</strong> and make sure meeting notifications are enabled.<br>2. Check that your browser has permission to show notifications (look for the bell or lock icon in the address bar).<br>3. Some browsers require the tab to be open for notifications to appear.')}
-        ${renderHelpAccordion('The Chrome extension isn\'t detected',
-          '1. Make sure you\'ve installed the <a href="#" style="color:var(--primary)">RentingRadar Importer</a> from the Chrome Web Store.<br>2. After installing, refresh this page.<br>3. Check that the extension is enabled in Chrome → Extensions (chrome://extensions).<br>4. The extension requires a Pro plan subscription.')}
       </div>
     </div>
 
