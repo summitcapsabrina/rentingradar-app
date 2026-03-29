@@ -5692,10 +5692,6 @@ function renderPricing(){
       })}
     </div>
 
-    ${currentTier !== 'free' ? `
-    <div style="text-align:center;margin-top:24px">
-      <button class="btn btn-secondary btn-sm" style="color:var(--text3)" onclick="showAppConfirm('You will lose access to paid features.', {title: 'Downgrade to Free?', icon: '⚠️', confirmText: 'Downgrade', confirmClass: 'btn-danger', onConfirm: () => setTier('free')})">Downgrade to Free</button>
-    </div>` : ''}
 
   </div>`;
 }
@@ -11005,7 +11001,6 @@ function renderHelp(){
           <kbd style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:2px 8px;font-size:.75rem;font-family:monospace;white-space:nowrap">Ctrl + S</kbd><span style="color:var(--text2)">Focus search bar</span>
           <kbd style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:2px 8px;font-size:.75rem;font-family:monospace;white-space:nowrap">Ctrl + N</kbd><span style="color:var(--text2)">Focus activity log note editor</span>
           <kbd style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:2px 8px;font-size:.75rem;font-family:monospace;white-space:nowrap">Shift + Enter</kbd><span style="color:var(--text2)">Save form (Add Property / Edit Contact)</span>
-          <kbd style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:2px 8px;font-size:.75rem;font-family:monospace;white-space:nowrap">Shift</kbd><span style="color:var(--text2)">Navigate address suggestions</span>
           <kbd style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:2px 8px;font-size:.75rem;font-family:monospace;white-space:nowrap">↑ ↓</kbd><span style="color:var(--text2)">Navigate address suggestions</span>
           <kbd style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:2px 8px;font-size:.75rem;font-family:monospace;white-space:nowrap">Enter</kbd><span style="color:var(--text2)">Select highlighted address suggestion</span>
           <kbd style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:2px 8px;font-size:.75rem;font-family:monospace;white-space:nowrap">Escape</kbd><span style="color:var(--text2)">Close popup / modal</span>
