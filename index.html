@@ -7731,9 +7731,9 @@ function renderCalculatorTab(r){
     const baseY1 = dCy + (nLen - tipLen) * Math.sin(needleAngle) + tipW * Math.sin(perpAngle);
     const baseX2 = dCx + (nLen - tipLen) * Math.cos(needleAngle) - tipW * Math.cos(perpAngle);
     const baseY2 = dCy + (nLen - tipLen) * Math.sin(needleAngle) - tipW * Math.sin(perpAngle);
-    h += '<line class="dial-needle-body" x1="'+dCx+'" y1="'+dCy+'" x2="'+(dCx + (nLen - tipLen) * Math.cos(needleAngle)).toFixed(1)+'" y2="'+(dCy + (nLen - tipLen) * Math.sin(needleAngle)).toFixed(1)+'" stroke="#111" stroke-width="3.5" stroke-linecap="round"/>';
-    h += '<polygon class="dial-needle-arrow" points="'+tipX.toFixed(1)+','+tipY.toFixed(1)+' '+baseX1.toFixed(1)+','+baseY1.toFixed(1)+' '+baseX2.toFixed(1)+','+baseY2.toFixed(1)+'" fill="#111" stroke="rgba(0,0,0,.4)" stroke-width=".5"/>';
-    h += '<circle class="dial-hub" cx="'+dCx+'" cy="'+dCy+'" r="10" fill="#111" stroke="rgba(0,0,0,.3)" stroke-width="1.5"/>';
+    h += '<line class="dial-needle-body" x1="'+dCx+'" y1="'+dCy+'" x2="'+(dCx + (nLen - tipLen) * Math.cos(needleAngle)).toFixed(1)+'" y2="'+(dCy + (nLen - tipLen) * Math.sin(needleAngle)).toFixed(1)+'" stroke="var(--text)" stroke-width="3.5" stroke-linecap="round"/>';
+    h += '<polygon class="dial-needle-arrow" points="'+tipX.toFixed(1)+','+tipY.toFixed(1)+' '+baseX1.toFixed(1)+','+baseY1.toFixed(1)+' '+baseX2.toFixed(1)+','+baseY2.toFixed(1)+'" fill="var(--text)" stroke="rgba(0,0,0,.25)" stroke-width=".5"/>';
+    h += '<circle class="dial-hub" cx="'+dCx+'" cy="'+dCy+'" r="10" fill="var(--text)" stroke="rgba(0,0,0,.2)" stroke-width="1.5"/>';
     h += '<circle cx="'+dCx+'" cy="'+dCy+'" r="4" fill="var(--surface)"/>';
     h += '<circle cx="'+dCx+'" cy="'+dCy+'" r="'+dR+'" fill="transparent" id="rentDialHitArea_'+r.id+'" style="cursor:grab"/>';
 
