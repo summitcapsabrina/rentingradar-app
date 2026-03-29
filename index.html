@@ -4136,6 +4136,21 @@ window.addEventListener('message', (event) => {
   }
 });
 
+// Proactively check for extension on page load — handles timing where
+// the content script's READY message fires before our listener is set up.
+// Retries a few times with delays to catch late-loading extensions.
+(function probeExtension(){
+  var attempts = 0;
+  function tryDetect(){
+    if(extensionReady || attempts >= 5) return;
+    attempts++;
+    window.postMessage({ type: 'ARBFLOW_HEALTH_CHECK' }, '*');
+    setTimeout(tryDetect, 1000);
+  }
+  // Start probing after a short delay to let page settle
+  setTimeout(tryDetect, 500);
+})();
+
 function checkExtension(){
   return new Promise(resolve => {
     window.postMessage({ type: 'ARBFLOW_HEALTH_CHECK' }, '*');
