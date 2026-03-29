@@ -7130,7 +7130,7 @@ function renderCalculatorTab(r){
   kpiHtml += '<div class="calc-kpi"'+tipAttrs('Net Operating Income','Projected revenue minus all operating expenses (co-host, Airbnb fees, cleaning, utilities, etc.). Does not include rent.')+'><div class="kpi-label">Net Operating Income'+projTagHtml+'</div><div class="kpi-monthly">'+(insufficientComps ? '<span style="color:var(--text3)">$—<span class="kpi-per">/mo</span></span>' : fmtMoney(Math.round(kpiNOI))+'<span class="kpi-per">/mo</span>')+'</div><div class="kpi-annual">'+(insufficientComps ? '<span style="color:var(--text3);font-size:.7rem">$—/yr</span>' : fmtMoney(Math.round(kpiAnnualNOI))+'/yr')+'</div></div>';
   const _kpiProfitReq = parseFloat(getAnalysis(r).profitRequirement) || 1000;
   const _prPillLabel = _kpiProfitReq === 1000 ? 'Recommended' : 'Edited ✎';
-  const _prPillColor = _kpiProfitReq === 1000 ? 'color:#fff;border-color:var(--border)' : 'color:#eab308;border-color:#eab308';
+  const _prPillColor = _kpiProfitReq === 1000 ? 'color:var(--text2);border-color:var(--border)' : 'color:#eab308;border-color:#eab308';
   kpiHtml += '<div class="calc-kpi" style="cursor:pointer;position:relative" onclick="editAnalysisProfitReq(\''+r.id+'\')"'+tipAttrs('Profit Requirement','Your minimum desired monthly net profit. This drives the Deal Temperature thresholds — adjust it here to recalibrate. Default is $1,000/mo.',true)+'><div class="kpi-label">Profit Requirement<div class="kpi-proj-tag" style="'+_prPillColor+'">'+_prPillLabel+'</div></div><div class="kpi-monthly">'+fmtMoney(_kpiProfitReq)+'<span class="kpi-per">/mo</span> <span style="font-size:.65rem;opacity:.45;margin-left:2px">✏️</span></div><div class="kpi-annual">'+fmtMoney(_kpiProfitReq*12)+'/yr</div></div>';
   kpiHtml += '<div class="calc-kpi"'+tipAttrs('Cash Flow','NOI minus rent, adjusted by Position Adjustment ('+confidencePct+'%). This represents your estimated confidence-discounted take-home profit after all expenses and rent.')+'><div class="kpi-label">Cash Flow'+projTagHtml+'</div><div class="kpi-monthly" style="'+(insufficientComps?'':'color:'+_dtColor)+'">'+(insufficientComps ? '<span style="color:var(--text3)">$—<span class="kpi-per">/mo</span></span>' : fmtMoney(Math.round(kpiMonthlyCF))+'<span class="kpi-per">/mo</span>')+'</div><div class="kpi-annual">'+(insufficientComps ? '<span style="color:var(--text3);font-size:.7rem">$—/yr</span>' : fmtMoney(Math.round(kpiAnnualCF))+'/yr')+'</div></div>';
   kpiHtml += '<div class="calc-kpi"'+tipAttrs('Cash on Cash Return','Adjusted annual cash flow divided by total investment. Uses the confidence-discounted cash flow ('+confidencePct+'% Position Adjustment) to estimate how quickly your investment might pay for itself.')+'><div class="kpi-label">Cash on Cash Return'+projTagHtml+'</div><div class="kpi-monthly" style="'+(insufficientComps?'':'color:'+_dtColor)+'">'+(insufficientComps ? '<span style="color:var(--text3)">—%</span>' : kpiCoC.toFixed(1)+'%')+'</div><div class="kpi-annual">'+(insufficientComps ? '<span style="color:var(--text3);font-size:.7rem">$— invested</span>' : fmtMoney(Math.round(v.totalInvested))+' invested')+'</div></div>';
@@ -7720,7 +7720,7 @@ function renderCalculatorTab(r){
       h += '<text x="'+lx.toFixed(1)+'" y="'+ly.toFixed(1)+'" text-anchor="middle" fill="'+z.color+'" font-size="11" font-weight="800">'+z.name+'</text>';
     });
 
-    // White arrow needle
+    // Arrow needle — black for visibility in both light and dark mode
     const nLen = dR - 10;
     const needleAngle = Math.PI + needlePct * Math.PI;
     const tipLen = 20, tipW = 8;
@@ -7731,9 +7731,9 @@ function renderCalculatorTab(r){
     const baseY1 = dCy + (nLen - tipLen) * Math.sin(needleAngle) + tipW * Math.sin(perpAngle);
     const baseX2 = dCx + (nLen - tipLen) * Math.cos(needleAngle) - tipW * Math.cos(perpAngle);
     const baseY2 = dCy + (nLen - tipLen) * Math.sin(needleAngle) - tipW * Math.sin(perpAngle);
-    h += '<line class="dial-needle-body" x1="'+dCx+'" y1="'+dCy+'" x2="'+(dCx + (nLen - tipLen) * Math.cos(needleAngle)).toFixed(1)+'" y2="'+(dCy + (nLen - tipLen) * Math.sin(needleAngle)).toFixed(1)+'" stroke="#fff" stroke-width="3.5" stroke-linecap="round"/>';
-    h += '<polygon class="dial-needle-arrow" points="'+tipX.toFixed(1)+','+tipY.toFixed(1)+' '+baseX1.toFixed(1)+','+baseY1.toFixed(1)+' '+baseX2.toFixed(1)+','+baseY2.toFixed(1)+'" fill="#fff" stroke="rgba(0,0,0,.25)" stroke-width=".5"/>';
-    h += '<circle class="dial-hub" cx="'+dCx+'" cy="'+dCy+'" r="10" fill="#fff" stroke="rgba(0,0,0,.2)" stroke-width="1.5"/>';
+    h += '<line class="dial-needle-body" x1="'+dCx+'" y1="'+dCy+'" x2="'+(dCx + (nLen - tipLen) * Math.cos(needleAngle)).toFixed(1)+'" y2="'+(dCy + (nLen - tipLen) * Math.sin(needleAngle)).toFixed(1)+'" stroke="#111" stroke-width="3.5" stroke-linecap="round"/>';
+    h += '<polygon class="dial-needle-arrow" points="'+tipX.toFixed(1)+','+tipY.toFixed(1)+' '+baseX1.toFixed(1)+','+baseY1.toFixed(1)+' '+baseX2.toFixed(1)+','+baseY2.toFixed(1)+'" fill="#111" stroke="rgba(0,0,0,.4)" stroke-width=".5"/>';
+    h += '<circle class="dial-hub" cx="'+dCx+'" cy="'+dCy+'" r="10" fill="#111" stroke="rgba(0,0,0,.3)" stroke-width="1.5"/>';
     h += '<circle cx="'+dCx+'" cy="'+dCy+'" r="4" fill="var(--surface)"/>';
     h += '<circle cx="'+dCx+'" cy="'+dCy+'" r="'+dR+'" fill="transparent" id="rentDialHitArea_'+r.id+'" style="cursor:grab"/>';
 
