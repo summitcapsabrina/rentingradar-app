@@ -5985,6 +5985,7 @@ firebase.auth().onAuthStateChanged(async (user) => {
             }
           }).catch(function(e){ console.warn('Subscription sync failed:', e); });
         } catch(e){ /* sync failed silently */ }
+      }
     }
   } else {
     setUser(null);
