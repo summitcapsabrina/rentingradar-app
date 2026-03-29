@@ -2992,10 +2992,10 @@ function _renderProfileInner(){
       <div class="profile-card-header"><h3>📝 Activity Log</h3></div>
       <div style="padding:12px 16px 0;border-top:1px solid var(--border)">
         <div class="note-type-bar" id="noteTypeBar_${r.id}">
-          <button class="note-type-btn active" data-type="note" onclick="setNoteType('${r.id}','note')">📝 Note</button>
-          <button class="note-type-btn" data-type="call" onclick="setNoteType('${r.id}','call')">📞 Call</button>
-          <button class="note-type-btn" data-type="text" onclick="setNoteType('${r.id}','text')">💬 Text</button>
-          <button class="note-type-btn" data-type="email" onclick="setNoteType('${r.id}','email')">📧 Email</button>
+          <button class="note-type-btn active" data-type="note" onclick="setNoteType('${r.id}','note')" title="Note">📝</button>
+          <button class="note-type-btn" data-type="call" onclick="setNoteType('${r.id}','call')" title="Call">📞</button>
+          <button class="note-type-btn" data-type="text" onclick="setNoteType('${r.id}','text')" title="Text">💬</button>
+          <button class="note-type-btn" data-type="email" onclick="setNoteType('${r.id}','email')" title="Email">📧</button>
         </div>
         <div style="margin-top:10px">
           <div style="display:flex;gap:8px">
@@ -3013,7 +3013,7 @@ function _renderProfileInner(){
           ${(r.notes.length || r.date) ? r.notes.slice().reverse().map(n => {
             const isUserNote = n.type==='note'||n.type==='call'||n.type==='text'||n.type==='email';
             const emoji = n.type==='call'?'<span style="font-size:1.1em">📞</span> ':n.type==='text'?'<span style="font-size:1.1em">💬</span> ':n.type==='email'?'<span style="font-size:1.1em">📧</span> ':n.type==='note'?'<span style="font-size:1.1em">📝</span> ':'';
-            const label = n.type==='import'?'Imported':n.type==='followup'?'Follow-up':n.type==='status'?'Status change':n.type==='call'?'Call':n.type==='text'?'Text':n.type==='email'?'Email':'Note';
+            const label = n.type==='import'?'Imported':n.type==='followup'?'Follow-up':n.type==='status'?'Status change':'';
             const noteContent = n.html ? n.html : esc(n.text);
             const noteImages = n.images || [];
             const imgHtml = noteImages.length > 0 ? '<div class="note-images">' + noteImages.map((src, imgIdx) => '<img class="note-img-thumb" src="'+src+'" alt="Attachment" onclick="openNoteImagePopup(\''+r.id+'\',\''+n.id+'\','+imgIdx+')">').join('') + '</div>' + '<div class="note-img-badge">📎 ' + noteImages.length + ' image' + (noteImages.length > 1 ? 's' : '') + ' attached</div>' : '';
@@ -3947,10 +3947,10 @@ function editNote(recId, noteId){
   overlay.innerHTML = `<div class="stats-popup" style="width:440px">
     <h3>Edit Entry</h3>
     <div class="note-type-bar" id="editNoteTypeBar" style="margin-bottom:10px;margin-top:8px">
-      <button class="note-type-btn ${currentType==='note'?'active':''}" data-type="note" onclick="document.querySelectorAll('#editNoteTypeBar .note-type-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active')">📝 Note</button>
-      <button class="note-type-btn ${currentType==='call'?'active':''}" data-type="call" onclick="document.querySelectorAll('#editNoteTypeBar .note-type-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active')">📞 Call</button>
-      <button class="note-type-btn ${currentType==='text'?'active':''}" data-type="text" onclick="document.querySelectorAll('#editNoteTypeBar .note-type-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active')">💬 Text</button>
-      <button class="note-type-btn ${currentType==='email'?'active':''}" data-type="email" onclick="document.querySelectorAll('#editNoteTypeBar .note-type-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active')">📧 Email</button>
+      <button class="note-type-btn ${currentType==='note'?'active':''}" data-type="note" onclick="document.querySelectorAll('#editNoteTypeBar .note-type-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active')" title="Note">📝</button>
+      <button class="note-type-btn ${currentType==='call'?'active':''}" data-type="call" onclick="document.querySelectorAll('#editNoteTypeBar .note-type-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active')" title="Call">📞</button>
+      <button class="note-type-btn ${currentType==='text'?'active':''}" data-type="text" onclick="document.querySelectorAll('#editNoteTypeBar .note-type-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active')" title="Text">💬</button>
+      <button class="note-type-btn ${currentType==='email'?'active':''}" data-type="email" onclick="document.querySelectorAll('#editNoteTypeBar .note-type-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active')" title="Email">📧</button>
     </div>
     ${buildRteToolbarHtml(editEditorId)}
     <div class="rte-editor" contenteditable="true" id="${editEditorId}" data-placeholder="Edit note..." onkeydown="handleRteKeydown(event,'${recId}')">${note.html || esc(note.text)}</div>
@@ -4029,7 +4029,7 @@ function openNoteImagePopup(recId, noteId, imgIdx){
   if(!note || !note.images || !note.images[imgIdx]) return;
 
   const emoji = note.type==='call'?'📞 ':note.type==='text'?'💬 ':note.type==='email'?'📧 ':note.type==='note'?'📝 ':'';
-  const label = note.type==='call'?'Call':note.type==='text'?'Text':note.type==='email'?'Email':'Note';
+  const label = '';
   const noteContent = note.html ? note.html : esc(note.text);
   const totalImages = note.images.length;
 
