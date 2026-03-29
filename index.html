@@ -535,7 +535,8 @@ tr.clickable:hover{background:var(--primary-light)}
 .btn-danger{background:var(--danger);color:#fff;border:none}
 .btn-danger:hover{background:#dc2626}
 .profile-hero h1{font-size:1.65rem;font-weight:700;line-height:1.3;margin-bottom:2px}
-.profile-hero-meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.profile-hero-meta{display:flex;flex-direction:column;gap:6px}
+.profile-hero-meta-row{display:flex;align-items:center;gap:10px;flex-wrap:nowrap;overflow:hidden;white-space:nowrap;min-height:28px;max-height:28px}
 .profile-hero-actions{display:flex;gap:8px;flex-shrink:0;align-items:flex-start}
 .profile-platform{display:inline-flex;align-items:center;gap:6px;font-size:.8rem;padding:5px 12px;background:transparent;border:none;border-radius:var(--radius);color:var(--primary);transition:all .15s}
 .profile-platform:hover{background:var(--primary-light)}
@@ -2928,10 +2929,12 @@ function _renderProfileInner(){
         ${r.email?`<span class="hero-contact-item" style="font-size:.95rem;color:var(--primary)">${esc(r.email)}<button class="hero-copy-btn" onclick="copyRecordField(this,'${r.id}','email')" title="Copy email"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button></span>`:''}
       </div>
       <div class="profile-hero-meta" style="margin-top:8px">
-        ${statusPill(r.status)}
-        ${r.link ? `<a class="profile-platform" href="${esc(r.link)}" target="_blank">${plat.icon} ${plat.name} <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"/></svg></a>` : '<span style="font-size:.8rem;color:var(--text3)">No listing link</span>'}
-        ${r.followUpDate ? (()=>{ const fp = new Date(r.followUpDate+'T'+(r.followUpTime||'23:59')) < new Date(); return `<span style="font-size:.75rem;color:${fp?'var(--text3)':'var(--danger, #ef4444)'};display:inline-flex;align-items:center;gap:3px"><span style="font-size:.8rem">${fp?'\uD83D\uDD15':'\uD83D\uDD14'}</span> Follow-up: ${fmtDateTimeForCard(r.followUpDate, r.followUpTime)}</span>`; })() : ''}
-        ${r.meetingDate ? (()=>{ const mp = new Date(r.meetingDate+'T'+(r.meetingTime||'23:59')) < new Date(); return `<span style="font-size:.75rem;color:${mp?'var(--text3)':'var(--primary)'};display:inline-flex;align-items:center;gap:3px"><span style="font-size:.8rem">📅</span> Meeting: ${fmtDateTimeForCard(r.meetingDate, r.meetingTime)}</span>`; })() : ''}
+        <div class="profile-hero-meta-row">
+          ${statusPill(r.status)}
+          ${r.link ? `<a class="profile-platform" href="${esc(r.link)}" target="_blank">${plat.icon} ${plat.name} <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"/></svg></a>` : '<span style="font-size:.8rem;color:var(--text3)">No listing link</span>'}
+          ${r.followUpDate ? (()=>{ const fp = new Date(r.followUpDate+'T'+(r.followUpTime||'23:59')) < new Date(); return `<span style="font-size:.75rem;color:${fp?'var(--text3)':'var(--danger, #ef4444)'};display:inline-flex;align-items:center;gap:3px"><span style="font-size:.8rem">${fp?'\uD83D\uDD15':'\uD83D\uDD14'}</span> Follow-up: ${fmtDateTimeForCard(r.followUpDate, r.followUpTime)}</span>`; })() : ''}
+          ${r.meetingDate ? (()=>{ const mp = new Date(r.meetingDate+'T'+(r.meetingTime||'23:59')) < new Date(); return `<span style="font-size:.75rem;color:${mp?'var(--text3)':'var(--primary)'};display:inline-flex;align-items:center;gap:3px"><span style="font-size:.8rem">📅</span> Meeting: ${fmtDateTimeForCard(r.meetingDate, r.meetingTime)}</span>`; })() : ''}
+        </div>
         <div class="profile-tabs">
           <div class="profile-tab ${activeTab==='details'?'active':''}" data-tab="details" onclick="setProfileTab('details')">🏠 Property Details</div>
           <div class="profile-tab ${activeTab==='expenses'?'active':''}" data-tab="expenses" onclick="setProfileTab('expenses')">💸 Expenses</div>
