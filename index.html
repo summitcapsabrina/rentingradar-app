@@ -5204,8 +5204,22 @@ function checkCsvAccess(){
   return true;
 }
 
-// Firebase Cloud Functions — initialized after firebase.initializeApp() below
-let _functions = null;
+// Stripe API — hosted on Vercel (bypasses Google Cloud org policy)
+var VERCEL_API_BASE = 'https://rentingradar-api.vercel.app';
+
+async function callFunction(name, data){
+  var user = firebase.auth().currentUser;
+  if(!user) throw new Error('Not signed in');
+  var token = await user.getIdToken();
+  var res = await fetch(VERCEL_API_BASE + '/api/' + name, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+    body: JSON.stringify({ data: data || {} })
+  });
+  var json = await res.json();
+  if(json.error) throw new Error(json.error.message || 'Function call failed');
+  return json.result || json;
+}
 
 let billingPeriod = 'yearly'; // default to yearly to show savings
 
@@ -5749,9 +5763,19 @@ function renderPricingCard(tier, opts){
 async function handleUpgrade(tier){
   try {
     showToast('Preparing checkout...', 'info', 3000);
-    const createCheckoutSession = _functions.httpsCallable('createCheckoutSession');
-    const result = await createCheckoutSession({ tier: tier, period: billingPeriod });
+    var user = firebase.auth().currentUser;
+    // Get stripeCustomerId from Firestore to pass to server
+    var custId = null;
+    if(user){
+      var udoc = await db.collection('users').doc(user.uid).get();
+      if(udoc.exists && udoc.data().stripeCustomerId) custId = udoc.data().stripeCustomerId;
+    }
+    const result = await callFunction('createCheckoutSession', { tier: tier, period: billingPeriod, stripeCustomerId: custId });
     if(result.data && result.data.url){
+      // Save stripeCustomerId to Firestore before redirect
+      if(user && result.data.stripeCustomerId){
+        db.collection('users').doc(user.uid).set({ stripeCustomerId: result.data.stripeCustomerId }, { merge: true });
+      }
       window.location.href = result.data.url;
     } else {
       showAppAlert('Could not create checkout session. Please try again.', {title: 'Checkout Error', icon: '❌'});
@@ -5765,8 +5789,13 @@ async function handleUpgrade(tier){
 async function openStripePortal(){
   try {
     showToast('Opening billing portal...', 'info', 3000);
-    const createPortalSession = _functions.httpsCallable('createPortalSession');
-    const result = await createPortalSession();
+    var user = firebase.auth().currentUser;
+    var custId = null;
+    if(user){
+      var udoc = await db.collection('users').doc(user.uid).get();
+      if(udoc.exists && udoc.data().stripeCustomerId) custId = udoc.data().stripeCustomerId;
+    }
+    const result = await callFunction('createPortalSession', { stripeCustomerId: custId });
     if(result.data && result.data.url){
       window.open(result.data.url, '_blank');
       // When user returns from portal tab, sync their subscription status
@@ -5774,14 +5803,7 @@ async function openStripePortal(){
         if(!document.hidden){
           document.removeEventListener('visibilitychange', portalSyncHandler);
           setTimeout(function(){
-            var syncSub = _functions.httpsCallable('syncSubscription');
-            syncSub().then(function(res){
-              if(res.data && res.data.changed){
-                setTier(res.data.tier);
-                showToast('Subscription updated!', 'success', 3000);
-                render();
-              }
-            }).catch(function(e){ console.warn('Portal sync failed:', e); });
+            _doSyncSubscription();
           }, 1000);
         }
       };
@@ -5795,8 +5817,40 @@ async function openStripePortal(){
   }
 }
 
+// Shared: sync subscription with Stripe and write results to Firestore
+async function _doSyncSubscription(){
+  var user = firebase.auth().currentUser;
+  if(!user) return;
+  var udoc = await db.collection('users').doc(user.uid).get();
+  var custId = udoc.exists ? udoc.data().stripeCustomerId : null;
+  var subId = udoc.exists ? udoc.data().stripeSubscriptionId : null;
+  if(!custId && !subId) return;
+  try {
+    var result = await callFunction('syncSubscription', { stripeCustomerId: custId, stripeSubscriptionId: subId });
+    if(result.data){
+      var d = result.data;
+      var updates = { tier: d.tier, subscriptionStatus: d.subscriptionStatus, updatedAt: firebase.firestore.FieldValue.serverTimestamp() };
+      if(d.stripeCustomerId) updates.stripeCustomerId = d.stripeCustomerId;
+      if(d.stripeSubscriptionId) updates.stripeSubscriptionId = d.stripeSubscriptionId;
+      else if(d.stripeSubscriptionId === null) updates.stripeSubscriptionId = null;
+      if(d.currentPeriodEnd) updates.currentPeriodEnd = d.currentPeriodEnd;
+      await db.collection('users').doc(user.uid).update(updates);
+      var oldTier = udoc.exists ? udoc.data().tier : 'free';
+      setTier(d.tier);
+      if(d.tier === 'free' && oldTier !== 'free'){
+        showToast('Your subscription status has changed. You are now on the Free plan.', 'info', 6000);
+      } else if(d.subscriptionStatus === 'past_due'){
+        showToast('Your last payment failed. Please update your payment method.', 'warning', 8000);
+      } else if(d.tier !== oldTier){
+        showToast('Subscription updated!', 'success', 3000);
+      }
+      render();
+    }
+  } catch(e){ console.warn('Subscription sync failed:', e); }
+}
+
 // On page load, check if Stripe redirected back after successful checkout
-// Calls verifyCheckout Cloud Function to verify payment with Stripe and update Firestore
+// Calls verifyCheckout to verify payment with Stripe, then writes to Firestore client-side
 function checkCheckoutReturn(){
   const params = new URLSearchParams(window.location.search);
   const checkoutStatus = params.get('checkout');
@@ -5806,16 +5860,25 @@ function checkCheckoutReturn(){
     const cleanUrl = window.location.origin + window.location.pathname;
     window.history.replaceState({}, document.title, cleanUrl);
     showToast('Payment successful! Activating your plan...', 'success', 5000);
-    // Wait for auth to be ready, then verify with Stripe via Cloud Function
+    // Wait for auth to be ready, then verify with Stripe
     var unsubVerify = firebase.auth().onAuthStateChanged(function(user){
       unsubVerify();
       if(user){
-        var verifyCheckout = _functions.httpsCallable('verifyCheckout');
-        verifyCheckout({ sessionId: sessionId }).then(function(result){
+        callFunction('verifyCheckout', { sessionId: sessionId }).then(function(result){
           if(result.data && result.data.tier){
-            setTier(result.data.tier);
-            showToast('Plan upgraded to ' + result.data.tier.charAt(0).toUpperCase() + result.data.tier.slice(1) + '!', 'success', 4000);
-            switchView('pricing');
+            // Write verified data to Firestore
+            var updates = {
+              tier: result.data.tier,
+              subscriptionStatus: result.data.status || 'active',
+              stripeCustomerId: result.data.stripeCustomerId,
+              stripeSubscriptionId: result.data.stripeSubscriptionId,
+              updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            };
+            db.collection('users').doc(user.uid).update(updates).then(function(){
+              setTier(result.data.tier);
+              showToast('Plan upgraded to ' + result.data.tier.charAt(0).toUpperCase() + result.data.tier.slice(1) + '!', 'success', 4000);
+              switchView('pricing');
+            });
           }
         }).catch(function(err){
           console.error('Verify checkout error:', err);
@@ -5906,9 +5969,6 @@ const FIREBASE_CONFIG = {
 // Initialize Firebase
 const firebaseApp = firebase.initializeApp(FIREBASE_CONFIG);
 const db = firebase.firestore();
-_functions = firebase.functions();
-// Uncomment the line below for local emulator testing:
-// _functions.useEmulator('localhost', 5001);
 
 // Check if user arrived via ?tutorial=1 (from website "Try the Interactive Tutorial" link)
 let _launchTutorialAfterAuth = new URLSearchParams(window.location.search).get('tutorial') === '1';
@@ -5974,19 +6034,7 @@ firebase.auth().onAuthStateChanged(async (user) => {
       // Sync subscription status with Stripe in the background
       // Covers: renewals, failed payments, cancellations, plan changes
       if(data.stripeSubscriptionId || data.stripeCustomerId){
-        try {
-          var syncSub = _functions.httpsCallable('syncSubscription');
-          syncSub().then(function(result){
-            if(result.data && result.data.changed){
-              setTier(result.data.tier);
-              if(result.data.tier === 'free' && data.tier !== 'free'){
-                showToast('Your subscription status has changed. You are now on the Free plan.', 'info', 6000);
-              } else if(result.data.subscriptionStatus === 'past_due'){
-                showToast('Your last payment failed. Please update your payment method.', 'warning', 8000);
-              }
-            }
-          }).catch(function(e){ console.warn('Subscription sync failed:', e); });
-        } catch(e){ /* sync failed silently */ }
+        _doSyncSubscription();
       }
     }
   } else {
