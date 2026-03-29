@@ -883,7 +883,7 @@ h1 .hero-edit-input{font-size:1.35rem}
 .an-req-bar{display:flex;gap:0;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:14px;font-size:.85rem}
 .an-req-item{flex:1;text-align:center;padding:20px 10px;border-right:1px solid var(--border);display:flex;flex-direction:column;justify-content:center;gap:7px}
 .an-req-item:last-child{border-right:none}
-.an-req-item.total{background:rgba(99,129,250,.06)}
+.an-req-item.total{background:transparent}
 .an-req-item .req-label{font-size:.8rem;text-transform:uppercase;letter-spacing:.4px;color:var(--text3);font-weight:600}
 .an-req-item .req-val{font-size:1.1rem;font-weight:700;color:var(--text)}
 .an-req-item .req-period{font-size:.8rem;font-weight:400;color:var(--text3);margin-left:2px}
@@ -8089,7 +8089,7 @@ function renderAnalysisTab(r){
   h += '<div class="an-req-item" onclick="showAppAlert(\'Expenses are calculated from your Monthly Operating Expenses in the Expenses tab. Edit individual amounts there.\', {title: \'About Expenses\', icon: \'ℹ️\'})" style="cursor:help" title="Edit in Expenses → Monthly Operating Expenses"><div class="req-label">Expenses</div><div class="req-val">'+fmtMoney(Math.round(expenses*12))+'<span class="req-period">/yr</span></div><div class="req-annual">'+fmtMoney(Math.round(expenses))+'/mo</div></div>';
   h += '<div class="an-req-item" onclick="showAppAlert(\'Your Profit Requirement is set to <strong>'+fmtMoney(profitReq)+'/mo</strong>. To adjust it, go to the <strong>Projected ROI</strong> tab and click the <strong>Profit Requirement</strong> card. Changing it will recalibrate the Deal Temperature thresholds.\', {title: \'Profit Requirement\', icon: \'ℹ️\'})" style="cursor:help"><div class="req-label">Profit Req</div><div class="req-val">'+fmtMoney(profitReq*12)+'<span class="req-period">/yr</span></div><div class="req-annual">'+fmtMoney(profitReq)+'/mo</div></div>';
   const monthlyReqRev = v.monthlyRent + expenses + profitReq;
-  h += '<div class="an-req-item total"><div class="req-label">Required Rev</div><div class="req-val" style="color:var(--num-computed)">'+fmtMoney(Math.round(monthlyReqRev*12))+'<span class="req-period">/yr</span></div><div class="req-annual">'+fmtMoney(Math.round(monthlyReqRev))+'/mo</div></div>';
+  h += '<div class="an-req-item total"><div class="req-label">Required Rev</div><div class="req-val">'+fmtMoney(Math.round(monthlyReqRev*12))+'<span class="req-period">/yr</span></div><div class="req-annual">'+fmtMoney(Math.round(monthlyReqRev))+'/mo</div></div>';
   h += '</div>';
   h += '</div></div>';
 
@@ -8127,7 +8127,7 @@ function renderAnalysisTab(r){
   } else {
     h += '<div class="an-req-bar" style="border:none;border-radius:0;margin:0;flex:1">';
     h += '<div class="an-req-item"><div class="req-label" style="color:#ef4444">Loses To</div><div class="req-val" style="color:#ef4444;font-size:1.3rem">'+losesN+'</div><div class="req-annual">'+loseRate+'%</div></div>';
-    h += '<div class="an-req-item" style="background:rgba(99,129,250,.06)"><div class="req-label" style="color:var(--num-computed)">Competes With</div><div class="req-val" style="color:var(--num-computed);font-size:1.3rem">'+competesN+'</div><div class="req-annual">'+competeRate+'%</div></div>';
+    h += '<div class="an-req-item"><div class="req-label" style="color:var(--primary)">Competes With</div><div class="req-val" style="color:var(--primary);font-size:1.3rem">'+competesN+'</div><div class="req-annual">'+competeRate+'%</div></div>';
     h += '<div class="an-req-item"><div class="req-label" style="color:#10b981">Beats</div><div class="req-val" style="color:#10b981;font-size:1.3rem">'+beatsN+'</div><div class="req-annual">'+winRate+'%</div></div>';
     h += '</div>';
 
