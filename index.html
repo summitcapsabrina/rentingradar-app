@@ -5204,10 +5204,8 @@ function checkCsvAccess(){
   return true;
 }
 
-// Firebase Cloud Functions for Stripe billing
-const _functions = firebase.functions();
-// Uncomment the line below for local emulator testing:
-// _functions.useEmulator('localhost', 5001);
+// Firebase Cloud Functions — initialized after firebase.initializeApp() below
+let _functions = null;
 
 let billingPeriod = 'yearly'; // default to yearly to show savings
 
@@ -5908,6 +5906,9 @@ const FIREBASE_CONFIG = {
 // Initialize Firebase
 const firebaseApp = firebase.initializeApp(FIREBASE_CONFIG);
 const db = firebase.firestore();
+_functions = firebase.functions();
+// Uncomment the line below for local emulator testing:
+// _functions.useEmulator('localhost', 5001);
 
 // Check if user arrived via ?tutorial=1 (from website "Try the Interactive Tutorial" link)
 let _launchTutorialAfterAuth = new URLSearchParams(window.location.search).get('tutorial') === '1';
