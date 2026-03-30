@@ -223,7 +223,13 @@ body{font-family:var(--font);background:var(--bg);color:var(--text)}
   <div class="tut-welcome-card">
     <div class="tut-emoji">🏠</div>
     <h2>Welcome to RentingRadar!</h2>
-    <p>This tutorial walks you through every feature of the CRM — from adding properties to advanced negotiation tools. It takes about 5 minutes and covers all plan tiers so you can see everything RentingRadar has to offer.</p>
+    <p>This tutorial walks you through every feature of the CRM — from adding properties to advanced negotiation tools. It covers all plan tiers so you can see everything RentingRadar has to offer.</p>
+    <div style="text-align:left;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:14px 16px;margin:16px 0 20px;font-size:.82rem;color:#9399b2;line-height:1.6">
+      <p style="margin:0 0 8px;color:#e4e6f0;font-weight:600;font-size:.85rem">Quick tips before you start:</p>
+      <p style="margin:0 0 6px"><span style="color:#6381fa;font-weight:600">Navigate</span> — Use the arrow buttons or click any step in the sidebar to jump around freely.</p>
+      <p style="margin:0 0 6px"><span style="color:#34d399;font-weight:600">Track progress</span> — Mark steps as complete with the "Complete" button. Your progress is saved automatically.</p>
+      <p style="margin:0"><span style="color:#f59e0b;font-weight:600">Close & resume</span> — You can close the tutorial at any time and pick up right where you left off.</p>
+    </div>
     <div style="display:flex;gap:10px;justify-content:center">
       <button class="tut-btn tut-btn-secondary" onclick="closeTutorial()">Skip</button>
       <button class="tut-btn tut-btn-primary" onclick="startTutorial()">Let's Go →</button>
@@ -581,6 +587,29 @@ function goToStep(idx){
 }
 
 // ===== START / CLOSE =====
+function showFreshWelcome(){
+  started = false;
+  currentStep = 0;
+  visited.clear();
+  completed.clear();
+  var el = document.getElementById('tutWelcome');
+  el.querySelector('.tut-welcome-card').innerHTML =
+    '<div class="tut-emoji">🏠</div>'
+    + '<h2>Welcome to RentingRadar!</h2>'
+    + '<p>This tutorial walks you through every feature of the CRM — from adding properties to advanced negotiation tools. It covers all plan tiers so you can see everything RentingRadar has to offer.</p>'
+    + '<div style="text-align:left;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:14px 16px;margin:16px 0 20px;font-size:.82rem;color:#9399b2;line-height:1.6">'
+    + '<p style="margin:0 0 8px;color:#e4e6f0;font-weight:600;font-size:.85rem">Quick tips before you start:</p>'
+    + '<p style="margin:0 0 6px"><span style="color:#6381fa;font-weight:600">Navigate</span> — Use the arrow buttons or click any step in the sidebar to jump around freely.</p>'
+    + '<p style="margin:0 0 6px"><span style="color:#34d399;font-weight:600">Track progress</span> — Mark steps as complete with the &ldquo;Complete&rdquo; button. Your progress is saved automatically.</p>'
+    + '<p style="margin:0"><span style="color:#f59e0b;font-weight:600">Close &amp; resume</span> — You can close the tutorial at any time and pick up right where you left off.</p>'
+    + '</div>'
+    + '<div style="display:flex;gap:10px;justify-content:center">'
+    + '<button class="tut-btn tut-btn-secondary" onclick="closeTutorial()">Skip</button>'
+    + '<button class="tut-btn tut-btn-primary" onclick="startTutorial()">Let\'s Go →</button>'
+    + '</div>';
+  el.style.display = 'flex';
+}
+
 function startTutorial(resumeStep){
   document.getElementById('tutWelcome').style.display = 'none';
   started = true;
@@ -684,7 +713,7 @@ function initWithProgress(savedProgress){
     }
   } else if(params.get('restart') === '1'){
     clearProgress();
-    startTutorial(0);
+    showFreshWelcome();
   } else if(savedProgress && (savedProgress.step > 0 || (savedProgress.completed && savedProgress.completed.length > 0))){
     const completedCount = savedProgress.completed ? savedProgress.completed.length : 0;
     const pct = Math.round(completedCount / TUTORIAL_STEPS.length * 100);
@@ -695,7 +724,7 @@ function initWithProgress(savedProgress){
         + '<p>You\'ve completed ' + completedCount + ' of ' + TUTORIAL_STEPS.length + ' steps (' + pct + '%). Pick up where you left off or start over.</p>'
         + '<div style="display:flex;gap:10px;justify-content:center">'
         + '<button class="tut-btn tut-btn-secondary" onclick="closeTutorial()">Skip</button>'
-        + '<button class="tut-btn tut-btn-secondary" onclick="clearProgress();startTutorial(0)">Start Over</button>'
+        + '<button class="tut-btn tut-btn-secondary" onclick="clearProgress();showFreshWelcome()">Start Over</button>'
         + '<button class="tut-btn tut-btn-primary" onclick="startTutorial('+savedProgress.step+')">Resume →</button>'
         + '</div>';
       restoreProgressSets(savedProgress);
