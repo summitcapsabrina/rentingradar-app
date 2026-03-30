@@ -6954,7 +6954,6 @@ function renderExpensesTab(r){
   h += '<div class="calc-section"><div class="calc-section-header">Monthly Operating Expenses';
   const isPaidUser = requireTier('basic','Copy Expenses');
   h += '<button class="calc-copy-btn '+(isPaidUser?'':'locked')+'" onclick="'+(isPaidUser?'openCopyExpensesSearch(\''+r.id+'\')':'showAppAlert(\'Copy Expenses from another property is available for Basic and Pro users.\', {title: \'Feature Locked\', icon: \'🔒\'})')+'" title="'+(isPaidUser?'Copy expenses from another property':'Basic or Pro plan required')+'">📋 Copy from Property'+(isPaidUser?'':' 🔒')+'</button>';
-  h += '<button class="calc-ai-btn '+(isProUser?'':'locked')+'" onclick="'+(isProUser?'estimateExpensesAI(\''+r.id+'\')':'showAppAlert(\'AI expense estimation requires Pro plan.\', {title: \'Feature Locked\', icon: \'🔒\'})')+'" title="'+(isProUser?'Estimate for this market':'Pro plan required')+'">✨ AI Estimate'+(isProUser?'':' 🔒')+'</button>';
   h += '</div><div class="calc-section-body">';
   h += cRow('Insurance', cInput('insurance', c.insurance), {tip:'Monthly short-term rental insurance premium. Standard homeowner\\x27s or renter\\x27s insurance typically doesn\\x27t cover STR activity — consider specialized STR insurance.'});
   h += cRow('STR Fee', cInput('strFee', c.strFee), {hint:'to landlord, if any', tip:'Some landlords charge a monthly fee for allowing short-term rental use of their property. Enter the amount here if applicable.'});
