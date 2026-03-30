@@ -5351,6 +5351,8 @@ let _tutProgress = { step:0, total:31, pct:0 };
 function openTutorialSlideshow(autostart, restart){
   // Remove any existing slideshow
   closeTutorialSlideshow();
+  // Persist tutorial-open state so it survives page refresh
+  try { sessionStorage.setItem('rr_tutorial_open', '1'); } catch(e){}
   const overlay = document.createElement('div');
   overlay.className = 'tut-slideshow-overlay';
   overlay.id = 'tutSlideshowOverlay';
@@ -5397,6 +5399,8 @@ function openTutorialSlideshow(autostart, restart){
 }
 
 function closeTutorialSlideshow(){
+  // Clear tutorial-open state so it doesn't reopen on refresh
+  try { sessionStorage.removeItem('rr_tutorial_open'); } catch(e){}
   const overlay = document.getElementById('tutSlideshowOverlay');
   if(overlay) overlay.remove();
   if(window._tutSlideshowHandler){
@@ -6003,6 +6007,7 @@ firebase.auth().onAuthStateChanged(async (user) => {
   try {
   if(user){
     setUser(user);
+    loadEmailPrefs();
     // If this is a token refresh for the same user, skip full reload to avoid
     // destroying any open editors or typed content
     if(_authDataLoaded && _currentUid === user.uid){
@@ -6050,6 +6055,10 @@ firebase.auth().onAuthStateChanged(async (user) => {
       await loadDataFromFirestore(user.uid);
       _authDataLoaded = true;
       if(_launchTutorialAfterAuth){ _launchTutorialAfterAuth = false; setTimeout(() => openTutorialSlideshow(true), 600); }
+      // Restore tutorial if it was open before a page refresh
+      else if(sessionStorage.getItem('rr_tutorial_open') === '1'){
+        setTimeout(() => openTutorialSlideshow(true), 400);
+      }
       // Check if tier tutorial needed (only after disclaimer flow)
       else if(data.tier && data.tier !== 'free' && _disclaimerAcknowledged){
         _tutCheckAutoStart(data.tier, false);
@@ -10917,6 +10926,63 @@ function toggleSettingsPref(key, el){
   saveSettingsPrefs();
 }
 
+// ============================================================
+// EMAIL PREFERENCES (synced with Firebase Cloud Functions)
+// ============================================================
+var _emailPrefs = { marketingEmails: true, productEmails: true, weeklyDigest: true };
+var _emailPrefsLoaded = false;
+
+function loadEmailPrefs(){
+  // Load cached version first for instant UI
+  try { _emailPrefs = JSON.parse(localStorage.getItem('rr_email_prefs') || '{}') } catch(e){ _emailPrefs = {} }
+  if(_emailPrefs.marketingEmails === undefined) _emailPrefs.marketingEmails = true;
+  if(_emailPrefs.productEmails === undefined) _emailPrefs.productEmails = true;
+  if(_emailPrefs.weeklyDigest === undefined) _emailPrefs.weeklyDigest = true;
+
+  // Then fetch from server if signed in
+  var user = firebase.auth().currentUser;
+  if(!user || _emailPrefsLoaded) return;
+
+  user.getIdToken().then(function(token){
+    return fetch('/api/emailPreferences', {
+      method: 'GET',
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }
+    });
+  }).then(function(resp){ return resp.json() }).then(function(data){
+    if(data.result && data.result.data){
+      _emailPrefs = data.result.data;
+      _emailPrefsLoaded = true;
+      try { localStorage.setItem('rr_email_prefs', JSON.stringify(_emailPrefs)) } catch(e){}
+      // Update toggle states if settings page is visible
+      var elP = document.getElementById('epToggleProduct');
+      var elM = document.getElementById('epToggleMarketing');
+      var elD = document.getElementById('epToggleDigest');
+      if(elP) elP.classList.toggle('on', _emailPrefs.productEmails !== false);
+      if(elM) elM.classList.toggle('on', _emailPrefs.marketingEmails !== false);
+      if(elD) elD.classList.toggle('on', _emailPrefs.weeklyDigest !== false);
+    }
+  }).catch(function(err){ console.warn('Could not load email prefs:', err) });
+}
+
+function toggleEmailPref(key, el){
+  _emailPrefs[key] = !_emailPrefs[key];
+  el.classList.toggle('on', _emailPrefs[key]);
+  try { localStorage.setItem('rr_email_prefs', JSON.stringify(_emailPrefs)) } catch(e){}
+
+  // Sync to server
+  var user = firebase.auth().currentUser;
+  if(!user) return;
+  user.getIdToken().then(function(token){
+    return fetch('/api/emailPreferences', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data: _emailPrefs })
+    });
+  }).then(function(resp){ return resp.json() }).then(function(data){
+    console.log('Email prefs saved:', data);
+  }).catch(function(err){ console.warn('Could not save email prefs:', err) });
+}
+
 function renderSettings(){
   loadSettingsPrefs();
   const u = currentUser || { name:'Guest', email:'Not signed in', photo:null, role:'' };
@@ -11009,6 +11075,28 @@ function renderSettings(){
         <div class="settings-row">
           <div class="settings-row-left"><div class="sr-label">Sound Effects</div><div class="sr-desc">Play a sound on import completion and status changes</div></div>
           <div class="settings-row-right"><div class="settings-toggle ${settingsPrefs.sounds===true?'on':''}" onclick="toggleSettingsPref('sounds',this)"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- EMAIL PREFERENCES -->
+    <div class="settings-section">
+      <div class="settings-section-header"><h3>📧 Email Preferences</h3></div>
+      <div class="settings-section-body" id="emailPrefsSection">
+        <div class="settings-row">
+          <div class="settings-row-left"><div class="sr-label">Product Updates</div><div class="sr-desc">Emails about new features, improvements, and tips</div></div>
+          <div class="settings-row-right"><div class="settings-toggle ${_emailPrefs.productEmails!==false?'on':''}" id="epToggleProduct" onclick="toggleEmailPref('productEmails',this)"></div></div>
+        </div>
+        <div class="settings-row">
+          <div class="settings-row-left"><div class="sr-label">Upgrade Recommendations</div><div class="sr-desc">Periodic suggestions about plan features you might find useful</div></div>
+          <div class="settings-row-right"><div class="settings-toggle ${_emailPrefs.marketingEmails!==false?'on':''}" id="epToggleMarketing" onclick="toggleEmailPref('marketingEmails',this)"></div></div>
+        </div>
+        <div class="settings-row">
+          <div class="settings-row-left"><div class="sr-label">Weekly Digest</div><div class="sr-desc">A weekly summary of your pipeline activity and deal status changes</div></div>
+          <div class="settings-row-right"><div class="settings-toggle ${_emailPrefs.weeklyDigest!==false?'on':''}" id="epToggleDigest" onclick="toggleEmailPref('weeklyDigest',this)"></div></div>
+        </div>
+        <div class="settings-row">
+          <div class="settings-row-left"><div class="sr-label" style="font-size:.78rem;color:var(--text3)">Transactional emails (welcome, account changes, security) cannot be disabled as they are required for your account.</div></div>
         </div>
       </div>
     </div>
