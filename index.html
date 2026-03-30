@@ -11167,7 +11167,7 @@ function renderSettings(){
         <div class="settings-row">
           <div class="settings-row-left">
             <div class="sr-label">${_tut.seen.slideshow ? '<span style="color:#22c55e;margin-right:6px">✓</span>Complete CRM Tutorial' : (typeof _tut.seen.tutCompletedCount === 'number' && _tut.seen.tutCompletedCount > 0 ? 'CRM Tutorial — In Progress' : 'Complete CRM Tutorial')}</div>
-            <div class="sr-desc">32-step guided tour covering all features — Free, Basic, and Pro tiers (about 5 minutes)</div>
+            <div class="sr-desc">A guided tour covering all features — Free, Basic, and Pro tiers</div>
             ${(function(){
               var pct = _tut.seen.slideshow ? 100 : (typeof _tut.seen.tutCompletedCount === 'number' && _tut.seen.tutCompletedCount > 0 ? Math.round(_tut.seen.tutCompletedCount / (_tut.seen.tutTotal || 31) * 100) : 0);
               if(pct > 0) return '<div style="margin-top:6px;display:flex;align-items:center;gap:8px"><div style="flex:1;height:4px;background:var(--border);border-radius:2px;overflow:hidden"><div style="height:100%;background:#34d399;border-radius:2px;width:' + pct + '%;transition:width .3s"></div></div><span style="font-size:.7rem;color:var(--text3);white-space:nowrap">' + pct + '%</span></div>';
