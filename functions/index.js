@@ -1,20 +1,752 @@
 const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
 const stripe = require("stripe");
+const cors = require("cors")({ origin: true });
+const sgMail = require("@sendgrid/mail");
 
 admin.initializeApp();
 const db = admin.firestore();
 
-// ============================================================
-// CONFIGURATION — uses .env file in the functions/ directory
-// Create functions/.env with:
-//   STRIPE_SECRET_KEY=sk_live_...
-//   BASIC_MONTHLY_PRICE=price_xxx
-//   BASIC_YEARLY_PRICE=price_xxx
-//   PRO_MONTHLY_PRICE=price_xxx
-//   PRO_YEARLY_PRICE=price_xxx
-// ============================================================
 const getStripe = () => stripe(process.env.STRIPE_SECRET_KEY);
+
+// ============================================================
+// SENDGRID SETUP
+// ============================================================
+function initSendGrid() {
+  sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+}
+
+const FROM_EMAIL = { email: "help@rentingradar.com", name: "RentingRadar" };
+const APP_URL = "https://app.rentingradar.com";
+const SITE_URL = "https://rentingradar.com";
+const PHYSICAL_ADDRESS = "RentingRadar · help@rentingradar.com";
+
+// ============================================================
+// EMAIL TEMPLATES — Dark theme matching rentingradar.com
+// ============================================================
+
+// Plan feature data (must match website/app exactly)
+const PLAN_FEATURES = {
+  Free: [
+    'Up to 15 properties',
+    'Pipeline view',
+    'Contact management',
+    'Follow-up reminders & notifications',
+    'Expense tracking'
+  ],
+  Basic: [
+    'Up to 50 properties',
+    'Everything in Free',
+    'CSV import & export',
+    'Dark mode & 8 color themes',
+    'Property analysis',
+    'ROI calculator'
+  ],
+  Pro: [
+    'Unlimited properties',
+    'Everything in Basic',
+    'Negotiation Forecasting Tools',
+    'Advanced property analysis',
+    'Priority feature requests'
+  ]
+};
+
+function emailWrapper(bodyHtml, preferencesUrl) {
+  const logoImg = `<img src="${SITE_URL}/logo-email.png" width="30" height="30" alt="RentingRadar" style="vertical-align:middle;margin-right:8px">`;
+
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark only">
+<meta name="supported-color-schemes" content="dark only">
+<style>
+  :root{color-scheme:dark only}
+  body,table,td,div,p,a,span{-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%}
+  @media(prefers-color-scheme:light){
+    .email-bg{background-color:#0b0d14!important}
+    .email-card{background-color:#141726!important}
+    .email-header{background-color:#0b0d14!important}
+    .email-body{background-color:#141726!important}
+    .email-body td,.email-body p,.email-body h2,.email-body span,.email-body strong{color:#e2e4eb!important}
+    .email-footer{background-color:#0f1120!important}
+    .feat-box{background-color:#1a1e30!important;border-color:#252a3d!important}
+    .text-main{color:#e2e4eb!important}
+    .text-sub{color:#c8cbd6!important}
+    .text-white{color:#ffffff!important}
+    .text-muted{color:#6b7280!important}
+    .text-dim{color:#4b5068!important}
+    .text-accent{color:#6381fa!important}
+    .divider-line{background-color:#252a3d!important}
+  }
+</style>
+</head><body class="email-bg" style="margin:0;padding:0;background-color:#0b0d14;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#e2e4eb">
+<!--[if mso]><style>body{background-color:#0b0d14!important}</style><![endif]-->
+<div style="display:none;max-height:0;overflow:hidden;color:#0b0d14;font-size:1px">&#8199;&#65279;&#847;&#8199;&#65279;&#847;&#8199;&#65279;&#847;&#8199;&#65279;&#847;&#8199;&#65279;&#847;&#8199;&#65279;&#847;&#8199;&#65279;&#847;&#8199;&#65279;&#847;</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="email-bg" style="background-color:#0b0d14">
+<tr><td align="center" style="padding:32px 16px">
+<table role="presentation" width="560" cellpadding="0" cellspacing="0" class="email-card" style="max-width:560px;width:100%;background-color:#141726;border-radius:12px;overflow:hidden;border:1px solid #252a3d">
+
+  <!-- HEADER -->
+  <tr><td class="email-header" style="background-color:#0b0d14;padding:28px 40px;text-align:center;border-bottom:1px solid #252a3d">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">
+      ${logoImg}<span class="text-white" style="color:#ffffff;font-size:22px;font-weight:700;letter-spacing:-.3px;vertical-align:middle">RentingRadar</span>
+    </td></tr></table>
+  </td></tr>
+
+  <!-- BODY -->
+  <tr><td class="email-body" style="padding:36px 40px;color:#e2e4eb;font-size:15px;line-height:1.65;background-color:#141726">
+    ${bodyHtml}
+  </td></tr>
+
+  <!-- FOOTER -->
+  <tr><td class="email-footer" style="background-color:#0f1120;padding:24px 40px;text-align:center;font-size:12px;color:#6b7280;border-top:1px solid #252a3d">
+    <p class="text-muted" style="margin:0;color:#6b7280">RentingRadar &middot; help@rentingradar.com</p>
+    <p style="margin:8px 0 0">
+      <a href="${preferencesUrl || (APP_URL + '#settings')}" class="text-accent" style="color:#6381fa;text-decoration:none">Email Preferences</a>
+      &nbsp;&middot;&nbsp;
+      <a href="${SITE_URL}/privacy/" class="text-accent" style="color:#6381fa;text-decoration:none">Privacy Policy</a>
+      &nbsp;&middot;&nbsp;
+      <a href="${SITE_URL}/terms/" class="text-accent" style="color:#6381fa;text-decoration:none">Terms of Service</a>
+    </p>
+    <p class="text-dim" style="margin:8px 0 0;color:#4b5068;font-size:11px">
+      You're receiving this because you have a RentingRadar account.
+      <a href="${preferencesUrl || (APP_URL + '#settings')}" class="text-accent" style="color:#6381fa;text-decoration:none">Unsubscribe from marketing emails</a>.
+    </p>
+  </td></tr>
+
+</table>
+</td></tr></table>
+</body></html>`;
+}
+
+function buildFeatureList(features) {
+  return features.map(f =>
+    `<tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6;line-height:1.5"><span style="color:#34d399;margin-right:8px">✓</span>${f}</td></tr>`
+  ).join("");
+}
+
+function welcomeEmailHtml(displayName, tierName) {
+  const name = displayName ? displayName.split(" ")[0] : "there";
+  const tier = tierName || "Free";
+  const features = PLAN_FEATURES[tier] || PLAN_FEATURES.Free;
+
+  return emailWrapper(`
+    <h2 style="margin:0 0 16px;font-size:20px;font-weight:700;color:#ffffff">Welcome to RentingRadar, ${name}!</h2>
+    <p style="margin:0 0 14px;color:#c8cbd6">We're excited to have you on board. You've signed up for the <strong style="color:#6381fa">${tier}</strong> plan${tier !== "Free" ? "" : " — free forever, no credit card needed"}.</p>
+
+    <div style="background:#1a1e30;border:1px solid #252a3d;border-radius:8px;padding:16px 20px;margin:20px 0">
+      <p style="margin:0 0 10px;font-size:13px;font-weight:600;color:#6381fa;text-transform:uppercase;letter-spacing:.5px">Your ${tier} Plan Includes</p>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+        ${buildFeatureList(features)}
+      </table>
+    </div>
+
+    <div style="height:1px;background:#252a3d;margin:24px 0"></div>
+
+    <p style="margin:0 0 8px;color:#ffffff;font-weight:600">Get started in 2 minutes</p>
+    <p style="margin:0 0 16px;color:#c8cbd6">Our interactive tutorial walks you through every feature so you can hit the ground running.</p>
+    <p style="text-align:center">
+      <a href="${APP_URL}/tutorial.html" style="display:inline-block;background:#6381fa;color:#ffffff;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:600;font-size:14px;margin:8px 0 16px">Launch Tutorial</a>
+    </p>
+
+    ${tier === "Free" ? `<div style="background:#1a1e30;border:1px solid #252a3d;border-radius:8px;padding:16px 20px;margin:20px 0;text-align:center">
+      <p style="margin:0 0 4px;font-size:14px;color:#ffffff;font-weight:600">Want more features?</p>
+      <p style="margin:0 0 12px;font-size:13px;color:#9298ad">Upgrade to Basic ($9.99/mo) for property analysis & ROI tools, or Pro ($14.99/mo) for unlimited properties & negotiation forecasting.</p>
+      <a href="${SITE_URL}/#pricing" style="color:#6381fa;font-size:13px;font-weight:600;text-decoration:none">View Plans →</a>
+    </div>` : ""}
+
+    <div style="height:1px;background:#252a3d;margin:24px 0"></div>
+    <p style="font-size:13px;color:#6b7280;margin:0"><strong style="color:#9298ad">Need help?</strong> Reply to this email or reach us at <a href="mailto:help@rentingradar.com" style="color:#6381fa;text-decoration:none">help@rentingradar.com</a>. We typically respond within a few hours.</p>
+  `);
+}
+
+function cancellationEmailHtml(displayName) {
+  const name = displayName ? displayName.split(" ")[0] : "there";
+  return emailWrapper(`
+    <h2 style="margin:0 0 16px;font-size:20px;font-weight:700;color:#ffffff">We're sorry to see you go, ${name}</h2>
+    <p style="margin:0 0 14px;color:#c8cbd6">Your RentingRadar account has been cancelled and your data has been removed from our systems as requested.</p>
+    <p style="margin:0 0 14px;color:#c8cbd6">If this was a mistake, or if you'd like to come back, you can create a new account at any time:</p>
+    <p style="text-align:center">
+      <a href="${APP_URL}" style="display:inline-block;background:#6381fa;color:#ffffff;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:600;font-size:14px;margin:8px 0 16px">Return to RentingRadar</a>
+    </p>
+    <div style="height:1px;background:#252a3d;margin:24px 0"></div>
+    <p style="margin:0 0 14px;color:#c8cbd6">We'd love to know how we could have done better. If you have a moment, reply to this email with any feedback — it helps us improve for everyone.</p>
+    <p style="font-size:13px;color:#6b7280;margin:0">This is the last email you'll receive from us. If you didn't cancel your account, please contact <a href="mailto:help@rentingradar.com" style="color:#6381fa;text-decoration:none">help@rentingradar.com</a> immediately.</p>
+  `);
+}
+
+function upgradeNudgeEmailHtml(displayName, weekNumber, unsubscribeUrl) {
+  const name = displayName ? displayName.split(" ")[0] : "there";
+
+  const subjects = [
+    { subject: "🚀 Unlock your full potential", body: `
+      <h2 style="margin:0 0 16px;font-size:20px;font-weight:700;color:#ffffff">You're doing great, ${name}!</h2>
+      <p style="margin:0 0 14px;color:#c8cbd6">You've been using RentingRadar's Free plan, and we hope it's been helpful for tracking your rental deals.</p>
+      <p style="margin:0 0 14px;color:#c8cbd6">Did you know that with a <strong style="color:#ffffff">Basic</strong> plan ($9.99/mo) you can also:</p>
+      <div style="background:#1a1e30;border:1px solid #252a3d;border-radius:8px;padding:16px 20px;margin:16px 0">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+          <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span>Track up to <strong style="color:#ffffff">50 properties</strong> (vs. 15 on Free)</td></tr>
+          <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span><strong style="color:#ffffff">Property analysis</strong> & ROI calculator</td></tr>
+          <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span><strong style="color:#ffffff">CSV import & export</strong> for your data</td></tr>
+          <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span><strong style="color:#ffffff">Dark mode</strong> & 8 color themes</td></tr>
+        </table>
+      </div>
+      <p style="text-align:center">
+        <a href="${SITE_URL}/#pricing" style="display:inline-block;background:#6381fa;color:#ffffff;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:600;font-size:14px;margin:8px 0 16px">View Plans & Pricing</a>
+      </p>
+    `},
+    { subject: "💡 Are you getting the most out of RentingRadar?", body: `
+      <h2 style="margin:0 0 16px;font-size:20px;font-weight:700;color:#ffffff">Quick tip, ${name}</h2>
+      <p style="margin:0 0 14px;color:#c8cbd6">Many successful RentingRadar users tell us that <strong style="color:#ffffff">Negotiation Forecasting</strong> and <strong style="color:#ffffff">Advanced Property Analysis</strong> are the features that save them the most money.</p>
+      <p style="margin:0 0 14px;color:#c8cbd6">These tools are available on our <strong style="color:#6381fa">Pro plan</strong> ($14.99/mo), and they've helped users lock in better lease terms by showing landlords exactly why a lower rate makes sense for both parties.</p>
+      <div style="background:#1a1e30;border:1px solid #252a3d;border-radius:8px;padding:16px 20px;margin:16px 0;text-align:center">
+        <p style="margin:0 0 4px;font-size:15px;color:#ffffff;font-weight:600">Pro Plan — $14.99/mo</p>
+        <p style="margin:0 0 12px;font-size:13px;color:#9298ad">Unlimited properties, negotiation forecasting, advanced analysis, and priority feature requests.</p>
+        <a href="${SITE_URL}/#pricing" style="color:#6381fa;font-size:13px;font-weight:600;text-decoration:none">Compare all plans →</a>
+      </div>
+      <p style="text-align:center">
+        <a href="${SITE_URL}/#pricing" style="display:inline-block;background:#6381fa;color:#ffffff;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:600;font-size:14px;margin:8px 0 16px">Explore Upgrade Options</a>
+      </p>
+    `},
+    { subject: "📈 A smarter way to manage your rentals", body: `
+      <h2 style="margin:0 0 16px;font-size:20px;font-weight:700;color:#ffffff">Ready to level up, ${name}?</h2>
+      <p style="margin:0 0 14px;color:#c8cbd6">Your Free plan is a great starting point, but as your portfolio grows, you'll want tools that scale with you.</p>
+      <p style="margin:0 0 14px;color:#c8cbd6">Here's what you're missing:</p>
+      <div style="background:#1a1e30;border:1px solid #252a3d;border-radius:8px;padding:16px 20px;margin:16px 0">
+        <p style="margin:0 0 8px;font-size:13px;font-weight:600;color:#f59e0b;text-transform:uppercase;letter-spacing:.5px">Basic — $9.99/mo</p>
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:12px">
+          <tr><td style="padding:2px 0;font-size:13px;color:#c8cbd6"><span style="color:#34d399;margin-right:6px">✓</span>50 properties, property analysis, ROI calculator, CSV import &amp; export</td></tr>
+        </table>
+        <p style="margin:0 0 8px;font-size:13px;font-weight:600;color:#6381fa;text-transform:uppercase;letter-spacing:.5px">Pro — $14.99/mo</p>
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+          <tr><td style="padding:2px 0;font-size:13px;color:#c8cbd6"><span style="color:#34d399;margin-right:6px">✓</span>Unlimited properties, negotiation forecasting, advanced analysis</td></tr>
+        </table>
+      </div>
+      <p style="text-align:center">
+        <a href="${SITE_URL}/#pricing" style="display:inline-block;background:#6381fa;color:#ffffff;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:600;font-size:14px;margin:8px 0 16px">Upgrade Now</a>
+      </p>
+    `}
+  ];
+
+  const idx = (weekNumber || 0) % subjects.length;
+  return { subject: subjects[idx].subject, html: emailWrapper(subjects[idx].body, unsubscribeUrl) };
+}
+
+// Upgrade nudge emails for BASIC tier users (nudging to Pro)
+function basicUpgradeNudgeEmailHtml(displayName, weekNumber, unsubscribeUrl) {
+  const name = displayName ? displayName.split(" ")[0] : "there";
+
+  const subjects = [
+    { subject: "🚀 Take your rental game to the next level", body: `
+      <h2 style="margin:0 0 16px;font-size:20px;font-weight:700;color:#ffffff">You're crushing it, ${name}!</h2>
+      <p style="margin:0 0 14px;color:#c8cbd6">You've been making great use of your Basic plan. Ready to unlock even more powerful tools?</p>
+      <p style="margin:0 0 14px;color:#c8cbd6">With the <strong style="color:#6381fa">Pro plan</strong> ($14.99/mo), you get:</p>
+      <div style="background:#1a1e30;border:1px solid #252a3d;border-radius:8px;padding:16px 20px;margin:16px 0">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+          <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span><strong style="color:#ffffff">Unlimited properties</strong> (vs. 50 on Basic)</td></tr>
+          <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span><strong style="color:#ffffff">Negotiation Forecasting Tools</strong></td></tr>
+          <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span><strong style="color:#ffffff">Advanced property analysis</strong></td></tr>
+          <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span><strong style="color:#ffffff">Priority feature requests</strong></td></tr>
+        </table>
+      </div>
+      <p style="text-align:center">
+        <a href="${SITE_URL}/#pricing" style="display:inline-block;background:#6381fa;color:#ffffff;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:600;font-size:14px;margin:8px 0 16px">View Plans & Pricing</a>
+      </p>
+    `},
+    { subject: "💡 Negotiate smarter with Pro tools", body: `
+      <h2 style="margin:0 0 16px;font-size:20px;font-weight:700;color:#ffffff">A quick thought, ${name}</h2>
+      <p style="margin:0 0 14px;color:#c8cbd6">As a Basic user, you've already got solid tools for managing your pipeline. But our most successful users say <strong style="color:#ffffff">Negotiation Forecasting</strong> is what really sets them apart.</p>
+      <p style="margin:0 0 14px;color:#c8cbd6">It shows landlords exactly why a lower rate makes sense for both parties — backed by data. That's available on our <strong style="color:#6381fa">Pro plan</strong> ($14.99/mo).</p>
+      <div style="background:#1a1e30;border:1px solid #252a3d;border-radius:8px;padding:16px 20px;margin:16px 0;text-align:center">
+        <p style="margin:0 0 4px;font-size:15px;color:#ffffff;font-weight:600">Pro Plan — $14.99/mo</p>
+        <p style="margin:0 0 12px;font-size:13px;color:#9298ad">Unlimited properties, negotiation forecasting, advanced analysis, and priority feature requests.</p>
+        <a href="${SITE_URL}/#pricing" style="color:#6381fa;font-size:13px;font-weight:600;text-decoration:none">Compare all plans →</a>
+      </div>
+      <p style="text-align:center">
+        <a href="${SITE_URL}/#pricing" style="display:inline-block;background:#6381fa;color:#ffffff;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:600;font-size:14px;margin:8px 0 16px">Explore Pro Features</a>
+      </p>
+    `},
+    { subject: "📈 Unlimited properties are one click away", body: `
+      <h2 style="margin:0 0 16px;font-size:20px;font-weight:700;color:#ffffff">Outgrowing your Basic plan, ${name}?</h2>
+      <p style="margin:0 0 14px;color:#c8cbd6">With 50 properties on your Basic plan, you've got a solid setup. But as your portfolio scales, you'll want the freedom of <strong style="color:#ffffff">unlimited tracking</strong> plus advanced negotiation tools.</p>
+      <p style="margin:0 0 14px;color:#c8cbd6">Here's what Pro adds on top of Basic:</p>
+      <div style="background:#1a1e30;border:1px solid #252a3d;border-radius:8px;padding:16px 20px;margin:16px 0">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+          <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span><strong style="color:#ffffff">Unlimited properties</strong> — no cap on your portfolio</td></tr>
+          <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span><strong style="color:#ffffff">Negotiation Forecasting Tools</strong> — data-backed lease negotiations</td></tr>
+          <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span><strong style="color:#ffffff">Advanced property analysis</strong> — deeper deal insights</td></tr>
+          <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span><strong style="color:#ffffff">Priority feature requests</strong> — shape the product roadmap</td></tr>
+        </table>
+      </div>
+      <p style="text-align:center">
+        <a href="${SITE_URL}/#pricing" style="display:inline-block;background:#6381fa;color:#ffffff;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:600;font-size:14px;margin:8px 0 16px">Upgrade to Pro</a>
+      </p>
+    `}
+  ];
+
+  const idx = (weekNumber || 0) % subjects.length;
+  return { subject: subjects[idx].subject, html: emailWrapper(subjects[idx].body, unsubscribeUrl) };
+}
+
+
+// Upgrade confirmation email — sent when user upgrades from one plan to another
+function upgradeConfirmationEmailHtml(displayName, newTier, previousTier) {
+  const name = displayName ? displayName.split(" ")[0] : "there";
+  const tierDisplay = newTier.charAt(0).toUpperCase() + newTier.slice(1);
+  const features = PLAN_FEATURES[tierDisplay] || PLAN_FEATURES.Basic;
+  const price = tierDisplay === "Pro" ? "$14.99" : "$9.99";
+
+  let introText = "";
+  if (previousTier === "free" || !previousTier) {
+    introText = `You've upgraded from the Free plan to <strong style="color:#6381fa">${tierDisplay}</strong> — great decision! Here's everything you now have access to:`;
+  } else {
+    const prevDisplay = previousTier.charAt(0).toUpperCase() + previousTier.slice(1);
+    introText = `You've upgraded from ${prevDisplay} to <strong style="color:#6381fa">${tierDisplay}</strong> — nice move! Here's everything included in your new plan:`;
+  }
+
+  return emailWrapper(`
+    <h2 style="margin:0 0 16px;font-size:20px;font-weight:700;color:#ffffff">Welcome to ${tierDisplay}, ${name}! 🎉</h2>
+    <p style="margin:0 0 14px;color:#c8cbd6">${introText}</p>
+
+    <div style="background:#1a1e30;border:1px solid #252a3d;border-radius:8px;padding:16px 20px;margin:20px 0">
+      <p style="margin:0 0 10px;font-size:13px;font-weight:600;color:#6381fa;text-transform:uppercase;letter-spacing:.5px">${tierDisplay} Plan — ${price}/mo</p>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+        ${buildFeatureList(features)}
+      </table>
+    </div>
+
+    <p style="margin:0 0 14px;color:#c8cbd6">Your new features are available right now. Head to the app to start using them:</p>
+    <p style="text-align:center">
+      <a href="${APP_URL}" style="display:inline-block;background:#6381fa;color:#ffffff;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:600;font-size:14px;margin:8px 0 16px">Open RentingRadar</a>
+    </p>
+
+    <div style="height:1px;background:#252a3d;margin:24px 0"></div>
+
+    <p style="margin:0 0 14px;color:#c8cbd6">You can manage your subscription anytime from <a href="${APP_URL}#settings" style="color:#6381fa;text-decoration:none">Settings → Billing</a>.</p>
+    <p style="font-size:13px;color:#6b7280;margin:0"><strong style="color:#9298ad">Questions?</strong> Reply to this email or reach us at <a href="mailto:help@rentingradar.com" style="color:#6381fa;text-decoration:none">help@rentingradar.com</a>.</p>
+  `);
+}
+
+
+// ============================================================
+// EMAIL HELPER: Check preferences before sending marketing email
+// ============================================================
+async function canSendMarketingEmail(uid) {
+  try {
+    const prefsDoc = await db.collection("emailPreferences").doc(uid).get();
+    if (!prefsDoc.exists) return true; // Default: opted in
+    const prefs = prefsDoc.data();
+    return prefs.marketingEmails !== false;
+  } catch (err) {
+    console.error("Error checking email prefs:", err);
+    return false; // Fail closed — don't send if we can't check
+  }
+}
+
+async function canSendProductEmails(uid) {
+  try {
+    const prefsDoc = await db.collection("emailPreferences").doc(uid).get();
+    if (!prefsDoc.exists) return true;
+    const prefs = prefsDoc.data();
+    return prefs.productEmails !== false;
+  } catch (err) {
+    console.error("Error checking email prefs:", err);
+    return false;
+  }
+}
+
+// Helper: generate unsubscribe token for a user
+function generateUnsubToken(uid, email) {
+  const crypto = require("crypto");
+  return crypto.createHash("sha256").update(uid + (email || "")).digest("hex").substring(0, 16);
+}
+
+// Helper: build unsubscribe URL
+function getUnsubscribeUrl(uid, email, type) {
+  const token = generateUnsubToken(uid, email);
+  return `${APP_URL}/api/unsubscribe?uid=${encodeURIComponent(uid)}&type=${encodeURIComponent(type || "marketing")}&token=${token}`;
+}
+
+// Helper: send an email via SendGrid with error handling
+// Includes List-Unsubscribe header for CAN-SPAM / Gmail compliance
+async function sendEmail(to, subject, htmlContent, options) {
+  initSendGrid();
+  const opts = options || {};
+  const msg = {
+    to: to,
+    from: FROM_EMAIL,
+    subject: subject,
+    html: htmlContent,
+  };
+
+  // Add List-Unsubscribe header for marketing emails (CAN-SPAM + Gmail/Yahoo requirement)
+  if (opts.unsubscribeUrl) {
+    msg.headers = {
+      "List-Unsubscribe": `<${opts.unsubscribeUrl}>`,
+      "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+    };
+  }
+
+  // SendGrid category for analytics
+  if (opts.category) {
+    msg.categories = [opts.category];
+  }
+
+  try {
+    await sgMail.send(msg);
+    console.log(`Email sent to ${to}: "${subject}"`);
+    return true;
+  } catch (err) {
+    console.error(`Failed to send email to ${to}:`, err?.response?.body || err.message);
+    return false;
+  }
+}
+
+
+// ============================================================
+// TEST EMAIL — call this directly to debug SendGrid
+// ============================================================
+exports.testEmail = functions.https.onRequest((req, res) => {
+  cors(req, res, async () => {
+    const envKey = process.env.SENDGRID_API_KEY;
+    console.log("SENDGRID_API_KEY exists:", !!envKey);
+    console.log("SENDGRID_API_KEY starts with:", envKey ? envKey.substring(0, 5) : "UNDEFINED");
+
+    if (!envKey) {
+      res.status(500).json({ error: "SENDGRID_API_KEY not found in environment" });
+      return;
+    }
+
+    try {
+      initSendGrid();
+      const testHtml = welcomeEmailHtml("Test", "Free");
+      await sgMail.send({
+        to: "sabrina@summitcapllc.com",
+        from: FROM_EMAIL,
+        subject: "RentingRadar Test Email",
+        html: testHtml,
+      });
+      console.log("Test email sent successfully!");
+      res.status(200).json({ success: true, message: "Test email sent to sabrina@summitcapllc.com" });
+    } catch (err) {
+      console.error("Test email failed:", err?.response?.body || err.message);
+      res.status(500).json({ error: err?.response?.body || err.message });
+    }
+  });
+});
+
+
+// ============================================================
+// 5. WELCOME EMAIL — triggered on new user creation
+// ============================================================
+exports.onUserCreated = functions.auth.user().onCreate(async (user) => {
+  const { uid, email, displayName } = user;
+  console.log(`onUserCreated triggered for ${uid} / ${email}`);
+  if (!email) {
+    console.log(`User ${uid} created without email, skipping welcome email.`);
+    return null;
+  }
+
+  // Send welcome email first (no Firestore dependency)
+  try {
+    const html = welcomeEmailHtml(displayName, "Free");
+    console.log("Sending welcome email to", email);
+    await sendEmail(email, "🎉 Welcome to RentingRadar! Here's how to get started", html, { category: "welcome" });
+    console.log("Welcome email sent successfully to", email);
+  } catch (err) {
+    console.error("Failed to send welcome email:", err);
+  }
+
+  // Then try Firestore operations (non-blocking)
+  try {
+    await db.collection("emailPreferences").doc(uid).set({
+      email: email,
+      marketingEmails: true,
+      productEmails: true,
+      weeklyDigest: true,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    console.log("Email prefs created for", uid);
+  } catch (err) {
+    console.error("Failed to create email prefs:", err);
+  }
+
+  try {
+    await db.collection("emailLog").add({
+      uid: uid,
+      email: email,
+      type: "welcome",
+      sentAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  } catch (err) {
+    console.error("Failed to log email:", err);
+  }
+
+  return null;
+});
+
+
+// ============================================================
+// 6. CANCELLATION EMAIL — triggered on user deletion
+// ============================================================
+exports.onUserDeleted = functions.auth.user().onDelete(async (user) => {
+  const { uid, email, displayName } = user;
+  if (!email) return null;
+
+  const html = cancellationEmailHtml(displayName);
+  await sendEmail(email, "👋 Your RentingRadar account has been cancelled", html);
+
+  // Clean up email preferences
+  try {
+    await db.collection("emailPreferences").doc(uid).delete();
+  } catch (err) {
+    console.error("Failed to delete email prefs:", err);
+  }
+
+  // Log the email send
+  try {
+    await db.collection("emailLog").add({
+      uid: uid,
+      email: email,
+      type: "cancellation",
+      sentAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  } catch (err) {
+    console.error("Failed to log email:", err);
+  }
+
+  return null;
+});
+
+
+// ============================================================
+// 7. BI-WEEKLY UPGRADE NUDGE — runs every Monday at 10 AM EST,
+//    but only sends emails every other week
+// ============================================================
+exports.weeklyUpgradeNudge = functions.pubsub
+  .schedule("every monday 10:00")
+  .timeZone("America/New_York")
+  .onRun(async (context) => {
+    // Calculate week number — only send on even weeks (bi-weekly)
+    const weekNumber = Math.floor(Date.now() / (7 * 24 * 60 * 60 * 1000));
+    if (weekNumber % 2 !== 0) {
+      console.log("Skipping upgrade nudge — odd week. Next send is next Monday.");
+      return null;
+    }
+
+    console.log("Running bi-weekly upgrade nudge...");
+
+    // Query free-tier AND basic-tier users (both get upgrade nudges)
+    const freeSnapshot = await db.collection("users").where("tier", "==", "free").get();
+    const basicSnapshot = await db.collection("users").where("tier", "==", "basic").get();
+
+    const allUsers = [...freeSnapshot.docs, ...basicSnapshot.docs];
+
+    if (allUsers.length === 0) {
+      console.log("No free or basic tier users found.");
+      return null;
+    }
+
+    let sent = 0;
+    let skipped = 0;
+
+    const batch = [];
+
+    for (const userDoc of allUsers) {
+      const userData = userDoc.data();
+      const uid = userDoc.id;
+      const email = userData.email;
+      const displayName = userData.displayName || userData.name;
+      const userTier = userData.tier || "free";
+
+      if (!email) { skipped++; continue; }
+
+      // Check if user has opted out of marketing emails
+      const canSend = await canSendMarketingEmail(uid);
+      if (!canSend) { skipped++; continue; }
+
+      // Check if we sent an upgrade email to this user in the last 13 days (prevent duplicates)
+      try {
+        const recentEmail = await db.collection("emailLog")
+          .where("uid", "==", uid)
+          .where("type", "==", "upgrade_nudge")
+          .where("sentAt", ">", new Date(Date.now() - 13 * 24 * 60 * 60 * 1000))
+          .limit(1)
+          .get();
+        if (!recentEmail.empty) { skipped++; continue; }
+      } catch (err) {
+        console.warn("Could not check recent emails for", uid, err);
+      }
+
+      const unsubUrl = getUnsubscribeUrl(uid, email, "marketing");
+
+      // Use the appropriate nudge template based on user's current tier
+      let subject, html;
+      if (userTier === "basic") {
+        ({ subject, html } = basicUpgradeNudgeEmailHtml(displayName, weekNumber, unsubUrl));
+      } else {
+        ({ subject, html } = upgradeNudgeEmailHtml(displayName, weekNumber, unsubUrl));
+      }
+
+      const success = await sendEmail(email, subject, html, { unsubscribeUrl: unsubUrl, category: "upgrade_nudge" });
+
+      if (success) {
+        sent++;
+        batch.push(db.collection("emailLog").add({
+          uid: uid,
+          email: email,
+          type: "upgrade_nudge",
+          subject: subject,
+          sentAt: admin.firestore.FieldValue.serverTimestamp(),
+        }));
+      }
+    }
+
+    // Write all log entries
+    await Promise.all(batch);
+
+    console.log(`Bi-weekly nudge complete: ${sent} sent, ${skipped} skipped.`);
+    return null;
+  });
+
+
+// ============================================================
+// 8. EMAIL PREFERENCES — HTTP endpoint for managing opt-in/out
+// ============================================================
+exports.emailPreferences = functions.https.onRequest((req, res) => {
+  cors(req, res, async () => {
+    // GET: retrieve current preferences
+    if (req.method === "GET") {
+      const user = await verifyAuth(req);
+      if (!user) return sendError(res, 401, "You must be signed in.");
+
+      try {
+        const prefsDoc = await db.collection("emailPreferences").doc(user.uid).get();
+        if (!prefsDoc.exists) {
+          return sendSuccess(res, {
+            marketingEmails: true,
+            productEmails: true,
+            weeklyDigest: true,
+          });
+        }
+        const prefs = prefsDoc.data();
+        sendSuccess(res, {
+          marketingEmails: prefs.marketingEmails !== false,
+          productEmails: prefs.productEmails !== false,
+          weeklyDigest: prefs.weeklyDigest !== false,
+        });
+      } catch (err) {
+        sendError(res, 500, "Failed to get preferences.");
+      }
+      return;
+    }
+
+    // POST: update preferences
+    if (req.method === "POST") {
+      const user = await verifyAuth(req);
+      if (!user) return sendError(res, 401, "You must be signed in.");
+
+      const body = req.body.data || req.body;
+      const { marketingEmails, productEmails, weeklyDigest } = body;
+
+      try {
+        await db.collection("emailPreferences").doc(user.uid).set({
+          email: user.email || "",
+          marketingEmails: marketingEmails !== false,
+          productEmails: productEmails !== false,
+          weeklyDigest: weeklyDigest !== false,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
+
+        sendSuccess(res, { updated: true });
+      } catch (err) {
+        sendError(res, 500, "Failed to update preferences.");
+      }
+      return;
+    }
+
+    sendError(res, 405, "Method not allowed.");
+  });
+});
+
+
+// ============================================================
+// 9. ONE-CLICK UNSUBSCRIBE — public endpoint (no auth required)
+//    CAN-SPAM compliant: works via unique token in email links
+// ============================================================
+exports.unsubscribe = functions.https.onRequest(async (req, res) => {
+  const uid = req.query.uid;
+  const type = req.query.type || "marketing"; // "marketing", "product", "all"
+  const token = req.query.token;
+
+  if (!uid) {
+    res.status(400).send(unsubscribePageHtml("Invalid unsubscribe link.", false));
+    return;
+  }
+
+  // Verify the unsubscribe token matches what we stored
+  try {
+    const prefsDoc = await db.collection("emailPreferences").doc(uid).get();
+    if (!prefsDoc.exists) {
+      res.status(404).send(unsubscribePageHtml("Account not found.", false));
+      return;
+    }
+
+    const prefs = prefsDoc.data();
+
+    // Simple token verification: hash of uid + email
+    const crypto = require("crypto");
+    const expectedToken = crypto
+      .createHash("sha256")
+      .update(uid + (prefs.email || ""))
+      .digest("hex")
+      .substring(0, 16);
+
+    if (token !== expectedToken) {
+      res.status(403).send(unsubscribePageHtml("Invalid unsubscribe link.", false));
+      return;
+    }
+
+    const update = { updatedAt: admin.firestore.FieldValue.serverTimestamp() };
+    if (type === "all") {
+      update.marketingEmails = false;
+      update.productEmails = false;
+      update.weeklyDigest = false;
+    } else if (type === "product") {
+      update.productEmails = false;
+    } else {
+      update.marketingEmails = false;
+      update.weeklyDigest = false;
+    }
+
+    await db.collection("emailPreferences").doc(uid).update(update);
+
+    res.status(200).send(unsubscribePageHtml("You've been unsubscribed successfully.", true));
+  } catch (err) {
+    console.error("Unsubscribe error:", err);
+    res.status(500).send(unsubscribePageHtml("Something went wrong. Please try again or contact help@rentingradar.com.", false));
+  }
+});
+
+function unsubscribePageHtml(message, success) {
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RentingRadar — Email Preferences</title>
+<style>
+body{margin:0;padding:40px 20px;background:#f4f4f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh}
+.card{background:#fff;border-radius:12px;padding:40px;max-width:440px;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,.06)}
+.icon{font-size:48px;margin-bottom:16px}
+h1{font-size:20px;margin:0 0 12px;color:#1a1a2e}
+p{font-size:15px;color:#6b7280;line-height:1.6;margin:0 0 20px}
+a{color:#6381fa;text-decoration:none;font-weight:500}
+</style></head><body>
+<div class="card">
+  <div class="icon">${success ? "✅" : "⚠️"}</div>
+  <h1>${success ? "Unsubscribed" : "Oops"}</h1>
+  <p>${message}</p>
+  ${success ? '<p>You can update your preferences anytime in your <a href="https://app.rentingradar.com#settings">account settings</a>.</p>' : ""}
+  <p><a href="https://rentingradar.com">← Back to RentingRadar</a></p>
+</div>
+</body></html>`;
+}
 
 function getTierFromPriceId(priceId) {
   if (priceId === process.env.BASIC_MONTHLY_PRICE || priceId === process.env.BASIC_YEARLY_PRICE) return "basic";
@@ -22,272 +754,286 @@ function getTierFromPriceId(priceId) {
   return null;
 }
 
+// Helper: verify Firebase ID token from Authorization header
+async function verifyAuth(req) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return null;
+  }
+  try {
+    const token = authHeader.split("Bearer ")[1];
+    return await admin.auth().verifyIdToken(token);
+  } catch (err) {
+    console.error("Auth verification failed:", err.message);
+    return null;
+  }
+}
+
+// Helper: send JSON response
+function sendSuccess(res, data) {
+  res.status(200).json({ result: { data: data } });
+}
+function sendError(res, status, message) {
+  res.status(status).json({ error: { message: message } });
+}
+
 
 // ============================================================
 // 1. CREATE CHECKOUT SESSION
-//    Called from the app when a user clicks Upgrade.
-//    Expects: { tier: "basic"|"pro", period: "monthly"|"yearly" }
-//    Returns: { url: "https://checkout.stripe.com/..." }
 // ============================================================
-exports.createCheckoutSession = functions.https.onCall(async (data, context) => {
-  if (!context.auth) {
-    throw new functions.https.HttpsError("unauthenticated", "You must be signed in to upgrade.");
-  }
+exports.createCheckoutSession = functions.https.onRequest((req, res) => {
+  cors(req, res, async () => {
+    const user = await verifyAuth(req);
+    if (!user) return sendError(res, 401, "You must be signed in to upgrade.");
 
-  const { tier, period } = data;
-  if (!tier || !period) {
-    throw new functions.https.HttpsError("invalid-argument", "Missing tier or period.");
-  }
+    const body = req.body.data || req.body;
+    const { tier, period } = body;
+    if (!tier || !period) return sendError(res, 400, "Missing tier or period.");
 
-  const PRICE_IDS = {
-    basic_monthly: process.env.BASIC_MONTHLY_PRICE,
-    basic_yearly: process.env.BASIC_YEARLY_PRICE,
-    pro_monthly: process.env.PRO_MONTHLY_PRICE,
-    pro_yearly: process.env.PRO_YEARLY_PRICE,
-  };
+    const PRICE_IDS = {
+      basic_monthly: process.env.BASIC_MONTHLY_PRICE,
+      basic_yearly: process.env.BASIC_YEARLY_PRICE,
+      pro_monthly: process.env.PRO_MONTHLY_PRICE,
+      pro_yearly: process.env.PRO_YEARLY_PRICE,
+    };
 
-  const priceKey = `${tier}_${period}`;
-  const priceId = PRICE_IDS[priceKey];
+    const priceKey = `${tier}_${period}`;
+    const priceId = PRICE_IDS[priceKey];
+    if (!priceId) return sendError(res, 404, `No Stripe price configured for ${tier}/${period}.`);
 
-  if (!priceId) {
-    throw new functions.https.HttpsError("not-found", `No Stripe price configured for ${tier}/${period}.`);
-  }
+    try {
+      const stripeClient = getStripe();
+      const uid = user.uid;
+      const email = user.email || "";
 
-  const stripeClient = getStripe();
-  const uid = context.auth.uid;
-  const email = context.auth.token.email || "";
+      const userDoc = await db.collection("users").doc(uid).get();
+      let customerId = userDoc.exists ? userDoc.data().stripeCustomerId : null;
 
-  // Check if user already has a Stripe customer ID
-  const userDoc = await db.collection("users").doc(uid).get();
-  let customerId = userDoc.exists ? userDoc.data().stripeCustomerId : null;
+      if (!customerId) {
+        const customer = await stripeClient.customers.create({
+          email: email,
+          metadata: { firebaseUID: uid },
+        });
+        customerId = customer.id;
+        await db.collection("users").doc(uid).update({ stripeCustomerId: customerId });
+      }
 
-  // Create or retrieve the Stripe customer
-  if (!customerId) {
-    const customer = await stripeClient.customers.create({
-      email: email,
-      metadata: { firebaseUID: uid },
-    });
-    customerId = customer.id;
-    await db.collection("users").doc(uid).update({ stripeCustomerId: customerId });
-  }
+      const session = await stripeClient.checkout.sessions.create({
+        customer: customerId,
+        mode: "subscription",
+        payment_method_types: ["card"],
+        line_items: [{ price: priceId, quantity: 1 }],
+        success_url: "https://app.rentingradar.com?checkout=success&session_id={CHECKOUT_SESSION_ID}",
+        cancel_url: "https://app.rentingradar.com?checkout=cancelled",
+        subscription_data: {
+          metadata: { firebaseUID: uid, tier: tier },
+        },
+        metadata: { firebaseUID: uid, tier: tier },
+      });
 
-  // Create the Checkout Session
-  const session = await stripeClient.checkout.sessions.create({
-    customer: customerId,
-    mode: "subscription",
-    payment_method_types: ["card"],
-    line_items: [{ price: priceId, quantity: 1 }],
-    success_url: "https://app.rentingradar.com?checkout=success&session_id={CHECKOUT_SESSION_ID}",
-    cancel_url: "https://app.rentingradar.com?checkout=cancelled",
-    subscription_data: {
-      metadata: { firebaseUID: uid, tier: tier },
-    },
-    metadata: { firebaseUID: uid, tier: tier },
+      sendSuccess(res, { url: session.url });
+    } catch (err) {
+      console.error("createCheckoutSession error:", err);
+      sendError(res, 500, err.message || "Failed to create checkout session.");
+    }
   });
-
-  return { url: session.url };
 });
 
 
 // ============================================================
 // 2. CREATE PORTAL SESSION
-//    Called from the app when user clicks "Open Stripe Portal".
-//    Returns: { url: "https://billing.stripe.com/session/..." }
 // ============================================================
-exports.createPortalSession = functions.https.onCall(async (data, context) => {
-  if (!context.auth) {
-    throw new functions.https.HttpsError("unauthenticated", "You must be signed in.");
-  }
+exports.createPortalSession = functions.https.onRequest((req, res) => {
+  cors(req, res, async () => {
+    const user = await verifyAuth(req);
+    if (!user) return sendError(res, 401, "You must be signed in.");
 
-  const uid = context.auth.uid;
-  const userDoc = await db.collection("users").doc(uid).get();
+    const uid = user.uid;
+    const userDoc = await db.collection("users").doc(uid).get();
 
-  if (!userDoc.exists || !userDoc.data().stripeCustomerId) {
-    throw new functions.https.HttpsError("not-found", "No billing account found. Subscribe to a paid plan first.");
-  }
+    if (!userDoc.exists || !userDoc.data().stripeCustomerId) {
+      return sendError(res, 404, "No billing account found. Subscribe to a paid plan first.");
+    }
 
-  const stripeClient = getStripe();
-  const session = await stripeClient.billingPortal.sessions.create({
-    customer: userDoc.data().stripeCustomerId,
-    return_url: "https://app.rentingradar.com#settings",
+    try {
+      const stripeClient = getStripe();
+      const session = await stripeClient.billingPortal.sessions.create({
+        customer: userDoc.data().stripeCustomerId,
+        return_url: "https://app.rentingradar.com#settings",
+      });
+      sendSuccess(res, { url: session.url });
+    } catch (err) {
+      console.error("createPortalSession error:", err);
+      sendError(res, 500, err.message || "Failed to create portal session.");
+    }
   });
-
-  return { url: session.url };
 });
 
 
 // ============================================================
 // 3. VERIFY CHECKOUT
-//    Called from the app after user returns from Stripe Checkout.
-//    Verifies the session with Stripe and updates Firestore.
-//    Expects: { sessionId: "cs_..." }
 // ============================================================
-exports.verifyCheckout = functions.https.onCall(async (data, context) => {
-  if (!context.auth) {
-    throw new functions.https.HttpsError("unauthenticated", "You must be signed in.");
-  }
+exports.verifyCheckout = functions.https.onRequest((req, res) => {
+  cors(req, res, async () => {
+    const user = await verifyAuth(req);
+    if (!user) return sendError(res, 401, "You must be signed in.");
 
-  const { sessionId } = data;
-  if (!sessionId) {
-    throw new functions.https.HttpsError("invalid-argument", "Missing session ID.");
-  }
+    const body = req.body.data || req.body;
+    const { sessionId } = body;
+    if (!sessionId) return sendError(res, 400, "Missing session ID.");
 
-  const stripeClient = getStripe();
-  const uid = context.auth.uid;
+    try {
+      const stripeClient = getStripe();
+      const uid = user.uid;
 
-  // Retrieve the checkout session from Stripe
-  const session = await stripeClient.checkout.sessions.retrieve(sessionId, {
-    expand: ["subscription"],
+      const session = await stripeClient.checkout.sessions.retrieve(sessionId, {
+        expand: ["subscription"],
+      });
+
+      if (session.metadata?.firebaseUID !== uid) {
+        return sendError(res, 403, "Session does not belong to this user.");
+      }
+
+      if (session.payment_status !== "paid") {
+        return sendError(res, 400, "Payment not completed.");
+      }
+
+      const tier = session.metadata?.tier;
+      if (!tier) return sendError(res, 500, "No tier found in session metadata.");
+
+      // Get previous tier before updating
+      const userDoc = await db.collection("users").doc(uid).get();
+      const previousTier = userDoc.exists ? (userDoc.data().tier || "free") : "free";
+
+      await db.collection("users").doc(uid).update({
+        tier: tier,
+        stripeCustomerId: session.customer,
+        stripeSubscriptionId: session.subscription?.id || session.subscription,
+        subscriptionStatus: "active",
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      console.log(`User ${uid} verified and upgraded to ${tier}`);
+
+      // Send upgrade confirmation email
+      try {
+        const email = user.email;
+        if (email) {
+          const tierDisplay = tier.charAt(0).toUpperCase() + tier.slice(1);
+          const html = upgradeConfirmationEmailHtml(user.name || user.email, tier, previousTier);
+          await sendEmail(email, `🎉 Welcome to ${tierDisplay}! Your upgrade is confirmed`, html, { category: "upgrade_confirmation" });
+          console.log(`Upgrade confirmation email sent to ${email} for ${previousTier} → ${tier}`);
+        }
+      } catch (emailErr) {
+        console.error("Failed to send upgrade confirmation email:", emailErr);
+      }
+
+      sendSuccess(res, { tier: tier, status: "active" });
+    } catch (err) {
+      console.error("verifyCheckout error:", err);
+      sendError(res, 500, err.message || "Failed to verify checkout.");
+    }
   });
-
-  // Verify this session belongs to this user
-  if (session.metadata?.firebaseUID !== uid) {
-    throw new functions.https.HttpsError("permission-denied", "Session does not belong to this user.");
-  }
-
-  // Verify payment was successful
-  if (session.payment_status !== "paid") {
-    throw new functions.https.HttpsError("failed-precondition", "Payment not completed.");
-  }
-
-  const tier = session.metadata?.tier;
-  if (!tier) {
-    throw new functions.https.HttpsError("internal", "No tier found in session metadata.");
-  }
-
-  // Update Firestore with the verified payment info
-  await db.collection("users").doc(uid).update({
-    tier: tier,
-    stripeCustomerId: session.customer,
-    stripeSubscriptionId: session.subscription?.id || session.subscription,
-    subscriptionStatus: "active",
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-  });
-
-  console.log(`User ${uid} verified and upgraded to ${tier}`);
-  return { tier: tier, status: "active" };
 });
 
 
 // ============================================================
 // 4. SYNC SUBSCRIPTION
-//    Called from the app on every page load and after portal return.
-//    Checks the user's current subscription status directly with
-//    Stripe and updates Firestore accordingly.
-//
-//    This replaces webhooks by covering all subscription events:
-//    - checkout.session.completed  → handled by verifyCheckout above
-//    - invoice.paid                → detected via subscription.status = "active"
-//    - invoice.payment_failed      → detected via subscription.status = "past_due"
-//    - customer.subscription.deleted → detected via subscription.status = "canceled"
-//    - customer.subscription.updated → detected via price/tier changes
-//
-//    Returns: { tier, subscriptionStatus, changed }
 // ============================================================
-exports.syncSubscription = functions.https.onCall(async (data, context) => {
-  if (!context.auth) {
-    throw new functions.https.HttpsError("unauthenticated", "You must be signed in.");
-  }
+exports.syncSubscription = functions.https.onRequest((req, res) => {
+  cors(req, res, async () => {
+    const user = await verifyAuth(req);
+    if (!user) return sendError(res, 401, "You must be signed in.");
 
-  const uid = context.auth.uid;
-  const userDoc = await db.collection("users").doc(uid).get();
+    const uid = user.uid;
+    const userDoc = await db.collection("users").doc(uid).get();
 
-  if (!userDoc.exists) {
-    throw new functions.https.HttpsError("not-found", "User not found.");
-  }
+    if (!userDoc.exists) return sendError(res, 404, "User not found.");
 
-  const userData = userDoc.data();
-  const subscriptionId = userData.stripeSubscriptionId;
-  const customerId = userData.stripeCustomerId;
+    const userData = userDoc.data();
+    const subscriptionId = userData.stripeSubscriptionId;
+    const customerId = userData.stripeCustomerId;
 
-  // If no subscription, user is on free tier — nothing to sync
-  if (!subscriptionId && !customerId) {
-    return { tier: "free", subscriptionStatus: "none", changed: false };
-  }
-
-  const stripeClient = getStripe();
-  let subscription = null;
-
-  // Try to get the subscription directly
-  if (subscriptionId) {
-    try {
-      subscription = await stripeClient.subscriptions.retrieve(subscriptionId);
-    } catch (err) {
-      // Subscription not found — might have been deleted
-      console.warn(`Subscription ${subscriptionId} not found:`, err.message);
+    if (!subscriptionId && !customerId) {
+      return sendSuccess(res, { tier: "free", subscriptionStatus: "none", changed: false });
     }
-  }
 
-  // If no subscription found by ID but we have a customer, check for any active subscriptions
-  if (!subscription && customerId) {
     try {
-      const subs = await stripeClient.subscriptions.list({
-        customer: customerId,
-        status: "all",
-        limit: 1,
-      });
-      if (subs.data.length > 0) {
-        subscription = subs.data[0];
+      const stripeClient = getStripe();
+      let subscription = null;
+
+      if (subscriptionId) {
+        try {
+          subscription = await stripeClient.subscriptions.retrieve(subscriptionId);
+        } catch (err) {
+          console.warn(`Subscription ${subscriptionId} not found:`, err.message);
+        }
       }
+
+      if (!subscription && customerId) {
+        try {
+          const subs = await stripeClient.subscriptions.list({
+            customer: customerId,
+            status: "all",
+            limit: 1,
+          });
+          if (subs.data.length > 0) subscription = subs.data[0];
+        } catch (err) {
+          console.warn(`Could not list subscriptions for customer ${customerId}:`, err.message);
+        }
+      }
+
+      if (!subscription) {
+        const wasChanged = userData.tier !== "free" || userData.subscriptionStatus !== "cancelled";
+        if (wasChanged) {
+          await db.collection("users").doc(uid).update({
+            tier: "free",
+            subscriptionStatus: "cancelled",
+            stripeSubscriptionId: null,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+        }
+        return sendSuccess(res, { tier: "free", subscriptionStatus: "cancelled", changed: wasChanged });
+      }
+
+      const priceId = subscription.items?.data?.[0]?.price?.id;
+      const stripeTier = getTierFromPriceId(priceId) || subscription.metadata?.tier || userData.tier;
+      const stripeStatus = subscription.status;
+
+      let newTier = stripeTier;
+      let newStatus = stripeStatus;
+
+      if (stripeStatus === "canceled" || stripeStatus === "unpaid" || stripeStatus === "incomplete_expired") {
+        newTier = "free";
+        newStatus = "cancelled";
+      }
+
+      const changed = userData.tier !== newTier || userData.subscriptionStatus !== newStatus;
+
+      if (changed) {
+        const update = {
+          tier: newTier,
+          subscriptionStatus: newStatus,
+          stripeSubscriptionId: subscription.id,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        };
+
+        if (stripeStatus === "active") {
+          update.currentPeriodEnd = new Date(subscription.current_period_end * 1000).toISOString();
+        }
+
+        if (newTier === "free") {
+          update.stripeSubscriptionId = null;
+        }
+
+        await db.collection("users").doc(uid).update(update);
+        console.log(`Synced user ${uid}: tier=${newTier}, status=${newStatus}`);
+      }
+
+      sendSuccess(res, { tier: newTier, subscriptionStatus: newStatus, changed: changed });
     } catch (err) {
-      console.warn(`Could not list subscriptions for customer ${customerId}:`, err.message);
+      console.error("syncSubscription error:", err);
+      sendError(res, 500, err.message || "Failed to sync subscription.");
     }
-  }
-
-  // No subscription found anywhere — downgrade to free
-  if (!subscription) {
-    const wasChanged = userData.tier !== "free" || userData.subscriptionStatus !== "cancelled";
-    if (wasChanged) {
-      await db.collection("users").doc(uid).update({
-        tier: "free",
-        subscriptionStatus: "cancelled",
-        stripeSubscriptionId: null,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      });
-      console.log(`User ${uid} has no active subscription — downgraded to free`);
-    }
-    return { tier: "free", subscriptionStatus: "cancelled", changed: wasChanged };
-  }
-
-  // Determine tier from the subscription's current price
-  const priceId = subscription.items?.data?.[0]?.price?.id;
-  const stripeTier = getTierFromPriceId(priceId) || subscription.metadata?.tier || userData.tier;
-  const stripeStatus = subscription.status; // active, past_due, canceled, unpaid, trialing, incomplete
-
-  // Map Stripe status to our app's tier and status
-  let newTier = stripeTier;
-  let newStatus = stripeStatus;
-
-  // If subscription is canceled or unpaid, downgrade to free
-  if (stripeStatus === "canceled" || stripeStatus === "unpaid" || stripeStatus === "incomplete_expired") {
-    newTier = "free";
-    newStatus = "cancelled";
-  }
-
-  // Check if anything actually changed
-  const changed = userData.tier !== newTier || userData.subscriptionStatus !== newStatus;
-
-  if (changed) {
-    const update = {
-      tier: newTier,
-      subscriptionStatus: newStatus,
-      stripeSubscriptionId: subscription.id,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    };
-
-    // If subscription is active, record the current period end for reference
-    if (stripeStatus === "active") {
-      update.currentPeriodEnd = new Date(subscription.current_period_end * 1000).toISOString();
-    }
-
-    // If canceled, clear the subscription ID
-    if (newTier === "free") {
-      update.stripeSubscriptionId = null;
-    }
-
-    await db.collection("users").doc(uid).update(update);
-    console.log(`Synced user ${uid}: tier=${newTier}, status=${newStatus} (changed=${changed})`);
-  }
-
-  return { tier: newTier, subscriptionStatus: newStatus, changed: changed };
+  });
 });
