@@ -72,6 +72,28 @@ body{font-family:var(--font);background:var(--bg);color:var(--text)}
 .tut-img-container img{display:block;max-width:100%;max-height:calc(100vh - 260px);object-fit:contain;border-radius:var(--radius)}
 .tut-img-container.fading{opacity:0}
 
+/* Zoom — container transform keeps highlight locked to image */
+.tut-img-container{transform-origin:center center;will-change:transform}
+.tut-viewport.zoom-panning{cursor:grabbing!important}
+.tut-viewport.zoom-panning *{cursor:grabbing!important}
+.tut-viewport.zoom-active{cursor:grab}
+
+/* Zoom controls — bottom-right of viewport */
+.tut-zoom-controls{position:absolute;bottom:14px;right:14px;display:flex;flex-direction:column;gap:4px;z-index:8}
+.tut-zoom-btn{width:32px;height:32px;display:flex;align-items:center;justify-content:center;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);color:var(--text2);font-size:1rem;cursor:pointer;transition:all .15s;line-height:1;user-select:none}
+.tut-zoom-btn:hover{color:var(--text);border-color:rgba(255,255,255,.15);background:rgba(255,255,255,.06)}
+.tut-zoom-btn:active{background:rgba(255,255,255,.1)}
+.tut-zoom-btn.disabled{opacity:.3;pointer-events:none}
+.tut-zoom-level{width:32px;text-align:center;font-size:.6rem;color:var(--text3);font-weight:600;letter-spacing:.02em;padding:2px 0;user-select:none}
+
+/* Zoom hint tooltip */
+.tut-zoom-hint{position:absolute;transform:translate(-50%,-120%);background:var(--surface);color:var(--text);border:1px solid var(--border);padding:8px 16px;border-radius:10px;font-size:.8rem;font-weight:600;pointer-events:none;z-index:20;opacity:0;transition:opacity .25s;box-shadow:0 4px 16px rgba(0,0,0,.25);white-space:nowrap}
+
+/* Zoom info bar — bottom-right of viewport, above controls */
+.tut-zoom-info{position:absolute;bottom:14px;right:52px;background:rgba(0,0,0,.55);color:rgba(255,255,255,.7);padding:5px 10px;border-radius:6px;font-size:.65rem;pointer-events:none;z-index:5;display:flex;align-items:center;gap:5px;backdrop-filter:blur(4px);letter-spacing:.01em;white-space:nowrap}
+.tut-zoom-info svg{opacity:.7}
+.tut-zoom-info .zi-sep{opacity:.4;margin:0 1px}
+
 /* Highlight overlay */
 .tut-highlight-region{position:absolute;border:2px solid rgba(99,129,250,.85);border-radius:6px;background:rgba(99,129,250,.12);pointer-events:none;transition:all .4s ease;box-shadow:0 0 0 5px rgba(99,129,250,.28),0 0 24px rgba(99,129,250,.22),0 0 48px rgba(99,129,250,.1);animation:tutPulse 2s ease-in-out infinite}
 @keyframes tutPulse{0%,100%{box-shadow:0 0 0 5px rgba(99,129,250,.28),0 0 24px rgba(99,129,250,.22),0 0 48px rgba(99,129,250,.1)}50%{box-shadow:0 0 0 8px rgba(99,129,250,.4),0 0 36px rgba(99,129,250,.3),0 0 60px rgba(99,129,250,.15)}}
@@ -196,6 +218,15 @@ body{font-family:var(--font);background:var(--bg);color:var(--text)}
         <img id="tutImg" src="" alt="Tutorial screenshot" draggable="false">
         <div class="tut-highlight-region" id="tutHighlight" style="display:none"></div>
       </div>
+      <!-- Zoom controls -->
+      <div class="tut-zoom-controls">
+        <button class="tut-zoom-btn" id="tutZoomIn" title="Zoom in">+</button>
+        <div class="tut-zoom-level" id="tutZoomLevel">100%</div>
+        <button class="tut-zoom-btn" id="tutZoomOut" title="Zoom out">−</button>
+        <button class="tut-zoom-btn" id="tutZoomReset" title="Reset zoom" style="margin-top:2px;font-size:.65rem">⟲</button>
+      </div>
+      <!-- Zoom info hint -->
+      <div class="tut-zoom-info"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg> Ctrl + Scroll to zoom <span class="zi-sep">·</span> Drag to pan</div>
     </div>
 
     <div class="tut-info">
@@ -585,6 +616,138 @@ function goToStep(idx){
     toggleSidebar(false);
   }
 }
+
+// ===== ZOOM & PAN =====
+const ZOOM_MIN = 1, ZOOM_MAX = 4, ZOOM_STEP = 0.25;
+let _zoom = 1, _panX = 0, _panY = 0;
+let _isPanning = false, _panStartX = 0, _panStartY = 0, _panStartPX = 0, _panStartPY = 0;
+let _ctrlZoomActive = false, _ctrlZoomTimeout = null, _zoomHintTimer = null;
+
+function applyTransform(){
+  const c = document.getElementById('tutImgContainer');
+  c.style.transform = 'scale('+_zoom+') translate('+(_panX/_zoom)+'px,'+(_panY/_zoom)+'px)';
+  document.getElementById('tutZoomLevel').textContent = Math.round(_zoom*100)+'%';
+  // Disable buttons at limits
+  document.getElementById('tutZoomIn').classList.toggle('disabled', _zoom >= ZOOM_MAX);
+  document.getElementById('tutZoomOut').classList.toggle('disabled', _zoom <= ZOOM_MIN);
+  // Show/hide cursor hint & zoom info
+  const vp = document.getElementById('tutViewport');
+  if(_zoom > 1){ vp.classList.add('zoom-active'); } else { vp.classList.remove('zoom-active'); }
+}
+
+function clampPan(){
+  if(_zoom <= 1){ _panX = 0; _panY = 0; return; }
+  const c = document.getElementById('tutImgContainer');
+  const cw = c.offsetWidth;
+  const ch = c.offsetHeight;
+  // Max pan = half the extra size from scaling
+  const maxX = cw * (_zoom - 1) / 2 + 20;
+  const maxY = ch * (_zoom - 1) / 2 + 20;
+  _panX = Math.max(-maxX, Math.min(maxX, _panX));
+  _panY = Math.max(-maxY, Math.min(maxY, _panY));
+}
+
+function zoomTo(newZoom, centerX, centerY){
+  const vp = document.getElementById('tutViewport');
+  const c = document.getElementById('tutImgContainer');
+  const oldZoom = _zoom;
+  newZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, Math.round(newZoom * 100) / 100));
+  if(newZoom === oldZoom) return;
+
+  // Zoom toward pointer position
+  if(typeof centerX === 'number'){
+    // Get viewport center
+    const vr = vp.getBoundingClientRect();
+    const vpCX = vr.left + vr.width / 2;
+    const vpCY = vr.top + vr.height / 2;
+    // Vector from viewport center to pointer in screen space
+    const dx = centerX - vpCX;
+    const dy = centerY - vpCY;
+    // Adjust pan so the point under the cursor stays fixed
+    const scale = newZoom / oldZoom;
+    _panX = _panX * scale - dx * (scale - 1);
+    _panY = _panY * scale - dy * (scale - 1);
+  }
+  _zoom = newZoom;
+  clampPan();
+  applyTransform();
+}
+
+function resetZoom(){
+  _zoom = 1; _panX = 0; _panY = 0;
+  applyTransform();
+}
+
+// Button handlers
+document.getElementById('tutZoomIn').addEventListener('click', function(){ zoomTo(_zoom + ZOOM_STEP); });
+document.getElementById('tutZoomOut').addEventListener('click', function(){ zoomTo(_zoom - ZOOM_STEP); });
+document.getElementById('tutZoomReset').addEventListener('click', resetZoom);
+
+// Ctrl + scroll wheel zoom (matches map behavior)
+function enableCtrlZoomTut(){
+  _ctrlZoomActive = true;
+  clearTimeout(_ctrlZoomTimeout);
+  _ctrlZoomTimeout = setTimeout(function(){ _ctrlZoomActive = false; }, 400);
+}
+
+document.getElementById('tutViewport').addEventListener('wheel', function(e){
+  if(e.ctrlKey || e.metaKey){
+    e.preventDefault();
+    enableCtrlZoomTut();
+    const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
+    zoomTo(_zoom + delta, e.clientX, e.clientY);
+  } else if(!_ctrlZoomActive && _zoom <= 1) {
+    // Show hint at pointer position
+    var vp = document.getElementById('tutViewport');
+    var hint = vp.querySelector('.tut-zoom-hint');
+    if(!hint){
+      hint = document.createElement('div');
+      hint.className = 'tut-zoom-hint';
+      hint.textContent = 'Hold Ctrl + scroll to zoom';
+      vp.appendChild(hint);
+    }
+    var rect = vp.getBoundingClientRect();
+    hint.style.left = (e.clientX - rect.left) + 'px';
+    hint.style.top = (e.clientY - rect.top) + 'px';
+    hint.style.opacity = '1';
+    clearTimeout(_zoomHintTimer);
+    _zoomHintTimer = setTimeout(function(){ hint.style.opacity = '0'; }, 1200);
+  }
+}, { passive: false });
+
+// Click & drag to pan
+document.getElementById('tutViewport').addEventListener('mousedown', function(e){
+  if(_zoom <= 1) return;
+  if(e.target.closest('.tut-zoom-controls')) return;
+  e.preventDefault();
+  _isPanning = true;
+  _panStartX = e.clientX; _panStartY = e.clientY;
+  _panStartPX = _panX; _panStartPY = _panY;
+  document.getElementById('tutViewport').classList.add('zoom-panning');
+});
+document.addEventListener('mousemove', function(e){
+  if(!_isPanning) return;
+  _panX = _panStartPX + (e.clientX - _panStartX);
+  _panY = _panStartPY + (e.clientY - _panStartY);
+  clampPan();
+  applyTransform();
+});
+document.addEventListener('mouseup', function(){
+  if(!_isPanning) return;
+  _isPanning = false;
+  document.getElementById('tutViewport').classList.remove('zoom-panning');
+});
+
+// Keyboard: Ctrl/Cmd down for immediate scroll zoom response
+document.addEventListener('keydown', function(e){ if((e.key==='Control'||e.key==='Meta') && document.getElementById('tutViewport').matches(':hover')) enableCtrlZoomTut(); });
+document.addEventListener('keyup', function(e){ if(e.key==='Control'||e.key==='Meta'){ clearTimeout(_ctrlZoomTimeout); _ctrlZoomActive=false; } });
+
+// Reset zoom when changing steps
+var _origRenderStep = renderStep;
+renderStep = function(){
+  resetZoom();
+  _origRenderStep();
+};
 
 // ===== START / CLOSE =====
 function showFreshWelcome(){
