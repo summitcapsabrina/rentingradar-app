@@ -5362,9 +5362,9 @@ function requireTier(minTier, featureName){
 
 // ── Analysis Quota System ──
 // Free: 1 analysis per 30-day cycle (accumulates — previous properties stay unlocked)
-// Basic: 15 per 30-day cycle (don't roll over)
+// Basic: 10 per 30-day cycle (don't roll over)
 // Pro: unlimited
-const ANALYSIS_LIMITS = { free: 1, basic: 15, pro: Infinity };
+const ANALYSIS_LIMITS = { free: 1, basic: 10, pro: Infinity };
 let _analysisQuota = { analyzedProperties: [], cycleStart: null, signupDate: null };
 
 function _aqLoad(){
@@ -5488,7 +5488,7 @@ function showAnalysisConfirmation(propertyId, tabToOpen){
       <p style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin:10px 0;font-weight:600">${esc(addr)}</p>
       <p>This will unlock <strong>Competitor Analysis</strong> and <strong>Projected ROI</strong> for this property permanently.</p>
       <p style="color:var(--text2);font-size:.85rem">Once confirmed, the <strong>Contact & Status</strong> and <strong>Expenses</strong> fields on this property will be locked to prevent reuse. Your next free analysis will be available on <strong>${resetDate}</strong>.</p>
-      <p style="color:var(--text3);font-size:.8rem;margin-top:8px">Need more analyses? <a href="javascript:void(0)" onclick="document.getElementById('appConfirmOverlay')?.remove();switchView('pricing')" style="color:var(--primary)">Upgrade to Basic</a> for 15/month.</p>
+      <p style="color:var(--text3);font-size:.8rem;margin-top:8px">Need more analyses? <a href="javascript:void(0)" onclick="document.getElementById('appConfirmOverlay')?.remove();switchView('pricing')" style="color:var(--primary)">Upgrade to Basic</a> for 10/month.</p>
     </div>`;
   } else {
     // Basic plan
@@ -6018,8 +6018,7 @@ function renderPricing(){
     <div class="pricing-cards">
       ${renderPricingCard('free', {
         features: [
-          'Up to 15 properties',
-          '1 property analysis per month',
+          'Analyze 1 property per month',
           'Pipeline view',
           'Contact management',
           'Follow-up reminders & notifications',
@@ -6034,19 +6033,17 @@ function renderPricing(){
       ${renderPricingCard('basic', {
         popular: true,
         features: [
-          'Up to 50 properties',
-          '15 property analyses per month',
+          'Analyze 10 properties per month',
           'Everything in Free',
           'CSV import & export',
           'Dark mode & 8 color themes',
         ],
         disabled: [],
-        desc: 'Analyze up to 15 deals per month with full Competitor Analysis and ROI projections.'
+        desc: 'Analyze up to 10 deals per month with full Competitor Analysis and ROI projections.'
       })}
       ${renderPricingCard('pro', {
         features: [
-          'Unlimited properties',
-          'Unlimited property analyses',
+          'Analyze unlimited properties',
           'Everything in Basic',
           'Negotiation Forecasting Tools',
           'Priority feature requests',
@@ -11612,7 +11609,7 @@ function renderHelp(){
         ${renderHelpAccordion('Can I import properties from a spreadsheet?',
           'Yes! Go to <strong>Settings → Data Management → Import CSV</strong> or use the import button on the dashboard. Your CSV should have columns for address, contact name, phone, email, and status. The importer will map your columns automatically.')}
         ${renderHelpAccordion('What\'s the difference between the plans?',
-          '<strong>Free</strong> — Up to 15 properties, pipeline view, contact management, follow-up reminders, and expense tracking.<br><strong>Basic</strong> — Up to 50 properties, plus CSV import/export, dark mode & themes, property analysis, and ROI calculator.<br><strong>Pro</strong> — Unlimited properties, negotiation forecasting tools, advanced property analysis, and priority feature requests.')}
+          '<strong>Free</strong> — Analyze 1 property per month, pipeline view, contact management, follow-up reminders, and expense tracking.<br><strong>Basic</strong> — Analyze 10 properties per month, plus CSV import/export, dark mode & themes.<br><strong>Pro</strong> — Analyze unlimited properties, negotiation forecasting tools, and priority feature requests.')}
         ${renderHelpAccordion('How do follow-up reminders work?',
           'Set a follow-up date on any property (in the Contact & Status card or when adding a property). You\'ll see upcoming follow-ups on your dashboard and receive browser notifications when they\'re due. Make sure notifications are enabled in <strong>Settings → Notifications</strong>.')}
       </div>
