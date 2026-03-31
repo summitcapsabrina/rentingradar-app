@@ -10990,13 +10990,13 @@ function checkMeetingNotifications(){
         const addr = r.property || 'Unknown property';
         const timeStr = r.meetingTime ? fmtDateTimeForCard(r.meetingDate, r.meetingTime) : fmtDate(r.meetingDate);
         try {
-          new Notification('Meeting Reminder — ' + rem.label, {
+          new Notification('Meeting in ' + rem.label, {
             body: addr + '\n' + timeStr,
             icon: 'https://app.rentingradar.com/favicon.ico',
             tag: key
           });
         } catch(e){}
-        showToast('📅 Meeting ' + rem.label + ': ' + addr, 'info', 6000);
+        showToast('📅 Meeting in ' + rem.label + ': ' + addr, 'info', 6000);
       }
     });
   });
