@@ -3000,6 +3000,7 @@ function _renderProfileInner(){
           <div class="profile-tab ${activeTab==='expenses'?'active':''}" data-tab="expenses" onclick="setProfileTab('expenses')">💸 Expenses</div>
           <div class="profile-tab ${activeTab==='analysis'?'active':''}" data-tab="analysis" onclick="${_needsConfirm ? `showAnalysisConfirmation('${r.id}','analysis')` : `setProfileTab('analysis')`}">📊 Competitor Analysis ${!proOk?'<span class=\\"tab-lock\\">🔒</span>':''}</div>
           <div class="profile-tab ${activeTab==='calculator'?'active':''}" data-tab="calculator" onclick="${_needsConfirm ? `showAnalysisConfirmation('${r.id}','calculator')` : `setProfileTab('calculator')`}">💰 Projected ROI ${!calcOk?'<span class=\\"tab-lock\\">🔒</span>':''}</div>
+          <div class="profile-tab ${activeTab==='negotiation'?'active':''}" data-tab="negotiation" onclick="setProfileTab('negotiation')">🤝 Negotiation Tools ${currentTier!=='pro'?'<span class=\\"tab-lock\\">🔒</span>':''}</div>
         </div>
       </div>
     </div>
@@ -3226,6 +3227,23 @@ function _renderProfileInner(){
   }
   html += `</div>`;
 
+  // ── TAB: Negotiation Tools ──
+  html += `<div class="tab-content ${activeTab==='negotiation'?'active':''}" data-tab="negotiation">`;
+  if(currentTier === 'pro'){
+    html += renderNegotiationTab(r);
+  } else {
+    html += `<div class="profile-card profile-full">
+      <div class="profile-card-body">
+        <div class="tab-locked-overlay">
+          <div class="tlo-icon">🤝</div>
+          <div class="tlo-title">Negotiation Forecasting Tools</div>
+          <div class="tlo-desc" style="max-width:420px;margin-left:auto;margin-right:auto">Model rent adjustments and rental concessions to find the perfect deal structure. The <strong>Rent Adjustment Dial</strong> lets you explore what rent would make a deal attractive, while <strong>Rental Concessions</strong> shows how free rent weeks reduce your upfront investment and accelerate break-even. These projection-only tools help you negotiate with confidence — backed by data.</div>
+          <button class="btn btn-primary" onclick="switchView('pricing')">Upgrade to Pro</button>
+        </div>
+      </div>
+    </div>`;
+  }
+  html += `</div>`;
 
   return html;
 }
@@ -8087,9 +8105,43 @@ function renderCalculatorTab(r){
   // FULL WIDTH: Payback Period (below the grid)
   h += paybackHtml;
 
-  // ══════════════════════════════════════════
-  // SECTION 6 & 7: Negotiation Tools — Rent Adjustment (left) + Rental Concessions (right)
-  // ══════════════════════════════════════════
+  return h;
+}
+
+
+// ══════════════════════════════════════════
+// NEGOTIATION TOOLS TAB — separate from Projected ROI
+// ══════════════════════════════════════════
+function renderNegotiationTab(r){
+  const v = calcComputeAll(r);
+  const c = v.c;
+
+  // Recompute the necessary values from the calculator
+  const modeMap = { optimistic: v.optimisticD, realistic: v.projectedD, pessimistic: v.pessimisticD };
+  const selectedD = v.hasProjectionData && modeMap[calcProjMode] ? modeMap[calcProjMode] : (v.hasProjectionData ? v.projectedD : { monthlyNOI: v.monthlyNOI, annualNOI: v.annualNOI, monthlyCF: v.monthlyCF, annualCF: v.annualCF, cocReturn: v.cocReturn });
+  const confidence = 0.55 + 0.45 * ((v.positionScore + 1) / 2);
+  const confidencePct = Math.round(confidence * 100);
+  const _pynAnnualRent = Math.round(v.monthlyRent * 12);
+  const _pynRev = v.hasProjectionData ? Math.round(calcProjMode === 'optimistic' ? v.optimisticRevenue : calcProjMode === 'pessimistic' ? v.pessimisticRevenue : v.projectedRevenue) : 0;
+  const _pynExp = v.hasProjectionData ? Math.round((calcProjMode === 'optimistic' ? v.optimisticD : calcProjMode === 'pessimistic' ? v.pessimisticD : v.projectedD).annualExp) : 0;
+  const _pynNet = v.hasProjectionData ? (_pynRev - _pynExp - _pynAnnualRent) : 0;
+  const _pynMonthlyNet = v.hasProjectionData ? Math.round(_pynNet / 12) : Math.round(selectedD.monthlyCF);
+  const kpiMonthlyCF = Math.round(_pynMonthlyNet * confidencePct / 100);
+  const kpiAnnualCF = kpiMonthlyCF * 12;
+  const inv = v.totalInvested;
+  const acf = kpiAnnualCF;
+  const insufficientComps = v.compsCount < 3;
+
+  // Projection columns for mode selection
+  const cols = [
+    { key:'pessimistic', label:'Pessimistic', color:'var(--num-danger)', rev: Math.round(v.pessimisticRevenue || 0) , exp: Math.round((v.pessimisticD||{}).annualExp||0) },
+    { key:'realistic', label:'Realistic', color:'var(--num-computed)', rev: Math.round(v.projectedRevenue || 0), exp: Math.round((v.projectedD||{}).annualExp||0) },
+    { key:'optimistic', label:'Optimistic', color:'var(--num-success)', rev: Math.round(v.optimisticRevenue || 0), exp: Math.round((v.optimisticD||{}).annualExp||0) }
+  ];
+
+  const _dtAn = (r.details && r.details.analysis) || {};
+  const _dtProfitReq = parseFloat(_dtAn.profitRequirement) || 1000;
+  const _dtHalf = Math.round(_dtProfitReq * 0.5);
 
   const _raRent = v.monthlyRent;
   const _raExp = v.totalMonthlyExp;
@@ -8101,6 +8153,8 @@ function renderCalculatorTab(r){
   const _raConfPct = confidencePct;
   const _raHasData = !insufficientComps && v.hasProjectionData;
   const _raSelectedCol = cols.find(c => c.key === calcProjMode) || cols[1];
+
+  let h = '';
 
   // Helper: compute deal temp color for a given monthly net
   function _dtColorFor(mn){ return mn >= _raPR ? '#10b981' : mn >= _raPRHalf ? '#3b82f6' : mn > 0 ? '#f59e0b' : '#ef4444'; }
@@ -8132,29 +8186,23 @@ function renderCalculatorTab(r){
     return y + 'y ' + m + 'm';
   }
 
-  // ── NEGOTIATION TOOLS — single card with Rent Adjustment (left) + Rental Concessions (right) ──
-  const _nftProOk = requireTier('pro','Negotiation Forecasting Tools');
-  h += '<div class="calc-section" style="margin-top:0"><div class="calc-section-header"'+tipAttrs('Negotiation Forecasting Tools','Projection-only tools to explore rent and concession scenarios. Changes here do NOT affect your actual property data.')+'>Negotiation Forecasting Tools' + (!_nftProOk ? ' <span style="font-size:.65rem;opacity:.7">🔒</span>' : '') + '</div><div class="calc-section-body" style="padding:0">';
-
-  if(!_nftProOk){
-    h += '<div style="text-align:center;padding:40px 20px"><div style="font-size:2rem;margin-bottom:12px">🔒</div><div style="font-size:.95rem;font-weight:600;color:var(--text);margin-bottom:6px">Pro Feature</div><div style="font-size:.82rem;color:var(--text3);margin-bottom:16px;max-width:320px;margin-left:auto;margin-right:auto">Negotiation Forecasting Tools require the Pro plan. Upgrade to model rent adjustments, rental concessions, and optimize your deal negotiations.</div><button class="btn btn-primary btn-sm" onclick="switchView(\'pricing\')">Upgrade to Pro</button></div>';
-    h += '</div></div>'; // close calc-section-body + calc-section
-    return h;
-  }
-
-  // ── Title row with both section names side by side ──
+  // ── Forecast mode pills (single set, syncs with Projected ROI tab) ──
   const _nftModeLabels = {pessimistic:'Pessimistic',realistic:'Realistic',optimistic:'Optimistic'};
   const _nftModeColors = {pessimistic:'var(--num-danger)',realistic:'var(--num-computed)',optimistic:'var(--num-success)'};
-  const _nftPillsHtml = (function(){ let p='<div style="display:flex;justify-content:center;gap:8px">'; ['pessimistic','realistic','optimistic'].forEach(m => { const active = m === calcProjMode; p += '<span style="font-size:.72rem;padding:4px 12px;border-radius:12px;font-weight:600;letter-spacing:.3px;'+(active?'background:'+_nftModeColors[m]+';color:#fff':'color:var(--text3);border:1px solid var(--border)')+'">'+_nftModeLabels[m]+'</span>'; }); p += '</div>'; return p; })();
+  h += '<div class="calc-section" style="margin-top:0"><div class="calc-section-body" style="padding:12px 16px">';
+  h += '<div style="display:flex;justify-content:center;gap:8px">';
+  ['pessimistic','realistic','optimistic'].forEach(m => { const active = m === calcProjMode; h += '<span onclick="setCalcProjMode(\''+m+'\')" style="cursor:pointer;font-size:.76rem;padding:5px 14px;border-radius:12px;font-weight:600;letter-spacing:.3px;transition:all .15s;'+(active?'background:'+_nftModeColors[m]+';color:#fff':'color:var(--text3);border:1px solid var(--border)')+'">'+_nftModeLabels[m]+'</span>'; });
+  h += '</div>';
+  h += '</div></div>';
 
+  // ── Tool cards: Rent Adjustment + Rental Concessions ──
+  h += '<div class="calc-section" style="margin-top:0"><div class="calc-section-body" style="padding:0">';
   h += '<div style="display:flex;flex-wrap:wrap">';
   h += '<div style="flex:1;min-width:300px;padding:14px 16px 14px;text-align:center;border-right:1px solid var(--border)">';
   h += '<div class="nft-title-row" style="font-size:.82rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;display:inline-flex;align-items:center;gap:5px;cursor:help"'+tipAttrs('Rent Adjustment','Drag the dial or click the amount to explore what rent would make this deal attractive. This is a projection tool — it does NOT change the actual rent.',true)+'>Rent Adjustment<span class="nft-hint-q">?</span></div>';
-  h += '<div style="margin-top:14px">' + _nftPillsHtml + '</div>';
   h += '</div>';
   h += '<div style="flex:1;min-width:280px;padding:14px 16px 14px;text-align:center">';
   h += '<div class="nft-title-row" style="font-size:.82rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;display:inline-flex;align-items:center;gap:5px;cursor:help"'+tipAttrs('Rental Concessions','Negotiate free rent weeks to reduce your upfront investment and accelerate break-even. 6–8 weeks is a common target for rental arbitrage.',true)+'>Rental Concessions<span class="nft-hint-q">?</span></div>';
-  h += '<div style="margin-top:14px">' + _nftPillsHtml + '</div>';
   h += '</div>';
   h += '</div>'; // end title row
 
@@ -8431,6 +8479,9 @@ function onCalcChange(field, value){
   // Re-render Projected ROI tab since expenses affect projections
   const calcEl = document.querySelector('.tab-content[data-tab="calculator"]');
   if(calcEl){ calcEl.innerHTML = renderCalculatorTab(r); }
+  // Re-render Negotiation Tools tab since it shares data
+  const negoEl = document.querySelector('.tab-content[data-tab="negotiation"]');
+  if(negoEl && currentTier === 'pro'){ negoEl.innerHTML = renderNegotiationTab(r); }
 }
 
 function _rerenderCalcTab(){
@@ -8442,6 +8493,9 @@ function _rerenderCalcTab(){
   // Re-render Projected ROI tab if present
   const tabEl = document.querySelector('.tab-content[data-tab="calculator"]');
   if(tabEl){ tabEl.innerHTML = renderCalculatorTab(r); }
+  // Re-render Negotiation Tools tab if present
+  const negoEl = document.querySelector('.tab-content[data-tab="negotiation"]');
+  if(negoEl && currentTier === 'pro'){ negoEl.innerHTML = renderNegotiationTab(r); }
 }
 
 let _activeCalcEdit = null;
@@ -8899,6 +8953,8 @@ function updateCompField(recId, idx, field, value){
   if(['annualRevenue','occupancy','nightlyRate','daysAvailable','rating'].includes(field)){
     const calcEl = document.querySelector('.tab-content[data-tab="calculator"]');
     if(calcEl){ calcEl.innerHTML = renderCalculatorTab(r); }
+    const negoEl2 = document.querySelector('.tab-content[data-tab="negotiation"]');
+    if(negoEl2 && currentTier === 'pro'){ negoEl2.innerHTML = renderNegotiationTab(r); }
   }
   // Re-render Expenses tab since revenue affects computed expense rows
   if(['annualRevenue','occupancy','nightlyRate','daysAvailable'].includes(field)){
@@ -9001,11 +9057,9 @@ function _initRentDialDrag(recId){
       document.removeEventListener('touchmove', onPointerMove);
       document.removeEventListener('touchend', onPointerUp);
       // Do a full re-render now to sync everything
-      const calcEl = document.querySelector('.tab-content[data-tab="calculator"]');
-      if(calcEl){
-        const rr = records.find(x => x.id === currentProfileId);
-        if(rr) calcEl.innerHTML = renderCalculatorTab(rr);
-      }
+      const rr = records.find(x => x.id === currentProfileId);
+      const negoEl = document.querySelector('.tab-content[data-tab="negotiation"]');
+      if(negoEl && rr) negoEl.innerHTML = renderNegotiationTab(rr);
     }
     document.addEventListener('mousemove', onPointerMove, {passive:false});
     document.addEventListener('mouseup', onPointerUp);
@@ -9105,11 +9159,11 @@ function adjustRentDial(recId, direction){
   const previewRent = _rentDialPreview[recId] !== undefined ? _rentDialPreview[recId] : currentRent;
   const newRent = Math.max(0, Math.min(currentRent, previewRent + direction * incr));
   _rentDialPreview[recId] = newRent;
-  // Re-render the calculator tab to update the dial
-  const calcEl = document.querySelector('.tab-content[data-tab="calculator"]');
-  if(calcEl){
+  // Re-render the negotiation tab to update the dial
+  const negoEl = document.querySelector('.tab-content[data-tab="negotiation"]');
+  if(negoEl){
     const rr = records.find(x => x.id === currentProfileId);
-    if(rr) calcEl.innerHTML = renderCalculatorTab(rr);
+    if(rr) negoEl.innerHTML = renderNegotiationTab(rr);
   }
 }
 
@@ -9153,10 +9207,10 @@ function saveRentDialInput(recId){
   if(val > currentRent) return; // blocked
   _rentDialPreview[recId] = Math.round(val);
   document.getElementById('rentDialInputOverlay')?.remove();
-  const calcEl = document.querySelector('.tab-content[data-tab="calculator"]');
-  if(calcEl){
+  const negoEl = document.querySelector('.tab-content[data-tab="negotiation"]');
+  if(negoEl){
     const rr = records.find(x => x.id === currentProfileId);
-    if(rr) calcEl.innerHTML = renderCalculatorTab(rr);
+    if(rr) negoEl.innerHTML = renderNegotiationTab(rr);
   }
 }
 
@@ -9168,10 +9222,10 @@ function adjustConcessionWeeks(recId, delta){
   const current = an.concessionWeeks !== undefined ? parseFloat(an.concessionWeeks) : 6;
   an.concessionWeeks = Math.max(0, Math.min(12, current + delta));
   saveData();
-  const calcEl = document.querySelector('.tab-content[data-tab="calculator"]');
-  if(calcEl){
+  const negoEl = document.querySelector('.tab-content[data-tab="negotiation"]');
+  if(negoEl){
     const rr = records.find(x => x.id === currentProfileId);
-    if(rr) calcEl.innerHTML = renderCalculatorTab(rr);
+    if(rr) negoEl.innerHTML = renderNegotiationTab(rr);
   }
 }
 
