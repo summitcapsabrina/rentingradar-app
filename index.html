@@ -11518,7 +11518,7 @@ function renderSettings(){
           </div>
           <div class="settings-row-right" style="display:flex;gap:6px">
             ${(function(){
-              if(_tut.seen.slideshow) return '<button class="btn btn-secondary btn-sm" onclick="confirmTutorialRestart()">↻ Replay</button>';
+              if(_tut.seen.slideshow) return '<button class="btn btn-secondary btn-sm" onclick="confirmTutorialRestart()">↻ Restart</button>';
               if((typeof _tut.seen.tutCompletedCount === 'number' && _tut.seen.tutCompletedCount > 0) || (typeof _tut.seen.tutStep === 'number' && _tut.seen.tutStep > 0)) return '<button class="btn btn-secondary btn-sm" onclick="confirmTutorialRestart()">↻ Restart</button><button class="btn btn-primary btn-sm" onclick="openTutorialSlideshow(true)">▶ Resume</button>';
               return '<button class="btn btn-primary btn-sm" onclick="openTutorialSlideshow(true)">▶ Start Tutorial</button>';
             })()}
