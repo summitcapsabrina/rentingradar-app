@@ -5418,14 +5418,34 @@ function _aqSetSignupDate(dateStr){
   _aqSave();
 }
 
-// Get the current 30-day cycle boundaries based on signup date
+// Get the current 30-day cycle boundaries
+// Free tier: 30-day cooldown from last analysis date
+// Basic tier: 30-day cycle based on signup date
 function _aqGetCurrentCycle(){
+  const msPerCycle = 30 * 24 * 60 * 60 * 1000;
+  const now = new Date();
+
+  // Free tier: cooldown based on most recent analysis date
+  if(currentTier === 'free'){
+    const analyses = _analysisQuota.analyzedProperties || [];
+    if(analyses.length === 0){
+      // No analyses yet — user can analyze right away; no reset date needed
+      return { start: null, end: null, resetDate: null, freeReady: true };
+    }
+    // Find the most recent analysis date
+    const lastAnalysis = analyses.reduce((latest, a) => {
+      const d = new Date(a.date).getTime();
+      return d > latest ? d : latest;
+    }, 0);
+    const cooldownEnd = new Date(lastAnalysis + msPerCycle);
+    const ready = now.getTime() >= cooldownEnd.getTime();
+    return { start: new Date(lastAnalysis).toISOString(), end: cooldownEnd.toISOString(), resetDate: cooldownEnd, freeReady: ready };
+  }
+
+  // Basic tier: cycle based on signup date
   const signup = _aqGetSignupDate();
   if(!signup) return { start: null, end: null, resetDate: null };
   const signupDate = new Date(signup);
-  const now = new Date();
-  // Calculate how many full 30-day cycles have passed
-  const msPerCycle = 30 * 24 * 60 * 60 * 1000;
   const elapsed = now.getTime() - signupDate.getTime();
   const cycleNum = Math.floor(elapsed / msPerCycle);
   const cycleStart = new Date(signupDate.getTime() + cycleNum * msPerCycle);
@@ -5453,6 +5473,13 @@ function isPropertyAnalyzed(propertyId){
 // Get remaining analyses for the current cycle
 function getAnalysisRemaining(){
   if(currentTier === 'pro') return Infinity;
+  // Free tier: cooldown-based — either 1 (ready) or 0 (still cooling down)
+  if(currentTier === 'free'){
+    const cycle = _aqGetCurrentCycle();
+    if(cycle.freeReady || cycle.freeReady === undefined && !cycle.start) return 1;
+    return 0;
+  }
+  // Basic tier: count-based within billing cycle
   const limit = ANALYSIS_LIMITS[currentTier] || 0;
   const used = _aqGetCurrentCycleAnalyses().length;
   return Math.max(0, limit - used);
@@ -5513,14 +5540,16 @@ function showAnalysisConfirmation(propertyId, tabToOpen){
   const limit = ANALYSIS_LIMITS[currentTier] || 0;
   const resetDate = getAnalysisResetDateStr();
   const isFreePlan = currentTier === 'free';
+  // Free tier: show 30 days from today (since the analysis is about to happen now)
+  const freeNextDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 
   let message = '';
   if(isFreePlan){
     message = `<div style="text-align:left;line-height:1.6">
-      <p>You're about to use your <strong>1 free property analysis</strong> for this 30-day cycle on:</p>
+      <p>You're about to use your <strong>1 free property analysis</strong> on:</p>
       <p style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin:10px 0;font-weight:600">${esc(addr)}</p>
       <p>This will unlock <strong>Competitor Analysis</strong> and <strong>Projected ROI</strong> for this property permanently.</p>
-      <p style="color:var(--text2);font-size:.85rem">Once confirmed, the <strong>Contact & Status</strong> and <strong>Expenses</strong> fields on this property will be locked to prevent reuse. Your next free analysis will be available on <strong>${resetDate}</strong>.</p>
+      <p style="color:var(--text2);font-size:.85rem">Once confirmed, the <strong>Contact & Status</strong> and <strong>Expenses</strong> fields on this property will be locked to prevent reuse. Your next free analysis will be available on <strong>${freeNextDate}</strong>.</p>
       <p style="color:var(--text3);font-size:.8rem;margin-top:8px">Need more analyses? <a href="javascript:void(0)" onclick="document.getElementById('appConfirmOverlay')?.remove();switchView('pricing')" style="color:var(--primary)">Upgrade to Basic</a> for $9.99/month and analyze 10x more properties.</p>
     </div>`;
   } else {
