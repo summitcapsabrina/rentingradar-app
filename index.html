@@ -5368,6 +5368,8 @@ function _tutSaveUpdateNotifs(){
 }
 
 function checkTutorialUpdates(){
+  loadSettingsPrefs();
+  if(settingsPrefs.tutorialUpdateNotifs === false) return;
   _tutLoadUpdateNotifs();
   _tutLoadSeen();
   // Only notify users who previously completed the tutorial
@@ -5399,6 +5401,7 @@ function checkTutorialUpdates(){
 }
 
 function getTutorialUpdateNotifs(){
+  if(settingsPrefs.tutorialUpdateNotifs === false) return [];
   _tutLoadUpdateNotifs();
   return _tutUpdateNotifications.filter(n => !n.read);
 }
@@ -11260,6 +11263,10 @@ function renderSettings(){
               return '<button class="btn btn-primary btn-sm" onclick="openTutorialSlideshow(true)">▶ Start Tutorial</button>';
             })()}
           </div>
+        </div>
+        <div class="settings-row">
+          <div class="settings-row-left"><div class="sr-label">New Lesson Notifications</div><div class="sr-desc">Get notified when new tutorial lessons are published</div></div>
+          <div class="settings-row-right"><div class="settings-toggle ${settingsPrefs.tutorialUpdateNotifs!==false?'on':''}" onclick="toggleSettingsPref('tutorialUpdateNotifs',this)"></div></div>
         </div>
       </div>
     </div>
