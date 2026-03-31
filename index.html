@@ -804,6 +804,13 @@ h1 .hero-edit-input{font-size:1.35rem}
 .pyn-col-label{font-size:.74rem;font-weight:700;text-transform:uppercase;letter-spacing:.3px;color:var(--col-color)}
 .pyn-col-active .pyn-col-label{font-size:.78rem}
 .pyn-col-indicator{height:3px;background:var(--col-color);border-radius:3px 3px 0 0;margin:-1px -4px 0;position:absolute;bottom:0;left:4px;right:4px}
+.nft-mode-bar{display:flex;align-items:stretch;justify-content:center;gap:0}
+.nft-mode-col{flex:1;text-align:center;padding:14px 8px 12px;cursor:pointer;position:relative;transition:all .15s;user-select:none}
+.nft-mode-col:hover:not(.nft-mode-active){background:rgba(148,163,184,.08)}
+.nft-mode-col.nft-mode-active{background:rgba(99,129,250,.06)}
+.nft-mode-label{font-size:.88rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--col-color)}
+.nft-mode-active .nft-mode-label{font-size:.94rem}
+.nft-mode-indicator{height:3px;background:var(--col-color);border-radius:3px 3px 0 0;position:absolute;bottom:0;left:8px;right:8px}
 .pyn-body .calc-row{gap:4px}
 .pyn-body .calc-label{font-size:.88rem}
 .pyn-body .total-row .calc-label{font-size:.92rem}
@@ -8215,12 +8222,18 @@ function renderNegotiationTab(r){
     return y + 'y ' + m + 'm';
   }
 
-  // ── Forecast mode pills (single set, syncs with Projected ROI tab) ──
+  // ── Forecast mode selector (single set, syncs with Projected ROI tab) ──
   const _nftModeLabels = {pessimistic:'Pessimistic',realistic:'Realistic',optimistic:'Optimistic'};
   const _nftModeColors = {pessimistic:'var(--num-danger)',realistic:'var(--num-computed)',optimistic:'var(--num-success)'};
-  h += '<div class="calc-section" style="margin-top:0"><div class="calc-section-body" style="padding:12px 16px">';
-  h += '<div style="display:flex;justify-content:center;gap:8px">';
-  ['pessimistic','realistic','optimistic'].forEach(m => { const active = m === calcProjMode; h += '<span onclick="setCalcProjMode(\''+m+'\')" style="cursor:pointer;font-size:.76rem;padding:5px 14px;border-radius:12px;font-weight:600;letter-spacing:.3px;transition:all .15s;'+(active?'background:'+_nftModeColors[m]+';color:#fff':'color:var(--text3);border:1px solid var(--border)')+'">'+_nftModeLabels[m]+'</span>'; });
+  h += '<div class="calc-section" style="margin-top:0"><div class="calc-section-body" style="padding:0">';
+  h += '<div class="nft-mode-bar">';
+  ['pessimistic','realistic','optimistic'].forEach(m => {
+    const active = m === calcProjMode;
+    h += '<div class="nft-mode-col'+(active?' nft-mode-active':'')+'" style="--col-color:'+_nftModeColors[m]+'" onclick="setCalcProjMode(\''+m+'\')">';
+    h += '<span class="nft-mode-label">'+_nftModeLabels[m]+'</span>';
+    if(active) h += '<div class="nft-mode-indicator"></div>';
+    h += '</div>';
+  });
   h += '</div>';
   h += '</div></div>';
 
