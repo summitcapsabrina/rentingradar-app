@@ -29,7 +29,7 @@ const PHYSICAL_ADDRESS = "RentingRadar · help@rentingradar.com";
 const PLAN_FEATURES = {
   Free: [
     'Analyze 1 property per month',
-    'Pipeline view',
+    'Pipeline management',
     'Full-scope property profiles',
     'Follow-up reminders & notifications',
     'Expense tracking'

@@ -8,7 +8,7 @@ const APP_URL = "https://app.rentingradar.com";
 const SITE_URL = "https://rentingradar.com";
 
 const PLAN_FEATURES = {
-  Free: ['Analyze 1 property per month','Pipeline view','Full-scope property profiles','Follow-up reminders & notifications','Expense tracking'],
+  Free: ['Analyze 1 property per month','Pipeline management','Full-scope property profiles','Follow-up reminders & notifications','Expense tracking'],
   Basic: ['Analyze 10 properties per month','Everything in Free','CSV import & export','Dark mode & 8 color themes'],
   Pro: ['Analyze unlimited properties','Everything in Basic','Negotiation Forecasting Tools','Priority feature requests']
 };
