@@ -206,7 +206,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text)}
   <div class="tut-main">
     <div class="tut-topbar">
       <button class="tut-close-btn tut-menu-btn" onclick="toggleSidebar(true)" title="Chapters" style="display:none">☰</button>
-      <div class="step-counter">Step <span id="tutStepNum">1</span> of <span id="tutStepTotal">31</span></div>
+      <div class="step-counter">Step <span id="tutStepNum">1</span> of <span id="tutStepTotal">27</span></div>
       <div class="step-title" id="tutStepTitle">Welcome</div>
       <div class="tier-badge" id="tutTierBadge"></div>
       <button class="tut-close-btn" onclick="toggleFullscreen()" title="Toggle fullscreen">⛶</button>
@@ -309,9 +309,6 @@ const TUTORIAL_STEPS = [
   { chapter:4, image:'08-negotiation-tools.webp', title:'Rent Adjustment Dial', desc:'Drag the <b>dial</b> to simulate different rent amounts. Watch how <b>monthly cash flow</b>, <b>ROI</b>, and <b>deal temperature</b> change in real-time. Find the sweet spot for your negotiation.', highlight:{x:14.86,y:32.65,w:40.50,h:59.00}, tier:'pro' },
   { chapter:4, image:'08-negotiation-tools.webp', title:'Rental Concessions', desc:'Model common concessions like <b>free months</b>, <b>reduced security deposit</b>, or <b>included utilities</b>. See the impact on your <b>break-even timeline</b> and overall <b>ROI</b> instantly.', highlight:{x:55.36,y:32.65,w:43.87,h:58.99}, tier:'pro' },
 
-  // ─── Chapter 6: Pro Power Features (Steps 28–29) ───
-  { chapter:5, image:'10-settings.webp', title:'Themes & Accent Colors', desc:'Personalize your CRM with <b>dark or light mode</b>, and choose from multiple accent colors — <b>default blue</b>, <b>crimson flame</b>, <b>ocean depths</b>, or <b>emerald forest</b>.', highlight:{x:14.5,y:20,w:85,h:30}, tier:'pro' },
-  { chapter:5, image:'10-settings.webp', title:'Keyboard Shortcuts', desc:'Power users can navigate the entire CRM with <b>keyboard shortcuts</b>. Press <b>?</b> anywhere to see the full list, or check them in <b>Settings</b>. You\'re now ready to master RentingRadar!', highlight:{x:14.5,y:52,w:85,h:25}, tier:'pro' },
 ];
 
 const CHAPTERS = [
@@ -320,7 +317,6 @@ const CHAPTERS = [
   { title:'Competitor Analysis', tier:'basic', steps:[14,15,16,17] },
   { title:'Projected ROI', tier:'basic', steps:[18,19,20,21,22,23] },
   { title:'Negotiation Tools', tier:'pro', steps:[24,25,26] },
-  { title:'Power Features', tier:'pro', steps:[27,28] },
 ];
 
 const IMAGE_BASE = 'tutorials/';
