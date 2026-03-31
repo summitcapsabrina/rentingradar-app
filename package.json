@@ -1,0 +1,9 @@
+{
+  "name": "rentingradar-api",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "jsonwebtoken": "^9.0.0",
+    "stripe": "^14.0.0"
+  }
+}

@@ -3,6 +3,13 @@
     "public": ".",
     "ignore": ["firebase.json", "functions", "node_modules", ".git", "*.bak"],
     "rewrites": [
+      { "source": "/api/createCheckoutSession", "function": "createCheckoutSession" },
+      { "source": "/api/createPortalSession", "function": "createPortalSession" },
+      { "source": "/api/verifyCheckout", "function": "verifyCheckout" },
+      { "source": "/api/syncSubscription", "function": "syncSubscription" },
+      { "source": "/api/emailPreferences", "function": "emailPreferences" },
+      { "source": "/api/unsubscribe", "function": "unsubscribe" },
+      { "source": "/api/testEmail", "function": "testEmail" },
       { "source": "**", "destination": "/index.html" }
     ]
   },
