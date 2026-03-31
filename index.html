@@ -5521,7 +5521,7 @@ function showAnalysisConfirmation(propertyId, tabToOpen){
       <p style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin:10px 0;font-weight:600">${esc(addr)}</p>
       <p>This will unlock <strong>Competitor Analysis</strong> and <strong>Projected ROI</strong> for this property permanently.</p>
       <p style="color:var(--text2);font-size:.85rem">Once confirmed, the <strong>Contact & Status</strong> and <strong>Expenses</strong> fields on this property will be locked to prevent reuse. Your next free analysis will be available on <strong>${resetDate}</strong>.</p>
-      <p style="color:var(--text3);font-size:.8rem;margin-top:8px">Need more analyses? <a href="javascript:void(0)" onclick="document.getElementById('appConfirmOverlay')?.remove();switchView('pricing')" style="color:var(--primary)">Upgrade to Basic</a> for $9.99/month.</p>
+      <p style="color:var(--text3);font-size:.8rem;margin-top:8px">Need more analyses? <a href="javascript:void(0)" onclick="document.getElementById('appConfirmOverlay')?.remove();switchView('pricing')" style="color:var(--primary)">Upgrade to Basic</a> for $9.99/month and analyze 10x more properties.</p>
     </div>`;
   } else {
     // Basic plan
@@ -5531,7 +5531,7 @@ function showAnalysisConfirmation(propertyId, tabToOpen){
       <p>This will unlock <strong>Competitor Analysis</strong> and <strong>Projected ROI</strong> for this property permanently.</p>
       <p style="font-size:.9rem">You have <strong>${remaining} of ${limit}</strong> analyses remaining this cycle. Resets on <strong>${resetDate}</strong>.</p>
       <p style="color:var(--text2);font-size:.85rem">Once confirmed, the <strong>Contact & Status</strong> and <strong>Expenses</strong> fields on this property will be locked to prevent reuse.</p>
-      ${remaining <= 3 ? '<p style="color:var(--warning);font-size:.8rem;margin-top:8px">Need unlimited analyses? <a href="javascript:void(0)" onclick="document.getElementById(\'appConfirmOverlay\')?.remove();switchView(\'pricing\')" style="color:var(--primary)">Upgrade to Pro</a>.</p>' : ''}
+      ${remaining <= 3 ? '<p style="color:var(--warning);font-size:.8rem;margin-top:8px">Need unlimited analyses? <a href="javascript:void(0)" onclick="document.getElementById(\'appConfirmOverlay\')?.remove();switchView(\'pricing\')" style="color:var(--primary)">Upgrade to Pro</a> for $14.99/month and analyze unlimited properties.</p>' : ''}
     </div>`;
   }
 
