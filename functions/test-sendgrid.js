@@ -277,6 +277,64 @@ function basicNudge3(name) {
   `);
 }
 
+// ---- ANALYSIS LIMIT (Free) ----
+function analysisLimitFreeHtml(name) {
+  const resetDate = "Apr 30, 2026";
+  return emailWrapper(`
+    <h2 style="margin:0 0 16px;font-size:20px;font-weight:700;color:#ffffff">You've hit your analysis limit, ${name}</h2>
+    <p style="margin:0 0 14px;color:#c8cbd6">You've used your <strong style="color:#ffffff">1 free property analysis</strong> for this 30-day cycle.</p>
+    <p style="margin:0 0 14px;color:#c8cbd6">Your analyses will reset on <strong style="color:#ffffff">${resetDate}</strong>. In the meantime, you can still view data on properties you've already analyzed.</p>
+
+    <div class="divider-line" style="height:1px;background-color:#252a3d;margin:24px 0"></div>
+
+    <p style="margin:0 0 14px;color:#ffffff;font-weight:600">Don't want to wait?</p>
+    <p style="margin:0 0 14px;color:#c8cbd6">Upgrade to <strong style="color:#6381fa">Basic</strong> ($9.99/mo) and get access to <strong style="color:#ffffff">10 properties per month</strong>:</p>
+
+    <div class="feat-box" style="background-color:#1a1e30;border:1px solid #252a3d;border-radius:8px;padding:16px 20px;margin:16px 0">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+        <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span><strong style="color:#ffffff">Analyze 10 properties per month</strong> (vs. 1 on Free)</td></tr>
+        <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span><strong style="color:#ffffff">CSV import & export</strong> for your data</td></tr>
+        <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span><strong style="color:#ffffff">Dark mode</strong> & 8 color themes</td></tr>
+      </table>
+    </div>
+    <p style="text-align:center">
+      <a href="${SITE_URL}/#pricing" style="display:inline-block;background:#6381fa;color:#ffffff;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:600;font-size:14px;margin:8px 0 16px">Upgrade Now</a>
+    </p>
+
+    <div class="divider-line" style="height:1px;background-color:#252a3d;margin:24px 0"></div>
+    <p style="font-size:13px;color:#6b7280;margin:0"><strong style="color:#9298ad">Questions?</strong> Reply to this email or reach us at <a href="mailto:help@rentingradar.com" style="color:#6381fa;text-decoration:none">help@rentingradar.com</a>.</p>
+  `);
+}
+
+// ---- ANALYSIS LIMIT (Basic) ----
+function analysisLimitBasicHtml(name) {
+  const resetDate = "Apr 30, 2026";
+  return emailWrapper(`
+    <h2 style="margin:0 0 16px;font-size:20px;font-weight:700;color:#ffffff">You've hit your analysis limit, ${name}</h2>
+    <p style="margin:0 0 14px;color:#c8cbd6">You've used all <strong style="color:#ffffff">10 property analyses</strong> for this 30-day cycle.</p>
+    <p style="margin:0 0 14px;color:#c8cbd6">Your analyses will reset on <strong style="color:#ffffff">${resetDate}</strong>. In the meantime, you can still view data on properties you've already analyzed.</p>
+
+    <div class="divider-line" style="height:1px;background-color:#252a3d;margin:24px 0"></div>
+
+    <p style="margin:0 0 14px;color:#ffffff;font-weight:600">Don't want to wait?</p>
+    <p style="margin:0 0 14px;color:#c8cbd6">Upgrade to <strong style="color:#6381fa">Pro</strong> ($14.99/mo) and get access to <strong style="color:#ffffff">unlimited properties</strong>:</p>
+
+    <div class="feat-box" style="background-color:#1a1e30;border:1px solid #252a3d;border-radius:8px;padding:16px 20px;margin:16px 0">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+        <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span><strong style="color:#ffffff">Analyze unlimited properties</strong> — no monthly cap</td></tr>
+        <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span><strong style="color:#ffffff">Negotiation Forecasting Tools</strong></td></tr>
+        <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span><strong style="color:#ffffff">Priority feature requests</strong></td></tr>
+      </table>
+    </div>
+    <p style="text-align:center">
+      <a href="${SITE_URL}/#pricing" style="display:inline-block;background:#6381fa;color:#ffffff;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:600;font-size:14px;margin:8px 0 16px">Upgrade Now</a>
+    </p>
+
+    <div class="divider-line" style="height:1px;background-color:#252a3d;margin:24px 0"></div>
+    <p style="font-size:13px;color:#6b7280;margin:0"><strong style="color:#9298ad">Questions?</strong> Reply to this email or reach us at <a href="mailto:help@rentingradar.com" style="color:#6381fa;text-decoration:none">help@rentingradar.com</a>.</p>
+  `);
+}
+
 // ---- MAIN ----
 const key = process.env.SENDGRID_API_KEY;
 console.log('API Key exists:', !!key);
@@ -305,6 +363,10 @@ async function sendAll() {
     { subject: "TEST: 🚀 Take your rental game to the next level", html: basicNudge1('Sabrina') },
     { subject: "TEST: 💡 Negotiate smarter with Pro tools", html: basicNudge2('Sabrina') },
     { subject: "TEST: 📈 Unlimited properties are one click away", html: basicNudge3('Sabrina') },
+
+    // Analysis quota limit emails
+    { subject: "TEST: 📊 You've used your free analysis for this month", html: analysisLimitFreeHtml('Sabrina') },
+    { subject: "TEST: 📊 You've used all 10 analyses for this month", html: analysisLimitBasicHtml('Sabrina') },
   ];
 
   for (const email of emails) {

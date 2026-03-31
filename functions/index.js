@@ -288,6 +288,48 @@ function basicUpgradeNudgeEmailHtml(displayName, weekNumber, unsubscribeUrl) {
 }
 
 
+// Analysis quota limit email — sent when a Free or Basic user uses all their analyses for the cycle
+function analysisLimitEmailHtml(displayName, userTier, resetDateStr, unsubscribeUrl) {
+  const name = displayName ? displayName.split(" ")[0] : "there";
+  const isFreePlan = userTier === "free";
+  const limit = isFreePlan ? 1 : 10;
+  const nextTier = isFreePlan ? "Basic" : "Pro";
+  const nextPrice = isFreePlan ? "$9.99" : "$14.99";
+  const nextLimit = isFreePlan ? "10 properties per month" : "unlimited properties";
+
+  return emailWrapper(`
+    <h2 style="margin:0 0 16px;font-size:20px;font-weight:700;color:#ffffff">You've hit your analysis limit, ${name}</h2>
+    <p style="margin:0 0 14px;color:#c8cbd6">You've used ${limit === 1 ? "your <strong style=\"color:#ffffff\">1 free property analysis</strong>" : "all <strong style=\"color:#ffffff\">" + limit + " property analyses</strong>"} for this 30-day cycle.</p>
+    <p style="margin:0 0 14px;color:#c8cbd6">Your analyses will reset on <strong style="color:#ffffff">${resetDateStr}</strong>. In the meantime, you can still view data on properties you've already analyzed.</p>
+
+    <div style="height:1px;background:#252a3d;margin:24px 0"></div>
+
+    <p style="margin:0 0 14px;color:#ffffff;font-weight:600">Don't want to wait?</p>
+    <p style="margin:0 0 14px;color:#c8cbd6">Upgrade to <strong style="color:#6381fa">${nextTier}</strong> (${nextPrice}/mo) and get access to <strong style="color:#ffffff">${nextLimit}</strong>:</p>
+
+    <div style="background:#1a1e30;border:1px solid #252a3d;border-radius:8px;padding:16px 20px;margin:16px 0">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+        ${isFreePlan ? `
+          <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span><strong style="color:#ffffff">Analyze 10 properties per month</strong> (vs. 1 on Free)</td></tr>
+          <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span><strong style="color:#ffffff">CSV import & export</strong> for your data</td></tr>
+          <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span><strong style="color:#ffffff">Dark mode</strong> & 8 color themes</td></tr>
+        ` : `
+          <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span><strong style="color:#ffffff">Analyze unlimited properties</strong> — no monthly cap</td></tr>
+          <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span><strong style="color:#ffffff">Negotiation Forecasting Tools</strong></td></tr>
+          <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span><strong style="color:#ffffff">Priority feature requests</strong></td></tr>
+        `}
+      </table>
+    </div>
+    <p style="text-align:center">
+      <a href="${SITE_URL}/#pricing" style="display:inline-block;background:#6381fa;color:#ffffff;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:600;font-size:14px;margin:8px 0 16px">Upgrade Now</a>
+    </p>
+
+    <div style="height:1px;background:#252a3d;margin:24px 0"></div>
+    <p style="font-size:13px;color:#6b7280;margin:0"><strong style="color:#9298ad">Questions?</strong> Reply to this email or reach us at <a href="mailto:help@rentingradar.com" style="color:#6381fa;text-decoration:none">help@rentingradar.com</a>.</p>
+  `, unsubscribeUrl);
+}
+
+
 // Upgrade confirmation email — sent when user upgrades from one plan to another
 function upgradeConfirmationEmailHtml(displayName, newTier, previousTier) {
   const name = displayName ? displayName.split(" ")[0] : "there";
@@ -519,21 +561,21 @@ exports.onUserDeleted = functions.auth.user().onDelete(async (user) => {
 
 
 // ============================================================
-// 7. BI-WEEKLY UPGRADE NUDGE — runs every Monday at 10 AM EST,
-//    but only sends emails every other week
+// 7. MONTHLY UPGRADE NUDGE — runs every Monday at 10 AM EST,
+//    but only sends emails once per month (every 4th week)
 // ============================================================
 exports.weeklyUpgradeNudge = functions.pubsub
   .schedule("every monday 10:00")
   .timeZone("America/New_York")
   .onRun(async (context) => {
-    // Calculate week number — only send on even weeks (bi-weekly)
+    // Calculate week number — only send every 4th week (monthly)
     const weekNumber = Math.floor(Date.now() / (7 * 24 * 60 * 60 * 1000));
-    if (weekNumber % 2 !== 0) {
-      console.log("Skipping upgrade nudge — odd week. Next send is next Monday.");
+    if (weekNumber % 4 !== 0) {
+      console.log("Skipping upgrade nudge — not a monthly send week. Next send in " + (4 - (weekNumber % 4)) + " week(s).");
       return null;
     }
 
-    console.log("Running bi-weekly upgrade nudge...");
+    console.log("Running monthly upgrade nudge...");
 
     // Query free-tier AND basic-tier users (both get upgrade nudges)
     const freeSnapshot = await db.collection("users").where("tier", "==", "free").get();
@@ -564,12 +606,12 @@ exports.weeklyUpgradeNudge = functions.pubsub
       const canSend = await canSendMarketingEmail(uid);
       if (!canSend) { skipped++; continue; }
 
-      // Check if we sent an upgrade email to this user in the last 13 days (prevent duplicates)
+      // Check if we sent an upgrade email to this user in the last 27 days (prevent duplicates)
       try {
         const recentEmail = await db.collection("emailLog")
           .where("uid", "==", uid)
           .where("type", "==", "upgrade_nudge")
-          .where("sentAt", ">", new Date(Date.now() - 13 * 24 * 60 * 60 * 1000))
+          .where("sentAt", ">", new Date(Date.now() - 27 * 24 * 60 * 60 * 1000))
           .limit(1)
           .get();
         if (!recentEmail.empty) { skipped++; continue; }
@@ -604,13 +646,92 @@ exports.weeklyUpgradeNudge = functions.pubsub
     // Write all log entries
     await Promise.all(batch);
 
-    console.log(`Bi-weekly nudge complete: ${sent} sent, ${skipped} skipped.`);
+    console.log(`Monthly nudge complete: ${sent} sent, ${skipped} skipped.`);
     return null;
   });
 
 
 // ============================================================
-// 8. EMAIL PREFERENCES — HTTP endpoint for managing opt-in/out
+// 8. ANALYSIS QUOTA LIMIT EMAIL — triggered from client when user
+//    exhausts their monthly analyses (Free or Basic)
+// ============================================================
+exports.sendAnalysisLimitEmail = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError("unauthenticated", "Must be logged in.");
+  }
+
+  const uid = context.auth.uid;
+  const resetDateStr = data.resetDate || "your next cycle";
+
+  // Get user data
+  const userDoc = await db.collection("users").doc(uid).get();
+  if (!userDoc.exists) {
+    throw new functions.https.HttpsError("not-found", "User not found.");
+  }
+
+  const userData = userDoc.data();
+  const email = userData.email;
+  const displayName = userData.displayName || userData.name;
+  const userTier = userData.tier || "free";
+
+  if (!email) {
+    throw new functions.https.HttpsError("failed-precondition", "No email on file.");
+  }
+
+  // Pro users should never hit a limit
+  if (userTier === "pro") {
+    return { sent: false, reason: "Pro users have unlimited analyses." };
+  }
+
+  // Check if user has opted out of product emails
+  const canSend = await canSendProductEmails(uid);
+  if (!canSend) {
+    return { sent: false, reason: "User opted out of product emails." };
+  }
+
+  // Prevent duplicate: don't send if we already sent one in the last 25 days
+  try {
+    const recentEmail = await db.collection("emailLog")
+      .where("uid", "==", uid)
+      .where("type", "==", "analysis_limit")
+      .where("sentAt", ">", new Date(Date.now() - 25 * 24 * 60 * 60 * 1000))
+      .limit(1)
+      .get();
+    if (!recentEmail.empty) {
+      return { sent: false, reason: "Already sent this cycle." };
+    }
+  } catch (err) {
+    console.warn("Could not check recent analysis limit emails for", uid, err);
+  }
+
+  const unsubUrl = getUnsubscribeUrl(uid, email, "product");
+  const htmlContent = analysisLimitEmailHtml(displayName, userTier, resetDateStr, unsubUrl);
+
+  const subject = userTier === "free"
+    ? "📊 You've used your free analysis for this month"
+    : "📊 You've used all 10 analyses for this month";
+
+  const success = await sendEmail(email, subject, htmlContent, {
+    unsubscribeUrl: unsubUrl,
+    category: "analysis_limit",
+  });
+
+  if (success) {
+    await db.collection("emailLog").add({
+      uid: uid,
+      email: email,
+      type: "analysis_limit",
+      subject: subject,
+      sentAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  }
+
+  return { sent: success };
+});
+
+
+// ============================================================
+// 9. EMAIL PREFERENCES — HTTP endpoint for managing opt-in/out
 // ============================================================
 exports.emailPreferences = functions.https.onRequest((req, res) => {
   cors(req, res, async () => {

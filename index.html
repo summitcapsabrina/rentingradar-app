@@ -5462,6 +5462,21 @@ function commitPropertyAnalysis(propertyId){
     date: new Date().toISOString()
   });
   _aqSave();
+
+  // If user just used their last analysis, send the quota limit email
+  if(currentTier !== 'pro' && getAnalysisRemaining() <= 0){
+    _sendAnalysisLimitEmail();
+  }
+}
+
+// Fire the analysis limit email via Cloud Function
+function _sendAnalysisLimitEmail(){
+  try {
+    const fn = firebase.functions().httpsCallable('sendAnalysisLimitEmail');
+    fn({ resetDate: getAnalysisResetDateStr() }).then(res => {
+      if(res.data && res.data.sent) console.log('Analysis limit email sent.');
+    }).catch(err => console.warn('Analysis limit email error:', err));
+  } catch(e){ console.warn('Could not call sendAnalysisLimitEmail:', e); }
 }
 
 // Format the reset date for display
