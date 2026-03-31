@@ -8,9 +8,9 @@ const APP_URL = "https://app.rentingradar.com";
 const SITE_URL = "https://rentingradar.com";
 
 const PLAN_FEATURES = {
-  Free: ['Up to 15 properties','Pipeline view','Contact management','Follow-up reminders & notifications','Expense tracking'],
-  Basic: ['Up to 50 properties','Everything in Free','CSV import & export','Dark mode & 8 color themes','Property analysis','ROI calculator'],
-  Pro: ['Unlimited properties','Everything in Basic','Negotiation Forecasting Tools','Advanced property analysis','Priority feature requests']
+  Free: ['Analyze 1 property per month','Pipeline view','Full-scope property profiles','Follow-up reminders & notifications','Expense tracking'],
+  Basic: ['Analyze 10 properties per month','Everything in Free','CSV import & export','Dark mode & 8 color themes'],
+  Pro: ['Analyze unlimited properties','Everything in Basic','Negotiation Forecasting Tools','Priority feature requests']
 };
 
 function emailWrapper(bodyHtml, preferencesUrl) {
@@ -99,7 +99,7 @@ function welcomeEmailHtml(displayName, tierName) {
     </p>
     ${tier === "Free" ? `<div class="feat-box" style="background-color:#1a1e30;border:1px solid #252a3d;border-radius:8px;padding:16px 20px;margin:20px 0;text-align:center">
       <p style="margin:0 0 4px;font-size:14px;color:#ffffff;font-weight:600">Want more features?</p>
-      <p style="margin:0 0 12px;font-size:13px;color:#9298ad">Upgrade to Basic ($9.99/mo) for property analysis & ROI tools, or Pro ($14.99/mo) for unlimited properties & negotiation forecasting.</p>
+      <p style="margin:0 0 12px;font-size:13px;color:#9298ad">Upgrade to Basic ($9.99/mo) to analyze 10 properties per month, or Pro ($14.99/mo) for unlimited analyses & negotiation forecasting.</p>
       <a href="${SITE_URL}/#pricing" style="color:#6381fa;font-size:13px;font-weight:600;text-decoration:none">View Plans →</a>
     </div>` : ""}
     <div class="divider-line" style="height:1px;background-color:#252a3d;margin:24px 0"></div>
@@ -131,8 +131,7 @@ function upgradeNudge1(name) {
     <p style="margin:0 0 14px;color:#c8cbd6">Did you know that with a <strong style="color:#ffffff">Basic</strong> plan ($9.99/mo) you can also:</p>
     <div class="feat-box" style="background-color:#1a1e30;border:1px solid #252a3d;border-radius:8px;padding:16px 20px;margin:16px 0">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-        <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span>Track up to <strong style="color:#ffffff">50 properties</strong> (vs. 15 on Free)</td></tr>
-        <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span><strong style="color:#ffffff">Property analysis</strong> & ROI calculator</td></tr>
+        <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span><strong style="color:#ffffff">Analyze 10 properties per month</strong> (vs. 1 on Free)</td></tr>
         <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span><strong style="color:#ffffff">CSV import & export</strong> for your data</td></tr>
         <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span><strong style="color:#ffffff">Dark mode</strong> & 8 color themes</td></tr>
       </table>
@@ -147,11 +146,11 @@ function upgradeNudge1(name) {
 function upgradeNudge2(name) {
   return emailWrapper(`
     <h2 style="margin:0 0 16px;font-size:20px;font-weight:700;color:#ffffff">Quick tip, ${name}</h2>
-    <p style="margin:0 0 14px;color:#c8cbd6">Many successful RentingRadar users tell us that <strong style="color:#ffffff">Negotiation Forecasting</strong> and <strong style="color:#ffffff">Advanced Property Analysis</strong> are the features that save them the most money.</p>
+    <p style="margin:0 0 14px;color:#c8cbd6">Many successful RentingRadar users tell us that <strong style="color:#ffffff">Negotiation Forecasting</strong> and <strong style="color:#ffffff">unlimited property analyses</strong> are the features that save them the most money.</p>
     <p style="margin:0 0 14px;color:#c8cbd6">These tools are available on our <strong style="color:#6381fa">Pro plan</strong> ($14.99/mo), and they've helped users lock in better lease terms by showing landlords exactly why a lower rate makes sense for both parties.</p>
     <div class="feat-box" style="background-color:#1a1e30;border:1px solid #252a3d;border-radius:8px;padding:16px 20px;margin:16px 0;text-align:center">
       <p style="margin:0 0 4px;font-size:15px;color:#ffffff;font-weight:600">Pro Plan — $14.99/mo</p>
-      <p style="margin:0 0 12px;font-size:13px;color:#9298ad">Unlimited properties, negotiation forecasting, advanced analysis, and priority feature requests.</p>
+      <p style="margin:0 0 12px;font-size:13px;color:#9298ad">Unlimited analyses, negotiation forecasting tools, and priority feature requests.</p>
       <a href="${SITE_URL}/#pricing" style="color:#6381fa;font-size:13px;font-weight:600;text-decoration:none">Compare all plans →</a>
     </div>
     <p style="text-align:center">
@@ -169,11 +168,11 @@ function upgradeNudge3(name) {
     <div class="feat-box" style="background-color:#1a1e30;border:1px solid #252a3d;border-radius:8px;padding:16px 20px;margin:16px 0">
       <p style="margin:0 0 8px;font-size:13px;font-weight:600;color:#f59e0b;text-transform:uppercase;letter-spacing:.5px">Basic — $9.99/mo</p>
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:12px">
-        <tr><td style="padding:2px 0;font-size:13px;color:#c8cbd6"><span style="color:#34d399;margin-right:6px">✓</span>50 properties, property analysis, ROI calculator, CSV import &amp; export</td></tr>
+        <tr><td style="padding:2px 0;font-size:13px;color:#c8cbd6"><span style="color:#34d399;margin-right:6px">✓</span>Analyze 10 properties per month, CSV import &amp; export, dark mode &amp; themes</td></tr>
       </table>
       <p style="margin:0 0 8px;font-size:13px;font-weight:600;color:#6381fa;text-transform:uppercase;letter-spacing:.5px">Pro — $14.99/mo</p>
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-        <tr><td style="padding:2px 0;font-size:13px;color:#c8cbd6"><span style="color:#34d399;margin-right:6px">✓</span>Unlimited properties, negotiation forecasting, advanced analysis</td></tr>
+        <tr><td style="padding:2px 0;font-size:13px;color:#c8cbd6"><span style="color:#34d399;margin-right:6px">✓</span>Unlimited analyses, negotiation forecasting tools, priority feature requests</td></tr>
       </table>
     </div>
     <p style="text-align:center">
@@ -228,9 +227,8 @@ function basicNudge1(name) {
     <p style="margin:0 0 14px;color:#c8cbd6">With the <strong style="color:#6381fa">Pro plan</strong> ($14.99/mo), you get:</p>
     <div class="feat-box" style="background-color:#1a1e30;border:1px solid #252a3d;border-radius:8px;padding:16px 20px;margin:16px 0">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-        <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span><strong style="color:#ffffff">Unlimited properties</strong> (vs. 50 on Basic)</td></tr>
+        <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span><strong style="color:#ffffff">Analyze unlimited properties</strong> (vs. 10/month on Basic)</td></tr>
         <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span><strong style="color:#ffffff">Negotiation Forecasting Tools</strong></td></tr>
-        <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span><strong style="color:#ffffff">Advanced property analysis</strong></td></tr>
         <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span><strong style="color:#ffffff">Priority feature requests</strong></td></tr>
       </table>
     </div>
@@ -248,7 +246,7 @@ function basicNudge2(name) {
     <p style="margin:0 0 14px;color:#c8cbd6">It shows landlords exactly why a lower rate makes sense for both parties — backed by data. That's available on our <strong style="color:#6381fa">Pro plan</strong> ($14.99/mo).</p>
     <div class="feat-box" style="background-color:#1a1e30;border:1px solid #252a3d;border-radius:8px;padding:16px 20px;margin:16px 0;text-align:center">
       <p style="margin:0 0 4px;font-size:15px;color:#ffffff;font-weight:600">Pro Plan — $14.99/mo</p>
-      <p style="margin:0 0 12px;font-size:13px;color:#9298ad">Unlimited properties, negotiation forecasting, advanced analysis, and priority feature requests.</p>
+      <p style="margin:0 0 12px;font-size:13px;color:#9298ad">Unlimited analyses, negotiation forecasting tools, and priority feature requests.</p>
       <a href="${SITE_URL}/#pricing" style="color:#6381fa;font-size:13px;font-weight:600;text-decoration:none">Compare all plans →</a>
     </div>
     <p style="text-align:center">
@@ -261,13 +259,12 @@ function basicNudge2(name) {
 function basicNudge3(name) {
   return emailWrapper(`
     <h2 style="margin:0 0 16px;font-size:20px;font-weight:700;color:#ffffff">Outgrowing your Basic plan, ${name}?</h2>
-    <p style="margin:0 0 14px;color:#c8cbd6">With 50 properties on your Basic plan, you've got a solid setup. But as your portfolio scales, you'll want the freedom of <strong style="color:#ffffff">unlimited tracking</strong> plus advanced negotiation tools.</p>
+    <p style="margin:0 0 14px;color:#c8cbd6">With 10 analyses per month on your Basic plan, you've got a solid setup. But as your portfolio scales, you'll want the freedom of <strong style="color:#ffffff">unlimited analyses</strong> plus advanced negotiation tools.</p>
     <p style="margin:0 0 14px;color:#c8cbd6">Here's what Pro adds on top of Basic:</p>
     <div class="feat-box" style="background-color:#1a1e30;border:1px solid #252a3d;border-radius:8px;padding:16px 20px;margin:16px 0">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-        <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span><strong style="color:#ffffff">Unlimited properties</strong> — no cap on your portfolio</td></tr>
+        <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span><strong style="color:#ffffff">Analyze unlimited properties</strong> — no monthly cap</td></tr>
         <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span><strong style="color:#ffffff">Negotiation Forecasting Tools</strong> — data-backed lease negotiations</td></tr>
-        <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span><strong style="color:#ffffff">Advanced property analysis</strong> — deeper deal insights</td></tr>
         <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span><strong style="color:#ffffff">Priority feature requests</strong> — shape the product roadmap</td></tr>
       </table>
     </div>
@@ -362,7 +359,7 @@ async function sendAll() {
     // Basic tier upgrade nudges (→ Pro)
     { subject: "TEST: 🚀 Take your rental game to the next level", html: basicNudge1('Sabrina') },
     { subject: "TEST: 💡 Negotiate smarter with Pro tools", html: basicNudge2('Sabrina') },
-    { subject: "TEST: 📈 Unlimited properties are one click away", html: basicNudge3('Sabrina') },
+    { subject: "TEST: 📈 Unlimited analyses are one click away", html: basicNudge3('Sabrina') },
 
     // Analysis quota limit emails
     { subject: "TEST: 📊 You've used your free analysis for this month", html: analysisLimitFreeHtml('Sabrina') },
