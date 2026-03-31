@@ -2945,8 +2945,13 @@ function _renderProfileInner(){
   const hasDetails = Object.keys(d).some(k => d[k] && (Array.isArray(d[k]) ? d[k].length > 0 : true));
   const showImport = r.link && !hasDetails;
   const activeTab = profileActiveTab || 'details';
-  const calcOk = requireTier('basic','Pro Forma');
-  const proOk = requireTier('basic','Property Analysis');
+  // Analysis access: Pro always OK, otherwise check quota system
+  const _isPro = currentTier === 'pro';
+  const _propAnalyzed = isPropertyAnalyzed(r.id);
+  const _hasQuota = getAnalysisRemaining() > 0;
+  const proOk = _isPro || _propAnalyzed || _hasQuota;  // Can see unlocked tab
+  const calcOk = proOk;
+  const _needsConfirm = !_isPro && !_propAnalyzed && _hasQuota; // Unlocked but not yet committed
   const expensesOk = true; // Expenses available on all tiers including Free
 
   const heroMarket = d.market || '';
@@ -2993,8 +2998,8 @@ function _renderProfileInner(){
         <div class="profile-tabs">
           <div class="profile-tab ${activeTab==='details'?'active':''}" data-tab="details" onclick="setProfileTab('details')">🏠 Property Details</div>
           <div class="profile-tab ${activeTab==='expenses'?'active':''}" data-tab="expenses" onclick="setProfileTab('expenses')">💸 Expenses</div>
-          <div class="profile-tab ${activeTab==='analysis'?'active':''}" data-tab="analysis" onclick="setProfileTab('analysis')">📊 Competitor Analysis ${!proOk?'<span class=\\"tab-lock\\">🔒</span>':''}</div>
-          <div class="profile-tab ${activeTab==='calculator'?'active':''}" data-tab="calculator" onclick="setProfileTab('calculator')">💰 Projected ROI ${!calcOk?'<span class=\\"tab-lock\\">🔒</span>':''}</div>
+          <div class="profile-tab ${activeTab==='analysis'?'active':''}" data-tab="analysis" onclick="${_needsConfirm ? `showAnalysisConfirmation('${r.id}','analysis')` : `setProfileTab('analysis')`}">📊 Competitor Analysis ${!proOk?'<span class=\\"tab-lock\\">🔒</span>':''}</div>
+          <div class="profile-tab ${activeTab==='calculator'?'active':''}" data-tab="calculator" onclick="${_needsConfirm ? `showAnalysisConfirmation('${r.id}','calculator')` : `setProfileTab('calculator')`}">💰 Projected ROI ${!calcOk?'<span class=\\"tab-lock\\">🔒</span>':''}</div>
         </div>
       </div>
     </div>
@@ -3006,11 +3011,12 @@ function _renderProfileInner(){
   html += `<div class="tab-content ${activeTab==='details'?'active':''}" data-tab="details">`;
 
   // Contact & Status Card + Activity Log (inside Property Details tab)
+  const _contactLocked = !_isPro && _propAnalyzed;
   html += `<div class="profile-grid">
     <div class="profile-card">
-      <div class="profile-card-header clickable-edit" onclick="openCardEditor('${r.id}','contact')" title="Click to edit contact & status">
-        <h3>👤 Contact & Status</h3>
-        <button class="card-edit-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+      <div class="profile-card-header ${_contactLocked ? '' : 'clickable-edit'}" ${_contactLocked ? '' : `onclick="openCardEditor('${r.id}','contact')" title="Click to edit contact & status"`}>
+        <h3>👤 Contact & Status ${_contactLocked ? '<span style="font-size:.7rem;color:var(--text3);font-weight:400;margin-left:6px">🔒 Locked — Analysis active</span>' : ''}</h3>
+        ${_contactLocked ? '' : `<button class="card-edit-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>`}
       </div>
       <div class="profile-card-body card-readonly" style="padding:14px 16px 10px">
         <div class="cr-row">
@@ -3137,7 +3143,21 @@ function _renderProfileInner(){
 
   // ── TAB: Analysis ──
   html += `<div class="tab-content ${activeTab==='analysis'?'active':''}" data-tab="analysis">`;
-  if(proOk && needsDisclaimer()){
+  if(_needsConfirm){
+    // Has quota but hasn't committed this property — show prompt
+    const _remDisp = getAnalysisRemaining();
+    const _limDisp = ANALYSIS_LIMITS[currentTier] || 0;
+    html += `<div class="profile-card profile-full">
+      <div class="profile-card-body">
+        <div class="tab-locked-overlay">
+          <div class="tlo-icon">📊</div>
+          <div class="tlo-title">Use an Analysis on This Property?</div>
+          <div class="tlo-desc">You have <strong>${_remDisp} of ${_limDisp}</strong> ${currentTier === 'free' ? 'free analysis' : 'analyses'} remaining this cycle. Click below to unlock Competitor Analysis and Projected ROI for this property.</div>
+          <button class="btn btn-primary" onclick="showAnalysisConfirmation('${r.id}','analysis')">Unlock Analysis</button>
+        </div>
+      </div>
+    </div>`;
+  } else if(proOk && needsDisclaimer()){
     html += `<div class="profile-card profile-full">
       <div class="profile-card-body">
         <div class="tab-locked-overlay">
@@ -3156,8 +3176,8 @@ function _renderProfileInner(){
         <div class="tab-locked-overlay">
           <div class="tlo-icon">🔒</div>
           <div class="tlo-title">Competitor Analysis</div>
-          <div class="tlo-desc">Compare this property against nearby Airbnb listings, analyze rental rates, occupancy, and understand market positioning. Available on the Basic plan.</div>
-          <button class="btn btn-primary" onclick="switchView('pricing')">Upgrade to Basic — $7.50/mo</button>
+          <div class="tlo-desc">You've used all your property analyses for this cycle. Your next analysis will be available on <strong>${getAnalysisResetDateStr()}</strong>. Upgrade your plan for more monthly analyses.</div>
+          <button class="btn btn-primary" onclick="switchView('pricing')">View Plans</button>
         </div>
       </div>
     </div>`;
@@ -3166,7 +3186,20 @@ function _renderProfileInner(){
 
   // ── TAB: Projected ROI ──
   html += `<div class="tab-content ${activeTab==='calculator'?'active':''}" data-tab="calculator">`;
-  if(calcOk && needsDisclaimer()){
+  if(_needsConfirm){
+    const _remDisp2 = getAnalysisRemaining();
+    const _limDisp2 = ANALYSIS_LIMITS[currentTier] || 0;
+    html += `<div class="profile-card profile-full">
+      <div class="profile-card-body">
+        <div class="tab-locked-overlay">
+          <div class="tlo-icon">💰</div>
+          <div class="tlo-title">Use an Analysis on This Property?</div>
+          <div class="tlo-desc">You have <strong>${_remDisp2} of ${_limDisp2}</strong> ${currentTier === 'free' ? 'free analysis' : 'analyses'} remaining this cycle. Click below to unlock Competitor Analysis and Projected ROI for this property.</div>
+          <button class="btn btn-primary" onclick="showAnalysisConfirmation('${r.id}','calculator')">Unlock Analysis</button>
+        </div>
+      </div>
+    </div>`;
+  } else if(calcOk && needsDisclaimer()){
     html += `<div class="profile-card profile-full">
       <div class="profile-card-body">
         <div class="tab-locked-overlay">
@@ -3185,8 +3218,8 @@ function _renderProfileInner(){
         <div class="tab-locked-overlay">
           <div class="tlo-icon">🔒</div>
           <div class="tlo-title">Projected ROI</div>
-          <div class="tlo-desc">View projected revenue, cash flow, return on investment, and deal temperature for this property. Available on the Basic plan.</div>
-          <button class="btn btn-primary" onclick="switchView('pricing')">Upgrade to Basic — $7.50/mo</button>
+          <div class="tlo-desc">You've used all your property analyses for this cycle. Your next analysis will be available on <strong>${getAnalysisResetDateStr()}</strong>. Upgrade your plan for more monthly analyses.</div>
+          <button class="btn btn-primary" onclick="switchView('pricing')">View Plans</button>
         </div>
       </div>
     </div>`;
@@ -5327,6 +5360,207 @@ function requireTier(minTier, featureName){
   return false;
 }
 
+// ── Analysis Quota System ──
+// Free: 1 analysis per 30-day cycle (accumulates — previous properties stay unlocked)
+// Basic: 15 per 30-day cycle (don't roll over)
+// Pro: unlimited
+const ANALYSIS_LIMITS = { free: 1, basic: 15, pro: Infinity };
+let _analysisQuota = { analyzedProperties: [], cycleStart: null, signupDate: null };
+
+function _aqLoad(){
+  try { _analysisQuota = JSON.parse(localStorage.getItem('rr_analysis_quota') || '{}'); } catch(e){}
+  if(!_analysisQuota.analyzedProperties) _analysisQuota.analyzedProperties = [];
+  if(!_analysisQuota.cycleStart) _analysisQuota.cycleStart = null;
+  if(!_analysisQuota.signupDate) _analysisQuota.signupDate = null;
+}
+function _aqSave(){
+  try { localStorage.setItem('rr_analysis_quota', JSON.stringify(_analysisQuota)); } catch(e){}
+  // Sync to Firestore
+  try {
+    const u = firebase.auth().currentUser;
+    if(u && db) db.collection('users').doc(u.uid).update({ analysisQuota: _analysisQuota }).catch(()=>{
+      db.collection('users').doc(u.uid).set({ analysisQuota: _analysisQuota }, { merge: true }).catch(()=>{});
+    });
+  } catch(e){}
+}
+function _aqLoadFromFirestore(data){
+  if(data && data.analysisQuota){
+    _analysisQuota = data.analysisQuota;
+    if(!_analysisQuota.analyzedProperties) _analysisQuota.analyzedProperties = [];
+    try { localStorage.setItem('rr_analysis_quota', JSON.stringify(_analysisQuota)); } catch(e){}
+  }
+}
+
+function _aqGetSignupDate(){
+  return _analysisQuota.signupDate || null;
+}
+
+function _aqSetSignupDate(dateStr){
+  _analysisQuota.signupDate = dateStr;
+  _aqSave();
+}
+
+// Get the current 30-day cycle boundaries based on signup date
+function _aqGetCurrentCycle(){
+  const signup = _aqGetSignupDate();
+  if(!signup) return { start: null, end: null, resetDate: null };
+  const signupDate = new Date(signup);
+  const now = new Date();
+  // Calculate how many full 30-day cycles have passed
+  const msPerCycle = 30 * 24 * 60 * 60 * 1000;
+  const elapsed = now.getTime() - signupDate.getTime();
+  const cycleNum = Math.floor(elapsed / msPerCycle);
+  const cycleStart = new Date(signupDate.getTime() + cycleNum * msPerCycle);
+  const cycleEnd = new Date(cycleStart.getTime() + msPerCycle);
+  return { start: cycleStart.toISOString(), end: cycleEnd.toISOString(), resetDate: cycleEnd };
+}
+
+// Get properties analyzed in the CURRENT 30-day cycle
+function _aqGetCurrentCycleAnalyses(){
+  const cycle = _aqGetCurrentCycle();
+  if(!cycle.start) return [];
+  const cycleStart = new Date(cycle.start).getTime();
+  const cycleEnd = new Date(cycle.end).getTime();
+  return _analysisQuota.analyzedProperties.filter(a => {
+    const t = new Date(a.date).getTime();
+    return t >= cycleStart && t < cycleEnd;
+  });
+}
+
+// Check if a specific property has EVER been analyzed (permanently unlocked)
+function isPropertyAnalyzed(propertyId){
+  return _analysisQuota.analyzedProperties.some(a => a.id === propertyId);
+}
+
+// Get remaining analyses for the current cycle
+function getAnalysisRemaining(){
+  if(currentTier === 'pro') return Infinity;
+  const limit = ANALYSIS_LIMITS[currentTier] || 0;
+  const used = _aqGetCurrentCycleAnalyses().length;
+  return Math.max(0, limit - used);
+}
+
+// Get total analyses used this cycle
+function getAnalysisUsedThisCycle(){
+  return _aqGetCurrentCycleAnalyses().length;
+}
+
+// Check if user can access analysis tabs for a given property
+function canAccessAnalysis(propertyId){
+  if(currentTier === 'pro') return true;
+  // Property already analyzed — always accessible
+  if(isPropertyAnalyzed(propertyId)) return true;
+  // Has remaining quota this cycle
+  return getAnalysisRemaining() > 0;
+}
+
+// Commit a property as analyzed (uses one analysis slot)
+function commitPropertyAnalysis(propertyId){
+  if(isPropertyAnalyzed(propertyId)) return; // Already analyzed
+  _analysisQuota.analyzedProperties.push({
+    id: propertyId,
+    date: new Date().toISOString()
+  });
+  _aqSave();
+}
+
+// Format the reset date for display
+function getAnalysisResetDateStr(){
+  const cycle = _aqGetCurrentCycle();
+  if(!cycle.resetDate) return '';
+  return cycle.resetDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+// Show the analysis confirmation pop-up
+function showAnalysisConfirmation(propertyId, tabToOpen){
+  const r = records.find(x => x.id === propertyId);
+  if(!r) return;
+  const addr = r.property || 'this property';
+  const remaining = getAnalysisRemaining();
+  const limit = ANALYSIS_LIMITS[currentTier] || 0;
+  const resetDate = getAnalysisResetDateStr();
+  const isFreePlan = currentTier === 'free';
+
+  let message = '';
+  if(isFreePlan){
+    message = `<div style="text-align:left;line-height:1.6">
+      <p>You're about to use your <strong>1 free property analysis</strong> for this 30-day cycle on:</p>
+      <p style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin:10px 0;font-weight:600">${esc(addr)}</p>
+      <p>This will unlock <strong>Competitor Analysis</strong> and <strong>Projected ROI</strong> for this property permanently.</p>
+      <p style="color:var(--text2);font-size:.85rem">Once confirmed, the <strong>Contact & Status</strong> and <strong>Expenses</strong> fields on this property will be locked to prevent reuse. Your next free analysis will be available on <strong>${resetDate}</strong>.</p>
+      <p style="color:var(--text3);font-size:.8rem;margin-top:8px">Need more analyses? <a href="javascript:void(0)" onclick="document.getElementById('appConfirmOverlay')?.remove();switchView('pricing')" style="color:var(--primary)">Upgrade to Basic</a> for 15/month.</p>
+    </div>`;
+  } else {
+    // Basic plan
+    message = `<div style="text-align:left;line-height:1.6">
+      <p>You're about to analyze:</p>
+      <p style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin:10px 0;font-weight:600">${esc(addr)}</p>
+      <p>This will unlock <strong>Competitor Analysis</strong> and <strong>Projected ROI</strong> for this property permanently.</p>
+      <p style="font-size:.9rem">You have <strong>${remaining} of ${limit}</strong> analyses remaining this cycle. Resets on <strong>${resetDate}</strong>.</p>
+      <p style="color:var(--text2);font-size:.85rem">Once confirmed, the <strong>Contact & Status</strong> and <strong>Expenses</strong> fields on this property will be locked to prevent reuse.</p>
+      ${remaining <= 3 ? '<p style="color:var(--warning);font-size:.8rem;margin-top:8px">Need unlimited analyses? <a href="javascript:void(0)" onclick="document.getElementById(\'appConfirmOverlay\')?.remove();switchView(\'pricing\')" style="color:var(--primary)">Upgrade to Pro</a>.</p>' : ''}
+    </div>`;
+  }
+
+  showAppConfirm(message, {
+    title: 'Use Analysis on This Property?',
+    icon: '📊',
+    confirmText: 'No, choose a different property',
+    cancelText: '',
+    confirmClass: 'btn-secondary',
+    onConfirm: function(){
+      // User said No — do nothing
+    }
+  });
+
+  // We need a two-step confirmation. Replace the standard confirm with a custom one.
+  // Remove the standard overlay and build a custom one
+  const existing = document.getElementById('appConfirmOverlay');
+  if(existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.className = 'multi-editor-overlay';
+  overlay.id = 'appConfirmOverlay';
+  overlay.innerHTML = `<div class="multi-editor" style="max-width:500px">
+    <div class="multi-editor-header">
+      <h3>Use Analysis on This Property?</h3>
+      <button class="modal-close" id="aqCloseBtn"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+    </div>
+    <div class="multi-editor-body" style="padding:20px 24px">
+      <div style="font-size:1.8rem;text-align:center;margin-bottom:12px">📊</div>
+      ${message}
+      <div style="display:flex;gap:10px;justify-content:center;margin-top:18px" id="aqBtnRow">
+        <button class="btn btn-secondary" id="aqNoBtn" style="padding:10px 20px">No, go back</button>
+        <button class="btn btn-primary" id="aqYesBtn" style="padding:10px 20px">Yes, analyze this property</button>
+      </div>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+
+  document.getElementById('aqCloseBtn').addEventListener('click', () => overlay.remove());
+  document.getElementById('aqNoBtn').addEventListener('click', () => overlay.remove());
+  document.getElementById('aqYesBtn').addEventListener('click', () => {
+    // Step 2: Final confirmation
+    document.getElementById('aqBtnRow').innerHTML = `
+      <div style="width:100%;text-align:center">
+        <p style="font-weight:600;margin-bottom:14px;color:var(--text)">Are you sure? This will permanently use 1 analysis on <strong>${esc(addr)}</strong>.</p>
+        <div style="display:flex;gap:10px;justify-content:center">
+          <button class="btn btn-secondary" id="aqFinalNo" style="padding:10px 20px">Cancel</button>
+          <button class="btn btn-primary" id="aqFinalYes" style="padding:10px 20px">Confirm Analysis</button>
+        </div>
+      </div>`;
+    document.getElementById('aqFinalNo').addEventListener('click', () => overlay.remove());
+    document.getElementById('aqFinalYes').addEventListener('click', () => {
+      overlay.remove();
+      commitPropertyAnalysis(propertyId);
+      showToast('✅ Analysis unlocked for ' + (r.property || 'this property'), 'success', 4000);
+      render();
+      // Switch to the requested tab
+      setTimeout(() => { setProfileTab(tabToOpen); }, 100);
+    });
+  });
+}
+
 function tierGateHtml(minTier, featureName, description){
   const t = TIERS[minTier];
   return `<div class="tier-gate">
@@ -5785,6 +6019,7 @@ function renderPricing(){
       ${renderPricingCard('free', {
         features: [
           'Up to 15 properties',
+          '1 property analysis per month',
           'Pipeline view',
           'Contact management',
           'Follow-up reminders & notifications',
@@ -5793,34 +6028,31 @@ function renderPricing(){
         disabled: [
           'CSV import & export',
           'Dark mode & color themes',
-          'Property analysis',
-          'ROI calculator',
         ],
-        desc: 'Get started with core CRM features for tracking your rental arbitrage outreach.'
+        desc: 'Analyze 1 deal per month for free — see Competitor Analysis and Projected ROI on any property.'
       })}
       ${renderPricingCard('basic', {
         popular: true,
         features: [
           'Up to 50 properties',
+          '15 property analyses per month',
           'Everything in Free',
           'CSV import & export',
           'Dark mode & 8 color themes',
-          'Property analysis',
-          'ROI calculator',
         ],
         disabled: [],
-        desc: 'Unlock analysis tools, themes, and data import/export for serious prospecting.'
+        desc: 'Analyze up to 15 deals per month with full Competitor Analysis and ROI projections.'
       })}
       ${renderPricingCard('pro', {
         features: [
           'Unlimited properties',
+          'Unlimited property analyses',
           'Everything in Basic',
           'Negotiation Forecasting Tools',
-          'Advanced property analysis',
           'Priority feature requests',
         ],
         disabled: [],
-        desc: 'Full power — unlimited properties with advanced analysis and forecasting.'
+        desc: 'No limits — analyze every deal, every month, with advanced negotiation forecasting.'
       })}
     </div>
 
@@ -6120,6 +6352,9 @@ firebase.auth().onAuthStateChanged(async (user) => {
       });
       _disclaimerAcknowledged = false;
       setTier('free');
+      // Initialize analysis quota with signup date
+      _aqLoad();
+      _aqSetSignupDate(new Date().toISOString());
       // New user — trigger free tutorial after data loads
       await loadDataFromFirestore(user.uid);
       _authDataLoaded = true;
@@ -6132,6 +6367,13 @@ firebase.auth().onAuthStateChanged(async (user) => {
       _disclaimerVersion = data.disclaimerVersion || 0;
       if(data.disclaimerAcknowledgedAt && data.disclaimerAcknowledgedAt.toDate){ _disclaimerAcknowledgedAt = data.disclaimerAcknowledgedAt.toDate().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'}); }
       _tutLoadSeenFromFirestore(data);
+      // Load analysis quota from Firestore
+      _aqLoadFromFirestore(data);
+      // Set signup date from Firestore createdAt if not already set
+      if(!_analysisQuota.signupDate && data.createdAt){
+        const ts = data.createdAt.toDate ? data.createdAt.toDate() : new Date(data.createdAt);
+        _aqSetSignupDate(ts.toISOString());
+      }
       if(data.tier) setTier(data.tier);
       // Load user's property data from Firestore
       await loadDataFromFirestore(user.uid);
@@ -6746,6 +6988,11 @@ function showAutoImportWarning(recId, field, containerId, currentVal){
 function activateHeroInput(recId, field, containerId, currentVal){
   const container = document.getElementById(containerId);
   if(!container) return;
+  // Block editing contact/address fields on analyzed properties (non-Pro)
+  if(currentTier !== 'pro' && isPropertyAnalyzed(recId) && (field === 'property' || field === 'monthlyRent')){
+    showToast('🔒 This field is locked on analyzed properties', 'info', 2500);
+    return;
+  }
   activeHeroEdit = { recId, field, containerId };
 
   const isRent = field === 'monthlyRent';
@@ -7011,8 +7258,14 @@ function renderExpensesTab(r){
   const v = calcComputeAll(r);
   const c = v.c;
   const isProUser = requireTier('pro','AI Estimates');
+  const _expLocked = currentTier !== 'pro' && isPropertyAnalyzed(r.id);
 
   let h = '<div class="calc-layout">';
+
+  // Show lock banner if expenses are locked due to analysis
+  if(_expLocked){
+    h += '<div style="background:rgba(139,92,246,.1);border:1px solid rgba(139,92,246,.25);border-radius:8px;padding:10px 16px;margin-bottom:14px;display:flex;align-items:center;gap:8px;font-size:.85rem;color:var(--text2)"><span style="font-size:1.1rem">🔒</span> Investment Details and Monthly Operating Expenses are locked because this property has an active analysis. Values are read-only.</div>';
+  }
 
   // Left panel: Investment Details
   h += '<div class="calc-panel">';
@@ -8191,6 +8444,11 @@ function _saveActiveCalcEdit(){
 
 function calcEditCell(el, skipBlurSave){
   if(el.querySelector('input')) return;
+  // Block editing on analyzed properties (non-Pro)
+  if(currentProfileId && currentTier !== 'pro' && isPropertyAnalyzed(currentProfileId)){
+    showToast('🔒 Expenses are locked on analyzed properties', 'info', 2500);
+    return;
+  }
   // Save any active edit first
   if(_activeCalcEdit){
     _activeCalcEdit._skipRerender = true;
@@ -10133,6 +10391,11 @@ function openCardEditor(recId, cardType){
   dismissAllOverlays();
   const r = records.find(x => x.id === recId);
   if(!r) return;
+  // Block editing Contact & Status on analyzed properties (non-Pro)
+  if(cardType === 'contact' && currentTier !== 'pro' && isPropertyAnalyzed(recId)){
+    showToast('🔒 Contact & Status is locked on analyzed properties', 'info', 3000);
+    return;
+  }
   const d = r.propertyDetails || {};
 
   let title = '', fieldsHtml = '', saveHandler = '';
@@ -11606,6 +11869,7 @@ function performReset(){
 /* ===== INIT ===== */
 loadTier();
 _tutLoadSeen();
+_aqLoad();
 checkTutorialUpdates();
 checkCheckoutReturn();
 initTheme();
