@@ -1155,211 +1155,220 @@ exports.syncSubscription = functions.https.onRequest((req, res) => {
 
 
 // ============================================================
-// SEND MEETING CALENDAR INVITE
+// HTML ESCAPE HELPER
 // ============================================================
 function escHtml(str) {
   return String(str || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-exports.sendMeetingInvite = functions.https.onCall(async (data, context) => {
-  if (!context.auth) {
-    throw new functions.https.HttpsError("unauthenticated", "Must be logged in.");
-  }
+// ============================================================
+// SEND MEETING CALENDAR INVITE (onRequest + CORS)
+// ============================================================
+exports.sendMeetingInvite = functions.https.onRequest((req, res) => {
+  cors(req, res, async () => {
+    try {
+      // Verify authentication
+      const decoded = await verifyAuth(req);
+      if (!decoded) {
+        sendError(res, 401, "Must be logged in.");
+        return;
+      }
 
-  const uid = context.auth.uid;
-  const meetingDate = data.meetingDate || "";
-  const meetingTime = data.meetingTime || "";
-  const contactName = data.contactName || "";
-  const propertyAddress = data.propertyAddress || "";
-  const propertyNotes = Array.isArray(data.propertyNotes) ? data.propertyNotes.filter(n => typeof n === "string" && n.length > 0) : [];
-  const durationMinutes = data.durationMinutes || 60;
+      const uid = decoded.uid;
+      const body = req.body || {};
+      // Support both direct body and { data: {...} } wrapper from frontend
+      const data = body.data || body;
 
-  if (!meetingDate || !meetingTime) {
-    throw new functions.https.HttpsError("invalid-argument", "Meeting date and time are required.");
-  }
+      const meetingDate = data.meetingDate || "";
+      const meetingTime = data.meetingTime || "";
+      const contactName = data.contactName || "";
+      const propertyAddress = data.propertyAddress || "";
+      const propertyNotes = Array.isArray(data.propertyNotes) ? data.propertyNotes.filter(n => typeof n === "string" && n.length > 0) : [];
+      const durationMinutes = data.durationMinutes || 60;
 
-  try {
-    // Get user data for email
-    const userDoc = await db.collection("users").doc(uid).get();
-    if (!userDoc.exists) {
-      throw new functions.https.HttpsError("not-found", "User not found.");
+      if (!meetingDate || !meetingTime) {
+        sendError(res, 400, "Meeting date and time are required.");
+        return;
+      }
+
+      // Get user data for email
+      const userDoc = await db.collection("users").doc(uid).get();
+      if (!userDoc.exists) {
+        sendError(res, 404, "User not found.");
+        return;
+      }
+      const userData = userDoc.data();
+      const userEmail = userData.email;
+      const userName = userData.displayName || userData.name || "RentingRadar User";
+
+      if (!userEmail) {
+        sendError(res, 400, "No email on file.");
+        return;
+      }
+
+      // Parse date parts manually to avoid timezone issues
+      const dateParts = meetingDate.split("-");
+      const timeParts = meetingTime.split(":");
+      const yr = dateParts[0], mo = dateParts[1], dy = dateParts[2];
+      const hr = timeParts[0], mn = timeParts[1] || "00";
+
+      // .ics uses local time format (no Z suffix) so calendar apps use user's timezone
+      const icsStart = yr + mo + dy + "T" + hr + mn + "00";
+      const endHour = parseInt(hr, 10) + Math.floor(durationMinutes / 60);
+      const endMin = parseInt(mn, 10) + (durationMinutes % 60);
+      const finalHour = String(endHour + Math.floor(endMin / 60)).padStart(2, "0");
+      const finalMin = String(endMin % 60).padStart(2, "0");
+      const icsEnd = yr + mo + dy + "T" + finalHour + finalMin + "00";
+      const icsStamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+
+      // Human-readable date/time for email
+      const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+      const days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+      const dtObj = new Date(parseInt(yr), parseInt(mo) - 1, parseInt(dy));
+      const dayName = days[dtObj.getDay()];
+      const monthName = months[parseInt(mo) - 1];
+      const meetingDateFmt = dayName + ", " + monthName + " " + parseInt(dy) + ", " + yr;
+
+      // Format 24h to 12h
+      const h = parseInt(hr, 10);
+      const ampm = h >= 12 ? "PM" : "AM";
+      const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+      const meetingTimeFmt = h12 + ":" + mn + " " + ampm;
+      const eh = parseInt(finalHour, 10);
+      const eampm = eh >= 12 ? "PM" : "AM";
+      const eh12 = eh === 0 ? 12 : eh > 12 ? eh - 12 : eh;
+      const endTimeFmt = eh12 + ":" + finalMin + " " + eampm;
+
+      // Build description
+      const contact = contactName || "the landlord/property manager";
+      const loc = propertyAddress || "";
+      var icsDesc = "Meeting with " + contact;
+      if (propertyAddress) icsDesc += "\\nProperty: " + propertyAddress;
+      if (propertyNotes.length > 0) {
+        icsDesc += "\\n\\nProperty Notes:\\n" + propertyNotes.map(function(n) { return "- " + n; }).join("\\n");
+      }
+      icsDesc += "\\n\\nScheduled via RentingRadar CRM";
+
+      // Generate unique ID
+      const eventUID = "rr-meeting-" + uid + "-" + Date.now() + "@rentingradar.com";
+
+      // Build .ics
+      const icsContent = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//RentingRadar//CRM//EN",
+        "CALSCALE:GREGORIAN",
+        "METHOD:REQUEST",
+        "BEGIN:VEVENT",
+        "DTSTART:" + icsStart,
+        "DTEND:" + icsEnd,
+        "DTSTAMP:" + icsStamp,
+        "UID:" + eventUID,
+        "ORGANIZER;CN=RentingRadar:mailto:" + FROM_EMAIL.email,
+        "ATTENDEE;CN=" + userName + ";RSVP=TRUE:mailto:" + userEmail,
+        "SUMMARY:Meeting with " + contact,
+        "LOCATION:" + loc,
+        "DESCRIPTION:" + icsDesc,
+        "STATUS:CONFIRMED",
+        "BEGIN:VALARM",
+        "TRIGGER:-PT30M",
+        "ACTION:DISPLAY",
+        "DESCRIPTION:Meeting with " + contact + " in 30 minutes",
+        "END:VALARM",
+        "BEGIN:VALARM",
+        "TRIGGER:-PT10M",
+        "ACTION:DISPLAY",
+        "DESCRIPTION:Meeting with " + contact + " in 10 minutes",
+        "END:VALARM",
+        "END:VEVENT",
+        "END:VCALENDAR"
+      ].join("\r\n");
+
+      // Build notes HTML
+      var notesHtml = "";
+      if (propertyNotes.length > 0) {
+        notesHtml = '<tr><td style="padding:20px 30px 0">' +
+          '<p style="margin:0 0 8px;font-size:13px;font-weight:600;color:#9399b2">Property Notes</p>' +
+          '<div style="background:#1a1e30;border:1px solid #252a3d;border-radius:8px;padding:12px 16px">' +
+          propertyNotes.map(function(n) { return '<p style="margin:0 0 4px;font-size:13px;color:#9399b2">&bull; ' + escHtml(n) + '</p>'; }).join("") +
+          '</div></td></tr>';
+      }
+
+      // Build email HTML
+      var locationRow = "";
+      if (propertyAddress) {
+        locationRow = '<tr><td style="padding:0">' +
+          '<p style="margin:0 0 2px;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#4b5068">Location</p>' +
+          '<p style="margin:0;font-size:15px;color:#e2e4eb">' + escHtml(propertyAddress) + '</p>' +
+          '</td></tr>';
+      }
+
+      const htmlContent = emailWrapper(
+        '<tr><td style="padding:30px 30px 0;text-align:center">' +
+          '<div style="font-size:42px;margin-bottom:12px">&#128197;</div>' +
+          '<h2 style="margin:0 0 6px;font-size:22px;font-weight:700;color:#e2e4eb">Meeting Scheduled</h2>' +
+          '<p style="margin:0;font-size:14px;color:#9399b2">A calendar invite is attached to this email.</p>' +
+        '</td></tr>' +
+        '<tr><td style="padding:24px 30px 0">' +
+          '<div style="background:#1a1e30;border:1px solid #252a3d;border-radius:10px;padding:20px 24px">' +
+            '<table width="100%" cellpadding="0" cellspacing="0" role="presentation">' +
+              '<tr><td style="padding:0 0 12px">' +
+                '<p style="margin:0 0 2px;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#4b5068">Meeting</p>' +
+                '<p style="margin:0;font-size:16px;font-weight:600;color:#e2e4eb">Meeting with ' + escHtml(contact) + '</p>' +
+              '</td></tr>' +
+              '<tr><td style="padding:0 0 12px">' +
+                '<p style="margin:0 0 2px;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#4b5068">Date &amp; Time</p>' +
+                '<p style="margin:0;font-size:15px;color:#e2e4eb">' + meetingDateFmt + '</p>' +
+                '<p style="margin:2px 0 0;font-size:14px;color:#9399b2">' + meetingTimeFmt + ' – ' + endTimeFmt + '</p>' +
+              '</td></tr>' +
+              locationRow +
+            '</table>' +
+          '</div>' +
+        '</td></tr>' +
+        notesHtml +
+        '<tr><td style="padding:24px 30px 30px;text-align:center">' +
+          '<p style="margin:0;font-size:13px;color:#9399b2">Open the attached <strong>.ics</strong> file or accept the invite in your email client to add this to your calendar.</p>' +
+        '</td></tr>'
+      );
+
+      // Send via SendGrid with .ics attachment
+      initSendGrid();
+      const msg = {
+        to: userEmail,
+        from: FROM_EMAIL,
+        subject: "Meeting with " + contact + " - " + meetingDateFmt,
+        html: htmlContent,
+        attachments: [
+          {
+            content: Buffer.from(icsContent).toString("base64"),
+            filename: "meeting.ics",
+            type: "text/calendar; method=REQUEST",
+            disposition: "attachment"
+          }
+        ],
+        categories: ["meeting_invite"]
+      };
+
+      await sgMail.send(msg);
+      console.log("Meeting invite sent to " + userEmail + " for " + meetingDate + " " + meetingTime);
+
+      // Log the email
+      await db.collection("emailLog").add({
+        uid: uid,
+        email: userEmail,
+        type: "meeting_invite",
+        subject: msg.subject,
+        meetingDate: meetingDate,
+        meetingTime: meetingTime,
+        contactName: contactName || null,
+        propertyAddress: propertyAddress || null,
+        sentAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+
+      sendSuccess(res, { sent: true });
+    } catch (err) {
+      console.error("sendMeetingInvite error:", err);
+      sendError(res, 500, err.message || "Failed to send calendar invite.");
     }
-    const userData = userDoc.data();
-    const userEmail = userData.email;
-    const userName = userData.displayName || userData.name || "RentingRadar User";
-
-    if (!userEmail) {
-      throw new functions.https.HttpsError("failed-precondition", "No email on file.");
-    }
-
-    // Parse date parts manually to avoid timezone issues
-    const dateParts = meetingDate.split("-"); // "2026-04-05" => ["2026","04","05"]
-    const timeParts = meetingTime.split(":"); // "14:00" => ["14","00"]
-    const yr = dateParts[0], mo = dateParts[1], dy = dateParts[2];
-    const hr = timeParts[0], mn = timeParts[1] || "00";
-
-    // .ics uses local time format (no Z suffix) so calendar apps interpret it in user's timezone
-    const icsStart = `${yr}${mo}${dy}T${hr}${mn}00`;
-    const endHour = parseInt(hr, 10) + Math.floor(durationMinutes / 60);
-    const endMin = parseInt(mn, 10) + (durationMinutes % 60);
-    const finalHour = String(endHour + Math.floor(endMin / 60)).padStart(2, "0");
-    const finalMin = String(endMin % 60).padStart(2, "0");
-    const icsEnd = `${yr}${mo}${dy}T${finalHour}${finalMin}00`;
-    const icsStamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
-
-    // Human-readable date/time for email
-    const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
-    const days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
-    const dtObj = new Date(parseInt(yr), parseInt(mo) - 1, parseInt(dy));
-    const dayName = days[dtObj.getDay()];
-    const monthName = months[parseInt(mo) - 1];
-    const meetingDateFmt = `${dayName}, ${monthName} ${parseInt(dy)}, ${yr}`;
-
-    // Format 24h to 12h
-    const h = parseInt(hr, 10);
-    const ampm = h >= 12 ? "PM" : "AM";
-    const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
-    const meetingTimeFmt = `${h12}:${mn} ${ampm}`;
-    const eh = parseInt(finalHour, 10);
-    const eampm = eh >= 12 ? "PM" : "AM";
-    const eh12 = eh === 0 ? 12 : eh > 12 ? eh - 12 : eh;
-    const endTimeFmt = `${eh12}:${finalMin} ${eampm}`;
-
-    // Build description
-    const contact = contactName || "the landlord/property manager";
-    const loc = propertyAddress || "";
-    let icsDesc = `Meeting with ${contact}`;
-    if (propertyAddress) icsDesc += `\\nProperty: ${propertyAddress}`;
-    if (propertyNotes.length > 0) {
-      icsDesc += "\\n\\nProperty Notes:\\n" + propertyNotes.map(n => `- ${n}`).join("\\n");
-    }
-    icsDesc += "\\n\\nScheduled via RentingRadar CRM";
-
-    // Generate unique ID
-    const eventUID = `rr-meeting-${uid}-${Date.now()}@rentingradar.com`;
-
-    // Build .ics
-    const icsContent = [
-      "BEGIN:VCALENDAR",
-      "VERSION:2.0",
-      "PRODID:-//RentingRadar//CRM//EN",
-      "CALSCALE:GREGORIAN",
-      "METHOD:REQUEST",
-      "BEGIN:VEVENT",
-      `DTSTART:${icsStart}`,
-      `DTEND:${icsEnd}`,
-      `DTSTAMP:${icsStamp}`,
-      `UID:${eventUID}`,
-      `ORGANIZER;CN=RentingRadar:mailto:${FROM_EMAIL.email}`,
-      `ATTENDEE;CN=${userName};RSVP=TRUE:mailto:${userEmail}`,
-      `SUMMARY:Meeting with ${contact}`,
-      `LOCATION:${loc}`,
-      `DESCRIPTION:${icsDesc}`,
-      "STATUS:CONFIRMED",
-      "BEGIN:VALARM",
-      "TRIGGER:-PT30M",
-      "ACTION:DISPLAY",
-      `DESCRIPTION:Meeting with ${contact} in 30 minutes`,
-      "END:VALARM",
-      "BEGIN:VALARM",
-      "TRIGGER:-PT10M",
-      "ACTION:DISPLAY",
-      `DESCRIPTION:Meeting with ${contact} in 10 minutes`,
-      "END:VALARM",
-      "END:VEVENT",
-      "END:VCALENDAR",
-    ].join("\r\n");
-
-    // Build notes HTML
-    const notesHtml = propertyNotes.length > 0
-      ? `<tr><td style="padding:20px 30px 0">
-          <p class="text-sub" style="margin:0 0 8px;font-size:13px;font-weight:600;color:#9399b2">Property Notes</p>
-          <div class="feat-box" style="background:#1a1e30;border:1px solid #252a3d;border-radius:8px;padding:12px 16px">
-            ${propertyNotes.map(n => `<p class="text-sub" style="margin:0 0 4px;font-size:13px;color:#9399b2">&bull; ${escHtml(n)}</p>`).join("")}
-          </div>
-        </td></tr>`
-      : "";
-
-    // Build email HTML
-    const htmlContent = emailWrapper(`
-      <tr><td style="padding:30px 30px 0;text-align:center">
-        <div style="font-size:42px;margin-bottom:12px">&#128197;</div>
-        <h2 class="text-main" style="margin:0 0 6px;font-size:22px;font-weight:700;color:#e2e4eb">Meeting Scheduled</h2>
-        <p class="text-sub" style="margin:0;font-size:14px;color:#9399b2">A calendar invite is attached to this email.</p>
-      </td></tr>
-      <tr><td style="padding:24px 30px 0">
-        <div class="feat-box" style="background:#1a1e30;border:1px solid #252a3d;border-radius:10px;padding:20px 24px">
-          <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
-            <tr>
-              <td style="padding:0 0 12px">
-                <p class="text-dim" style="margin:0 0 2px;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#4b5068">Meeting</p>
-                <p class="text-main" style="margin:0;font-size:16px;font-weight:600;color:#e2e4eb">Meeting with ${escHtml(contact)}</p>
-              </td>
-            </tr>
-            <tr>
-              <td style="padding:0 0 12px">
-                <p class="text-dim" style="margin:0 0 2px;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#4b5068">Date &amp; Time</p>
-                <p class="text-main" style="margin:0;font-size:15px;color:#e2e4eb">${meetingDateFmt}</p>
-                <p class="text-sub" style="margin:2px 0 0;font-size:14px;color:#9399b2">${meetingTimeFmt} – ${endTimeFmt}</p>
-              </td>
-            </tr>
-            ${propertyAddress ? `<tr>
-              <td style="padding:0">
-                <p class="text-dim" style="margin:0 0 2px;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#4b5068">Location</p>
-                <p class="text-main" style="margin:0;font-size:15px;color:#e2e4eb">${escHtml(propertyAddress)}</p>
-              </td>
-            </tr>` : ""}
-          </table>
-        </div>
-      </td></tr>
-      ${notesHtml}
-      <tr><td style="padding:24px 30px 30px;text-align:center">
-        <p class="text-sub" style="margin:0;font-size:13px;color:#9399b2">Open the attached <strong>.ics</strong> file or accept the invite in your email client to add this to your calendar.</p>
-      </td></tr>
-    `);
-
-    // Send via SendGrid with .ics attachment
-    initSendGrid();
-    const msg = {
-      to: userEmail,
-      from: FROM_EMAIL,
-      subject: `Meeting with ${contact} — ${meetingDateFmt}`,
-      html: htmlContent,
-      attachments: [
-        {
-          content: Buffer.from(icsContent).toString("base64"),
-          filename: "meeting.ics",
-          type: "text/calendar; method=REQUEST",
-          disposition: "attachment",
-        },
-      ],
-      categories: ["meeting_invite"],
-    };
-
-    await sgMail.send(msg);
-    console.log(`Meeting invite sent to ${userEmail} for ${meetingDate} ${meetingTime}`);
-
-    // Log the email
-    await db.collection("emailLog").add({
-      uid: uid,
-      email: userEmail,
-      type: "meeting_invite",
-      subject: msg.subject,
-      meetingDate: meetingDate,
-      meetingTime: meetingTime,
-      contactName: contactName || null,
-      propertyAddress: propertyAddress || null,
-      sentAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
-
-    return { sent: true };
-  } catch (err) {
-    console.error("sendMeetingInvite error:", err);
-    // Return error details for debugging instead of throwing
-    return { sent: false, debug: true, errorMessage: String(err.message || err), errorStack: String(err.stack || "").substring(0, 500) };
-  }
-});
-
-exports.testMeetingDebug = functions.https.onCall(async (data, context) => {
-  return { ok: true, msg: "function works", ts: Date.now() };
+  });
 });
