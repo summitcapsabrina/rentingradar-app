@@ -1577,8 +1577,15 @@ function renderDashboard(){
     .sort((a,b) => a.meetingDate.localeCompare(b.meetingDate)).slice(0,5);
   const pastMeetings = records.filter(r => r.meetingDate && r.meetingDate < today).length;
 
-  // Recent activity — latest notes and status changes
-  const recentActivity = records.filter(r => r.date).sort((a,b) => new Date(b.date) - new Date(a.date)).slice(0,6);
+  // Recent activity — sort by most recent note/status change, fallback to creation date
+  function _getLastActivityDate(r){
+    let latest = r.date ? new Date(r.date).getTime() : 0;
+    if(r.notes && r.notes.length > 0){
+      r.notes.forEach(n => { const t = n.date ? new Date(n.date).getTime() : 0; if(t > latest) latest = t; });
+    }
+    return latest;
+  }
+  const recentActivity = records.filter(r => r.date || (r.notes && r.notes.length > 0)).sort((a,b) => _getLastActivityDate(b) - _getLastActivityDate(a)).slice(0,6);
 
   // Needs attention: Follow Up status but no date, or no contact info on active leads
   const needsFollowUp = records.filter(r => r.status === 'Follow Up' && !r.followUpDate);
@@ -1611,10 +1618,10 @@ function renderDashboard(){
 
   // ── KPI CARDS ──
   h += '<div class="db-kpis">';
-  h += `<div class="db-kpi" onclick="switchView('contacts')" style="cursor:pointer"><div class="kpi-icon" style="background:rgba(99,129,250,.12);color:var(--primary)">📋</div><div class="kpi-val">${total}</div><div class="kpi-label">Total Properties</div><div class="kpi-sub">${withContact} with contacts</div></div>`;
-  h += `<div class="db-kpi" onclick="pipelineCategory='prospects';render();document.querySelector('.pipeline-category-tabs')?.scrollIntoView({behavior:'smooth',block:'nearest'})" style="cursor:pointer"><div class="kpi-icon" style="background:rgba(56,189,248,.12);color:#38bdf8">🔄</div><div class="kpi-val">${active}</div><div class="kpi-label">Active Pipeline</div><div class="kpi-sub">${closed} closed/lost</div></div>`;
-  h += `<div class="db-kpi" onclick="pipelineCategory='qualified';render();document.querySelector('.pipeline-category-tabs')?.scrollIntoView({behavior:'smooth',block:'nearest'})" style="cursor:pointer"><div class="kpi-icon" style="background:rgba(52,211,153,.12);color:#34d399">🔥</div><div class="kpi-val">${hotLeads}</div><div class="kpi-label">Hot Leads</div><div class="kpi-sub">${convRate}% qualification rate</div></div>`;
-  h += `<div class="db-kpi" onclick="switchView('notifications')" style="cursor:pointer"><div class="kpi-icon" style="background:${overdue.length?'rgba(239,68,68,.12)':'rgba(52,211,153,.12)'};color:${overdue.length?'var(--danger)':'var(--success)'}">📣</div><div class="kpi-val" style="color:${overdue.length?'var(--danger)':'var(--text)'}">${followUps.length}</div><div class="kpi-label">Follow-Ups Due</div><div class="kpi-sub">${overdue.length} overdue${todayFU.length ? ', '+todayFU.length+' today' : ''}</div></div>`;
+  h += `<div class="db-kpi"><div class="kpi-icon" style="background:rgba(99,129,250,.12);color:var(--primary)">📋</div><div class="kpi-val">${total}</div><div class="kpi-label">Total Properties</div><div class="kpi-sub">${withContact} with contacts</div></div>`;
+  h += `<div class="db-kpi"><div class="kpi-icon" style="background:rgba(56,189,248,.12);color:#38bdf8">🔄</div><div class="kpi-val">${active}</div><div class="kpi-label">Active Pipeline</div><div class="kpi-sub">${closed} closed/lost</div></div>`;
+  h += `<div class="db-kpi"><div class="kpi-icon" style="background:rgba(52,211,153,.12);color:#34d399">🔥</div><div class="kpi-val">${hotLeads}</div><div class="kpi-label">Hot Leads</div><div class="kpi-sub">${convRate}% qualification rate</div></div>`;
+  h += `<div class="db-kpi"><div class="kpi-icon" style="background:${overdue.length?'rgba(239,68,68,.12)':'rgba(52,211,153,.12)'};color:${overdue.length?'var(--danger)':'var(--success)'}">📣</div><div class="kpi-val" style="color:${overdue.length?'var(--danger)':'var(--text)'}">${followUps.length}</div><div class="kpi-label">Follow-Ups Due</div><div class="kpi-sub">${overdue.length} overdue${todayFU.length ? ', '+todayFU.length+' today' : ''}</div></div>`;
   h += `<div class="db-kpi"><div class="kpi-icon" style="background:rgba(168,85,247,.12);color:#a855f7">📅</div><div class="kpi-val">${meetings.length}</div><div class="kpi-label">Upcoming Meetings</div><div class="kpi-sub">${pastMeetings} completed</div></div>`;
   h += '</div>';
 
@@ -1674,9 +1681,11 @@ function renderDashboard(){
   h += '<div class="db-card-body no-pad">';
   if(recentActivity.length > 0){
     recentActivity.forEach(r => {
-      const lastNote = r.notes && r.notes.length > 0 ? r.notes[r.notes.length - 1] : null;
-      const noteSnippet = lastNote ? (lastNote.html ? lastNote.html.replace(/<[^>]+>/g,' ').substring(0,50) : (lastNote.text||'').substring(0,50)) : '';
-      h += `<div class="db-recent-item" onclick="openDetail('${r.id}')">${statusPill(r.status)}<div class="db-recent-prop">${truncate(r.property,30)}${noteSnippet ? ' <span style="color:var(--text3);font-weight:400;font-size:.76rem">— '+esc(noteSnippet)+'</span>' : ''}</div><div class="db-recent-date">${fmtDate(r.date)}</div></div>`;
+      const sortedNotes = r.notes && r.notes.length > 0 ? r.notes.slice().sort((a,b) => new Date(b.date||0) - new Date(a.date||0)) : [];
+      const lastNote = sortedNotes.length > 0 ? sortedNotes[0] : null;
+      const noteSnippet = lastNote ? (lastNote.html ? lastNote.html.replace(/<[^>]+>/g,' ').trim().substring(0,50) : (lastNote.text||'').substring(0,50)) : '';
+      const activityDate = lastNote && lastNote.date ? lastNote.date : r.date;
+      h += `<div class="db-recent-item" onclick="openDetail('${r.id}')">${statusPill(r.status)}<div class="db-recent-prop">${truncate(r.property,30)}${noteSnippet ? ' <span style="color:var(--text3);font-weight:400;font-size:.76rem">— '+esc(noteSnippet)+'</span>' : ''}</div><div class="db-recent-date">${fmtDate(activityDate)}</div></div>`;
     });
   } else {
     h += '<div class="db-empty">No recent activity yet.</div>';
