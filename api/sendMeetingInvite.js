@@ -69,11 +69,20 @@ module.exports = async function handler(req, res) {
     var h = parseInt(hr, 10);
     var ampm = h >= 12 ? "PM" : "AM";
     var h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
-    var meetingTimeFmt = h12 + ":" + mn + " " + ampm;
+    var meetingTimeFmt = h12 + ":" + mn + ampm.toLowerCase();
     var eh = parseInt(finalHour, 10);
     var eampm = eh >= 12 ? "PM" : "AM";
     var eh12 = eh === 0 ? 12 : eh > 12 ? eh - 12 : eh;
-    var endTimeFmt = eh12 + ":" + finalMin + " " + eampm;
+    var endTimeFmt = eh12 + ":" + finalMin + eampm.toLowerCase();
+
+    // Get timezone abbreviation (e.g. "PST", "EST", "CST")
+    var tzAbbr = "";
+    try {
+      var sample = new Date(parseInt(yr), parseInt(mo) - 1, parseInt(dy), h, parseInt(mn));
+      var parts = new Intl.DateTimeFormat("en-US", { timeZone: timezone, timeZoneName: "short" }).formatToParts(sample);
+      var tzPart = parts.find(function(p) { return p.type === "timeZoneName"; });
+      if (tzPart) tzAbbr = tzPart.value;
+    } catch(e) { tzAbbr = ""; }
 
     var contact = contactName || "the landlord/property manager";
     var loc = propertyAddress || "";
@@ -161,7 +170,7 @@ module.exports = async function handler(req, res) {
             '<tr><td style="padding:0 0 12px">' +
               '<p style="margin:0 0 2px;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#4b5068">Date &amp; Time</p>' +
               '<p style="margin:0;font-size:15px;color:#e2e4eb">' + meetingDateFmt + '</p>' +
-              '<p style="margin:2px 0 0;font-size:14px;color:#9399b2">' + meetingTimeFmt + ' - ' + endTimeFmt + '</p>' +
+              '<p style="margin:2px 0 0;font-size:14px;color:#9399b2">' + meetingTimeFmt + ' - ' + endTimeFmt + (tzAbbr ? ' ' + tzAbbr : '') + '</p>' +
             '</td></tr>' +
             locationRow +
           '</table>' +
@@ -181,7 +190,7 @@ module.exports = async function handler(req, res) {
     await sgMail.send({
       to: user.email,
       from: { email: "help@rentingradar.com", name: "RentingRadar" },
-      subject: "\uD83D\uDCC5 Meeting with " + contact,
+      subject: "\uD83D\uDCC5 Meeting with " + contact + " - " + meetingDateFmt + " at " + meetingTimeFmt + (tzAbbr ? " " + tzAbbr : ""),
       html: htmlContent,
       attachments: [
         {
