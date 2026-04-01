@@ -345,7 +345,9 @@ firebase.auth().onAuthStateChanged(function(user){
   _currentUser = user || null;
   renderUserSection();
   // If user just signed in and we have Firestore progress, merge it
-  if(user && !started){
+  // Skip Firestore restore when restarting — progress was intentionally cleared
+  var _isRestart = (new URLSearchParams(location.search)).get('restart') === '1';
+  if(user && !started && !_isRestart){
     loadProgressFromFirestore().then(function(fbProgress){
       if(fbProgress){
         var localProgress = loadProgress();
@@ -427,6 +429,12 @@ function loadProgressFromFirestore(){
 }
 function clearProgress(){
   try { localStorage.removeItem('rr_tutorial_progress'); } catch(e){}
+  // Also clear Firestore progress so it doesn't get restored on auth
+  if(_currentUser && db){
+    db.collection('users').doc(_currentUser.uid).update({
+      tutorialsSeen: { tutStep: 0, tutTotal: TUTORIAL_STEPS.length, tutCompletedCount: 0, tutCompletedSteps: [], slideshow: false }
+    }).catch(function(){});
+  }
 }
 
 // ===== PRELOAD IMAGES =====
