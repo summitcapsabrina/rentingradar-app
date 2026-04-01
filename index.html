@@ -8453,58 +8453,132 @@ function renderNegotiationTab(r){
     h += '</div>';
     h += '</div>';
 
-    // ── Bar Chart ──
+    // ── Break-Even Comparison Chart ──
     h += '<div style="margin-top:10px;border-top:1px solid var(--border);padding-top:8px">';
 
-    const barWeeks = [0,1,2,3,4,5,6,7,8,9,10,11,12];
-    const barPBs = barWeeks.map(w => {
-      const sav = Math.round((_conRent / 4) * w);
-      const adjI = Math.max(0, _raInv - sav);
-      return _calcPayback(adjI, _conAnnualCF);
-    });
-    const maxPBRaw = Math.max(...barPBs.map(p => p !== null ? p : 10), 1);
-    const yMaxYears = Math.ceil(maxPBRaw);
-    const yStep = yMaxYears <= 4 ? 1 : yMaxYears <= 8 ? 2 : yMaxYears <= 15 ? 3 : 5;
-    const yMaxDisplay = Math.ceil(yMaxYears / yStep) * yStep;
-    const yTickCount = yMaxDisplay / yStep;
+    // Compute cumulative cash flow arrays for 10 years (monthly granularity plotted yearly)
+    // Without concessions: start at -investment, add annual CF each year
+    const _beCumWithout = [];
+    let _beRunW = -_raInv;
+    _beCumWithout.push(_beRunW);
+    for(let y=1;y<=10;y++){ _beRunW += _conAnnualCF; _beCumWithout.push(_beRunW); }
 
-    const chartBarW = 420, chartBarH = 180, barPadL = 52, barPadR = 10, barPadT = 8, barPadB = 44;
-    const barAreaW = chartBarW - barPadL - barPadR;
-    const barAreaH = chartBarH - barPadT - barPadB;
-    const barW2 = Math.floor(barAreaW / barWeeks.length) - 4;
+    // With concessions: start at -(investment - savings), add annual CF each year
+    const _beCumWith = [];
+    let _beRunC = -adjInvB;
+    _beCumWith.push(_beRunC);
+    for(let y=1;y<=10;y++){ _beRunC += _conAnnualCF; _beCumWith.push(_beRunC); }
+
+    // Find break-even years for both lines
+    function _beFindBE(cum){
+      for(let y=1;y<=10;y++){
+        if(cum[y-1] < 0 && cum[y] >= 0){
+          return y - 1 + (Math.abs(cum[y-1]) / (Math.abs(cum[y-1]) + cum[y]));
+        }
+      }
+      return null;
+    }
+    const _beYearWithout = _beFindBE(_beCumWithout);
+    const _beYearWith = _beFindBE(_beCumWith);
+
+    // Chart dimensions (match Projected ROI break-even style)
+    const svgW2 = 420, svgH2 = 180, padL2 = 52, padR2 = 10, padT2 = 10, padB2 = 28;
+    const chartW2 = svgW2 - padL2 - padR2, chartH2 = svgH2 - padT2 - padB2;
+    const allBEVals = _beCumWithout.concat(_beCumWith);
+    const beYMin = Math.min(...allBEVals);
+    const beYMax = Math.max(...allBEVals);
+    const beYRange = beYMax - beYMin || 1;
+    function beY2(val){ return padT2 + chartH2 * (1 - (val - beYMin) / beYRange); }
+    function beX2(yr){ return padL2 + (yr / 10) * chartW2; }
+    const zeroY2 = beY2(0);
 
     h += '<div style="height:160px;overflow:hidden">';
-    h += '<svg viewBox="0 0 '+chartBarW+' '+chartBarH+'" style="width:100%;display:block;margin:0 auto">';
+    h += '<svg viewBox="0 0 '+svgW2+' '+svgH2+'" style="width:100%;display:block;margin:0 auto">';
 
-    for(let g = 0; g <= yTickCount; g++){
-      const yVal = yMaxDisplay - g * yStep;
-      const gy = barPadT + (g / yTickCount) * barAreaH;
-      h += '<line x1="'+barPadL+'" y1="'+gy.toFixed(1)+'" x2="'+(chartBarW-barPadR)+'" y2="'+gy.toFixed(1)+'" stroke="rgba(148,163,184,.12)" stroke-width="1"/>';
-      h += '<text x="'+(barPadL-5)+'" y="'+(gy+3).toFixed(1)+'" text-anchor="end" fill="var(--text3)" font-size="7.5" font-weight="500">'+yVal+'y</text>';
+    // Gradient defs
+    const conGradId = 'conGrad_'+r.id;
+    h += '<defs>';
+    h += '<linearGradient id="'+conGradId+'_pos" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#10b981" stop-opacity=".20"/><stop offset="100%" stop-color="#10b981" stop-opacity=".02"/></linearGradient>';
+    h += '<linearGradient id="'+conGradId+'_neg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ef4444" stop-opacity=".02"/><stop offset="100%" stop-color="#ef4444" stop-opacity=".20"/></linearGradient>';
+    h += '</defs>';
+
+    // Grid lines
+    for(let g=0;g<=4;g++){
+      const gy = padT2 + (g/4)*chartH2;
+      h += '<line x1="'+padL2+'" y1="'+gy.toFixed(1)+'" x2="'+(svgW2-padR2)+'" y2="'+gy.toFixed(1)+'" stroke="rgba(148,163,184,.08)" stroke-width="1"/>';
+    }
+    // Zero line
+    if(zeroY2 >= padT2 && zeroY2 <= padT2+chartH2){
+      h += '<line x1="'+padL2+'" y1="'+zeroY2.toFixed(1)+'" x2="'+(svgW2-padR2)+'" y2="'+zeroY2.toFixed(1)+'" stroke="rgba(148,163,184,.35)" stroke-width="1.5" stroke-dasharray="4,3"/>';
+      h += '<text x="'+(padL2-4)+'" y="'+(zeroY2+3).toFixed(1)+'" text-anchor="end" fill="rgba(148,163,184,.5)" font-size="8" font-weight="600">$0</text>';
     }
 
-    // Find closest bar week to user's selected concession weeks
-    const _selBarIdx = barWeeks.reduce((best, w, i) => Math.abs(w - conW) < Math.abs(barWeeks[best] - conW) ? i : best, 0);
-    barWeeks.forEach((w, i) => {
-      const pbVal = barPBs[i] !== null ? barPBs[i] : yMaxDisplay;
-      const barH = Math.max(0, (pbVal / yMaxDisplay) * barAreaH);
-      const bx = barPadL + i * (barAreaW / barWeeks.length) + 2;
-      const by = barPadT + barAreaH - barH;
-      const barCol = pbVal <= 2 ? '#10b981' : pbVal <= 4 ? '#3b82f6' : pbVal <= 6 ? '#f59e0b' : '#ef4444';
-      const isSel = i === _selBarIdx;
-      h += '<rect x="'+bx.toFixed(1)+'" y="'+by.toFixed(1)+'" width="'+barW2+'" height="'+barH.toFixed(1)+'" rx="3" fill="'+barCol+'" opacity="'+(isSel?'1':'.4')+'"/>';
-      if(isSel) h += '<rect x="'+(bx-1).toFixed(1)+'" y="'+(by-1).toFixed(1)+'" width="'+(barW2+2)+'" height="'+(barH+2).toFixed(1)+'" rx="4" fill="none" stroke="'+barCol+'" stroke-width="1.5" opacity=".6"/>';
-      h += '<text x="'+(bx + barW2/2).toFixed(1)+'" y="'+(by - 3).toFixed(1)+'" text-anchor="middle" fill="'+barCol+'" font-size="6" font-weight="700"'+(isSel?' opacity="1"':' opacity=".6"')+'>'+_fmtPayback(barPBs[i])+'</text>';
-      h += '<text x="'+(bx + barW2/2).toFixed(1)+'" y="'+(barPadT + barAreaH + 12)+'" text-anchor="middle" fill="'+(isSel?barCol:'var(--text3)')+'" font-size="6.5" font-weight="'+(isSel?'700':'500')+'">'+w+(isSel?' ✓':'')+'</text>';
-    });
+    // Positive area fill for "With Concessions" line
+    let posArea = 'M'+beX2(0).toFixed(1)+','+Math.min(zeroY2, padT2+chartH2).toFixed(1);
+    for(let y=0;y<=10;y++){ posArea += ' L'+beX2(y).toFixed(1)+','+Math.min(beY2(_beCumWith[y]), zeroY2).toFixed(1); }
+    posArea += ' L'+beX2(10).toFixed(1)+','+Math.min(zeroY2, padT2+chartH2).toFixed(1)+' Z';
+    h += '<path d="'+posArea+'" fill="url(#'+conGradId+'_pos)"/>';
+    // Negative area fill for "With Concessions" line
+    let negArea = 'M'+beX2(0).toFixed(1)+','+Math.max(zeroY2, padT2).toFixed(1);
+    for(let y=0;y<=10;y++){ negArea += ' L'+beX2(y).toFixed(1)+','+Math.max(beY2(_beCumWith[y]), zeroY2).toFixed(1); }
+    negArea += ' L'+beX2(10).toFixed(1)+','+Math.max(zeroY2, padT2).toFixed(1)+' Z';
+    h += '<path d="'+negArea+'" fill="url(#'+conGradId+'_neg)"/>';
 
-    h += '<text x="4" y="'+(barPadT + barAreaH/2)+'" text-anchor="start" fill="var(--text3)" font-size="7" font-weight="700">Break-</text>';
-    h += '<text x="4" y="'+(barPadT + barAreaH/2 + 9)+'" text-anchor="start" fill="var(--text3)" font-size="7" font-weight="700">Even</text>';
-    h += '<text x="'+(barPadL + barAreaW/2)+'" y="'+(barPadT + barAreaH + 26)+'" text-anchor="middle" fill="var(--text3)" font-size="7" font-weight="600">Weeks of Free Rent</text>';
+    // "Without Concessions" line — more transparent
+    for(let y=0;y<10;y++){
+      const x1 = beX2(y), y1 = beY2(_beCumWithout[y]);
+      const x2 = beX2(y+1), y2 = beY2(_beCumWithout[y+1]);
+      const segCol = (_beCumWithout[y]<0&&_beCumWithout[y+1]<0)?'#ef4444':(_beCumWithout[y]>=0&&_beCumWithout[y+1]>=0)?'#10b981':'#f59e0b';
+      h += '<line x1="'+x1.toFixed(1)+'" y1="'+y1.toFixed(1)+'" x2="'+x2.toFixed(1)+'" y2="'+y2.toFixed(1)+'" stroke="'+segCol+'" stroke-width="2" stroke-linecap="round" opacity=".25"/>';
+    }
+    // Dots for "Without" line
+    for(let y=0;y<=10;y++){
+      const dotCol = _beCumWithout[y]<0?'#ef4444':'#10b981';
+      h += '<circle cx="'+beX2(y).toFixed(1)+'" cy="'+beY2(_beCumWithout[y]).toFixed(1)+'" r="2" fill="'+dotCol+'" opacity=".3"/>';
+    }
+
+    // "With Concessions" line — solid, prominent
+    for(let y=0;y<10;y++){
+      const x1 = beX2(y), y1 = beY2(_beCumWith[y]);
+      const x2 = beX2(y+1), y2 = beY2(_beCumWith[y+1]);
+      const segCol = (_beCumWith[y]<0&&_beCumWith[y+1]<0)?'#ef4444':(_beCumWith[y]>=0&&_beCumWith[y+1]>=0)?'#10b981':'#f59e0b';
+      h += '<line x1="'+x1.toFixed(1)+'" y1="'+y1.toFixed(1)+'" x2="'+x2.toFixed(1)+'" y2="'+y2.toFixed(1)+'" stroke="'+segCol+'" stroke-width="2.5" stroke-linecap="round"/>';
+    }
+    // Dots for "With" line
+    for(let y=0;y<=10;y++){
+      const dotCol = _beCumWith[y]<0?'#ef4444':'#10b981';
+      h += '<circle cx="'+beX2(y).toFixed(1)+'" cy="'+beY2(_beCumWith[y]).toFixed(1)+'" r="'+(y===0||y===10?'4':'2.5')+'" fill="'+dotCol+'" stroke="var(--surface)" stroke-width="1.5"/>';
+    }
+
+    // Break-even marker for "With Concessions"
+    if(_beYearWith !== null){
+      const bx = beX2(_beYearWith);
+      h += '<line x1="'+bx.toFixed(1)+'" y1="'+padT2+'" x2="'+bx.toFixed(1)+'" y2="'+(svgH2-padB2)+'" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="4,3" opacity=".6"/>';
+      h += '<circle cx="'+bx.toFixed(1)+'" cy="'+zeroY2.toFixed(1)+'" r="4.5" fill="#f59e0b" stroke="var(--surface)" stroke-width="2" filter="drop-shadow(0 1px 3px rgba(0,0,0,.3))"/>';
+      const beLbl = Math.floor(_beYearWith)+'y '+Math.round((_beYearWith-Math.floor(_beYearWith))*12)+'m';
+      const lbX = bx + (bx > svgW2/2 ? -8 : 8);
+      const lbAnc = bx > svgW2/2 ? 'end' : 'start';
+      h += '<text x="'+lbX.toFixed(1)+'" y="'+(padT2+9)+'" text-anchor="'+lbAnc+'" fill="#f59e0b" font-size="8" font-weight="700">Break-even</text>';
+      h += '<text x="'+lbX.toFixed(1)+'" y="'+(padT2+18)+'" text-anchor="'+lbAnc+'" fill="#f59e0b" font-size="7.5" font-weight="600">'+beLbl+'</text>';
+    }
+
+    // X-axis year labels
+    for(let y=0;y<=10;y+=2){
+      h += '<text x="'+beX2(y).toFixed(1)+'" y="'+(svgH2-8)+'" text-anchor="middle" fill="rgba(148,163,184,.5)" font-size="8" font-weight="500">Yr '+y+'</text>';
+    }
+    // Y-axis labels
+    h += '<text x="'+(padL2-4)+'" y="'+(beY2(beYMax)+3).toFixed(1)+'" text-anchor="end" fill="rgba(148,163,184,.4)" font-size="7.5">'+fmtMoney(Math.round(beYMax))+'</text>';
+    h += '<text x="'+(padL2-4)+'" y="'+(beY2(beYMin)+3).toFixed(1)+'" text-anchor="end" fill="rgba(148,163,184,.4)" font-size="7.5">'+fmtMoney(Math.round(beYMin))+'</text>';
 
     h += '</svg>';
     h += '</div>'; // end fixed-height chart wrapper
-    h += '<div style="font-size:.6rem;color:var(--text3);text-align:center;margin-top:4px">✓ = Your selection ('+conW+' week'+(conW!==1?'s':'')+')</div>';
+
+    // Legend
+    h += '<div style="display:flex;justify-content:center;gap:16px;margin-top:4px">';
+    h += '<div style="display:flex;align-items:center;gap:4px;font-size:.6rem;color:var(--text3)"><span style="display:inline-block;width:16px;height:2.5px;background:#10b981;border-radius:2px"></span> With '+conW+' wk'+(conW!==1?'s':'')+' free</div>';
+    h += '<div style="display:flex;align-items:center;gap:4px;font-size:.6rem;color:var(--text3)"><span style="display:inline-block;width:16px;height:2px;background:var(--text3);border-radius:2px;opacity:.3"></span> Without concessions</div>';
+    h += '</div>';
+
     h += '</div>';
   }
   h += '</div>'; // end right half
