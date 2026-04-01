@@ -5570,7 +5570,8 @@ function _sendMeetingCalendarInvite(r){
       contactName: r.name || '',
       propertyAddress: r.property || '',
       propertyNotes: notes,
-      durationMinutes: 60
+      durationMinutes: 60,
+      timezone: getUserTimezone()
     }).then(function(result){
       if(result && result.data && result.data.sent){
         showToast('Calendar invite sent to your email!', 'success', 5000);
@@ -11516,6 +11517,33 @@ function loadSettingsPrefs(){
 function saveSettingsPrefs(){
   try { localStorage.setItem('rr_prefs', JSON.stringify(settingsPrefs)) } catch(e){}
 }
+function getUserTimezone(){
+  loadSettingsPrefs();
+  return settingsPrefs.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/New_York';
+}
+function getTimezoneOptions(selected){
+  var tzList = [
+    'America/New_York','America/Chicago','America/Denver','America/Los_Angeles','America/Anchorage','Pacific/Honolulu',
+    'America/Phoenix','America/Indiana/Indianapolis','America/Detroit','America/Kentucky/Louisville',
+    'America/Toronto','America/Vancouver','America/Edmonton','America/Winnipeg','America/Halifax',
+    'America/Mexico_City','America/Bogota','America/Lima','America/Sao_Paulo','America/Argentina/Buenos_Aires',
+    'Europe/London','Europe/Dublin','Europe/Paris','Europe/Berlin','Europe/Madrid','Europe/Rome','Europe/Amsterdam',
+    'Europe/Brussels','Europe/Zurich','Europe/Vienna','Europe/Stockholm','Europe/Oslo','Europe/Helsinki',
+    'Europe/Warsaw','Europe/Prague','Europe/Budapest','Europe/Bucharest','Europe/Athens','Europe/Istanbul',
+    'Europe/Moscow','Europe/Kiev',
+    'Asia/Dubai','Asia/Karachi','Asia/Kolkata','Asia/Dhaka','Asia/Bangkok','Asia/Singapore','Asia/Hong_Kong',
+    'Asia/Shanghai','Asia/Tokyo','Asia/Seoul','Asia/Taipei','Asia/Manila','Asia/Jakarta',
+    'Australia/Sydney','Australia/Melbourne','Australia/Brisbane','Australia/Perth','Australia/Adelaide',
+    'Pacific/Auckland','Pacific/Fiji',
+    'Africa/Cairo','Africa/Lagos','Africa/Johannesburg','Africa/Nairobi'
+  ];
+  var sel = selected || Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/New_York';
+  if(tzList.indexOf(sel) === -1) tzList.unshift(sel);
+  return tzList.map(function(tz){
+    var label = tz.replace(/_/g,' ').replace(/\//g,' / ');
+    return '<option value="'+tz+'"'+(tz===sel?' selected':'')+'>'+label+'</option>';
+  }).join('');
+}
 function toggleSettingsPref(key, el){
   settingsPrefs[key] = !settingsPrefs[key];
   el.classList.toggle('on', settingsPrefs[key]);
@@ -11663,6 +11691,12 @@ function renderSettings(){
         <div class="settings-row">
           <div class="settings-row-left"><div class="sr-label">Follow-Up Notification Time</div><div class="sr-desc">Time of day to send follow-up reminders (for date-only follow-ups)</div></div>
           <div class="settings-row-right"><input type="time" value="${getFollowUpNotifyTime()}" onchange="loadSettingsPrefs();settingsPrefs.followUpNotifyTime=this.value;saveSettingsPrefs()" style="font-size:.82rem;padding:4px 8px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);color:var(--text);cursor:pointer"></div>
+        </div>
+        <div class="settings-row">
+          <div class="settings-row-left"><div class="sr-label">Time Zone</div><div class="sr-desc">Used for calendar invites when scheduling meetings</div></div>
+          <div class="settings-row-right"><select id="settingsTimezone" style="font-size:.82rem;padding:4px 8px;width:auto;max-width:220px" onchange="loadSettingsPrefs();settingsPrefs.timezone=this.value;saveSettingsPrefs()">
+            ${getTimezoneOptions(settingsPrefs.timezone)}
+          </select></div>
         </div>
         <div class="settings-row">
           <div class="settings-row-left"><div class="sr-label">Status Change Logging</div><div class="sr-desc">Automatically log a note when a property status changes</div></div>

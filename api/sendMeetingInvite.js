@@ -31,6 +31,7 @@ module.exports = async function handler(req, res) {
   const propertyAddress = body.propertyAddress || "";
   const propertyNotes = Array.isArray(body.propertyNotes) ? body.propertyNotes.filter(function(n) { return typeof n === "string" && n.length > 0; }) : [];
   const durationMinutes = body.durationMinutes || 60;
+  const timezone = body.timezone || "America/New_York";
 
   if (!meetingDate || !meetingTime) {
     return res.status(400).json({ error: { message: "Meeting date and time are required." } });
@@ -87,21 +88,25 @@ module.exports = async function handler(req, res) {
 
     var eventUID = "rr-meeting-" + user.uid + "-" + Date.now() + "@rentingradar.com";
 
-    // Build .ics file
+    // Build .ics file with VTIMEZONE for proper timezone support
     var icsContent = [
       "BEGIN:VCALENDAR",
       "VERSION:2.0",
       "PRODID:-//RentingRadar//CRM//EN",
       "CALSCALE:GREGORIAN",
       "METHOD:REQUEST",
+      "BEGIN:VTIMEZONE",
+      "TZID:" + timezone,
+      "X-LIC-LOCATION:" + timezone,
+      "END:VTIMEZONE",
       "BEGIN:VEVENT",
-      "DTSTART:" + icsStart,
-      "DTEND:" + icsEnd,
+      "DTSTART;TZID=" + timezone + ":" + icsStart,
+      "DTEND;TZID=" + timezone + ":" + icsEnd,
       "DTSTAMP:" + icsStamp,
       "UID:" + eventUID,
       "ORGANIZER;CN=RentingRadar:mailto:help@rentingradar.com",
       "ATTENDEE;CN=" + (user.email.split("@")[0]) + ";RSVP=TRUE:mailto:" + user.email,
-      "SUMMARY:Meeting with " + contact,
+      "SUMMARY:\uD83D\uDCC5 Meeting with " + contact,
       "LOCATION:" + loc,
       "DESCRIPTION:" + icsDesc,
       "STATUS:CONFIRMED",
@@ -176,7 +181,7 @@ module.exports = async function handler(req, res) {
     await sgMail.send({
       to: user.email,
       from: { email: "help@rentingradar.com", name: "RentingRadar" },
-      subject: "Meeting with " + contact + " - " + meetingDateFmt,
+      subject: "\uD83D\uDCC5 Meeting with " + contact,
       html: htmlContent,
       attachments: [
         {
