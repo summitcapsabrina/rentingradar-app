@@ -1359,3 +1359,7 @@ exports.sendMeetingInvite = functions.https.onCall(async (data, context) => {
     return { sent: false, debug: true, errorMessage: String(err.message || err), errorStack: String(err.stack || "").substring(0, 500) };
   }
 });
+
+exports.testMeetingDebug = functions.https.onCall(async (data, context) => {
+  return { ok: true, msg: "function works", ts: Date.now() };
+});
