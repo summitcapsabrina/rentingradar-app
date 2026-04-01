@@ -1208,7 +1208,12 @@ h1 .hero-edit-input{font-size:1.35rem}
 }
 /* Toast notifications */
 .rr-toast{position:fixed;bottom:24px;right:24px;z-index:100000;padding:12px 20px;border-radius:10px;font-size:.85rem;font-weight:500;color:#fff;box-shadow:0 8px 30px rgba(0,0,0,0.3);transform:translateY(20px);opacity:0;transition:all .3s ease;pointer-events:none;max-width:360px}
-.rr-toast.visible{transform:translateY(0);opacity:1}
+.rr-toast.visible{transform:translateY(0);opacity:1;pointer-events:auto}
+.rr-toast.clickable{cursor:pointer}
+.rr-toast.clickable:hover{filter:brightness(1.12)}
+.rr-toast-close{position:absolute;top:4px;right:8px;background:none;border:none;color:rgba(255,255,255,.7);font-size:.9rem;cursor:pointer;padding:2px 4px;line-height:1;opacity:0;transition:opacity .15s;font-weight:700}
+.rr-toast:hover .rr-toast-close{opacity:1}
+.rr-toast-close:hover{color:#fff}
 .rr-toast.success{background:#10b981}
 .rr-toast.warning{background:#f59e0b;color:#1a1d2e}
 .rr-toast.error{background:#ef4444}
@@ -4298,8 +4303,9 @@ function sendImportRequest(url){
 
 /**
  * Show a toast notification.
+ * opts.recordId — if provided, clicking the toast navigates to that property profile
  */
-function showToast(msg, type = 'info', duration = 4000) {
+function showToast(msg, type = 'info', duration = 4000, opts = {}) {
   let toast = document.getElementById('rr-toast');
   if (!toast) {
     toast = document.createElement('div');
@@ -4307,8 +4313,10 @@ function showToast(msg, type = 'info', duration = 4000) {
     toast.className = 'rr-toast';
     document.body.appendChild(toast);
   }
-  toast.textContent = msg;
-  toast.className = 'rr-toast ' + type;
+  toast.style.position = 'relative';
+  toast.innerHTML = '<span class="rr-toast-msg">' + msg + '</span><button class="rr-toast-close" onclick="event.stopPropagation();document.getElementById(\'rr-toast\').classList.remove(\'visible\')">&times;</button>';
+  toast.className = 'rr-toast ' + type + (opts.recordId ? ' clickable' : '');
+  toast.onclick = opts.recordId ? function(){ toast.classList.remove('visible'); openDetail(opts.recordId); } : null;
   requestAnimationFrame(() => { toast.classList.add('visible'); });
   clearTimeout(toast._timer);
   toast._timer = setTimeout(() => { toast.classList.remove('visible'); }, duration);
@@ -5346,24 +5354,16 @@ function setTier(tier){
     const user = firebase.auth().currentUser;
     if(user && db) db.collection('users').doc(user.uid).update({ tier: tier, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }).catch(()=>{});
   } catch(e){}
-  // Reset disclaimer acknowledgment on downgrade to free
+  // Reset theme on downgrade to free
   if(tier === 'free'){
-    _disclaimerAcknowledged = false;
-    _disclaimerVersion = 0;
-    _disclaimerAcknowledgedAt = null;
-    try {
-      const u = firebase.auth().currentUser;
-      if(u && db) db.collection('users').doc(u.uid).update({ disclaimerAcknowledged: false, disclaimerVersion: 0, disclaimerAcknowledgedAt: null }).catch(()=>{});
-    } catch(e){}
     isDark = false; currentAccent = 'standard'; applyTheme();
   }
-  // Show disclaimer on upgrade from free to paid
-  if(wasFree && tier !== 'free' && !_disclaimerAcknowledged){
+  // Show disclaimer if not yet acknowledged (any tier)
+  if(!_disclaimerAcknowledged && _authDataLoaded){
     setTimeout(() => showDisclaimerOverlay(), 400);
   }
   // Trigger tier tutorial for upgrades (e.g. Basic→Pro) when disclaimer already done
-  const prevTier = wasFree ? 'free' : currentTier;
-  if(!wasFree && tier !== 'free' && _disclaimerAcknowledged && _authDataLoaded){
+  if(wasFree && tier !== 'free' && _disclaimerAcknowledged && _authDataLoaded){
     _tutCheckAutoStart(tier, false);
   }
   updateTierUI();
@@ -5844,8 +5844,8 @@ const DISCLAIMER_VERSION = 1; // Bump this number when disclaimer text is update
 let _disclaimerVersion = 0; // Version the user acknowledged
 
 function needsDisclaimer(){
-  // Only paid users who haven't acknowledged the current version need the disclaimer
-  return currentTier !== 'free' && (!_disclaimerAcknowledged || _disclaimerVersion < DISCLAIMER_VERSION);
+  // All tiers must acknowledge the current disclaimer version before using analysis tools
+  return !_disclaimerAcknowledged || _disclaimerVersion < DISCLAIMER_VERSION;
 }
 
 function _closeDisclaimerOverlay(){
@@ -6421,10 +6421,11 @@ firebase.auth().onAuthStateChanged(async (user) => {
       // Initialize analysis quota with signup date
       _aqLoad();
       _aqSetSignupDate(new Date().toISOString());
-      // New user — trigger free tutorial after data loads
+      // New user — load data, then show disclaimer as first thing they see
       await loadDataFromFirestore(user.uid);
       _authDataLoaded = true;
-      if(_launchTutorialAfterAuth){ _launchTutorialAfterAuth = false; setTimeout(() => openTutorialSlideshow(true), 600); }
+      setTimeout(() => showDisclaimerOverlay(), 400);
+      if(_launchTutorialAfterAuth){ _launchTutorialAfterAuth = false; }
       else { _tutCheckAutoStart('free', true); }
     } else {
       const data = userDoc.data();
@@ -6444,13 +6445,17 @@ firebase.auth().onAuthStateChanged(async (user) => {
       // Load user's property data from Firestore
       await loadDataFromFirestore(user.uid);
       _authDataLoaded = true;
-      if(_launchTutorialAfterAuth){ _launchTutorialAfterAuth = false; setTimeout(() => openTutorialSlideshow(true), 600); }
+      // Show disclaimer as first thing if not yet acknowledged (any tier)
+      if(needsDisclaimer()){
+        setTimeout(() => showDisclaimerOverlay(), 400);
+      }
+      else if(_launchTutorialAfterAuth){ _launchTutorialAfterAuth = false; setTimeout(() => openTutorialSlideshow(true), 600); }
       // Restore tutorial if it was open before a page refresh
       else if(sessionStorage.getItem('rr_tutorial_open') === '1'){
         setTimeout(() => openTutorialSlideshow(true), 400);
       }
       // Check if tier tutorial needed (only after disclaimer flow)
-      else if(data.tier && data.tier !== 'free' && _disclaimerAcknowledged){
+      else if(data.tier && _disclaimerAcknowledged){
         _tutCheckAutoStart(data.tier, false);
       }
       // Sync subscription status with Stripe in the background
@@ -11107,7 +11112,7 @@ function checkMeetingNotifications(){
             tag: key
           });
         } catch(e){}
-        showToast('📅 Meeting in ' + rem.label + ': ' + addr, 'info', 6000);
+        showToast('📅 Meeting in ' + rem.label + ': ' + addr, 'info', 6000, { recordId: r.id });
       }
     });
   });
@@ -11302,13 +11307,13 @@ function checkFollowUpNotifications(){
         localStorage.setItem(key, '1');
         const addr = r.property || 'Unknown property';
         try {
-          new Notification('Follow-Up Reminder — ' + rem.label, {
+          new Notification('Follow-up in ' + rem.label, {
             body: addr + '\nDue: ' + fmtDate(r.followUpDate),
             icon: 'https://app.rentingradar.com/favicon.ico',
             tag: key
           });
         } catch(e){}
-        showToast('🔔 Follow-up ' + rem.label + ': ' + addr, 'info', 6000);
+        showToast('🔔 Follow-up in ' + rem.label + ': ' + addr, 'info', 6000, { recordId: r.id });
       }
     });
   });
