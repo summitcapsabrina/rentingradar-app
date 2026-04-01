@@ -1284,6 +1284,10 @@ h1 .hero-edit-input{font-size:1.35rem}
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
         <span>Plan</span>
       </div>
+      <div class="nav-item" data-view="tutorial" onclick="switchView('tutorial')" title="Tutorial">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>
+        <span>Tutorial</span>
+      </div>
       <div class="nav-item" data-view="settings" onclick="switchView('settings')" title="Settings">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
         <span>Settings</span>
@@ -1477,7 +1481,7 @@ function switchView(view){
   clearSearch();
   const navView = view === 'pipeline' ? 'dashboard' : view;
   document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.view === navView));
-  const titles = { dashboard:'Dashboard', pipeline:'Pipeline', contacts:'All Contacts', notifications:'Notifications', pricing:'Your Plan', settings:'Settings', featureRequest:'Feature Request', askExpert:'Ask an Expert' };
+  const titles = { dashboard:'Dashboard', pipeline:'Pipeline', contacts:'All Contacts', notifications:'Notifications', pricing:'Your Plan', tutorial:'Tutorial', settings:'Settings', featureRequest:'Feature Request', askExpert:'Ask an Expert' };
   document.getElementById('headerTitle').textContent = titles[view] || '';
   if(!_handlingPopstate) history.pushState({ view: view, profileId: null }, '', '#' + view);
   saveViewState();
@@ -1544,6 +1548,7 @@ function render(){
     case 'pricing': area.innerHTML = renderPricing(); break;
     case 'settings': area.innerHTML = renderSettings(); break;
     case 'help': area.innerHTML = renderHelp(); break;
+    case 'tutorial': area.innerHTML = renderTutorialView(); break;
     case 'featureRequest': area.innerHTML = renderFeatureRequest(); break;
     case 'askExpert': area.innerHTML = renderAskExpert(); break;
   }
@@ -5739,14 +5744,7 @@ function dismissTutorialUpdateNotif(id){
 
 function handleTutorialNotifClick(id){
   dismissTutorialUpdateNotif(id);
-  switchView('settings');
-  // Scroll to tutorial section after render
-  requestAnimationFrame(function(){
-    setTimeout(function(){
-      var el = document.getElementById('settingsTutorialSection');
-      if(el) el.scrollIntoView({ behavior:'smooth', block:'center' });
-    }, 100);
-  });
+  switchView('tutorial');
 }
 
 // ── Slideshow Tutorial (replaces interactive tutorial) ──
@@ -5791,8 +5789,8 @@ function openTutorialSlideshow(autostart, restart){
         _tutProgress.pct = 100;
       }
       _tutSaveSeen();
-      // Re-render settings if visible
-      if(currentView === 'settings') render();
+      // Re-render if tutorial or settings view is visible
+      if(currentView === 'tutorial' || currentView === 'settings') render();
     }
   };
   window.addEventListener('message', window._tutSlideshowHandler);
@@ -5834,7 +5832,7 @@ function restartTutorial(name){
     try { localStorage.removeItem('rr_tutorial_progress'); } catch(e){}
     _tutProgress = { step:0, total:TUTORIAL_TOTAL_STEPS, pct:0 };
     showAppAlert('Tutorial reset! It will auto-trigger on your next login.', {title:'Tutorial Reset', icon:'🔄'});
-    if(currentView === 'settings') render();
+    if(currentView === 'tutorial' || currentView === 'settings') render();
   } else {
     openTutorialSlideshow(false);
   }
@@ -5843,9 +5841,18 @@ function restartTutorial(name){
 function confirmTutorialRestart(){
   var completedCount = typeof _tut.seen.tutCompletedCount === 'number' ? _tut.seen.tutCompletedCount : 0;
   var total = _tut.seen.tutTotal || TUTORIAL_TOTAL_STEPS;
-  showAppConfirm('You\'ve completed ' + completedCount + ' of ' + total + ' steps. Restarting will begin the tutorial from the beginning, but your progress is still saved.', {
+  showAppConfirm('You\'ve completed ' + completedCount + ' of ' + total + ' steps. Restarting will reset your progress and begin the tutorial from the beginning.', {
     title: 'Restart Tutorial?', icon: '↻', confirmText: 'Restart', cancelText: 'Cancel',
-    onConfirm: function(){ openTutorialSlideshow(false, true); }
+    onConfirm: function(){
+      // Reset all progress tracking in parent before opening iframe with restart=1
+      _tut.seen.slideshow = false;
+      _tut.seen.tutStep = 0;
+      _tut.seen.tutCompletedCount = 0;
+      _tutProgress = { step:0, total:TUTORIAL_TOTAL_STEPS, pct:0 };
+      try { localStorage.removeItem('rr_tutorial_progress'); } catch(e){}
+      _tutSaveSeen();
+      openTutorialSlideshow(false, true);
+    }
   });
 }
 
@@ -11725,35 +11732,6 @@ function renderSettings(){
       </div>
     </div>
 
-    <!-- TUTORIAL WALKTHROUGH -->
-    <div class="settings-section" id="settingsTutorialSection">
-      <div class="settings-section-header"><h3>🎓 Tutorial Walkthrough</h3></div>
-      <div class="settings-section-body">
-        <div class="settings-row">
-          <div class="settings-row-left">
-            <div class="sr-label">${_tut.seen.slideshow ? '<span style="color:#22c55e;margin-right:6px">✓</span>Complete CRM Tutorial' : (typeof _tut.seen.tutCompletedCount === 'number' && _tut.seen.tutCompletedCount > 0 ? 'CRM Tutorial — In Progress' : 'Complete CRM Tutorial')}</div>
-            <div class="sr-desc">A guided tour covering all features — Free, Basic, and Pro tiers</div>
-            ${(function(){
-              var pct = _tut.seen.slideshow ? 100 : (typeof _tut.seen.tutCompletedCount === 'number' && _tut.seen.tutCompletedCount > 0 ? Math.round(_tut.seen.tutCompletedCount / (_tut.seen.tutTotal || TUTORIAL_TOTAL_STEPS) * 100) : 0);
-              if(pct > 0) return '<div style="margin-top:6px;display:flex;align-items:center;gap:8px"><div style="flex:1;height:4px;background:var(--border);border-radius:2px;overflow:hidden"><div style="height:100%;background:#34d399;border-radius:2px;width:' + pct + '%;transition:width .3s"></div></div><span style="font-size:.7rem;color:var(--text3);white-space:nowrap">' + pct + '%</span></div>';
-              return '';
-            })()}
-          </div>
-          <div class="settings-row-right" style="display:flex;gap:6px">
-            ${(function(){
-              if(_tut.seen.slideshow) return '<button class="btn btn-secondary btn-sm" onclick="confirmTutorialRestart()">↻ Restart</button>';
-              if((typeof _tut.seen.tutCompletedCount === 'number' && _tut.seen.tutCompletedCount > 0) || (typeof _tut.seen.tutStep === 'number' && _tut.seen.tutStep > 0)) return '<button class="btn btn-secondary btn-sm" onclick="confirmTutorialRestart()">↻ Restart</button><button class="btn btn-primary btn-sm" onclick="openTutorialSlideshow(true)">▶ Resume</button>';
-              return '<button class="btn btn-primary btn-sm" onclick="openTutorialSlideshow(true)">▶ Start Tutorial</button>';
-            })()}
-          </div>
-        </div>
-        <div class="settings-row">
-          <div class="settings-row-left"><div class="sr-label">New Lesson Notifications</div><div class="sr-desc">Get notified when new tutorial lessons are published</div></div>
-          <div class="settings-row-right"><div class="settings-toggle ${settingsPrefs.tutorialUpdateNotifs!==false?'on':''}" onclick="toggleSettingsPref('tutorialUpdateNotifs',this)"></div></div>
-        </div>
-      </div>
-    </div>
-
     <!-- IMPORT & EXPORT -->
     <div class="settings-section">
       <div class="settings-section-header"><h3>📁 Data Management</h3></div>
@@ -11972,6 +11950,50 @@ async function submitHelpRequest(){
     if(msg){ msg.style.display = 'inline'; msg.textContent = '⚠ Network error — please try again.'; msg.style.color = 'var(--danger)'; setTimeout(() => msg.style.display = 'none', 5000); }
   }
   if(submitBtn){ submitBtn.disabled = false; submitBtn.textContent = 'Submit'; }
+}
+
+/* ===== TUTORIAL (sidebar view) ===== */
+function renderTutorialView(){
+  var pct = _tut.seen.slideshow ? 100 : (typeof _tut.seen.tutCompletedCount === 'number' && _tut.seen.tutCompletedCount > 0 ? Math.round(_tut.seen.tutCompletedCount / (_tut.seen.tutTotal || TUTORIAL_TOTAL_STEPS) * 100) : 0);
+  var completedCount = typeof _tut.seen.tutCompletedCount === 'number' ? _tut.seen.tutCompletedCount : 0;
+  var total = _tut.seen.tutTotal || TUTORIAL_TOTAL_STEPS;
+  var statusLabel = _tut.seen.slideshow ? '<span style="color:#22c55e;margin-right:6px">✓</span>Complete CRM Tutorial' : (completedCount > 0 ? 'CRM Tutorial — In Progress' : 'Complete CRM Tutorial');
+  var buttons = '';
+  if(_tut.seen.slideshow){
+    buttons = '<button class="btn btn-secondary btn-sm" onclick="confirmTutorialRestart()">↻ Restart</button>';
+  } else if(completedCount > 0 || (typeof _tut.seen.tutStep === 'number' && _tut.seen.tutStep > 0)){
+    buttons = '<button class="btn btn-secondary btn-sm" onclick="confirmTutorialRestart()">↻ Restart</button><button class="btn btn-primary btn-sm" onclick="openTutorialSlideshow(true)">▶ Resume</button>';
+  } else {
+    buttons = '<button class="btn btn-primary btn-sm" onclick="openTutorialSlideshow(true)">▶ Start Tutorial</button>';
+  }
+  var progressBar = '';
+  if(pct > 0){
+    progressBar = '<div style="margin-top:6px;display:flex;align-items:center;gap:8px"><div style="flex:1;height:4px;background:var(--border);border-radius:2px;overflow:hidden"><div style="height:100%;background:#34d399;border-radius:2px;width:' + pct + '%;transition:width .3s"></div></div><span style="font-size:.7rem;color:var(--text3);white-space:nowrap">' + pct + '%</span></div>';
+  }
+  return '<div class="view-content" style="max-width:640px;margin:0 auto;padding:24px 16px">' +
+    '<div style="text-align:center;margin-bottom:24px">' +
+      '<div style="font-size:2.4rem;margin-bottom:8px"><svg viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" width="48" height="48"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg></div>' +
+      '<h2 style="margin:0 0 6px;font-size:1.3rem;font-weight:700;color:var(--text1)">Tutorial</h2>' +
+      '<p style="color:var(--text3);font-size:.85rem;margin:0">Learn how to use every feature of RentingRadar with our guided walkthrough.</p>' +
+    '</div>' +
+    '<div class="settings-section" id="settingsTutorialSection">' +
+      '<div class="settings-section-header"><h3>🎓 Tutorial Walkthrough</h3></div>' +
+      '<div class="settings-section-body">' +
+        '<div class="settings-row">' +
+          '<div class="settings-row-left">' +
+            '<div class="sr-label">' + statusLabel + '</div>' +
+            '<div class="sr-desc">A guided tour covering all features — Free, Basic, and Pro tiers</div>' +
+            progressBar +
+          '</div>' +
+          '<div class="settings-row-right" style="display:flex;gap:6px">' + buttons + '</div>' +
+        '</div>' +
+        '<div class="settings-row">' +
+          '<div class="settings-row-left"><div class="sr-label">New Lesson Notifications</div><div class="sr-desc">Get notified when new tutorial lessons are published</div></div>' +
+          '<div class="settings-row-right"><div class="settings-toggle ' + (settingsPrefs.tutorialUpdateNotifs !== false ? 'on' : '') + '" onclick="toggleSettingsPref(\'tutorialUpdateNotifs\',this)"></div></div>' +
+        '</div>' +
+      '</div>' +
+    '</div>' +
+  '</div>';
 }
 
 /* ===== FEATURE REQUEST (sidebar view) ===== */
@@ -12285,7 +12307,7 @@ if(currentView === 'profile' && currentProfileId){
   document.getElementById('headerTitle').textContent = 'Property Profile';
 } else {
   document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.view === currentView));
-  const titles = { dashboard:'Dashboard', pipeline:'Pipeline', contacts:'All Contacts', notifications:'Notifications', pricing:'Your Plan', settings:'Settings', featureRequest:'Feature Request', askExpert:'Ask an Expert' };
+  const titles = { dashboard:'Dashboard', pipeline:'Pipeline', contacts:'All Contacts', notifications:'Notifications', pricing:'Your Plan', tutorial:'Tutorial', settings:'Settings', featureRequest:'Feature Request', askExpert:'Ask an Expert' };
   document.getElementById('headerTitle').textContent = titles[currentView] || '';
 }
 render();
@@ -12346,7 +12368,7 @@ window.addEventListener('popstate', function(e){
       currentProfileId = null;
       clearSearch();
       document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.view === state.view));
-      const titles = { dashboard:'Dashboard', pipeline:'Pipeline', contacts:'All Contacts', notifications:'Notifications', pricing:'Your Plan', settings:'Settings', featureRequest:'Feature Request', askExpert:'Ask an Expert' };
+      const titles = { dashboard:'Dashboard', pipeline:'Pipeline', contacts:'All Contacts', notifications:'Notifications', pricing:'Your Plan', tutorial:'Tutorial', settings:'Settings', featureRequest:'Feature Request', askExpert:'Ask an Expert' };
       document.getElementById('headerTitle').textContent = titles[state.view] || '';
       saveViewState();
       render();
