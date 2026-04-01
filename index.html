@@ -5560,23 +5560,20 @@ function _sendAnalysisLimitEmail(){
 function _sendMeetingCalendarInvite(r){
   if(!_currentUid || !r.meetingDate || !r.meetingTime) return;
   try {
-    // Gather property notes (plain text from activity log)
     const notes = (r.notes || []).filter(n => n.type === 'note' || !n.type).map(n => {
       if(n.html) return n.html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
       return (n.text || '').trim();
-    }).filter(t => t.length > 0).slice(0, 10); // Max 10 notes
+    }).filter(t => t.length > 0).slice(0, 10);
 
-    const fn = firebase.functions().httpsCallable('sendMeetingInvite');
-    fn({
-      meetingDate: r.meetingDate,
-      meetingTime: r.meetingTime,
-      contactName: r.name || '',
-      propertyAddress: r.property || '',
-      propertyNotes: notes,
-      durationMinutes: 60
-    }).then(res => {
-      if(res.data && res.data.sent){
-        showToast('📅 Calendar invite sent to your email!', 'success', 5000);
+    firebase.auth().currentUser.getIdToken().then(token => {
+      return fetch('/api/sendMeetingInvite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+        body: JSON.stringify({ data: { meetingDate: r.meetingDate, meetingTime: r.meetingTime, contactName: r.name || '', propertyAddress: r.property || '', propertyNotes: notes, durationMinutes: 60 } })
+      });
+    }).then(resp => resp.json()).then(json => {
+      if(json.result && json.result.data && json.result.data.sent){
+        showToast('Calendar invite sent to your email!', 'success', 5000);
       }
     }).catch(err => console.warn('Meeting invite email error:', err));
   } catch(e){ console.warn('Could not call sendMeetingInvite:', e); }
