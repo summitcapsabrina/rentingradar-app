@@ -1355,7 +1355,7 @@ exports.sendMeetingInvite = functions.https.onCall(async (data, context) => {
     return { sent: true };
   } catch (err) {
     console.error("sendMeetingInvite error:", err);
-    if (err instanceof functions.https.HttpsError) throw err;
-    throw new functions.https.HttpsError("internal", err.message || "Failed to send calendar invite.");
+    // Return error details for debugging instead of throwing
+    return { sent: false, debug: true, errorMessage: String(err.message || err), errorStack: String(err.stack || "").substring(0, 500) };
   }
 });
