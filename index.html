@@ -5565,27 +5565,19 @@ function _sendMeetingCalendarInvite(r){
       return (n.text || '').trim();
     }).filter(t => t.length > 0).slice(0, 10);
 
-    // Write to Firestore — Cloud Function trigger handles the email
-    firebase.firestore().collection('meetingInvites').add({
-      uid: _currentUid,
+    callFunction('sendMeetingInvite', {
       meetingDate: r.meetingDate,
       meetingTime: r.meetingTime,
       contactName: r.name || '',
       propertyAddress: r.property || '',
       propertyNotes: notes,
-      durationMinutes: 60,
-      status: 'pending',
-      createdAt: firebase.firestore.FieldValue.serverTimestamp()
-    }).then(function(docRef){
-      showToast('Calendar invite is being sent to your email!', 'success', 5000);
-      // Listen for status update from Cloud Function
-      docRef.onSnapshot(function(snap){
-        var d = snap.data();
-        if(d && d.status === 'sent'){ showToast('Calendar invite delivered!', 'success', 4000); }
-        else if(d && d.status === 'error'){ showToast('Calendar invite failed: ' + (d.error || 'unknown'), 'warning', 5000); }
-      });
-    }).catch(function(err){ console.warn('Meeting invite write error:', err); });
-  } catch(e){ console.warn('Could not create meeting invite:', e); }
+      durationMinutes: 60
+    }).then(function(result){
+      if(result && result.data && result.data.sent){
+        showToast('Calendar invite sent to your email!', 'success', 5000);
+      }
+    }).catch(function(err){ console.warn('Meeting invite error:', err); });
+  } catch(e){ console.warn('Could not call sendMeetingInvite:', e); }
 }
 
 // Format the reset date for display

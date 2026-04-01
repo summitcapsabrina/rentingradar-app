@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "dependencies": {
+    "@sendgrid/mail": "^8.1.0",
     "jsonwebtoken": "^9.0.0",
     "stripe": "^14.0.0"
   }
