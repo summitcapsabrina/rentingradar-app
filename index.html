@@ -1292,6 +1292,14 @@ h1 .hero-edit-input{font-size:1.35rem}
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><circle cx="12" cy="17" r=".5" fill="currentColor"/></svg>
         <span>Help</span>
       </div>
+      <div class="nav-item" data-view="featureRequest" onclick="switchView('featureRequest')" title="Feature Request">
+        <span style="font-size:1.1rem;width:20px;text-align:center;flex-shrink:0">💡</span>
+        <span>Feature Request</span>
+      </div>
+      <div class="nav-item" data-view="askExpert" onclick="switchView('askExpert')" title="Ask an Expert">
+        <span style="font-size:1.1rem;width:20px;text-align:center;flex-shrink:0">🧠</span>
+        <span>Ask an Expert</span>
+      </div>
     </nav>
     <div class="sidebar-user" id="userSection">
       <button class="login-btn" onclick="showAuthModal('signin')" style="width:100%;justify-content:center">
@@ -1468,7 +1476,7 @@ function switchView(view){
   clearSearch();
   const navView = view === 'pipeline' ? 'dashboard' : view;
   document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.view === navView));
-  const titles = { dashboard:'Dashboard', pipeline:'Pipeline', contacts:'All Contacts', notifications:'Notifications', pricing:'Your Plan', settings:'Settings' };
+  const titles = { dashboard:'Dashboard', pipeline:'Pipeline', contacts:'All Contacts', notifications:'Notifications', pricing:'Your Plan', settings:'Settings', featureRequest:'Feature Request', askExpert:'Ask an Expert' };
   document.getElementById('headerTitle').textContent = titles[view] || '';
   if(!_handlingPopstate) history.pushState({ view: view, profileId: null }, '', '#' + view);
   saveViewState();
@@ -1535,6 +1543,8 @@ function render(){
     case 'pricing': area.innerHTML = renderPricing(); break;
     case 'settings': area.innerHTML = renderSettings(); break;
     case 'help': area.innerHTML = renderHelp(); break;
+    case 'featureRequest': area.innerHTML = renderFeatureRequest(); break;
+    case 'askExpert': area.innerHTML = renderAskExpert(); break;
   }
   updateNotifBadges();
   // Set up paste handlers for Activity Log editors
@@ -11954,6 +11964,184 @@ async function submitHelpRequest(){
   if(submitBtn){ submitBtn.disabled = false; submitBtn.textContent = 'Submit'; }
 }
 
+/* ===== FEATURE REQUEST (sidebar view) ===== */
+function renderFeatureRequest(){
+  return `<div class="view-content" style="max-width:640px;margin:0 auto;padding:24px 16px">
+    <div style="text-align:center;margin-bottom:24px">
+      <div style="font-size:2.4rem;margin-bottom:8px">💡</div>
+      <h2 style="margin:0 0 6px;font-size:1.3rem;font-weight:700;color:var(--text1)">Feature Request</h2>
+      <p style="color:var(--text3);font-size:.85rem;margin:0">Have an idea that would make RentingRadar better? We'd love to hear it.</p>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-body">
+        <div class="field-group" style="margin-bottom:10px"><label class="field-label">Your Name</label><input type="text" id="fr_name" value="${esc((currentUser||{}).name||'')}" placeholder="Your name"></div>
+        <div class="field-group" style="margin-bottom:10px"><label class="field-label">Email</label><input type="email" id="fr_email" value="${esc((currentUser||{}).email||'')}" placeholder="you@email.com"></div>
+        <div class="field-group" style="margin-bottom:10px">
+          <label class="field-label">Category</label>
+          <select id="fr_category">
+            <option value="feature">Feature Request</option>
+            <option value="improvement">Improvement</option>
+            <option value="bug">Bug Report</option>
+            <option value="question">Question</option>
+          </select>
+        </div>
+        <div class="field-group" style="margin-bottom:10px"><label class="field-label">Subject</label><input type="text" id="fr_subject" placeholder="Brief description of your idea or issue"></div>
+        <div class="field-group" style="margin-bottom:14px"><label class="field-label">Details</label><textarea id="fr_details" rows="5" placeholder="Tell us more — what would this feature do? What problem does it solve? If reporting a bug, include steps to reproduce it."></textarea></div>
+        <div style="display:flex;align-items:center;gap:12px">
+          <button class="btn btn-primary" onclick="submitFeatureRequest()">Submit</button>
+          <span id="frSubmitMsg" style="font-size:.8rem;color:var(--success);display:none"></span>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+async function submitFeatureRequest(){
+  const name = document.getElementById('fr_name')?.value?.trim() || '';
+  const email = document.getElementById('fr_email')?.value?.trim() || '';
+  const category = document.getElementById('fr_category')?.value || 'feature';
+  const subject = document.getElementById('fr_subject')?.value?.trim() || '';
+  const details = document.getElementById('fr_details')?.value?.trim() || '';
+  if(!subject){ showAppAlert('Please enter a subject.', {title: 'Validation', icon: '⚠️'}); return; }
+  if(!details){ showAppAlert('Please provide some details.', {title: 'Validation', icon: '⚠️'}); return; }
+
+  const submitBtn = document.querySelector('#contentArea .btn-primary');
+  const msg = document.getElementById('frSubmitMsg');
+  if(submitBtn){ submitBtn.disabled = true; submitBtn.textContent = 'Submitting...'; }
+
+  try {
+    const resp = await fetch('https://formspree.io/f/' + FORMSPREE_ID, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify({
+        name: name,
+        _replyto: email,
+        category: category,
+        _subject: '[' + category.charAt(0).toUpperCase() + category.slice(1) + '] ' + subject,
+        message: details,
+        tier: currentTier || 'free',
+        source: 'sidebar-feature-request'
+      })
+    });
+    if(resp.ok){
+      document.getElementById('fr_subject').value = '';
+      document.getElementById('fr_details').value = '';
+      if(msg){ msg.style.display = 'inline'; msg.textContent = '✓ Submitted — thank you!'; msg.style.color = 'var(--success)'; setTimeout(() => msg.style.display = 'none', 5000); }
+    } else {
+      if(msg){ msg.style.display = 'inline'; msg.textContent = '⚠ Submission failed — please try again.'; msg.style.color = 'var(--danger)'; setTimeout(() => msg.style.display = 'none', 5000); }
+    }
+  } catch(e){
+    console.error('Feature request submit error:', e);
+    if(msg){ msg.style.display = 'inline'; msg.textContent = '⚠ Network error — please try again.'; msg.style.color = 'var(--danger)'; setTimeout(() => msg.style.display = 'none', 5000); }
+  }
+  if(submitBtn){ submitBtn.disabled = false; submitBtn.textContent = 'Submit'; }
+}
+
+/* ===== ASK AN EXPERT (sidebar view) ===== */
+function renderAskExpert(){
+  return `<div class="view-content" style="max-width:640px;margin:0 auto;padding:24px 16px">
+    <div style="text-align:center;margin-bottom:24px">
+      <div style="font-size:2.4rem;margin-bottom:8px">🧠</div>
+      <h2 style="margin:0 0 6px;font-size:1.3rem;font-weight:700;color:var(--text1)">Ask an Expert</h2>
+      <p style="color:var(--text3);font-size:.85rem;margin:0;max-width:480px;display:inline-block">Submit a request to speak with a Rental Arbitrage expert. Get in-depth answers, strategy insights, and personalized guidance beyond what the CRM can offer.</p>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-header"><h3>How It Works</h3></div>
+      <div class="settings-section-body">
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;text-align:center;margin-bottom:8px">
+          <div>
+            <div style="width:36px;height:36px;border-radius:50%;background:var(--primary);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:.9rem;margin-bottom:8px">1</div>
+            <div style="font-size:.78rem;font-weight:600;color:var(--text1)">Submit your question</div>
+            <div style="font-size:.7rem;color:var(--text3);margin-top:2px">Tell us what you need help with</div>
+          </div>
+          <div>
+            <div style="width:36px;height:36px;border-radius:50%;background:var(--primary);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:.9rem;margin-bottom:8px">2</div>
+            <div style="font-size:.78rem;font-weight:600;color:var(--text1)">We match you with an expert</div>
+            <div style="font-size:.7rem;color:var(--text3);margin-top:2px">Based on your question and market</div>
+          </div>
+          <div>
+            <div style="width:36px;height:36px;border-radius:50%;background:var(--primary);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:.9rem;margin-bottom:8px">3</div>
+            <div style="font-size:.78rem;font-weight:600;color:var(--text1)">Get personalized guidance</div>
+            <div style="font-size:.7rem;color:var(--text3);margin-top:2px">1-on-1 session with a specialist</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="settings-section" style="margin-top:16px">
+      <div class="settings-section-header"><h3>Request a Consultation</h3></div>
+      <div class="settings-section-body">
+        <div class="field-group" style="margin-bottom:10px"><label class="field-label">Your Name</label><input type="text" id="ae_name" value="${esc((currentUser||{}).name||'')}" placeholder="Your name"></div>
+        <div class="field-group" style="margin-bottom:10px"><label class="field-label">Email</label><input type="email" id="ae_email" value="${esc((currentUser||{}).email||'')}" placeholder="you@email.com"></div>
+        <div class="field-group" style="margin-bottom:10px">
+          <label class="field-label">Topic</label>
+          <select id="ae_topic">
+            <option value="deal-analysis">Deal Analysis & Evaluation</option>
+            <option value="negotiation">Landlord Negotiation Strategy</option>
+            <option value="market-research">Market Research & Selection</option>
+            <option value="furnishing">Furnishing & Setup</option>
+            <option value="pricing-strategy">Pricing & Revenue Optimization</option>
+            <option value="scaling">Scaling Your Portfolio</option>
+            <option value="legal">Lease Terms & Legal Considerations</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div class="field-group" style="margin-bottom:10px">
+          <label class="field-label">Your Market / City</label>
+          <input type="text" id="ae_market" placeholder="e.g. Austin, TX">
+        </div>
+        <div class="field-group" style="margin-bottom:14px"><label class="field-label">What do you need help with?</label><textarea id="ae_details" rows="5" placeholder="Describe your situation and the questions you'd like answered. The more detail you provide, the better we can match you with the right expert."></textarea></div>
+        <div style="display:flex;align-items:center;gap:12px">
+          <button class="btn btn-primary" onclick="submitAskExpert()">Request Consultation</button>
+          <span id="aeSubmitMsg" style="font-size:.8rem;color:var(--success);display:none"></span>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+async function submitAskExpert(){
+  const name = document.getElementById('ae_name')?.value?.trim() || '';
+  const email = document.getElementById('ae_email')?.value?.trim() || '';
+  const topic = document.getElementById('ae_topic')?.value || 'other';
+  const market = document.getElementById('ae_market')?.value?.trim() || '';
+  const details = document.getElementById('ae_details')?.value?.trim() || '';
+  if(!email){ showAppAlert('Please enter your email so our expert can reach you.', {title: 'Validation', icon: '⚠️'}); return; }
+  if(!details){ showAppAlert('Please describe what you need help with.', {title: 'Validation', icon: '⚠️'}); return; }
+
+  const submitBtn = document.querySelector('#contentArea .btn-primary');
+  const msg = document.getElementById('aeSubmitMsg');
+  if(submitBtn){ submitBtn.disabled = true; submitBtn.textContent = 'Submitting...'; }
+
+  try {
+    const resp = await fetch('https://formspree.io/f/' + FORMSPREE_ID, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify({
+        name: name,
+        _replyto: email,
+        category: 'expert-consultation',
+        _subject: '[Expert Request] ' + topic.replace(/-/g,' ').replace(/\b\w/g,c=>c.toUpperCase()) + (market ? ' — ' + market : ''),
+        message: details,
+        topic: topic,
+        market: market,
+        tier: currentTier || 'free',
+        source: 'ask-an-expert'
+      })
+    });
+    if(resp.ok){
+      document.getElementById('ae_details').value = '';
+      document.getElementById('ae_market').value = '';
+      if(msg){ msg.style.display = 'inline'; msg.textContent = '✓ Request submitted — we\'ll be in touch soon!'; msg.style.color = 'var(--success)'; setTimeout(() => msg.style.display = 'none', 7000); }
+    } else {
+      if(msg){ msg.style.display = 'inline'; msg.textContent = '⚠ Submission failed — please try again.'; msg.style.color = 'var(--danger)'; setTimeout(() => msg.style.display = 'none', 5000); }
+    }
+  } catch(e){
+    console.error('Ask expert submit error:', e);
+    if(msg){ msg.style.display = 'inline'; msg.textContent = '⚠ Network error — please try again.'; msg.style.color = 'var(--danger)'; setTimeout(() => msg.style.display = 'none', 5000); }
+  }
+  if(submitBtn){ submitBtn.disabled = false; submitBtn.textContent = 'Request Consultation'; }
+}
+
 function openEditProfile(){
   const u = currentUser || {};
   const overlay = document.createElement('div');
@@ -12087,7 +12275,7 @@ if(currentView === 'profile' && currentProfileId){
   document.getElementById('headerTitle').textContent = 'Property Profile';
 } else {
   document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.view === currentView));
-  const titles = { dashboard:'Dashboard', pipeline:'Pipeline', contacts:'All Contacts', notifications:'Notifications', pricing:'Your Plan', settings:'Settings' };
+  const titles = { dashboard:'Dashboard', pipeline:'Pipeline', contacts:'All Contacts', notifications:'Notifications', pricing:'Your Plan', settings:'Settings', featureRequest:'Feature Request', askExpert:'Ask an Expert' };
   document.getElementById('headerTitle').textContent = titles[currentView] || '';
 }
 render();
@@ -12148,7 +12336,7 @@ window.addEventListener('popstate', function(e){
       currentProfileId = null;
       clearSearch();
       document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.view === state.view));
-      const titles = { dashboard:'Dashboard', pipeline:'Pipeline', contacts:'All Contacts', notifications:'Notifications', pricing:'Your Plan', settings:'Settings' };
+      const titles = { dashboard:'Dashboard', pipeline:'Pipeline', contacts:'All Contacts', notifications:'Notifications', pricing:'Your Plan', settings:'Settings', featureRequest:'Feature Request', askExpert:'Ask an Expert' };
       document.getElementById('headerTitle').textContent = titles[state.view] || '';
       saveViewState();
       render();
