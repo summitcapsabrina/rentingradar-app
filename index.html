@@ -4338,7 +4338,6 @@ function showToast(msg, type = 'info', duration = 4000, opts = {}) {
     toast.className = 'rr-toast';
     document.body.appendChild(toast);
   }
-  toast.style.position = 'relative';
   toast.innerHTML = '<span class="rr-toast-msg">' + msg + '</span><button class="rr-toast-close" onclick="event.stopPropagation();document.getElementById(\'rr-toast\').classList.remove(\'visible\')">&times;</button>';
   toast.className = 'rr-toast ' + type + (opts.recordId ? ' clickable' : '');
   toast.onclick = opts.recordId ? function(){ toast.classList.remove('visible'); openDetail(opts.recordId); } : null;
