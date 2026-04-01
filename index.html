@@ -8456,22 +8456,22 @@ function renderNegotiationTab(r){
     // ── Break-Even Comparison Chart ──
     h += '<div style="margin-top:10px;border-top:1px solid var(--border);padding-top:8px">';
 
-    // Compute cumulative cash flow arrays for 10 years (monthly granularity plotted yearly)
+    // Compute cumulative cash flow arrays for 5 years (plotted yearly)
     // Without concessions: start at -investment, add annual CF each year
     const _beCumWithout = [];
     let _beRunW = -_raInv;
     _beCumWithout.push(_beRunW);
-    for(let y=1;y<=10;y++){ _beRunW += _conAnnualCF; _beCumWithout.push(_beRunW); }
+    for(let y=1;y<=5;y++){ _beRunW += _conAnnualCF; _beCumWithout.push(_beRunW); }
 
     // With concessions: start at -(investment - savings), add annual CF each year
     const _beCumWith = [];
     let _beRunC = -adjInvB;
     _beCumWith.push(_beRunC);
-    for(let y=1;y<=10;y++){ _beRunC += _conAnnualCF; _beCumWith.push(_beRunC); }
+    for(let y=1;y<=5;y++){ _beRunC += _conAnnualCF; _beCumWith.push(_beRunC); }
 
     // Find break-even years for both lines
     function _beFindBE(cum){
-      for(let y=1;y<=10;y++){
+      for(let y=1;y<=5;y++){
         if(cum[y-1] < 0 && cum[y] >= 0){
           return y - 1 + (Math.abs(cum[y-1]) / (Math.abs(cum[y-1]) + cum[y]));
         }
@@ -8489,7 +8489,7 @@ function renderNegotiationTab(r){
     const beYMax = Math.max(...allBEVals);
     const beYRange = beYMax - beYMin || 1;
     function beY2(val){ return padT2 + chartH2 * (1 - (val - beYMin) / beYRange); }
-    function beX2(yr){ return padL2 + (yr / 10) * chartW2; }
+    function beX2(yr){ return padL2 + (yr / 5) * chartW2; }
     const zeroY2 = beY2(0);
 
     h += '<div>';
@@ -8515,39 +8515,51 @@ function renderNegotiationTab(r){
 
     // Positive area fill for "With Concessions" line
     let posArea = 'M'+beX2(0).toFixed(1)+','+Math.min(zeroY2, padT2+chartH2).toFixed(1);
-    for(let y=0;y<=10;y++){ posArea += ' L'+beX2(y).toFixed(1)+','+Math.min(beY2(_beCumWith[y]), zeroY2).toFixed(1); }
-    posArea += ' L'+beX2(10).toFixed(1)+','+Math.min(zeroY2, padT2+chartH2).toFixed(1)+' Z';
+    for(let y=0;y<=5;y++){ posArea += ' L'+beX2(y).toFixed(1)+','+Math.min(beY2(_beCumWith[y]), zeroY2).toFixed(1); }
+    posArea += ' L'+beX2(5).toFixed(1)+','+Math.min(zeroY2, padT2+chartH2).toFixed(1)+' Z';
     h += '<path d="'+posArea+'" fill="url(#'+conGradId+'_pos)"/>';
     // Negative area fill for "With Concessions" line
     let negArea = 'M'+beX2(0).toFixed(1)+','+Math.max(zeroY2, padT2).toFixed(1);
-    for(let y=0;y<=10;y++){ negArea += ' L'+beX2(y).toFixed(1)+','+Math.max(beY2(_beCumWith[y]), zeroY2).toFixed(1); }
-    negArea += ' L'+beX2(10).toFixed(1)+','+Math.max(zeroY2, padT2).toFixed(1)+' Z';
+    for(let y=0;y<=5;y++){ negArea += ' L'+beX2(y).toFixed(1)+','+Math.max(beY2(_beCumWith[y]), zeroY2).toFixed(1); }
+    negArea += ' L'+beX2(5).toFixed(1)+','+Math.max(zeroY2, padT2).toFixed(1)+' Z';
     h += '<path d="'+negArea+'" fill="url(#'+conGradId+'_neg)"/>';
 
     // "Without Concessions" line — more transparent
-    for(let y=0;y<10;y++){
+    for(let y=0;y<5;y++){
       const x1 = beX2(y), y1 = beY2(_beCumWithout[y]);
       const x2 = beX2(y+1), y2 = beY2(_beCumWithout[y+1]);
       const segCol = (_beCumWithout[y]<0&&_beCumWithout[y+1]<0)?'#ef4444':(_beCumWithout[y]>=0&&_beCumWithout[y+1]>=0)?'#10b981':'#f59e0b';
       h += '<line x1="'+x1.toFixed(1)+'" y1="'+y1.toFixed(1)+'" x2="'+x2.toFixed(1)+'" y2="'+y2.toFixed(1)+'" stroke="'+segCol+'" stroke-width="2" stroke-linecap="round" opacity=".25"/>';
     }
     // Dots for "Without" line
-    for(let y=0;y<=10;y++){
+    for(let y=0;y<=5;y++){
       const dotCol = _beCumWithout[y]<0?'#ef4444':'#10b981';
       h += '<circle cx="'+beX2(y).toFixed(1)+'" cy="'+beY2(_beCumWithout[y]).toFixed(1)+'" r="2" fill="'+dotCol+'" opacity=".3"/>';
     }
 
     // "With Concessions" line — solid, prominent
-    for(let y=0;y<10;y++){
+    for(let y=0;y<5;y++){
       const x1 = beX2(y), y1 = beY2(_beCumWith[y]);
       const x2 = beX2(y+1), y2 = beY2(_beCumWith[y+1]);
       const segCol = (_beCumWith[y]<0&&_beCumWith[y+1]<0)?'#ef4444':(_beCumWith[y]>=0&&_beCumWith[y+1]>=0)?'#10b981':'#f59e0b';
       h += '<line x1="'+x1.toFixed(1)+'" y1="'+y1.toFixed(1)+'" x2="'+x2.toFixed(1)+'" y2="'+y2.toFixed(1)+'" stroke="'+segCol+'" stroke-width="2.5" stroke-linecap="round"/>';
     }
     // Dots for "With" line
-    for(let y=0;y<=10;y++){
+    for(let y=0;y<=5;y++){
       const dotCol = _beCumWith[y]<0?'#ef4444':'#10b981';
-      h += '<circle cx="'+beX2(y).toFixed(1)+'" cy="'+beY2(_beCumWith[y]).toFixed(1)+'" r="'+(y===0||y===10?'4':'2.5')+'" fill="'+dotCol+'" stroke="var(--surface)" stroke-width="1.5"/>';
+      h += '<circle cx="'+beX2(y).toFixed(1)+'" cy="'+beY2(_beCumWith[y]).toFixed(1)+'" r="'+(y===0||y===5?'4':'2.5')+'" fill="'+dotCol+'" stroke="var(--surface)" stroke-width="1.5"/>';
+    }
+
+    // Break-even marker for "Without Concessions" — same low opacity as its line
+    if(_beYearWithout !== null){
+      const bxW = beX2(_beYearWithout);
+      h += '<line x1="'+bxW.toFixed(1)+'" y1="'+padT2+'" x2="'+bxW.toFixed(1)+'" y2="'+(svgH2-padB2)+'" stroke="#f59e0b" stroke-width="1" stroke-dasharray="4,3" opacity=".25"/>';
+      h += '<circle cx="'+bxW.toFixed(1)+'" cy="'+zeroY2.toFixed(1)+'" r="3.5" fill="#f59e0b" stroke="var(--surface)" stroke-width="1.5" opacity=".35" filter="drop-shadow(0 1px 2px rgba(0,0,0,.15))"/>';
+      const beWLbl = Math.floor(_beYearWithout)+'y '+Math.round((_beYearWithout-Math.floor(_beYearWithout))*12)+'m';
+      const lbWX = bxW + (bxW > svgW2/2 ? -8 : 8);
+      const lbWAnc = bxW > svgW2/2 ? 'end' : 'start';
+      h += '<text x="'+lbWX.toFixed(1)+'" y="'+(svgH2-padB2-6)+'" text-anchor="'+lbWAnc+'" fill="#f59e0b" font-size="7" font-weight="600" opacity=".4">No concessions</text>';
+      h += '<text x="'+lbWX.toFixed(1)+'" y="'+(svgH2-padB2-15)+'" text-anchor="'+lbWAnc+'" fill="#f59e0b" font-size="7" font-weight="600" opacity=".4">'+beWLbl+'</text>';
     }
 
     // Break-even marker for "With Concessions"
@@ -8563,7 +8575,7 @@ function renderNegotiationTab(r){
     }
 
     // X-axis year labels
-    for(let y=0;y<=10;y+=2){
+    for(let y=0;y<=5;y++){
       h += '<text x="'+beX2(y).toFixed(1)+'" y="'+(svgH2-8)+'" text-anchor="middle" fill="rgba(148,163,184,.5)" font-size="8" font-weight="500">Yr '+y+'</text>';
     }
     // Y-axis labels
