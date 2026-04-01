@@ -5556,6 +5556,32 @@ function _sendAnalysisLimitEmail(){
   } catch(e){ console.warn('Could not call sendAnalysisLimitEmail:', e); }
 }
 
+// Send meeting calendar invite via Cloud Function
+function _sendMeetingCalendarInvite(r){
+  if(!_currentUid || !r.meetingDate || !r.meetingTime) return;
+  try {
+    // Gather property notes (plain text from activity log)
+    const notes = (r.notes || []).filter(n => n.type === 'note' || !n.type).map(n => {
+      if(n.html) return n.html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+      return (n.text || '').trim();
+    }).filter(t => t.length > 0).slice(0, 10); // Max 10 notes
+
+    const fn = firebase.functions().httpsCallable('sendMeetingInvite');
+    fn({
+      meetingDate: r.meetingDate,
+      meetingTime: r.meetingTime,
+      contactName: r.name || '',
+      propertyAddress: r.property || '',
+      propertyNotes: notes,
+      durationMinutes: 60
+    }).then(res => {
+      if(res.data && res.data.sent){
+        showToast('📅 Calendar invite sent to your email!', 'success', 5000);
+      }
+    }).catch(err => console.warn('Meeting invite email error:', err));
+  } catch(e){ console.warn('Could not call sendMeetingInvite:', e); }
+}
+
 // Format the reset date for display
 function getAnalysisResetDateStr(){
   const cycle = _aqGetCurrentCycle();
@@ -10832,6 +10858,8 @@ function saveContactCard(recId){
         showToast('Meeting reminders scheduled!', 'success');
       }
     });
+    // Send calendar invite email via Cloud Function
+    _sendMeetingCalendarInvite(r);
   }
   document.getElementById('cardEditOverlay')?.remove();
   render();
