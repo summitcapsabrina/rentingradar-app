@@ -3030,8 +3030,10 @@ function _renderProfileInner(){
         <div class="profile-hero-meta-row">
           <span class="inline-status" onclick="toggleInlineStatus(event,'${r.id}')" title="Click to change status">${statusPill(r.status)}</span>
           ${r.link ? `<a class="profile-platform" href="${esc(r.link)}" target="_blank">${plat.icon} ${plat.name} <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"/></svg></a>` : '<span style="font-size:.8rem;color:var(--text3)">No listing link</span>'}
-          ${r.followUpDate ? (()=>{ const fp = new Date(r.followUpDate+'T'+(r.followUpTime||'23:59')) < new Date(); return `<span style="font-size:.75rem;color:${fp?'var(--text3)':'var(--danger, #ef4444)'};display:inline-flex;align-items:center;gap:3px"><span style="font-size:.8rem">${fp?'\uD83D\uDD15':'\uD83D\uDD14'}</span> Follow-up: ${fmtDateTimeForCard(r.followUpDate, r.followUpTime)}</span>`; })() : ''}
-          ${r.meetingDate ? (()=>{ const mp = new Date(r.meetingDate+'T'+(r.meetingTime||'23:59')) < new Date(); return `<span style="font-size:.75rem;color:${mp?'var(--text3)':'var(--primary)'};display:inline-flex;align-items:center;gap:3px"><span style="font-size:.8rem">📅</span> Meeting: ${fmtDateTimeForCard(r.meetingDate, r.meetingTime)}</span>`; })() : ''}
+        </div>
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:4px">
+          ${renderFollowUpSubtle(r)}
+          ${renderMeetingSubtle(r)}
         </div>
         <div class="profile-tabs">
           <div class="profile-tab ${activeTab==='details'?'active':''}" data-tab="details" onclick="setProfileTab('details')">🏠 Property Details</div>
@@ -10560,8 +10562,11 @@ function renderDtCalendar(popup, state, showTime){
     </div>`;
   }
 
-  // Actions
+  // Actions - show Remove button for inline pickers
+  const _inlinePopup = document.getElementById('rrDtPopup');
+  const _isInlinePicker = _inlinePopup && _inlinePopup.dataset.inlineRecId;
   html += `<div class="rr-dt-actions">
+    ${_isInlinePicker ? '<button class="rr-dt-clear-date" onclick="clearInlineDate()" style="margin-right:auto;color:var(--danger);border-color:var(--danger)">Remove</button>' : ''}
     <button class="rr-dt-cancel" onclick="closeDtPopup()">Cancel</button>
     <button class="rr-dt-done" onclick="dtConfirm()">Done</button>
   </div>`;
@@ -10774,6 +10779,49 @@ function saveInlineDatePicker(){
 
   closeDtPopup();
   delete _dtPickers[triggerId];
+  saveData();
+  render();
+}
+
+function clearInlineDate(){
+  const popup = document.getElementById('rrDtPopup');
+  if(!popup) return;
+  const triggerId = popup.dataset.triggerId;
+  const recId = popup.dataset.inlineRecId;
+  const dateType = popup.dataset.inlineDateType;
+  if(!recId || !dateType) { closeDtPopup(); return; }
+  const r = records.find(x => x.id === recId);
+  if(!r) { closeDtPopup(); return; }
+
+  const isFollowUp = dateType === 'followUp';
+  const oldDate = isFollowUp ? r.followUpDate : r.meetingDate;
+  const oldTime = isFollowUp ? r.followUpTime : r.meetingTime;
+  const oldStr = oldDate ? fmtDateTimeForCard(oldDate, oldTime) : '';
+
+  // Clear the date
+  if(isFollowUp){
+    r.followUpDate = null;
+    r.followUpTime = null;
+  } else {
+    r.meetingDate = null;
+    r.meetingTime = null;
+  }
+
+  // Activity log
+  loadSettingsPrefs();
+  if(oldDate){
+    if(isFollowUp && settingsPrefs.followUpChangeLog !== false){
+      r.notes = r.notes || [];
+      r.notes.push({ id:uid(), text:'Cleared (was ' + oldStr + ')', date:new Date().toISOString(), type:'followup' });
+    }
+    if(!isFollowUp && settingsPrefs.meetingChangeLog !== false){
+      r.notes = r.notes || [];
+      r.notes.push({ id:uid(), text:'Cleared (was ' + oldStr + ')', date:new Date().toISOString(), type:'meeting' });
+    }
+  }
+
+  closeDtPopup();
+  if(triggerId) delete _dtPickers[triggerId];
   saveData();
   render();
 }
