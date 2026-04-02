@@ -2801,7 +2801,7 @@ function renderNotifCard(r){
 function dismissFollowUp(id){
   const r = records.find(x => x.id===id);
   if(r){
-    r.notes.push({ id:uid(), text:`Follow-up completed (was due ${fmtDate(r.followUpDate)})`, date:new Date().toISOString(), type:'followup' });
+    r.notes.push({ id:uid(), text:`completed (was due ${fmtDate(r.followUpDate)})`, date:new Date().toISOString(), type:'followup' });
     r.followUpDate = null;
     saveData(); render();
   }
@@ -3115,12 +3115,15 @@ function _renderProfileInner(){
         <div class="note-list">
           ${(r.notes.length || r.date) ? r.notes.slice().reverse().map(n => {
             const isUserNote = n.type==='note'||n.type==='call'||n.type==='text'||n.type==='email';
+            const isAutoNote = n.type==='status'||n.type==='meeting'||n.type==='followup';
             const emoji = n.type==='call'?'<span style="font-size:1.1em">📞</span> ':n.type==='text'?'<span style="font-size:1.1em">💬</span> ':n.type==='email'?'<span style="font-size:1.1em">📧</span> ':n.type==='note'?'<span style="font-size:1.1em">📝</span> ':'';
-            const label = n.type==='import'?'Imported':n.type==='followup'?'Follow-up':n.type==='status'?'Status change':n.type==='meeting'?'Meeting':'';
+            const label = n.type==='import'?'Imported':n.type==='followup'?(n.text&&n.text.startsWith('Cleared')?'Follow-up cleared':n.text&&n.text.includes('→')?'Follow-up changed':n.text&&n.text.includes('completed')?'Follow-up completed':'Follow-up set'):n.type==='status'?'Status change':n.type==='meeting'?(n.text&&n.text.startsWith('Cleared')?'Meeting cleared':n.text&&n.text.includes('→')?'Meeting changed':'Meeting scheduled'):'';
             const noteContent = n.html ? n.html : esc(n.text);
             const noteImages = n.images || [];
             const imgHtml = noteImages.length > 0 ? '<div class="note-images">' + noteImages.map((src, imgIdx) => '<img class="note-img-thumb" src="'+src+'" alt="Attachment" onclick="openNoteImagePopup(\''+r.id+'\',\''+n.id+'\','+imgIdx+')">').join('') + '</div>' + '<div class="note-img-badge">📎 ' + noteImages.length + ' image' + (noteImages.length > 1 ? 's' : '') + ' attached</div>' : '';
-            const actionsHtml = isUserNote ? '<div class="note-actions"><button onclick="editNote(\''+r.id+'\',\''+n.id+'\')" title="Edit"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="del" onclick="deleteNote(\''+r.id+'\',\''+n.id+'\')" title="Delete"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button></div>' : '';
+            const delBtnHtml = '<button class="del" onclick="deleteNote(\''+r.id+'\',\''+n.id+'\')" title="Delete"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>';
+            const editBtnHtml = '<button onclick="editNote(\''+r.id+'\',\''+n.id+'\')" title="Edit"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>';
+            const actionsHtml = isUserNote ? '<div class="note-actions">' + editBtnHtml + delBtnHtml + '</div>' : isAutoNote ? '<div class="note-actions">' + delBtnHtml + '</div>' : '';
             const dateHtml = '<div class="note-date"><span>' + emoji + label + '</span><span>' + fmtDateTime(n.date) + (n.editedAt ? ' <span class="note-edited">(edited)</span>' : '') + '</span></div>';
             return '<div class="note-item">' + actionsHtml + dateHtml + '<div class="note-text">' + noteContent + '</div>' + imgHtml + '</div>';
           }).join('') + (r.date ? '<div class="note-item" style="opacity:.7"><div class="note-date"><span><span style="font-size:1.1em">🏁</span> Account Created</span><span>'+fmtDateTime(r.date)+'</span></div><div class="note-text">Property added to RentingRadar</div></div>' : '') : '<div style="color:var(--text3);font-size:.82rem">No activity yet</div>'}
@@ -3856,7 +3859,7 @@ function updateField(id, field, value){
   const old = r[field];
   r[field] = value;
   if(field === 'status' && old !== value){
-    r.notes.push({ id:uid(), text:`Status changed: ${old} → ${value}`, date:new Date().toISOString(), type:'status' });
+    r.notes.push({ id:uid(), text:`${old} → ${value}`, date:new Date().toISOString(), type:'status' });
   }
   saveData();
   updateNotifBadges();
@@ -10745,7 +10748,7 @@ function saveInlineDatePicker(){
     const newStr = newDate ? fmtDateTimeForCard(newDate, newTime) : 'Cleared';
     if(oldDate !== newDate || oldTime !== newTime){
       r.notes = r.notes || [];
-      r.notes.push({ id:uid(), text:'Follow-up ' + (newDate ? (oldDate ? 'changed: ' + oldStr + ' → ' + newStr : 'set: ' + newStr) : 'cleared' + (oldDate ? ' (was ' + oldStr + ')' : '')), date:new Date().toISOString(), type:'followup' });
+      r.notes.push({ id:uid(), text: newDate ? (oldDate ? oldStr + ' → ' + newStr : newStr) : 'Cleared' + (oldDate ? ' (was ' + oldStr + ')' : ''), date:new Date().toISOString(), type:'followup' });
     }
   }
   if(!isFollowUp && settingsPrefs.meetingChangeLog !== false){
@@ -10753,7 +10756,7 @@ function saveInlineDatePicker(){
     const newStr = newDate ? fmtDateTimeForCard(newDate, newTime) : 'Cleared';
     if(oldDate !== newDate || oldTime !== newTime){
       r.notes = r.notes || [];
-      r.notes.push({ id:uid(), text:'Meeting ' + (newDate ? (oldDate ? 'changed: ' + oldStr + ' → ' + newStr : 'scheduled: ' + newStr) : 'cleared' + (oldDate ? ' (was ' + oldStr + ')' : '')), date:new Date().toISOString(), type:'meeting' });
+      r.notes.push({ id:uid(), text: newDate ? (oldDate ? oldStr + ' → ' + newStr : newStr) : 'Cleared' + (oldDate ? ' (was ' + oldStr + ')' : ''), date:new Date().toISOString(), type:'meeting' });
     }
   }
 
@@ -10981,20 +10984,20 @@ function saveContactCard(recId){
   const newLink = document.getElementById('ce_link')?.value?.trim() || '';
   if(newLink !== r.link){ r.link = newLink }
   if(r.status !== oldStatus){
-    r.notes.push({ id:uid(), text:`Status changed: ${oldStatus} → ${r.status}`, date:new Date().toISOString(), type:'status' });
+    r.notes.push({ id:uid(), text:`${oldStatus} → ${r.status}`, date:new Date().toISOString(), type:'status' });
   }
   // Log follow-up changes
   loadSettingsPrefs();
   if(settingsPrefs.followUpChangeLog !== false && (r.followUpDate !== oldFollowUpDate || r.followUpTime !== oldFollowUpTime)){
     const oldStr = oldFollowUpDate ? fmtDateTimeForCard(oldFollowUpDate, oldFollowUpTime) : 'Not set';
     const newStr = r.followUpDate ? fmtDateTimeForCard(r.followUpDate, r.followUpTime) : 'Cleared';
-    r.notes.push({ id:uid(), text:'Follow-up ' + (r.followUpDate ? (oldFollowUpDate ? 'changed: ' + oldStr + ' → ' + newStr : 'set: ' + newStr) : 'cleared' + (oldFollowUpDate ? ' (was ' + oldStr + ')' : '')), date:new Date().toISOString(), type:'followup' });
+    r.notes.push({ id:uid(), text: r.followUpDate ? (oldFollowUpDate ? oldStr + ' → ' + newStr : newStr) : 'Cleared' + (oldFollowUpDate ? ' (was ' + oldStr + ')' : ''), date:new Date().toISOString(), type:'followup' });
   }
   // Log meeting changes
   if(settingsPrefs.meetingChangeLog !== false && (r.meetingDate !== oldMeetingDate || r.meetingTime !== oldMeetingTime)){
     const oldStr = oldMeetingDate ? fmtDateTimeForCard(oldMeetingDate, oldMeetingTime) : 'Not set';
     const newStr = r.meetingDate ? fmtDateTimeForCard(r.meetingDate, r.meetingTime) : 'Cleared';
-    r.notes.push({ id:uid(), text:'Meeting ' + (r.meetingDate ? (oldMeetingDate ? 'changed: ' + oldStr + ' → ' + newStr : 'scheduled: ' + newStr) : 'cleared' + (oldMeetingDate ? ' (was ' + oldStr + ')' : '')), date:new Date().toISOString(), type:'meeting' });
+    r.notes.push({ id:uid(), text: r.meetingDate ? (oldMeetingDate ? oldStr + ' → ' + newStr : newStr) : 'Cleared' + (oldMeetingDate ? ' (was ' + oldStr + ')' : ''), date:new Date().toISOString(), type:'meeting' });
   }
 
   // Save geolocation if captured from autocomplete
@@ -11078,7 +11081,7 @@ function setInlineStatus(recId, newStatus){
   closeInlineStatusDD();
   if(oldStatus === newStatus) return;
   r.status = newStatus;
-  r.notes.push({ id:uid(), text:`Status changed: ${oldStatus} → ${newStatus}`, date:new Date().toISOString(), type:'status' });
+  r.notes.push({ id:uid(), text:`${oldStatus} → ${newStatus}`, date:new Date().toISOString(), type:'status' });
   saveData();
   render();
 }
@@ -11090,7 +11093,7 @@ document.addEventListener('click', function(e){
   }
 });
 // Close on scroll so fixed dropdown doesn't drift from trigger
-window.addEventListener('scroll', function(){ closeInlineStatusDD(); }, true);
+window.addEventListener('scroll', function(e){ if(_inlineStatusDDEl && !_inlineStatusDDEl.contains(e.target)) closeInlineStatusDD(); }, true);
 
 /* ===== COPY FIELD VALUE ===== */
 const COPY_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>';
