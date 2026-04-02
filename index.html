@@ -3033,16 +3033,18 @@ function _renderProfileInner(){
           <span class="inline-status" onclick="toggleInlineStatus(event,'${r.id}')" title="Click to change status">${statusPill(r.status)}</span>
           ${r.link ? `<a class="profile-platform" href="${esc(r.link)}" target="_blank">${plat.icon} ${plat.name} <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"/></svg></a>` : '<span style="font-size:.8rem;color:var(--text3)">No listing link</span>'}
         </div>
-        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:4px">
-          ${renderFollowUpSubtle(r)}
-          ${renderMeetingSubtle(r)}
-        </div>
-        <div class="profile-tabs">
+        <div style="display:flex;align-items:flex-end;gap:12px;margin-top:6px;flex-wrap:wrap">
+          <div style="display:flex;flex-direction:column;gap:2px;flex-shrink:0">
+            ${renderFollowUpSubtle(r)}
+            ${renderMeetingSubtle(r)}
+          </div>
+          <div class="profile-tabs" style="margin-top:0">
           <div class="profile-tab ${activeTab==='details'?'active':''}" data-tab="details" onclick="setProfileTab('details')">🏠 Property Details</div>
           <div class="profile-tab ${activeTab==='expenses'?'active':''}" data-tab="expenses" onclick="setProfileTab('expenses')">💸 Expenses</div>
           <div class="profile-tab ${activeTab==='analysis'?'active':''}" data-tab="analysis" onclick="${_needsConfirm ? `showAnalysisConfirmation('${r.id}','analysis')` : `setProfileTab('analysis')`}">📊 Competitor Analysis ${!proOk?'<span class=\\"tab-lock\\">🔒</span>':''}</div>
           <div class="profile-tab ${activeTab==='calculator'?'active':''}" data-tab="calculator" onclick="${_needsConfirm ? `showAnalysisConfirmation('${r.id}','calculator')` : `setProfileTab('calculator')`}">💰 Projected ROI ${!calcOk?'<span class=\\"tab-lock\\">🔒</span>':''}</div>
           <div class="profile-tab ${activeTab==='negotiation'?'active':''}" data-tab="negotiation" onclick="setProfileTab('negotiation')">🤝 Negotiation Tools ${currentTier!=='pro'?'<span class=\\"tab-lock\\">🔒</span>':''}</div>
+          </div>
         </div>
       </div>
     </div>
