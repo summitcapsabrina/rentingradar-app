@@ -1072,6 +1072,7 @@ h1 .hero-edit-input{font-size:1.35rem}
 .rr-dt-popup .rr-dt-actions .rr-dt-cancel:hover{background:var(--primary-light)}
 .inline-status{cursor:pointer;position:relative;display:inline-block}
 .inline-status:hover{opacity:.85}
+.inline-date-edit:hover{background:var(--primary-light);opacity:.9}
 .inline-status-dd{position:fixed;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 12px 40px rgba(0,0,0,.35);z-index:9999;min-width:190px;max-height:360px;overflow-y:auto;padding:4px 0;display:none}
 .inline-status-dd.open{display:block}
 .inline-status-dd .isd-item{padding:7px 12px;cursor:pointer;transition:background .1s;font-size:.82rem}
@@ -3115,7 +3116,7 @@ function _renderProfileInner(){
           ${(r.notes.length || r.date) ? r.notes.slice().reverse().map(n => {
             const isUserNote = n.type==='note'||n.type==='call'||n.type==='text'||n.type==='email';
             const emoji = n.type==='call'?'<span style="font-size:1.1em">📞</span> ':n.type==='text'?'<span style="font-size:1.1em">💬</span> ':n.type==='email'?'<span style="font-size:1.1em">📧</span> ':n.type==='note'?'<span style="font-size:1.1em">📝</span> ':'';
-            const label = n.type==='import'?'Imported':n.type==='followup'?'Follow-up':n.type==='status'?'Status change':'';
+            const label = n.type==='import'?'Imported':n.type==='followup'?'Follow-up':n.type==='status'?'Status change':n.type==='meeting'?'Meeting':'';
             const noteContent = n.html ? n.html : esc(n.text);
             const noteImages = n.images || [];
             const imgHtml = noteImages.length > 0 ? '<div class="note-images">' + noteImages.map((src, imgIdx) => '<img class="note-img-thumb" src="'+src+'" alt="Attachment" onclick="openNoteImagePopup(\''+r.id+'\',\''+n.id+'\','+imgIdx+')">').join('') + '</div>' + '<div class="note-img-badge">📎 ' + noteImages.length + ' image' + (noteImages.length > 1 ? 's' : '') + ' attached</div>' : '';
@@ -10371,7 +10372,7 @@ function renderFollowUpSubtle(r){
   const dateText = hasDate ? fmtDateTimeForCard(r.followUpDate, r.followUpTime) : '<span style="font-style:italic">Not set</span>';
   const needsAlert = !hasDate && r.status === 'Follow Up';
   const borderStyle = needsAlert ? 'border:1px solid var(--danger, #ef4444);border-radius:4px;padding:2px 6px' : 'padding:2px 6px';
-  return '<span style="font-size:.65rem;color:' + color + ';display:inline-flex;align-items:center;gap:3px;' + borderStyle + '">'
+  return '<span class="inline-date-edit" onclick="event.stopPropagation();openInlineDatePicker(event,\'' + r.id + '\',\'followUp\')" title="Click to set follow-up date" style="cursor:pointer;font-size:.65rem;color:' + color + ';display:inline-flex;align-items:center;gap:3px;' + borderStyle + ';border-radius:4px;transition:background .15s">'
     + '<span style="font-size:.7rem">' + bell + '</span>'
     + ' Follow-Up: ' + dateText + '</span>';
 }
@@ -10383,7 +10384,7 @@ function renderMeetingSubtle(r){
   const dateText = hasDate ? fmtDateTimeForCard(r.meetingDate, r.meetingTime) : '<span style="font-style:italic">Not set</span>';
   const needsAlert = !hasDate && r.status === 'Meeting';
   const borderStyle = needsAlert ? 'border:1px solid var(--danger, #ef4444);border-radius:4px;padding:2px 6px' : 'padding:2px 6px';
-  return '<span style="font-size:.65rem;color:' + color + ';display:inline-flex;align-items:center;gap:3px;' + borderStyle + '">'
+  return '<span class="inline-date-edit" onclick="event.stopPropagation();openInlineDatePicker(event,\'' + r.id + '\',\'meeting\')" title="Click to set meeting date" style="cursor:pointer;font-size:.65rem;color:' + color + ';display:inline-flex;align-items:center;gap:3px;' + borderStyle + ';border-radius:4px;transition:background .15s">'
     + '<span style="font-size:.7rem">📅</span>'
     + ' Meeting: ' + dateText + '</span>';
 }
@@ -10617,6 +10618,11 @@ function dtUpdateTime(){
 function dtConfirm(){
   const popup = document.getElementById('rrDtPopup');
   if(!popup) return;
+  // If this is an inline date picker (from card display), use saveInlineDatePicker
+  if(popup.dataset.inlineRecId){
+    saveInlineDatePicker();
+    return;
+  }
   const triggerId = popup.dataset.triggerId;
   const state = _dtPickers[triggerId];
   if(!state) return;
@@ -10630,6 +10636,143 @@ function getDtValue(triggerId){
   const state = _dtPickers[triggerId];
   if(!state) return { date:'', time:'' };
   return { date: state.date || '', time: state.time || '' };
+}
+
+/* ===== INLINE DATE PICKER (for card display) ===== */
+function openInlineDatePicker(e, recId, dateType){
+  closeDtPopup();
+  const r = records.find(x => x.id === recId);
+  if(!r) return;
+
+  // Check if editing is locked
+  const _contactLocked = currentTier !== 'pro' && isPropertyAnalyzed && isPropertyAnalyzed(recId);
+  if(_contactLocked){
+    showToast('🔒 Contact & Status is locked on analyzed properties', 'info', 3000);
+    return;
+  }
+
+  const isFollowUp = dateType === 'followUp';
+  const triggerId = '_inline_' + dateType + '_' + recId;
+  const existingDate = isFollowUp ? (r.followUpDate || '') : (r.meetingDate || '');
+  const existingTime = isFollowUp ? (r.followUpTime || '') : (r.meetingTime || '');
+
+  // Create picker state
+  const now = new Date();
+  let viewMonth = now.getMonth(), viewYear = now.getFullYear();
+  if(existingDate){
+    const [y,m] = existingDate.split('-').map(Number);
+    viewMonth = m - 1; viewYear = y;
+  }
+  _dtPickers[triggerId] = { date: existingDate, time: existingTime, showTime: true, autoClose: false, viewMonth: viewMonth, viewYear: viewYear };
+
+  // Create popup
+  const popup = document.createElement('div');
+  popup.className = 'rr-dt-popup visible';
+  popup.id = 'rrDtPopup';
+  popup.dataset.triggerId = triggerId;
+  popup.dataset.inlineRecId = recId;
+  popup.dataset.inlineDateType = dateType;
+  document.body.appendChild(popup);
+
+  // Position below the clicked element
+  const target = e.currentTarget || e.target;
+  const rect = target.getBoundingClientRect();
+  popup.style.top = (rect.bottom + 4) + 'px';
+  popup.style.left = rect.left + 'px';
+  requestAnimationFrame(() => {
+    const pr = popup.getBoundingClientRect();
+    if(pr.right > window.innerWidth - 10) popup.style.left = (window.innerWidth - pr.width - 10) + 'px';
+    if(pr.bottom > window.innerHeight - 10) popup.style.top = (rect.top - pr.height - 4) + 'px';
+  });
+
+  renderDtCalendar(popup, _dtPickers[triggerId], true);
+
+  // Override Done button to save inline
+  requestAnimationFrame(() => {
+    const doneBtn = popup.querySelector('.rr-dt-done');
+    if(doneBtn){
+      doneBtn.onclick = function(){ saveInlineDatePicker(); };
+    }
+  });
+
+  setTimeout(() => { document.addEventListener('click', _dtOutsideClick); }, 50);
+}
+
+function saveInlineDatePicker(){
+  const popup = document.getElementById('rrDtPopup');
+  if(!popup) return;
+  const triggerId = popup.dataset.triggerId;
+  const recId = popup.dataset.inlineRecId;
+  const dateType = popup.dataset.inlineDateType;
+  if(!recId || !dateType) { closeDtPopup(); return; }
+
+  const r = records.find(x => x.id === recId);
+  if(!r) { closeDtPopup(); return; }
+
+  // Capture time from selects
+  if(popup.querySelector('.rr-time-row')) dtUpdateTime();
+  const state = _dtPickers[triggerId];
+  if(!state) { closeDtPopup(); return; }
+
+  const isFollowUp = dateType === 'followUp';
+  const newDate = state.date || null;
+  const newTime = state.time || null;
+
+  if(dateType === 'meeting' && newDate && !newTime){
+    showToast('Please add a time for the meeting.', 'warning');
+    return;
+  }
+
+  // Track old values for logging
+  const oldDate = isFollowUp ? r.followUpDate : r.meetingDate;
+  const oldTime = isFollowUp ? r.followUpTime : r.meetingTime;
+  const oldMeetingDate = r.meetingDate;
+  const oldMeetingTime = r.meetingTime;
+
+  // Apply changes
+  if(isFollowUp){
+    r.followUpDate = newDate;
+    r.followUpTime = newTime;
+  } else {
+    r.meetingDate = newDate;
+    r.meetingTime = newTime;
+  }
+
+  // Activity log
+  loadSettingsPrefs();
+  if(isFollowUp && settingsPrefs.followUpChangeLog !== false){
+    const oldStr = oldDate ? fmtDateTimeForCard(oldDate, oldTime) : 'Not set';
+    const newStr = newDate ? fmtDateTimeForCard(newDate, newTime) : 'Cleared';
+    if(oldDate !== newDate || oldTime !== newTime){
+      r.notes = r.notes || [];
+      r.notes.push({ id:uid(), text:'Follow-up ' + (newDate ? (oldDate ? 'changed: ' + oldStr + ' → ' + newStr : 'set: ' + newStr) : 'cleared' + (oldDate ? ' (was ' + oldStr + ')' : '')), date:new Date().toISOString(), type:'followup' });
+    }
+  }
+  if(!isFollowUp && settingsPrefs.meetingChangeLog !== false){
+    const oldStr = oldDate ? fmtDateTimeForCard(oldDate, oldTime) : 'Not set';
+    const newStr = newDate ? fmtDateTimeForCard(newDate, newTime) : 'Cleared';
+    if(oldDate !== newDate || oldTime !== newTime){
+      r.notes = r.notes || [];
+      r.notes.push({ id:uid(), text:'Meeting ' + (newDate ? (oldDate ? 'changed: ' + oldStr + ' → ' + newStr : 'scheduled: ' + newStr) : 'cleared' + (oldDate ? ' (was ' + oldStr + ')' : '')), date:new Date().toISOString(), type:'meeting' });
+    }
+  }
+
+  // Meeting-specific: schedule notifications + send calendar invite
+  if(!isFollowUp && r.meetingDate && (r.meetingDate !== oldMeetingDate || r.meetingTime !== oldMeetingTime)){
+    requestNotificationPermission(function(granted){
+      if(granted){
+        scheduleMeetingNotifications(r);
+        startNotificationLoop();
+        showToast('Meeting reminders scheduled!', 'success');
+      }
+    });
+    _sendMeetingCalendarInvite(r);
+  }
+
+  closeDtPopup();
+  delete _dtPickers[triggerId];
+  saveData();
+  render();
 }
 
 /* ===== CARD EDIT POPUPS ===== */
@@ -10818,6 +10961,8 @@ function saveContactCard(recId){
   r.phone = document.getElementById('ce_phone')?.value?.trim() || '';
   r.email = document.getElementById('ce_email')?.value?.trim() || '';
   r.status = document.getElementById('ce_status')?.value || r.status;
+  const oldFollowUpDate = r.followUpDate;
+  const oldFollowUpTime = r.followUpTime;
   const fuVal = getDtValue('dt_followup');
   r.followUpDate = fuVal.date || null;
   r.followUpTime = fuVal.time || null;
@@ -10837,6 +10982,19 @@ function saveContactCard(recId){
   if(newLink !== r.link){ r.link = newLink }
   if(r.status !== oldStatus){
     r.notes.push({ id:uid(), text:`Status changed: ${oldStatus} → ${r.status}`, date:new Date().toISOString(), type:'status' });
+  }
+  // Log follow-up changes
+  loadSettingsPrefs();
+  if(settingsPrefs.followUpChangeLog !== false && (r.followUpDate !== oldFollowUpDate || r.followUpTime !== oldFollowUpTime)){
+    const oldStr = oldFollowUpDate ? fmtDateTimeForCard(oldFollowUpDate, oldFollowUpTime) : 'Not set';
+    const newStr = r.followUpDate ? fmtDateTimeForCard(r.followUpDate, r.followUpTime) : 'Cleared';
+    r.notes.push({ id:uid(), text:'Follow-up ' + (r.followUpDate ? (oldFollowUpDate ? 'changed: ' + oldStr + ' → ' + newStr : 'set: ' + newStr) : 'cleared' + (oldFollowUpDate ? ' (was ' + oldStr + ')' : '')), date:new Date().toISOString(), type:'followup' });
+  }
+  // Log meeting changes
+  if(settingsPrefs.meetingChangeLog !== false && (r.meetingDate !== oldMeetingDate || r.meetingTime !== oldMeetingTime)){
+    const oldStr = oldMeetingDate ? fmtDateTimeForCard(oldMeetingDate, oldMeetingTime) : 'Not set';
+    const newStr = r.meetingDate ? fmtDateTimeForCard(r.meetingDate, r.meetingTime) : 'Cleared';
+    r.notes.push({ id:uid(), text:'Meeting ' + (r.meetingDate ? (oldMeetingDate ? 'changed: ' + oldStr + ' → ' + newStr : 'scheduled: ' + newStr) : 'cleared' + (oldMeetingDate ? ' (was ' + oldStr + ')' : '')), date:new Date().toISOString(), type:'meeting' });
   }
 
   // Save geolocation if captured from autocomplete
@@ -11701,6 +11859,14 @@ function renderSettings(){
         <div class="settings-row">
           <div class="settings-row-left"><div class="sr-label">Status Change Logging</div><div class="sr-desc">Automatically log a note when a property status changes</div></div>
           <div class="settings-row-right"><div class="settings-toggle ${settingsPrefs.statusChangeLog!==false?'on':''}" onclick="toggleSettingsPref('statusChangeLog',this)"></div></div>
+        </div>
+        <div class="settings-row">
+          <div class="settings-row-left"><div class="sr-label">Meeting Change Logging</div><div class="sr-desc">Automatically log a note when a meeting date is set or changed</div></div>
+          <div class="settings-row-right"><div class="settings-toggle ${settingsPrefs.meetingChangeLog!==false?'on':''}" onclick="toggleSettingsPref('meetingChangeLog',this)"></div></div>
+        </div>
+        <div class="settings-row">
+          <div class="settings-row-left"><div class="sr-label">Follow-Up Change Logging</div><div class="sr-desc">Automatically log a note when a follow-up date is set or changed</div></div>
+          <div class="settings-row-right"><div class="settings-toggle ${settingsPrefs.followUpChangeLog!==false?'on':''}" onclick="toggleSettingsPref('followUpChangeLog',this)"></div></div>
         </div>
         <div class="settings-row">
           <div class="settings-row-left"><div class="sr-label">Sound Effects</div><div class="sr-desc">Play a sound on import completion and status changes</div></div>
