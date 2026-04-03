@@ -6510,15 +6510,14 @@ firebase.auth().onAuthStateChanged(async (user) => {
       showEmailVerificationScreen(user);
       return;
     }
-    // If returning from verification, dismiss verification screen if open
+    // If returning from verification (page was reloaded after verify), dismiss overlay
     // and trigger the deferred welcome email for email/password users
-    if(isEmailProvider && _dismissEmailVerificationScreen()){
+    _dismissEmailVerificationScreen();
+    let _justVerified = false;
+    try { _justVerified = sessionStorage.getItem('rr_just_verified') === '1'; sessionStorage.removeItem('rr_just_verified'); } catch(e){}
+    if(isEmailProvider && _justVerified){
       // User just passed email verification — set Firestore flag to trigger welcome email
-      try {
-        db.collection('users').doc(user.uid).update({ pendingWelcomeEmail: true })
-          .then(function(){ console.log('Welcome email flag set for', user.uid); })
-          .catch(function(e){ console.error('Welcome email flag error:', e); });
-      } catch(e){ console.error('Welcome email trigger error:', e); }
+      // (flag is set AFTER user doc is created below, see _pendingWelcomeEmail logic)
     }
 
     // If this is a token refresh for the same user, skip full reload to avoid
@@ -6541,14 +6540,17 @@ firebase.auth().onAuthStateChanged(async (user) => {
     const userRef = db.collection('users').doc(user.uid);
     const userDoc = await userRef.get();
     if(!userDoc.exists){
-      await userRef.set({
+      const newUserData = {
         name: user.displayName || 'User',
         email: user.email || '',
         photo: user.photoURL || null,
         tier: 'free',
         disclaimerAcknowledged: false,
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
-      });
+      };
+      // If user just verified their email, include the welcome email flag
+      if(_justVerified) newUserData.pendingWelcomeEmail = true;
+      await userRef.set(newUserData);
       _disclaimerAcknowledged = false;
       setTier('free');
       // Initialize analysis quota with signup date
@@ -6575,6 +6577,10 @@ firebase.auth().onAuthStateChanged(async (user) => {
         _aqSetSignupDate(ts.toISOString());
       }
       if(data.tier) setTier(data.tier);
+      // If user just verified their email, trigger the welcome email
+      if(_justVerified){
+        userRef.update({ pendingWelcomeEmail: true }).catch(function(e){ console.error('Welcome email flag error:', e); });
+      }
       // Load user's property data from Firestore
       await loadDataFromFirestore(user.uid);
       _authDataLoaded = true;
@@ -6830,11 +6836,10 @@ function _checkEmailVerified(){
   user.reload().then(function(){
     if(user.emailVerified){
       if(msg){ msg.style.color = 'var(--success,#3fb950)'; msg.textContent = 'Email verified! Loading your account...'; }
-      // Re-trigger onAuthStateChanged by getting a fresh token
-      user.getIdToken(true).then(function(){
-        // onAuthStateChanged will fire and this time emailVerified=true, so CRM loads
-        _dismissEmailVerificationScreen();
-      });
+      // Set flag so on reload we know to trigger the welcome email
+      try { sessionStorage.setItem('rr_just_verified', '1'); } catch(e){}
+      // Reload the page — onAuthStateChanged will fire fresh with emailVerified=true
+      setTimeout(function(){ window.location.reload(); }, 800);
     } else {
       if(btn){ btn.disabled = false; btn.textContent = "I've Verified My Email"; }
       if(msg){ msg.style.color = 'var(--warning,#d29922)'; msg.textContent = "Email not verified yet. Please click the link in the email we sent you."; }
