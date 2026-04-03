@@ -6501,6 +6501,18 @@ firebase.auth().onAuthStateChanged(async (user) => {
   if(user){
     setUser(user);
     loadEmailPrefs();
+
+    // ── Email verification gate (email/password users only) ──
+    // Google sign-in users are automatically emailVerified, so this only blocks email/password signups
+    const isEmailProvider = user.providerData && user.providerData.some(function(p){ return p.providerId === 'password'; });
+    if(isEmailProvider && !user.emailVerified){
+      hideLoadingOverlay();
+      showEmailVerificationScreen(user);
+      return;
+    }
+    // If returning from verification, dismiss verification screen if open
+    _dismissEmailVerificationScreen();
+
     // If this is a token refresh for the same user, skip full reload to avoid
     // destroying any open editors or typed content
     if(_authDataLoaded && _currentUid === user.uid){
@@ -6711,6 +6723,9 @@ function handleEmailSignUp(){
   setAuthLoading(true);
   firebase.auth().createUserWithEmailAndPassword(email, password).then(function(result){
     return result.user.updateProfile({ displayName: name }).then(function(){
+      // Send verification email for email/password signups
+      return result.user.sendEmailVerification();
+    }).then(function(){
       closeAuthModal();
       setUser(result.user);
     });
@@ -6748,6 +6763,94 @@ function handlePasswordReset(){
       showAuthError(err.message);
     }
   });
+}
+
+// ===== EMAIL VERIFICATION SCREEN =====
+let _emailVerifyResendCooldown = false;
+
+function showEmailVerificationScreen(user){
+  if(document.getElementById('emailVerifyOverlay')) return;
+  const overlay = document.createElement('div');
+  overlay.id = 'emailVerifyOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:100000;display:flex;align-items:center;justify-content:center;background:var(--bg,#0d1117);padding:20px';
+  overlay.innerHTML = `<div style="background:var(--surface,#161b22);border:1px solid var(--border,#30363d);border-radius:16px;max-width:460px;width:100%;padding:40px 32px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.4)">
+    <div style="font-size:48px;margin-bottom:16px">📧</div>
+    <h2 style="color:var(--text,#e6edf3);font-size:1.4rem;margin:0 0 8px;font-weight:700">Verify Your Email</h2>
+    <p style="color:var(--text2,#8b949e);font-size:.92rem;line-height:1.5;margin:0 0 20px">
+      We sent a verification link to<br><strong style="color:var(--text,#e6edf3)">${esc(user.email)}</strong>
+    </p>
+    <p style="color:var(--text3,#6e7681);font-size:.82rem;line-height:1.5;margin:0 0 24px">
+      Please check your inbox (and spam folder) and click the verification link, then come back and click the button below.
+    </p>
+    <button id="emailVerifyCheckBtn" onclick="_checkEmailVerified()" style="display:block;width:100%;padding:11px 0;font-size:.92rem;font-weight:600;border:none;border-radius:8px;background:var(--primary,#2f81f7);color:#fff;cursor:pointer;font-family:inherit;margin-bottom:12px;transition:opacity .15s">I've Verified My Email</button>
+    <button id="emailVerifyResendBtn" onclick="_resendVerificationEmail()" style="display:block;width:100%;padding:10px 0;font-size:.85rem;font-weight:500;border:1px solid var(--border,#30363d);border-radius:8px;background:transparent;color:var(--text2,#8b949e);cursor:pointer;font-family:inherit;margin-bottom:16px;transition:all .15s">Resend Verification Email</button>
+    <div id="emailVerifyMsg" style="min-height:20px;font-size:.82rem;margin-bottom:16px"></div>
+    <button onclick="_signOutFromVerification()" style="background:none;border:none;color:var(--text3,#6e7681);font-size:.8rem;cursor:pointer;text-decoration:underline;font-family:inherit">Sign out &amp; use a different account</button>
+  </div>`;
+  document.body.appendChild(overlay);
+}
+
+function _dismissEmailVerificationScreen(){
+  const el = document.getElementById('emailVerifyOverlay');
+  if(el) el.remove();
+}
+
+function _checkEmailVerified(){
+  const btn = document.getElementById('emailVerifyCheckBtn');
+  const msg = document.getElementById('emailVerifyMsg');
+  if(btn) btn.disabled = true;
+  if(btn) btn.textContent = 'Checking...';
+  const user = firebase.auth().currentUser;
+  if(!user){ if(btn){ btn.disabled = false; btn.textContent = "I've Verified My Email"; } return; }
+  // Reload user to get latest emailVerified status from Firebase
+  user.reload().then(function(){
+    if(user.emailVerified){
+      if(msg){ msg.style.color = 'var(--success,#3fb950)'; msg.textContent = 'Email verified! Loading your account...'; }
+      // Re-trigger onAuthStateChanged by getting a fresh token
+      user.getIdToken(true).then(function(){
+        // onAuthStateChanged will fire and this time emailVerified=true, so CRM loads
+        _dismissEmailVerificationScreen();
+      });
+    } else {
+      if(btn){ btn.disabled = false; btn.textContent = "I've Verified My Email"; }
+      if(msg){ msg.style.color = 'var(--warning,#d29922)'; msg.textContent = "Email not verified yet. Please click the link in the email we sent you."; }
+    }
+  }).catch(function(err){
+    if(btn){ btn.disabled = false; btn.textContent = "I've Verified My Email"; }
+    if(msg){ msg.style.color = 'var(--danger,#f85149)'; msg.textContent = 'Error checking status. Please try again.'; }
+  });
+}
+
+function _resendVerificationEmail(){
+  if(_emailVerifyResendCooldown) return;
+  const btn = document.getElementById('emailVerifyResendBtn');
+  const msg = document.getElementById('emailVerifyMsg');
+  const user = firebase.auth().currentUser;
+  if(!user) return;
+  _emailVerifyResendCooldown = true;
+  if(btn){ btn.disabled = true; btn.textContent = 'Sending...'; }
+  user.sendEmailVerification().then(function(){
+    if(msg){ msg.style.color = 'var(--success,#3fb950)'; msg.textContent = 'Verification email sent! Check your inbox.'; }
+    if(btn){ btn.textContent = 'Email Sent'; }
+    // Cooldown for 60 seconds to prevent spamming
+    setTimeout(function(){
+      _emailVerifyResendCooldown = false;
+      if(btn){ btn.disabled = false; btn.textContent = 'Resend Verification Email'; }
+    }, 60000);
+  }).catch(function(err){
+    _emailVerifyResendCooldown = false;
+    if(btn){ btn.disabled = false; btn.textContent = 'Resend Verification Email'; }
+    if(err.code === 'auth/too-many-requests'){
+      if(msg){ msg.style.color = 'var(--warning,#d29922)'; msg.textContent = 'Too many attempts. Please wait a few minutes before trying again.'; }
+    } else {
+      if(msg){ msg.style.color = 'var(--danger,#f85149)'; msg.textContent = 'Failed to send email. Please try again.'; }
+    }
+  });
+}
+
+function _signOutFromVerification(){
+  _dismissEmailVerificationScreen();
+  firebase.auth().signOut();
 }
 
 // Google Identity Services — bypasses Firebase __/auth/handler completely
