@@ -6511,13 +6511,14 @@ firebase.auth().onAuthStateChanged(async (user) => {
       return;
     }
     // If returning from verification, dismiss verification screen if open
-    // and send the deferred welcome email for email/password users
+    // and trigger the deferred welcome email for email/password users
     if(isEmailProvider && _dismissEmailVerificationScreen()){
-      // User just passed email verification — send welcome email in background
+      // User just passed email verification — set Firestore flag to trigger welcome email
       try {
-        const sendWelcome = firebase.functions().httpsCallable('sendWelcomeEmailAfterVerification');
-        sendWelcome().then(function(res){ console.log('Post-verification welcome email:', res.data); }).catch(function(e){ console.error('Welcome email error:', e); });
-      } catch(e){ console.error('Welcome email call error:', e); }
+        db.collection('users').doc(user.uid).update({ pendingWelcomeEmail: true })
+          .then(function(){ console.log('Welcome email flag set for', user.uid); })
+          .catch(function(e){ console.error('Welcome email flag error:', e); });
+      } catch(e){ console.error('Welcome email trigger error:', e); }
     }
 
     // If this is a token refresh for the same user, skip full reload to avoid
