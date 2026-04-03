@@ -534,9 +534,11 @@ exports.onUserCreated = functions.auth.user().onCreate(async (user) => {
 // ============================================================
 exports.onWelcomeEmailRequested = functions.firestore
   .document("users/{uid}")
-  .onUpdate(async (change, context) => {
-    const before = change.before.data();
-    const after = change.after.data();
+  .onWrite(async (change, context) => {
+    // Handle both creates (new email/password user after verification)
+    // and updates (existing user doc getting the flag set)
+    const before = change.before.exists ? change.before.data() : {};
+    const after = change.after.exists ? change.after.data() : {};
     const uid = context.params.uid;
 
     // Only trigger when pendingWelcomeEmail flips from falsy to true
