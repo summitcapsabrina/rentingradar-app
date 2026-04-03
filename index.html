@@ -12841,16 +12841,65 @@ function confirmExportProfile(recId){
   const r = records.find(x => x.id === recId);
   if(!r) return;
   const addr = r.property || 'Property';
-  showAppConfirm(
-    'Export <strong>' + esc(addr) + '</strong> to a spreadsheet?<br><br><span style="font-size:.82rem;color:var(--text3)">Includes Property Details, Expenses, Competitor Analysis, and Projected ROI.</span>',
-    {
-      title: 'Export to Excel',
-      icon: '📤',
-      confirmText: 'Export',
-      confirmClass: 'btn-primary',
-      onConfirm: function(){ exportPropertyProfile(recId); }
-    }
-  );
+  const pd = r.propertyDetails || {};
+  const v = calcComputeAll(r);
+  const comps = (r.details && r.details.comps) ? r.details.comps : [];
+
+  // ── Check for incomplete data ──
+  const warnings = [];
+
+  // Property Analysis tab: comparable properties
+  if(comps.length === 0){
+    warnings.push('No comparable properties added — the Competitor Analysis section will be empty');
+  } else if(comps.length < 3){
+    warnings.push('Only ' + comps.length + ' comparable propert' + (comps.length === 1 ? 'y' : 'ies') + ' added — revenue projections require at least 3');
+  }
+
+  // Revenue projections
+  if(!v.hasProjectionData){
+    warnings.push('Revenue projections are unavailable — Definite, Best-Case, and Worst-Case fields will be blank');
+  }
+
+  // Expenses tab: key fields for calculations
+  const missingExpense = [];
+  if(!parseFloat(pd.monthlyRent)) missingExpense.push('Monthly Rent');
+  if(!parseInt(pd.bedrooms)) missingExpense.push('Bedrooms');
+  if(!v.totalInvested) missingExpense.push('Investment Details');
+  if(!v.totalMonthlyExp) missingExpense.push('Monthly Expenses');
+  if(missingExpense.length > 0){
+    warnings.push('Missing expense data (' + missingExpense.join(', ') + ') — some calculations in the Expenses tab will show as $0');
+  }
+
+  if(warnings.length > 0){
+    // Show warning with option to proceed or cancel
+    const warningHtml = '<span style="color:var(--warning,#d29922);font-weight:600">This export has incomplete data:</span><br><br>' +
+      '<ul style="text-align:left;font-size:.84rem;color:var(--text2);margin:0 0 12px;padding-left:20px;line-height:1.7">' +
+      warnings.map(function(w){ return '<li>' + w + '</li>'; }).join('') +
+      '</ul>' +
+      '<span style="font-size:.84rem;color:var(--text3)">Would you like to export anyway?</span>';
+    showAppConfirm(
+      warningHtml,
+      {
+        title: 'Incomplete Export',
+        icon: '⚠️',
+        confirmText: 'Export Anyway',
+        confirmClass: 'btn-primary',
+        cancelText: 'Cancel',
+        onConfirm: function(){ exportPropertyProfile(recId); }
+      }
+    );
+  } else {
+    showAppConfirm(
+      'Export <strong>' + esc(addr) + '</strong> to a spreadsheet?<br><br><span style="font-size:.82rem;color:var(--text3)">Includes Property Details, Expenses, Competitor Analysis, and Projected ROI.</span>',
+      {
+        title: 'Export to Excel',
+        icon: '📤',
+        confirmText: 'Export',
+        confirmClass: 'btn-primary',
+        onConfirm: function(){ exportPropertyProfile(recId); }
+      }
+    );
+  }
 }
 
 async function exportPropertyProfile(recId){
@@ -12921,7 +12970,7 @@ async function exportPropertyProfile(recId){
     ['Square Footage (or S-XL)', pd.sqft ? parseInt(pd.sqft).toLocaleString() : ''],
     ['Asking Rent / Price', pd.monthlyRent ? '$' + Math.round(parseFloat(pd.monthlyRent)).toLocaleString() : ''],
     ['Design / Amenities', _buildDesignAmenities(pd)],
-    ['Concerns', r.propertyNote ? cleanHtml(r.propertyNote.html || r.propertyNote.text || '') : '']
+    ['Notes', r.propertyNote ? cleanHtml(r.propertyNote.html || r.propertyNote.text || '') : '']
   ];
   propInfoRows.forEach(function(info, idx){
     const rn = idx + 2;
@@ -12996,7 +13045,7 @@ async function exportPropertyProfile(recId){
   ws1.getCell('A13').fill = greyFill;
   ws1.getCell('A13').alignment = { horizontal:'right' };
   ws1.mergeCells('C13:K13');
-  ws1.getCell('C13').value = _buildWhyNarrative(r, v, comps, hasProj, realisticRev, optimisticRev, pessimisticRev);
+  ws1.getCell('C13').value = '';
   ws1.getCell('C13').font = { name:'Arial', size:11, color:{argb:'FF000000'} };
   ws1.getCell('C13').alignment = { wrapText:true, vertical:'top' };
   for(let ci=1;ci<=11;ci++){ ws1.getCell(13,ci).border = borderAllBlk; }
