@@ -12739,10 +12739,10 @@ function confirmExportProfile(recId){
   if(!r) return;
   const addr = r.property || 'Property';
   showAppConfirm(
-    'Export <strong>' + esc(addr) + '</strong> to a professional Excel spreadsheet?<br><br><span style="font-size:.82rem;color:var(--text3)">Includes Property Details, Expenses, Competitor Analysis, and Projected ROI.</span>',
+    'Export <strong>' + esc(addr) + '</strong> to a spreadsheet?<br><br><span style="font-size:.82rem;color:var(--text3)">Includes Property Details, Expenses, Competitor Analysis, and Projected ROI.</span>',
     {
       title: 'Export to Excel',
-      icon: '📊',
+      icon: '📤',
       confirmText: 'Export',
       confirmClass: 'btn-primary',
       onConfirm: function(){ exportPropertyProfile(recId); }
