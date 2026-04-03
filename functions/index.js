@@ -472,15 +472,35 @@ exports.testEmail = functions.https.onRequest((req, res) => {
 
 
 // ============================================================
-// 5. NEW USER SETUP — email preferences on account creation
-//    Welcome email is sent by the frontend via /api/sendWelcomeEmail
-//    when the user first reaches the dashboard (after verification
-//    for email/password users, immediately for Google users).
+// 5. WELCOME EMAIL — triggered on new user creation
+//    Sends welcome email immediately for all users (Google & email/password).
 // ============================================================
 exports.onUserCreated = functions.auth.user().onCreate(async (user) => {
-  const { uid, email } = user;
+  const { uid, email, displayName } = user;
   console.log(`onUserCreated triggered for ${uid} / ${email}`);
   if (!email) return null;
+
+  // Send welcome email immediately for all users
+  try {
+    initSendGrid();
+    const html = welcomeEmailHtml(displayName, "Free");
+    console.log("Sending welcome email to", email);
+    await sendEmail(email, "🎉 Welcome to RentingRadar! Here's how to get started", html, { category: "welcome" });
+    console.log("Welcome email sent successfully to", email);
+  } catch (err) {
+    console.error("Failed to send welcome email:", err);
+  }
+
+  try {
+    await db.collection("emailLog").add({
+      uid: uid,
+      email: email,
+      type: "welcome",
+      sentAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  } catch (err) {
+    console.error("Failed to log email:", err);
+  }
 
   // Set up email preferences
   try {

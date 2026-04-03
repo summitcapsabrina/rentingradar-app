@@ -6555,15 +6555,6 @@ firebase.auth().onAuthStateChanged(async (user) => {
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
       };
       await userRef.set(newUserData);
-      // Send welcome email — this only runs on first dashboard load (after verification for email users)
-      user.getIdToken().then(function(token){
-        fetch('/api/sendWelcomeEmail', {
-          method: 'POST',
-          headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }
-        }).then(function(r){ return r.json(); }).then(function(d){
-          console.log('Welcome email response:', d);
-        }).catch(function(e){ console.error('Welcome email error:', e); });
-      }).catch(function(e){ console.error('Welcome email token error:', e); });
       _disclaimerAcknowledged = false;
       setTier('free');
       // Initialize analysis quota with signup date
