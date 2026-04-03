@@ -6511,7 +6511,14 @@ firebase.auth().onAuthStateChanged(async (user) => {
       return;
     }
     // If returning from verification, dismiss verification screen if open
-    _dismissEmailVerificationScreen();
+    // and send the deferred welcome email for email/password users
+    if(isEmailProvider && _dismissEmailVerificationScreen()){
+      // User just passed email verification — send welcome email in background
+      try {
+        const sendWelcome = firebase.functions().httpsCallable('sendWelcomeEmailAfterVerification');
+        sendWelcome().then(function(res){ console.log('Post-verification welcome email:', res.data); }).catch(function(e){ console.error('Welcome email error:', e); });
+      } catch(e){ console.error('Welcome email call error:', e); }
+    }
 
     // If this is a token refresh for the same user, skip full reload to avoid
     // destroying any open editors or typed content
@@ -6807,7 +6814,8 @@ function showEmailVerificationScreen(user){
 
 function _dismissEmailVerificationScreen(){
   const el = document.getElementById('emailVerifyOverlay');
-  if(el) el.remove();
+  if(el){ el.remove(); return true; }
+  return false;
 }
 
 function _checkEmailVerified(){

@@ -475,24 +475,41 @@ exports.testEmail = functions.https.onRequest((req, res) => {
 // 5. WELCOME EMAIL — triggered on new user creation
 // ============================================================
 exports.onUserCreated = functions.auth.user().onCreate(async (user) => {
-  const { uid, email, displayName } = user;
-  console.log(`onUserCreated triggered for ${uid} / ${email}`);
+  const { uid, email, displayName, emailVerified } = user;
+  console.log(`onUserCreated triggered for ${uid} / ${email} (emailVerified: ${emailVerified})`);
   if (!email) {
     console.log(`User ${uid} created without email, skipping welcome email.`);
     return null;
   }
 
-  // Send welcome email first (no Firestore dependency)
-  try {
-    const html = welcomeEmailHtml(displayName, "Free");
-    console.log("Sending welcome email to", email);
-    await sendEmail(email, "🎉 Welcome to RentingRadar! Here's how to get started", html, { category: "welcome" });
-    console.log("Welcome email sent successfully to", email);
-  } catch (err) {
-    console.error("Failed to send welcome email:", err);
+  // Only send welcome email immediately for users who are already verified (Google sign-in).
+  // Email/password users get their welcome email after they verify their email address,
+  // via the sendWelcomeEmailAfterVerification callable.
+  if (emailVerified) {
+    try {
+      const html = welcomeEmailHtml(displayName, "Free");
+      console.log("Sending welcome email to", email);
+      await sendEmail(email, "🎉 Welcome to RentingRadar! Here's how to get started", html, { category: "welcome" });
+      console.log("Welcome email sent successfully to", email);
+    } catch (err) {
+      console.error("Failed to send welcome email:", err);
+    }
+
+    try {
+      await db.collection("emailLog").add({
+        uid: uid,
+        email: email,
+        type: "welcome",
+        sentAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    } catch (err) {
+      console.error("Failed to log email:", err);
+    }
+  } else {
+    console.log(`User ${uid} is unverified (email/password signup), deferring welcome email until after verification.`);
   }
 
-  // Then try Firestore operations (non-blocking)
+  // Always set up email preferences regardless of provider
   try {
     await db.collection("emailPreferences").doc(uid).set({
       email: email,
@@ -506,6 +523,53 @@ exports.onUserCreated = functions.auth.user().onCreate(async (user) => {
     console.error("Failed to create email prefs:", err);
   }
 
+  return null;
+});
+
+
+// ============================================================
+// 5b. WELCOME EMAIL AFTER VERIFICATION — called by frontend
+//     when an email/password user verifies their email
+// ============================================================
+exports.sendWelcomeEmailAfterVerification = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError("unauthenticated", "Must be signed in.");
+  }
+
+  const uid = context.auth.uid;
+  const authUser = await admin.auth().getUser(uid);
+
+  if (!authUser.emailVerified) {
+    throw new functions.https.HttpsError("failed-precondition", "Email not yet verified.");
+  }
+
+  // Check if welcome email was already sent (prevent duplicates)
+  const existingLog = await db.collection("emailLog")
+    .where("uid", "==", uid)
+    .where("type", "==", "welcome")
+    .limit(1)
+    .get();
+
+  if (!existingLog.empty) {
+    console.log(`Welcome email already sent to ${uid}, skipping.`);
+    return { sent: false, reason: "already_sent" };
+  }
+
+  // Send the welcome email
+  const email = authUser.email;
+  const displayName = authUser.displayName;
+  try {
+    initSendGrid();
+    const html = welcomeEmailHtml(displayName, "Free");
+    console.log("Sending post-verification welcome email to", email);
+    await sendEmail(email, "🎉 Welcome to RentingRadar! Here's how to get started", html, { category: "welcome" });
+    console.log("Post-verification welcome email sent successfully to", email);
+  } catch (err) {
+    console.error("Failed to send post-verification welcome email:", err);
+    throw new functions.https.HttpsError("internal", "Failed to send welcome email.");
+  }
+
+  // Log it
   try {
     await db.collection("emailLog").add({
       uid: uid,
@@ -514,10 +578,10 @@ exports.onUserCreated = functions.auth.user().onCreate(async (user) => {
       sentAt: admin.firestore.FieldValue.serverTimestamp(),
     });
   } catch (err) {
-    console.error("Failed to log email:", err);
+    console.error("Failed to log welcome email:", err);
   }
 
-  return null;
+  return { sent: true };
 });
 
 
