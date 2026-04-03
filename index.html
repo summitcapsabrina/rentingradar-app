@@ -1116,6 +1116,17 @@ h1 .hero-edit-input{font-size:1.35rem}
 .settings-profile-card{display:flex;align-items:center;gap:16px;padding:4px 0}
 .settings-profile-avatar{width:56px;height:56px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-size:1.2rem;font-weight:700;flex-shrink:0}
 .settings-profile-avatar img{width:56px;height:56px;border-radius:50%;object-fit:cover}
+.ep-photo-section{display:flex;align-items:center;gap:16px;margin-bottom:16px}
+.ep-photo-preview{width:72px;height:72px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-size:1.4rem;font-weight:700;flex-shrink:0;position:relative;overflow:hidden;cursor:pointer;transition:opacity .15s}
+.ep-photo-preview:hover{opacity:.85}
+.ep-photo-preview img{width:72px;height:72px;border-radius:50%;object-fit:cover}
+.ep-photo-preview .ep-photo-overlay{position:absolute;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .15s;border-radius:50%}
+.ep-photo-preview:hover .ep-photo-overlay{opacity:1}
+.ep-photo-actions{display:flex;flex-direction:column;gap:6px}
+.ep-photo-actions button{font-size:.75rem;padding:4px 12px;border-radius:6px;cursor:pointer;border:1px solid var(--border);background:var(--surface2);color:var(--text);transition:background .15s}
+.ep-photo-actions button:hover{background:var(--surface3)}
+.ep-photo-actions .ep-remove-btn{color:var(--danger);border-color:var(--danger)}
+.ep-photo-actions .ep-remove-btn:hover{background:rgba(248,81,73,.1)}
 .settings-profile-info{flex:1}
 .settings-profile-info .sp-name{font-size:1.05rem;font-weight:600}
 .settings-profile-info .sp-email{font-size:.82rem;color:var(--text2)}
@@ -1246,6 +1257,7 @@ h1 .hero-edit-input{font-size:1.35rem}
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-functions-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <!-- MapLibre GL JS for interactive maps -->
 <link href="https://unpkg.com/maplibre-gl@4.1.1/dist/maplibre-gl.css" rel="stylesheet">
@@ -6513,12 +6525,6 @@ firebase.auth().onAuthStateChanged(async (user) => {
     // If returning from verification (page was reloaded after verify), dismiss overlay
     // and trigger the deferred welcome email for email/password users
     _dismissEmailVerificationScreen();
-    let _justVerified = false;
-    try { _justVerified = sessionStorage.getItem('rr_just_verified') === '1'; sessionStorage.removeItem('rr_just_verified'); } catch(e){}
-    if(isEmailProvider && _justVerified){
-      // User just passed email verification — set Firestore flag to trigger welcome email
-      // (flag is set AFTER user doc is created below, see _pendingWelcomeEmail logic)
-    }
 
     // If this is a token refresh for the same user, skip full reload to avoid
     // destroying any open editors or typed content
@@ -6548,9 +6554,16 @@ firebase.auth().onAuthStateChanged(async (user) => {
         disclaimerAcknowledged: false,
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
       };
-      // If user just verified their email, include the welcome email flag
-      if(_justVerified) newUserData.pendingWelcomeEmail = true;
       await userRef.set(newUserData);
+      // Send welcome email — this only runs on first dashboard load (after verification for email users)
+      user.getIdToken().then(function(token){
+        fetch('/api/sendWelcomeEmail', {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }
+        }).then(function(r){ return r.json(); }).then(function(d){
+          console.log('Welcome email response:', d);
+        }).catch(function(e){ console.error('Welcome email error:', e); });
+      }).catch(function(e){ console.error('Welcome email token error:', e); });
       _disclaimerAcknowledged = false;
       setTier('free');
       // Initialize analysis quota with signup date
@@ -6577,9 +6590,16 @@ firebase.auth().onAuthStateChanged(async (user) => {
         _aqSetSignupDate(ts.toISOString());
       }
       if(data.tier) setTier(data.tier);
-      // If user just verified their email, trigger the welcome email
-      if(_justVerified){
-        userRef.update({ pendingWelcomeEmail: true }).catch(function(e){ console.error('Welcome email flag error:', e); });
+      // Sync profile photo: update Firestore if Google provides a fresh one,
+      // or fall back to Firestore photo if Firebase Auth lost it
+      if(user.photoURL && user.photoURL !== (data.photo || null)){
+        userRef.update({ photo: user.photoURL }).catch(function(e){ console.error('Photo sync error:', e); });
+      } else if(!user.photoURL && data.photo){
+        // Firebase Auth lost the photo (can happen with Google tokens) — restore from Firestore
+        currentUser = currentUser || {};
+        currentUser.photo = data.photo;
+        try { localStorage.setItem('rr_user', JSON.stringify(currentUser)) } catch(e){}
+        renderUserSection();
       }
       // Load user's property data from Firestore
       await loadDataFromFirestore(user.uid);
@@ -6896,7 +6916,22 @@ function handleGoogleLogin(){
           if(tokenResponse && tokenResponse.access_token){
             var credential = firebase.auth.GoogleAuthProvider.credential(null, tokenResponse.access_token);
             firebase.auth().signInWithCredential(credential).then(function(result){
-              setUser(result.user);
+              // GIS access-token flow may not populate photoURL — fetch from Google userinfo
+              if(!result.user.photoURL){
+                fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+                  headers: { 'Authorization': 'Bearer ' + tokenResponse.access_token }
+                }).then(function(r){ return r.json(); }).then(function(info){
+                  if(info.picture){
+                    result.user.updateProfile({ photoURL: info.picture }).then(function(){
+                      setUser(result.user);
+                      // Also persist to Firestore
+                      db.collection('users').doc(result.user.uid).update({ photo: info.picture }).catch(function(){});
+                    }).catch(function(){ setUser(result.user); });
+                  } else { setUser(result.user); }
+                }).catch(function(){ setUser(result.user); });
+              } else {
+                setUser(result.user);
+              }
             }).catch(function(err){
               console.error('Firebase credential error:', err.code, err.message);
               showAppAlert('Sign-in failed: ' + err.message, {title: 'Sign-in Error', icon: '❌'});
@@ -12647,26 +12682,40 @@ async function submitAskExpert(){
 
 function openEditProfile(){
   const u = currentUser || {};
+  const initials = (u.name||'U').split(' ').map(w=>w[0]).join('').toUpperCase().substring(0,2);
   const overlay = document.createElement('div');
   overlay.className = 'card-edit-popup';
   overlay.id = 'cardEditOverlay';
   overlay.innerHTML = `<div class="cep-panel">
     <div class="cep-header"><h3>Edit Profile</h3><button class="modal-close" onclick="document.getElementById('cardEditOverlay').remove()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>
     <div class="cep-body">
+      <div class="ep-photo-section">
+        <div class="ep-photo-preview" id="epPhotoPreview" onclick="document.getElementById('epPhotoInput').click()">
+          ${u.photo ? '<img src="'+esc(u.photo)+'" alt="">' : initials}
+          <div class="ep-photo-overlay"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg></div>
+        </div>
+        <input type="file" id="epPhotoInput" accept="image/*" style="display:none" onchange="_epPhotoSelected(this)">
+        <div class="ep-photo-actions">
+          <button onclick="document.getElementById('epPhotoInput').click()">Upload Photo</button>
+          <button class="ep-remove-btn" id="epRemoveBtn" onclick="_epRemovePhoto()" style="${u.photo?'':'display:none'}">Remove Photo</button>
+        </div>
+      </div>
+      <div id="epPhotoMsg" style="font-size:.7rem;margin:-10px 0 12px;display:none"></div>
       <div class="prop-field-grid">
         <div class="prop-field"><label>Full Name</label><input type="text" id="ep_name" value="${esc(u.name||'')}"></div>
-        <div class="prop-field"><label>Email</label><input type="email" id="ep_email" value="${esc(u.email||'')}"></div>
+        <div class="prop-field"><label>Email</label><input type="email" id="ep_email" value="${esc(u.email||'')}" disabled style="opacity:.6;cursor:not-allowed"></div>
       </div>
     </div>
     <div class="cep-actions">
       <div style="font-size:.65rem;color:var(--text3);margin-right:auto;align-self:center">Shift + Enter to save</div>
       <button class="btn btn-secondary btn-sm" onclick="document.getElementById('cardEditOverlay').remove()">Cancel</button>
-      <button class="btn btn-primary btn-sm" onclick="saveEditProfile()">Save</button>
+      <button class="btn btn-primary btn-sm" id="epSaveBtn" onclick="saveEditProfile()">Save</button>
     </div>
   </div>`;
   document.body.appendChild(overlay);
+  // Track pending photo change
+  window._epPendingPhoto = null; // {file, dataUrl} or 'remove' or null (no change)
 
-  // Shift+Enter to save, Escape to cancel
   overlay.addEventListener('keydown', function(e){
     if(e.shiftKey && e.key === 'Enter'){ e.preventDefault(); saveEditProfile(); }
     if(e.key === 'Escape') overlay.remove();
@@ -12675,15 +12724,96 @@ function openEditProfile(){
   setTimeout(() => document.getElementById('ep_name')?.focus(), 100);
 }
 
-function saveEditProfile(){
+function _epPhotoSelected(input){
+  const file = input.files && input.files[0];
+  if(!file) return;
+  const msg = document.getElementById('epPhotoMsg');
+  // Validate: max 5MB, image only
+  if(!file.type.startsWith('image/')){
+    if(msg){ msg.style.display='block'; msg.style.color='var(--danger)'; msg.textContent='Please select an image file.'; }
+    return;
+  }
+  if(file.size > 5*1024*1024){
+    if(msg){ msg.style.display='block'; msg.style.color='var(--danger)'; msg.textContent='Image must be under 5MB.'; }
+    return;
+  }
+  if(msg) msg.style.display='none';
+  // Show preview
+  const reader = new FileReader();
+  reader.onload = function(e){
+    const preview = document.getElementById('epPhotoPreview');
+    if(preview) preview.innerHTML = '<img src="'+e.target.result+'" alt=""><div class="ep-photo-overlay"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg></div>';
+    const removeBtn = document.getElementById('epRemoveBtn');
+    if(removeBtn) removeBtn.style.display = '';
+    window._epPendingPhoto = { file: file, dataUrl: e.target.result };
+  };
+  reader.readAsDataURL(file);
+}
+
+function _epRemovePhoto(){
+  const u = currentUser || {};
+  const initials = (u.name||'U').split(' ').map(w=>w[0]).join('').toUpperCase().substring(0,2);
+  const preview = document.getElementById('epPhotoPreview');
+  if(preview) preview.innerHTML = initials + '<div class="ep-photo-overlay"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg></div>';
+  const removeBtn = document.getElementById('epRemoveBtn');
+  if(removeBtn) removeBtn.style.display = 'none';
+  window._epPendingPhoto = 'remove';
+}
+
+async function saveEditProfile(){
   const name = document.getElementById('ep_name')?.value?.trim();
-  const email = document.getElementById('ep_email')?.value?.trim();
-  if(name) currentUser.name = name;
-  if(email) currentUser.email = email;
-  try { localStorage.setItem('rr_user', JSON.stringify(currentUser)) } catch(e){}
-  document.getElementById('cardEditOverlay')?.remove();
-  renderUserSection();
-  render();
+  const saveBtn = document.getElementById('epSaveBtn');
+  const msg = document.getElementById('epPhotoMsg');
+  if(!name){
+    if(msg){ msg.style.display='block'; msg.style.color='var(--danger)'; msg.textContent='Name is required.'; }
+    return;
+  }
+  if(saveBtn){ saveBtn.disabled = true; saveBtn.textContent = 'Saving...'; }
+
+  const user = firebase.auth().currentUser;
+  if(!user){ document.getElementById('cardEditOverlay')?.remove(); return; }
+
+  let photoURL = currentUser?.photo || null;
+
+  try {
+    // Handle photo upload or removal
+    if(window._epPendingPhoto === 'remove'){
+      photoURL = null;
+      // Delete from Storage if exists
+      try {
+        const ref = firebase.storage().ref('profilePhotos/' + user.uid);
+        await ref.delete();
+      } catch(e){ /* file may not exist */ }
+    } else if(window._epPendingPhoto && window._epPendingPhoto.file){
+      // Upload to Firebase Storage
+      if(msg){ msg.style.display='block'; msg.style.color='var(--text2)'; msg.textContent='Uploading photo...'; }
+      const ref = firebase.storage().ref('profilePhotos/' + user.uid);
+      await ref.put(window._epPendingPhoto.file);
+      photoURL = await ref.getDownloadURL();
+    }
+
+    // Update Firebase Auth profile
+    await user.updateProfile({ displayName: name, photoURL: photoURL });
+
+    // Update Firestore
+    const userRef = db.collection('users').doc(user.uid);
+    await userRef.update({ name: name, photo: photoURL });
+
+    // Update local state
+    currentUser.name = name;
+    currentUser.photo = photoURL;
+    try { localStorage.setItem('rr_user', JSON.stringify(currentUser)) } catch(e){}
+    setRRCookie(user);
+
+    window._epPendingPhoto = null;
+    document.getElementById('cardEditOverlay')?.remove();
+    renderUserSection();
+    render();
+  } catch(err){
+    console.error('Save profile error:', err);
+    if(msg){ msg.style.display='block'; msg.style.color='var(--danger)'; msg.textContent='Error saving: ' + (err.message||'Unknown error'); }
+    if(saveBtn){ saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
+  }
 }
 
 function confirmResetAllData(){

@@ -472,44 +472,17 @@ exports.testEmail = functions.https.onRequest((req, res) => {
 
 
 // ============================================================
-// 5. WELCOME EMAIL — triggered on new user creation
+// 5. NEW USER SETUP — email preferences on account creation
+//    Welcome email is sent by the frontend via /api/sendWelcomeEmail
+//    when the user first reaches the dashboard (after verification
+//    for email/password users, immediately for Google users).
 // ============================================================
 exports.onUserCreated = functions.auth.user().onCreate(async (user) => {
-  const { uid, email, displayName, emailVerified } = user;
-  console.log(`onUserCreated triggered for ${uid} / ${email} (emailVerified: ${emailVerified})`);
-  if (!email) {
-    console.log(`User ${uid} created without email, skipping welcome email.`);
-    return null;
-  }
+  const { uid, email } = user;
+  console.log(`onUserCreated triggered for ${uid} / ${email}`);
+  if (!email) return null;
 
-  // Only send welcome email immediately for users who are already verified (Google sign-in).
-  // Email/password users get their welcome email after they verify their email address,
-  // via the sendWelcomeEmailAfterVerification callable.
-  if (emailVerified) {
-    try {
-      const html = welcomeEmailHtml(displayName, "Free");
-      console.log("Sending welcome email to", email);
-      await sendEmail(email, "🎉 Welcome to RentingRadar! Here's how to get started", html, { category: "welcome" });
-      console.log("Welcome email sent successfully to", email);
-    } catch (err) {
-      console.error("Failed to send welcome email:", err);
-    }
-
-    try {
-      await db.collection("emailLog").add({
-        uid: uid,
-        email: email,
-        type: "welcome",
-        sentAt: admin.firestore.FieldValue.serverTimestamp(),
-      });
-    } catch (err) {
-      console.error("Failed to log email:", err);
-    }
-  } else {
-    console.log(`User ${uid} is unverified (email/password signup), deferring welcome email until after verification.`);
-  }
-
-  // Always set up email preferences regardless of provider
+  // Set up email preferences
   try {
     await db.collection("emailPreferences").doc(uid).set({
       email: email,
@@ -528,48 +501,49 @@ exports.onUserCreated = functions.auth.user().onCreate(async (user) => {
 
 
 // ============================================================
-// 5b. WELCOME EMAIL AFTER VERIFICATION — Firestore trigger
-//     Fires when frontend sets pendingWelcomeEmail on user doc
-//     after an email/password user verifies their email
+// 5b. WELCOME EMAIL — HTTP endpoint called by frontend
+//     when user first reaches the dashboard (after user doc creation).
+//     Served via Firebase Hosting rewrite (no allUsers IAM needed).
 // ============================================================
-exports.onWelcomeEmailRequested = functions.firestore
-  .document("users/{uid}")
-  .onWrite(async (change, context) => {
-    // Handle both creates (new email/password user after verification)
-    // and updates (existing user doc getting the flag set)
-    const before = change.before.exists ? change.before.data() : {};
-    const after = change.after.exists ? change.after.data() : {};
-    const uid = context.params.uid;
-
-    // Only trigger when pendingWelcomeEmail flips from falsy to true
-    if (!after.pendingWelcomeEmail || before.pendingWelcomeEmail) {
-      return null;
+exports.sendWelcomeEmail = functions.https.onRequest((req, res) => {
+  cors(req, res, async () => {
+    if (req.method !== "POST") {
+      return res.status(405).json({ error: "Method not allowed" });
     }
 
-    console.log(`Welcome email requested for ${uid}`);
+    // Verify Firebase Auth token from Authorization header
+    const authHeader = req.headers.authorization || "";
+    const match = authHeader.match(/^Bearer (.+)$/);
+    if (!match) {
+      return res.status(401).json({ error: "Missing or invalid Authorization header" });
+    }
 
-    // Clear the flag immediately to prevent re-triggers
+    let decoded;
     try {
-      await change.after.ref.update({ pendingWelcomeEmail: false });
+      decoded = await admin.auth().verifyIdToken(match[1]);
     } catch (err) {
-      console.error("Failed to clear pendingWelcomeEmail flag:", err);
+      console.error("Token verification failed:", err);
+      return res.status(401).json({ error: "Invalid token" });
     }
 
-    // Verify the user's email is actually verified (safety check)
+    const uid = decoded.uid;
+    console.log(`sendWelcomeEmail HTTP called for uid=${uid}`);
+
+    // Get full auth user to check emailVerified
     let authUser;
     try {
       authUser = await admin.auth().getUser(uid);
     } catch (err) {
       console.error("Failed to get auth user:", err);
-      return null;
+      return res.status(500).json({ error: "Failed to get user" });
     }
 
     if (!authUser.emailVerified) {
-      console.log(`User ${uid} email not verified, skipping welcome email.`);
-      return null;
+      console.log(`User ${uid} email not verified, skipping.`);
+      return res.status(400).json({ error: "Email not verified" });
     }
 
-    // Check if welcome email was already sent (prevent duplicates)
+    // Check for duplicate welcome email
     const existingLog = await db.collection("emailLog")
       .where("uid", "==", uid)
       .where("type", "==", "welcome")
@@ -578,7 +552,7 @@ exports.onWelcomeEmailRequested = functions.firestore
 
     if (!existingLog.empty) {
       console.log(`Welcome email already sent to ${uid}, skipping.`);
-      return null;
+      return res.status(200).json({ ok: true, message: "Already sent" });
     }
 
     // Send the welcome email
@@ -591,8 +565,8 @@ exports.onWelcomeEmailRequested = functions.firestore
       await sendEmail(email, "🎉 Welcome to RentingRadar! Here's how to get started", html, { category: "welcome" });
       console.log("Post-verification welcome email sent successfully to", email);
     } catch (err) {
-      console.error("Failed to send post-verification welcome email:", err);
-      return null;
+      console.error("Failed to send welcome email:", err);
+      return res.status(500).json({ error: "Failed to send email" });
     }
 
     // Log it
@@ -607,8 +581,9 @@ exports.onWelcomeEmailRequested = functions.firestore
       console.error("Failed to log welcome email:", err);
     }
 
-    return null;
+    return res.status(200).json({ ok: true });
   });
+});
 
 
 // ============================================================
