@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RentingRadar — Email Verification</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Oxygen,Ubuntu,sans-serif;background:#0d1117;color:#e6edf3;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}
+  .card{background:#161b22;border:1px solid #30363d;border-radius:16px;max-width:440px;width:100%;padding:40px 32px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.4)}
+  .icon{font-size:48px;margin-bottom:16px}
+  h1{font-size:1.4rem;font-weight:700;margin-bottom:8px}
+  .msg{color:#8b949e;font-size:.92rem;line-height:1.6;margin-bottom:24px}
+  .btn{display:inline-block;padding:11px 28px;font-size:.92rem;font-weight:600;border:none;border-radius:8px;cursor:pointer;font-family:inherit;text-decoration:none;transition:opacity .15s}
+  .btn-primary{background:#2f81f7;color:#fff}
+  .btn-primary:hover{opacity:.9}
+  .spinner{display:inline-block;width:20px;height:20px;border:2px solid #30363d;border-top-color:#2f81f7;border-radius:50%;animation:spin .6s linear infinite;margin-bottom:16px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .success{color:#3fb950}
+  .error{color:#f85149}
+</style>
+</head>
+<body>
+<div class="card" id="card">
+  <div class="spinner"></div>
+  <h1>Verifying your email...</h1>
+  <p class="msg">Please wait a moment.</p>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script>
+  var FIREBASE_CONFIG = {
+    apiKey: 'AIzaSyAiWI-bB-HxFmvgiFSIuYLtFnv7BniFlQk',
+    authDomain: 'rentingradar.firebaseapp.com',
+    projectId: 'rentingradar',
+    storageBucket: 'rentingradar.firebasestorage.app',
+    messagingSenderId: '622768449810',
+    appId: '1:622768449810:web:fde8ec3ba25a70643d2bcb'
+  };
+  firebase.initializeApp(FIREBASE_CONFIG);
+
+  var params = new URLSearchParams(window.location.search);
+  var mode = params.get('mode');
+  var oobCode = params.get('oobCode');
+  var card = document.getElementById('card');
+
+  function showResult(icon, title, msg, showBtn) {
+    card.innerHTML =
+      '<div class="icon">' + icon + '</div>' +
+      '<h1>' + title + '</h1>' +
+      '<p class="msg">' + msg + '</p>' +
+      (showBtn ? '<a class="btn btn-primary" href="https://app.rentingradar.com">Open RentingRadar</a>' : '');
+  }
+
+  if (mode === 'verifyEmail' && oobCode) {
+    firebase.auth().applyActionCode(oobCode).then(function() {
+      showResult('✅', 'Email Verified!',
+        'Your email address has been confirmed. You can now access RentingRadar.', true);
+    }).catch(function(err) {
+      console.error('Verification error:', err);
+      if (err.code === 'auth/expired-action-code') {
+        showResult('⏰', 'Link Expired',
+          'This verification link has expired. Please go back to the app and click "Resend Verification Email" to get a new link.', true);
+      } else if (err.code === 'auth/invalid-action-code') {
+        showResult('⚠️', 'Invalid or Used Link',
+          'This link has already been used or is no longer valid. If your email is already verified, you can open the app. Otherwise, request a new verification email.', true);
+      } else {
+        showResult('❌', 'Verification Failed',
+          'Something went wrong: ' + (err.message || 'Unknown error') + '. Please try again or contact support.', true);
+      }
+    });
+  } else if (mode === 'resetPassword') {
+    // Redirect password resets to Firebase's default handler
+    window.location.href = 'https://rentingradar.firebaseapp.com/__/auth/action' + window.location.search;
+  } else {
+    showResult('❓', 'Invalid Link',
+      'This link doesn\'t appear to be a valid verification link. Please check your email for the correct link.', true);
+  }
+</script>
+</body>
+</html>
