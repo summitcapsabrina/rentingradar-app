@@ -541,6 +541,9 @@ tr.clickable:hover{background:var(--primary-light)}
 .profile-platform{display:inline-flex;align-items:center;gap:6px;font-size:.8rem;padding:5px 12px;background:transparent;border:none;border-radius:var(--radius);color:var(--primary);transition:all .15s}
 .profile-platform:hover{background:var(--primary-light)}
 .profile-platform svg{width:14px;height:14px}
+.profile-export-btn{display:inline-flex;align-items:center;gap:5px;font-size:.78rem;padding:5px 12px;background:transparent;border:1px solid var(--border);border-radius:var(--radius);color:var(--text2);cursor:pointer;transition:all .15s;font-family:inherit}
+.profile-export-btn:hover{background:var(--surface2, rgba(255,255,255,.06));color:var(--text);border-color:var(--text3)}
+.profile-export-btn svg{flex-shrink:0}
 .profile-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px}
 @media(max-width:900px){.profile-grid{grid-template-columns:1fr}}
 .profile-card{background:var(--surface);border-radius:var(--radius);border:1px solid var(--border);box-shadow:var(--shadow);overflow:hidden}
@@ -1247,6 +1250,7 @@ h1 .hero-edit-input{font-size:1.35rem}
 <!-- MapLibre GL JS for interactive maps -->
 <link href="https://unpkg.com/maplibre-gl@4.1.1/dist/maplibre-gl.css" rel="stylesheet">
 <script src="https://unpkg.com/maplibre-gl@4.1.1/dist/maplibre-gl.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 </head>
 <body>
 <!-- Loading overlay — shown until Firestore data is ready -->
@@ -3032,6 +3036,7 @@ function _renderProfileInner(){
         <div class="profile-hero-meta-row">
           <span class="inline-status" onclick="toggleInlineStatus(event,'${r.id}')" title="Click to change status">${statusPill(r.status)}</span>
           ${r.link ? `<a class="profile-platform" href="${esc(r.link)}" target="_blank">${plat.icon} ${plat.name} <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"/></svg></a>` : '<span style="font-size:.8rem;color:var(--text3)">No listing link</span>'}
+          <button class="profile-export-btn" onclick="confirmExportProfile('${r.id}')" title="Export to Excel"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg> Export</button>
         </div>
         <div style="display:flex;align-items:flex-end;gap:12px;margin-top:6px;flex-wrap:wrap">
           <div style="display:flex;flex-direction:column;gap:2px;flex-shrink:0">
@@ -12673,6 +12678,730 @@ window.addEventListener('popstate', function(e){
     if(pid && records.find(x => x.id === pid)) openProfile(pid);
   }
 })();
+
+// ===== EXPORT PROPERTY PROFILE TO EXCEL =====
+
+function confirmExportProfile(recId){
+  const r = records.find(x => x.id === recId);
+  if(!r) return;
+  const addr = r.property || 'Property';
+  showAppConfirm(
+    'Export <strong>' + esc(addr) + '</strong> to a professional Excel spreadsheet?<br><br><span style="font-size:.82rem;color:var(--text3)">Includes Property Details, Expenses, Competitor Analysis, and Projected ROI.</span>',
+    {
+      title: 'Export to Excel',
+      icon: '📊',
+      confirmText: 'Export',
+      confirmClass: 'btn-primary',
+      onConfirm: function(){ exportPropertyProfile(recId); }
+    }
+  );
+}
+
+async function exportPropertyProfile(recId){
+  const r = records.find(x => x.id === recId);
+  if(!r) return;
+  const pd = r.propertyDetails || {};
+  const v = calcComputeAll(r);
+  const c = v.c;
+  const comps = (r.details && r.details.comps) ? r.details.comps : [];
+  const an = (r.details && r.details.analysis) ? r.details.analysis : {};
+  const profitReq = parseFloat(an.profitRequirement) || 1000;
+
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'RentingRadar CRM';
+  wb.created = new Date();
+
+  // ── Brand colors ──
+  const DARK_BG = 'FF0F172A';
+  const SURFACE = 'FF141824';
+  const SURFACE2 = 'FF1A1E30';
+  const BORDER_CLR = 'FF252A3D';
+  const PRIMARY = 'FF6366F1';
+  const TEXT = 'FFE2E4EB';
+  const TEXT2 = 'FF9399B2';
+  const TEXT3 = 'FF4B5068';
+  const GREEN = 'FF10B981';
+  const RED = 'FFEF4444';
+  const YELLOW = 'FFF59E0B';
+  const BLUE = 'FF3B82F6';
+  const WHITE = 'FFFFFFFF';
+
+  const headerFont = { name:'Arial', size:11, bold:true, color:{argb:WHITE} };
+  const headerFill = { type:'pattern', pattern:'solid', fgColor:{argb:PRIMARY} };
+  const sectionFont = { name:'Arial', size:10, bold:true, color:{argb:TEXT} };
+  const sectionFill = { type:'pattern', pattern:'solid', fgColor:{argb:SURFACE2} };
+  const labelFont = { name:'Arial', size:9, color:{argb:TEXT2} };
+  const valueFont = { name:'Arial', size:9, color:{argb:TEXT} };
+  const valueBoldFont = { name:'Arial', size:9, bold:true, color:{argb:TEXT} };
+  const computedFont = { name:'Arial', size:9, bold:true, color:{argb:'FF818CF8'} };
+  const cellFill = { type:'pattern', pattern:'solid', fgColor:{argb:SURFACE} };
+  const darkFill = { type:'pattern', pattern:'solid', fgColor:{argb:DARK_BG} };
+  const thinBorder = { style:'thin', color:{argb:BORDER_CLR} };
+  const borderAll = { top:thinBorder, bottom:thinBorder, left:thinBorder, right:thinBorder };
+
+  function fmtDollar(val){ return val ? '$' + Math.round(val).toLocaleString('en-US') : '$0'; }
+  function fmtDollar2(val){ return val ? '$' + parseFloat(val).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) : '$0.00'; }
+  function fmtPct(val){ return val ? parseFloat(val).toFixed(1) + '%' : '0.0%'; }
+  function cleanHtml(str){ return (str||'').replace(/<[^>]+>/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&nbsp;/g,' ').replace(/\s+/g,' ').trim(); }
+
+  // Helper: style a range of cells
+  function styleRow(ws, rowNum, colStart, colEnd, font, fill){
+    for(let col=colStart; col<=colEnd; col++){
+      const cell = ws.getCell(rowNum, col);
+      if(font) cell.font = font;
+      if(fill) cell.fill = fill;
+      cell.border = borderAll;
+    }
+  }
+
+  // Helper: add a section header spanning cols
+  function addSectionHeader(ws, rowNum, text, colSpan){
+    ws.getCell(rowNum, 1).value = text;
+    ws.getCell(rowNum, 1).font = sectionFont;
+    ws.getCell(rowNum, 1).fill = sectionFill;
+    ws.getCell(rowNum, 1).alignment = { vertical:'middle' };
+    for(let col=1; col<=colSpan; col++){
+      ws.getCell(rowNum, col).fill = sectionFill;
+      ws.getCell(rowNum, col).border = borderAll;
+    }
+    if(colSpan > 1) ws.mergeCells(rowNum, 1, rowNum, colSpan);
+    return rowNum + 1;
+  }
+
+  // Helper: add label/value pair row
+  function addLabelValue(ws, rowNum, label, value, colSpan, opts){
+    ws.getCell(rowNum, 1).value = label;
+    ws.getCell(rowNum, 1).font = labelFont;
+    ws.getCell(rowNum, 1).fill = cellFill;
+    ws.getCell(rowNum, 1).alignment = { vertical:'middle' };
+    ws.getCell(rowNum, 1).border = borderAll;
+    ws.getCell(rowNum, 2).value = value || '—';
+    ws.getCell(rowNum, 2).font = (opts && opts.computed) ? computedFont : (opts && opts.bold) ? valueBoldFont : valueFont;
+    ws.getCell(rowNum, 2).fill = cellFill;
+    ws.getCell(rowNum, 2).alignment = { vertical:'middle', wrapText:true };
+    ws.getCell(rowNum, 2).border = borderAll;
+    if(colSpan > 2){
+      for(let col=3; col<=colSpan; col++){
+        ws.getCell(rowNum, col).fill = cellFill;
+        ws.getCell(rowNum, col).border = borderAll;
+      }
+      ws.mergeCells(rowNum, 2, rowNum, colSpan);
+    }
+    return rowNum + 1;
+  }
+
+  // ════════════════════════════════════════════════
+  // SHEET 1: Property Details
+  // ════════════════════════════════════════════════
+  const ws1 = wb.addWorksheet('Property Details');
+  ws1.properties.defaultRowHeight = 22;
+  ws1.properties.tabColor = { argb: PRIMARY.substring(2) };
+  ws1.getColumn(1).width = 24;
+  ws1.getColumn(2).width = 50;
+
+  // Title row
+  let row = 1;
+  ws1.getCell(row, 1).value = 'RentingRadar — Property Profile';
+  ws1.getCell(row, 1).font = { name:'Arial', size:14, bold:true, color:{argb:WHITE} };
+  ws1.getCell(row, 1).fill = { type:'pattern', pattern:'solid', fgColor:{argb:PRIMARY} };
+  ws1.getCell(row, 2).fill = { type:'pattern', pattern:'solid', fgColor:{argb:PRIMARY} };
+  ws1.mergeCells(row, 1, row, 2);
+  ws1.getRow(row).height = 32;
+  row++;
+
+  ws1.getCell(row, 1).value = r.property || 'No address';
+  ws1.getCell(row, 1).font = { name:'Arial', size:12, bold:true, color:{argb:TEXT} };
+  ws1.getCell(row, 1).fill = darkFill;
+  ws1.getCell(row, 2).fill = darkFill;
+  ws1.mergeCells(row, 1, row, 2);
+  ws1.getRow(row).height = 26;
+  row++;
+
+  ws1.getCell(row, 1).value = 'Exported ' + new Date().toLocaleDateString('en-US', {year:'numeric', month:'long', day:'numeric'});
+  ws1.getCell(row, 1).font = { name:'Arial', size:8, italic:true, color:{argb:TEXT3} };
+  ws1.getCell(row, 1).fill = darkFill;
+  ws1.getCell(row, 2).fill = darkFill;
+  ws1.mergeCells(row, 1, row, 2);
+  row++;
+  row++;
+
+  // Contact Information
+  row = addSectionHeader(ws1, row, 'Contact Information', 2);
+  row = addLabelValue(ws1, row, 'Contact Name', r.name || '—', 2);
+  row = addLabelValue(ws1, row, 'Phone', r.phone ? fmtPhone(r.phone) : '—', 2);
+  row = addLabelValue(ws1, row, 'Email', r.email || '—', 2);
+  row = addLabelValue(ws1, row, 'Status', r.status || '—', 2);
+  row = addLabelValue(ws1, row, 'Listing Link', r.link || '—', 2);
+  if(r.link){
+    ws1.getCell(row-1, 2).value = { text:r.link, hyperlink:r.link };
+    ws1.getCell(row-1, 2).font = { name:'Arial', size:9, color:{argb:PRIMARY.substring(0)}, underline:true };
+  }
+  row++;
+
+  // Core Property Info
+  row = addSectionHeader(ws1, row, 'Property Overview', 2);
+  row = addLabelValue(ws1, row, 'Monthly Rent', pd.monthlyRent ? fmtDollar(pd.monthlyRent) : '—', 2, {bold:true});
+  row = addLabelValue(ws1, row, 'Bedrooms', pd.bedrooms || '—', 2);
+  row = addLabelValue(ws1, row, 'Bathrooms', pd.bathrooms || '—', 2);
+  row = addLabelValue(ws1, row, 'Square Footage', pd.sqft ? parseInt(pd.sqft).toLocaleString() + ' sq ft' : '—', 2);
+  row = addLabelValue(ws1, row, 'Available Date', pd.availableDate || '—', 2);
+  row = addLabelValue(ws1, row, 'Market', pd.market || '—', 2);
+  row = addLabelValue(ws1, row, 'Submarket', pd.submarket || '—', 2);
+  row++;
+
+  // PROP_SECTIONS data
+  const propSections = [
+    { key:'basic', label:'Property Overview Details', fields:['propertyType','yearBuilt','stories','floorLevel','lotSize','furnished','view','architecturalStyle'] },
+    { key:'interior', label:'Interior Features', fields:['flooring','countertops','appliances','laundry','ac','heating','interiorFeatures','storage'] },
+    { key:'exterior', label:'Exterior & Outdoor', fields:['parking','parkingSpaces','pool','hotTub','outdoor','yard','exteriorFeatures'] },
+    { key:'community', label:'Community Amenities', fields:['communityAmenities'] },
+    { key:'utilities', label:'Utilities Included', fields:['utilitiesIncluded'] },
+    { key:'pets', label:'Pet Policy', fields:['petsAllowed','petDetails','petWeightLimit','maxPets','breedRestrictions'] },
+    { key:'safety', label:'Safety & Security', fields:['safetyFeatures','accessibility'] },
+    { key:'hoa', label:'HOA Details', fields:['hoaName','hoaFee','hoaStrPolicy','hoaContact','hoaPhone','hoaNotes'] },
+    { key:'str', label:'STR Arbitrage Details', fields:['strLicenseRequired','strLicenseNumber','strMaxOccupancy','strMinStay','strCheckIn','strCheckOut','strPlatforms','strInsurance','strCompStructure','strRevenueShare','strProjectedNightly','strProjectedMonthly','strProjectedOccupancy'] }
+  ];
+  const fieldLabels = {};
+  if(typeof PROP_SECTIONS !== 'undefined'){
+    PROP_SECTIONS.forEach(function(sec){
+      sec.fields.forEach(function(f){ fieldLabels[f.k] = f.l; });
+    });
+  }
+
+  propSections.forEach(function(sec){
+    let hasAnyData = sec.fields.some(function(fk){
+      const val = pd[fk];
+      return val && (Array.isArray(val) ? val.length > 0 : String(val).trim() !== '');
+    });
+    if(!hasAnyData) return;
+    row = addSectionHeader(ws1, row, sec.label, 2);
+    sec.fields.forEach(function(fk){
+      const val = pd[fk];
+      if(!val || (Array.isArray(val) && val.length === 0) || String(val).trim() === '') return;
+      const label = fieldLabels[fk] || fk;
+      const display = Array.isArray(val) ? val.join(', ') : String(val);
+      row = addLabelValue(ws1, row, label, display, 2);
+    });
+    row++;
+  });
+
+  // Property Note
+  const noteText = r.propertyNote ? cleanHtml(r.propertyNote.html || r.propertyNote.text || '') : '';
+  if(noteText){
+    row = addSectionHeader(ws1, row, 'Property Note', 2);
+    ws1.getCell(row, 1).value = noteText;
+    ws1.getCell(row, 1).font = valueFont;
+    ws1.getCell(row, 1).fill = cellFill;
+    ws1.getCell(row, 1).alignment = { vertical:'top', wrapText:true };
+    ws1.getCell(row, 1).border = borderAll;
+    ws1.getCell(row, 2).fill = cellFill;
+    ws1.getCell(row, 2).border = borderAll;
+    ws1.mergeCells(row, 1, row, 2);
+    ws1.getRow(row).height = Math.max(40, Math.ceil(noteText.length / 60) * 16);
+    row++;
+  }
+
+  // ════════════════════════════════════════════════
+  // SHEET 2: Expenses
+  // ════════════════════════════════════════════════
+  const ws2 = wb.addWorksheet('Expenses');
+  ws2.properties.defaultRowHeight = 22;
+  ws2.properties.tabColor = { argb: 'F59E0B' };
+  ws2.getColumn(1).width = 28;
+  ws2.getColumn(2).width = 20;
+
+  row = 1;
+  ws2.getCell(row, 1).value = 'Expenses — ' + (r.property || 'Property');
+  ws2.getCell(row, 1).font = { name:'Arial', size:14, bold:true, color:{argb:WHITE} };
+  ws2.getCell(row, 1).fill = { type:'pattern', pattern:'solid', fgColor:{argb:PRIMARY} };
+  ws2.getCell(row, 2).fill = { type:'pattern', pattern:'solid', fgColor:{argb:PRIMARY} };
+  ws2.mergeCells(row, 1, row, 2);
+  ws2.getRow(row).height = 32;
+  row++;
+  row++;
+
+  // Investment Details
+  row = addSectionHeader(ws2, row, 'Investment Details', 2);
+  row = addLabelValue(ws2, row, 'Application Fees', fmtDollar(c.applicationFees), 2);
+  row = addLabelValue(ws2, row, 'Security Deposit', fmtDollar(c.securityDeposit), 2);
+  row = addLabelValue(ws2, row, 'First Month Rent', fmtDollar(c.firstMonthRent), 2);
+  row = addLabelValue(ws2, row, 'Last Month Rent', fmtDollar(c.lastMonthRent), 2);
+  row = addLabelValue(ws2, row, 'Additional Fee #1', fmtDollar(c.additionalFee1), 2);
+  row = addLabelValue(ws2, row, 'Additional Fee #2', fmtDollar(c.additionalFee2), 2);
+  row = addLabelValue(ws2, row, 'Est. Cost Per Bedroom', fmtDollar(c.costPerBR), 2);
+  row = addLabelValue(ws2, row, '# Extra Common Spaces', c.extraCommonSpaces || 0, 2);
+  row = addLabelValue(ws2, row, 'Cost Per Extra Space', fmtDollar(c.costPerExtraSpace), 2);
+  row = addLabelValue(ws2, row, 'Est. Cost to Furnish', fmtDollar(v.furnishCost), 2, {computed:true});
+  row = addLabelValue(ws2, row, 'Total Money Invested', fmtDollar(v.totalInvested), 2, {bold:true});
+  row++;
+
+  // Monthly Operating Expenses
+  row = addSectionHeader(ws2, row, 'Monthly Operating Expenses', 2);
+  row = addLabelValue(ws2, row, 'Insurance', fmtDollar(c.insurance), 2);
+  row = addLabelValue(ws2, row, 'STR Fee (to landlord)', fmtDollar(c.strFee), 2);
+  row = addLabelValue(ws2, row, 'Water', fmtDollar(c.water), 2);
+  row = addLabelValue(ws2, row, 'Gas', fmtDollar(c.gas), 2);
+  row = addLabelValue(ws2, row, 'Electric', fmtDollar(c.electric), 2);
+  row = addLabelValue(ws2, row, 'WiFi + TV/Cable', fmtDollar(c.wifiTv), 2);
+  row = addLabelValue(ws2, row, 'Future Repairs', fmtDollar(c.futureRepairs), 2);
+  row = addLabelValue(ws2, row, 'Incidentals', fmtDollar(c.incidentals), 2);
+  row = addLabelValue(ws2, row, 'Parking', fmtDollar(c.parking), 2);
+  row = addLabelValue(ws2, row, 'Cleaning (Monthly)', fmtDollar(v.cleaning), 2);
+  row = addLabelValue(ws2, row, 'Garbage / Recycling', fmtDollar(c.garbageRecycling), 2);
+  row = addLabelValue(ws2, row, 'Channel Manager', fmtDollar(c.channelManager), 2);
+  row = addLabelValue(ws2, row, 'City Permit (monthly)', fmtDollar2(c.cityPermit), 2);
+  row = addLabelValue(ws2, row, 'Co-Host / PM Fee (%)', fmtPct(c.coHostPct), 2);
+  row = addLabelValue(ws2, row, 'Co-Host / PM Fee ($)', fmtDollar2(v.coHostFee), 2, {computed:true});
+  row = addLabelValue(ws2, row, 'Airbnb Service Fee (3%)', fmtDollar2(v.airbnbFee), 2, {computed:true});
+  row = addLabelValue(ws2, row, 'Total Monthly Expenses', fmtDollar2(v.totalMonthlyExp), 2, {bold:true});
+  row = addLabelValue(ws2, row, 'Annual Operating Expenses', fmtDollar(Math.round(v.annualExp)), 2, {computed:true});
+
+  // ════════════════════════════════════════════════
+  // SHEET 3: Competitor Analysis
+  // ════════════════════════════════════════════════
+  const ws3 = wb.addWorksheet('Competitor Analysis');
+  ws3.properties.defaultRowHeight = 22;
+  ws3.properties.tabColor = { argb: '3B82F6' };
+
+  const compCols = [
+    {header:'#', width:5},
+    {header:'Category', width:12},
+    {header:'Revenue', width:14},
+    {header:'Days/Yr', width:10},
+    {header:'Occupancy', width:12},
+    {header:'Nightly Rate', width:14},
+    {header:'Guests', width:9},
+    {header:'Bedrooms', width:10},
+    {header:'Beds', width:8},
+    {header:'Baths', width:8},
+    {header:'Host', width:16},
+    {header:'Link', width:30},
+    {header:'Notes', width:40}
+  ];
+  compCols.forEach(function(col, i){ ws3.getColumn(i+1).width = col.width; });
+
+  row = 1;
+  ws3.getCell(row, 1).value = 'Competitor Analysis — ' + (r.property || 'Property');
+  ws3.getCell(row, 1).font = { name:'Arial', size:14, bold:true, color:{argb:WHITE} };
+  ws3.getCell(row, 1).fill = { type:'pattern', pattern:'solid', fgColor:{argb:PRIMARY} };
+  for(let col2=1; col2<=compCols.length; col2++){
+    ws3.getCell(row, col2).fill = { type:'pattern', pattern:'solid', fgColor:{argb:PRIMARY} };
+  }
+  ws3.mergeCells(row, 1, row, compCols.length);
+  ws3.getRow(row).height = 32;
+  row++;
+
+  // Market Averages
+  const rateComps = comps.filter(function(x){ return parseFloat(x.nightlyRate) > 0; });
+  const occComps = comps.filter(function(x){ return parseFloat(x.occupancy) > 0; });
+  const daysComps = comps.filter(function(x){ return parseFloat(x.daysAvailable) > 0; });
+  const avgRate = rateComps.length > 0 ? rateComps.reduce(function(s,x){return s+parseFloat(x.nightlyRate);},0)/rateComps.length : 0;
+  const avgOcc = occComps.length > 0 ? occComps.reduce(function(s,x){return s+parseFloat(x.occupancy);},0)/occComps.length : 0;
+  const avgDays = daysComps.length > 0 ? Math.round(daysComps.reduce(function(s,x){return s+parseFloat(x.daysAvailable);},0)/daysComps.length) : 0;
+  const estRevenue = (avgRate > 0 && avgDays > 0 && avgOcc > 0) ? Math.round(avgRate * avgDays * (avgOcc / 100)) : 0;
+
+  if(comps.length > 0){
+    row++;
+    ws3.getCell(row, 1).value = 'Market Averages';
+    ws3.getCell(row, 1).font = sectionFont;
+    ws3.getCell(row, 1).fill = sectionFill;
+    for(let ci=1; ci<=compCols.length; ci++){
+      ws3.getCell(row, ci).fill = sectionFill;
+      ws3.getCell(row, ci).border = borderAll;
+    }
+    ws3.mergeCells(row, 1, row, compCols.length);
+    row++;
+
+    const avgLabels = ['Avg Daily Rate', 'Avg Occupancy', 'Avg Days/Yr', 'Avg Revenue'];
+    const avgValues = [
+      avgRate > 0 ? '$' + avgRate.toFixed(2) : '—',
+      avgOcc > 0 ? Math.round(avgOcc) + '%' : '—',
+      avgDays > 0 ? String(avgDays) : '—',
+      estRevenue > 0 ? fmtDollar(estRevenue) : '—'
+    ];
+    for(let i=0; i<avgLabels.length; i++){
+      const lCol = i * 3 + 1;
+      const vCol = i * 3 + 2;
+      ws3.getCell(row, lCol).value = avgLabels[i];
+      ws3.getCell(row, lCol).font = labelFont;
+      ws3.getCell(row, lCol).fill = cellFill;
+      ws3.getCell(row, lCol).border = borderAll;
+      ws3.getCell(row, vCol).value = avgValues[i];
+      ws3.getCell(row, vCol).font = valueBoldFont;
+      ws3.getCell(row, vCol).fill = cellFill;
+      ws3.getCell(row, vCol).border = borderAll;
+    }
+    // fill remaining cells
+    for(let ci=avgLabels.length*3+1; ci<=compCols.length; ci++){
+      ws3.getCell(row, ci).fill = cellFill;
+      ws3.getCell(row, ci).border = borderAll;
+    }
+    row++;
+  }
+
+  // Competitive Position
+  if(comps.length >= 3){
+    row++;
+    ws3.getCell(row, 1).value = 'Competitive Position';
+    ws3.getCell(row, 1).font = sectionFont;
+    ws3.getCell(row, 1).fill = sectionFill;
+    for(let ci=1; ci<=compCols.length; ci++){
+      ws3.getCell(row, ci).fill = sectionFill;
+      ws3.getCell(row, ci).border = borderAll;
+    }
+    ws3.mergeCells(row, 1, row, compCols.length);
+    row++;
+
+    const posLabels = ['Position Score', 'Market Percentile', 'Loses To', 'Competes With', 'Beats'];
+    const posValues = [
+      (v.positionScore >= 0 ? '+' : '') + v.positionScore.toFixed(2),
+      v.marketPercentile + 'th percentile',
+      String(v.losesCount),
+      String(v.competesCount),
+      String(v.beatsCount)
+    ];
+    for(let i=0; i<posLabels.length; i++){
+      const lCol = i < 2 ? (i * 3 + 1) : ((i - 2) * 2 + 7);
+      const vCol = lCol + 1;
+      ws3.getCell(row, lCol).value = posLabels[i];
+      ws3.getCell(row, lCol).font = labelFont;
+      ws3.getCell(row, lCol).fill = cellFill;
+      ws3.getCell(row, lCol).border = borderAll;
+      ws3.getCell(row, vCol).value = posValues[i];
+      ws3.getCell(row, vCol).font = valueBoldFont;
+      ws3.getCell(row, vCol).fill = cellFill;
+      ws3.getCell(row, vCol).border = borderAll;
+    }
+    for(let ci=1; ci<=compCols.length; ci++){
+      if(!ws3.getCell(row, ci).value){
+        ws3.getCell(row, ci).fill = cellFill;
+        ws3.getCell(row, ci).border = borderAll;
+      }
+    }
+    row++;
+  }
+
+  // Competitor Table
+  if(comps.length > 0){
+    row++;
+    // Header row
+    compCols.forEach(function(col, i){
+      ws3.getCell(row, i+1).value = col.header;
+      ws3.getCell(row, i+1).font = headerFont;
+      ws3.getCell(row, i+1).fill = headerFill;
+      ws3.getCell(row, i+1).border = borderAll;
+      ws3.getCell(row, i+1).alignment = { horizontal:'center', vertical:'middle' };
+    });
+    row++;
+
+    // Sort: loses first, then competes, then beats
+    const sortOrder = { loses:0, competes:1, beats:2 };
+    const sorted = comps.map(function(comp, i){ return {comp:comp, idx:i}; })
+      .sort(function(a,b){ return (sortOrder[a.comp.rating]||1) - (sortOrder[b.comp.rating]||1); });
+
+    sorted.forEach(function(entry, i){
+      const comp = entry.comp;
+      const catLabel = comp.rating === 'loses' ? 'Loses To' : comp.rating === 'beats' ? 'Beats' : 'Competes';
+      const catColor = comp.rating === 'loses' ? RED : comp.rating === 'beats' ? GREEN : BLUE;
+      const vals = [
+        i+1,
+        catLabel,
+        comp.annualRevenue ? fmtDollar(Math.round(parseFloat(comp.annualRevenue))) : '—',
+        comp.daysAvailable || '—',
+        comp.occupancy ? Math.round(parseFloat(comp.occupancy)) + '%' : '—',
+        comp.nightlyRate ? '$' + parseFloat(comp.nightlyRate).toFixed(2) : '—',
+        comp.guests || '—',
+        comp.bedrooms || '—',
+        comp.beds || '—',
+        comp.bathrooms || '—',
+        comp.host || '—',
+        comp.link || '—',
+        comp.notes ? cleanHtml(comp.notes) : ''
+      ];
+      vals.forEach(function(val, ci){
+        const cell = ws3.getCell(row, ci+1);
+        cell.value = val;
+        cell.font = ci === 1 ? { name:'Arial', size:9, bold:true, color:{argb:catColor} } : valueFont;
+        cell.fill = i % 2 === 0 ? cellFill : darkFill;
+        cell.border = borderAll;
+        cell.alignment = { vertical:'middle', wrapText: ci === 12 };
+        if(ci === 0) cell.alignment = { horizontal:'center', vertical:'middle' };
+      });
+      // Make link clickable
+      if(comp.link){
+        ws3.getCell(row, 12).value = { text: comp.link, hyperlink: comp.link };
+        ws3.getCell(row, 12).font = { name:'Arial', size:9, color:{argb:PRIMARY}, underline:true };
+      }
+      row++;
+    });
+  } else {
+    row++;
+    ws3.getCell(row, 1).value = 'No competitors added yet.';
+    ws3.getCell(row, 1).font = { name:'Arial', size:10, italic:true, color:{argb:TEXT3} };
+    ws3.mergeCells(row, 1, row, compCols.length);
+  }
+
+  // ════════════════════════════════════════════════
+  // SHEET 4: Projected ROI
+  // ════════════════════════════════════════════════
+  const ws4 = wb.addWorksheet('Projected ROI');
+  ws4.properties.defaultRowHeight = 22;
+  ws4.properties.tabColor = { argb: '10B981' };
+  ws4.getColumn(1).width = 28;
+  ws4.getColumn(2).width = 18;
+  ws4.getColumn(3).width = 18;
+  ws4.getColumn(4).width = 18;
+
+  row = 1;
+  ws4.getCell(row, 1).value = 'Projected ROI — ' + (r.property || 'Property');
+  ws4.getCell(row, 1).font = { name:'Arial', size:14, bold:true, color:{argb:WHITE} };
+  for(let ci=1; ci<=4; ci++){
+    ws4.getCell(row, ci).fill = { type:'pattern', pattern:'solid', fgColor:{argb:PRIMARY} };
+  }
+  ws4.mergeCells(row, 1, row, 4);
+  ws4.getRow(row).height = 32;
+  row++;
+  row++;
+
+  // Required Revenue
+  row = addSectionHeader(ws4, row, 'Required Revenue', 4);
+  const monthlyReqRev = v.monthlyRent + v.totalMonthlyExp + profitReq;
+  const reqRows = [
+    ['Monthly Rent', fmtDollar(v.monthlyRent) + '/mo', fmtDollar(Math.round(v.monthlyRent * 12)) + '/yr'],
+    ['Operating Expenses', fmtDollar(Math.round(v.totalMonthlyExp)) + '/mo', fmtDollar(Math.round(v.annualExp)) + '/yr'],
+    ['Profit Requirement', fmtDollar(profitReq) + '/mo', fmtDollar(profitReq * 12) + '/yr'],
+    ['Required Revenue', fmtDollar(Math.round(monthlyReqRev)) + '/mo', fmtDollar(Math.round(monthlyReqRev * 12)) + '/yr']
+  ];
+  reqRows.forEach(function(rr2, idx){
+    ws4.getCell(row, 1).value = rr2[0];
+    ws4.getCell(row, 1).font = idx === 3 ? valueBoldFont : labelFont;
+    ws4.getCell(row, 1).fill = cellFill;
+    ws4.getCell(row, 1).border = borderAll;
+    ws4.getCell(row, 2).value = rr2[1];
+    ws4.getCell(row, 2).font = idx === 3 ? { name:'Arial', size:9, bold:true, color:{argb:PRIMARY} } : valueFont;
+    ws4.getCell(row, 2).fill = cellFill;
+    ws4.getCell(row, 2).border = borderAll;
+    ws4.getCell(row, 3).value = rr2[2];
+    ws4.getCell(row, 3).font = idx === 3 ? { name:'Arial', size:9, bold:true, color:{argb:PRIMARY} } : valueFont;
+    ws4.getCell(row, 3).fill = cellFill;
+    ws4.getCell(row, 3).border = borderAll;
+    ws4.getCell(row, 4).fill = cellFill;
+    ws4.getCell(row, 4).border = borderAll;
+    row++;
+  });
+  row++;
+
+  // Projected Yearly Net (3 columns: Pessimistic, Realistic, Optimistic)
+  const hasProj = v.hasProjectionData;
+  const projAnnualRent = Math.round(v.monthlyRent * 12);
+  const confidence = 0.55 + 0.45 * ((v.positionScore + 1) / 2);
+  const confidencePct = Math.round(confidence * 100);
+
+  const projCols = [
+    { key:'pessimistic', label:'Pessimistic', color:RED, rev: hasProj ? Math.round(v.pessimisticRevenue) : 0, d: v.pessimisticD },
+    { key:'realistic', label:'Realistic', color:BLUE, rev: hasProj ? Math.round(v.projectedRevenue) : 0, d: v.projectedD },
+    { key:'optimistic', label:'Optimistic', color:GREEN, rev: hasProj ? Math.round(v.optimisticRevenue) : 0, d: v.optimisticD }
+  ];
+  projCols.forEach(function(col){
+    col.exp = hasProj && col.d ? Math.round(col.d.annualExp) : 0;
+    col.net = hasProj ? (col.rev - col.exp - projAnnualRent) : 0;
+    col.monthlyNet = hasProj ? Math.round(col.net / 12) : 0;
+    col.adjustedMonthlyNet = hasProj ? Math.round(col.monthlyNet * confidencePct / 100) : 0;
+  });
+
+  row = addSectionHeader(ws4, row, 'Projected Yearly Net', 4);
+
+  // Column headers
+  ws4.getCell(row, 1).value = '';
+  ws4.getCell(row, 1).fill = sectionFill;
+  ws4.getCell(row, 1).border = borderAll;
+  projCols.forEach(function(col, ci){
+    ws4.getCell(row, ci+2).value = col.label;
+    ws4.getCell(row, ci+2).font = { name:'Arial', size:9, bold:true, color:{argb:col.color} };
+    ws4.getCell(row, ci+2).fill = sectionFill;
+    ws4.getCell(row, ci+2).border = borderAll;
+    ws4.getCell(row, ci+2).alignment = { horizontal:'center' };
+  });
+  row++;
+
+  function addPynRow(label, getVals, opts){
+    ws4.getCell(row, 1).value = label;
+    ws4.getCell(row, 1).font = (opts && opts.bold) ? valueBoldFont : labelFont;
+    ws4.getCell(row, 1).fill = cellFill;
+    ws4.getCell(row, 1).border = borderAll;
+    projCols.forEach(function(col, ci){
+      const val = getVals(col);
+      ws4.getCell(row, ci+2).value = val;
+      ws4.getCell(row, ci+2).font = (opts && opts.bold) ? valueBoldFont : valueFont;
+      ws4.getCell(row, ci+2).fill = cellFill;
+      ws4.getCell(row, ci+2).border = borderAll;
+      ws4.getCell(row, ci+2).alignment = { horizontal:'center' };
+    });
+    row++;
+  }
+
+  addPynRow('Annual Revenue', function(col){ return hasProj ? fmtDollar(col.rev) : '—'; });
+  addPynRow('Annual Expenses', function(col){ return hasProj ? '-' + fmtDollar(col.exp) : '—'; });
+  addPynRow('Annual Rent', function(col){ return '-' + fmtDollar(projAnnualRent); });
+  addPynRow('Projected Yearly Net', function(col){ return hasProj ? fmtDollar(col.net) + '/yr' : '—'; }, {bold:true});
+  addPynRow('Monthly Net', function(col){ return hasProj ? fmtDollar(col.monthlyNet) + '/mo' : '—'; });
+  addPynRow('Position Adjustment', function(col){ return hasProj ? confidencePct + '%' : '—'; });
+  addPynRow('Adjusted Monthly Net', function(col){ return hasProj ? fmtDollar(col.adjustedMonthlyNet) + '/mo' : '—'; }, {bold:true});
+  row++;
+
+  // KPIs
+  row = addSectionHeader(ws4, row, 'Key Performance Indicators (Realistic)', 4);
+  const realisticCol = projCols[1];
+  const kpiNOI = hasProj && v.projectedD ? v.projectedD.monthlyNOI : v.monthlyNOI;
+  const _pynAnnualRent = Math.round(v.monthlyRent * 12);
+  const _pynRev = hasProj ? Math.round(v.projectedRevenue) : 0;
+  const _pynExp = hasProj ? Math.round(v.projectedD.annualExp) : 0;
+  const _pynNet = hasProj ? (_pynRev - _pynExp - _pynAnnualRent) : 0;
+  const _pynMonthlyNet = hasProj ? Math.round(_pynNet / 12) : 0;
+  const kpiMonthlyCF = Math.round(_pynMonthlyNet * confidencePct / 100);
+  const kpiAnnualCF = kpiMonthlyCF * 12;
+  const kpiCoC = v.totalInvested > 0 ? (kpiAnnualCF / v.totalInvested * 100) : 0;
+  const insufficientComps = v.compsCount < 3;
+
+  const kpiData = [
+    ['Net Operating Income', insufficientComps ? '—' : fmtDollar(Math.round(kpiNOI)) + '/mo', insufficientComps ? '—' : fmtDollar(Math.round(kpiNOI * 12)) + '/yr'],
+    ['Profit Requirement', fmtDollar(profitReq) + '/mo', fmtDollar(profitReq * 12) + '/yr'],
+    ['Cash Flow', insufficientComps ? '—' : fmtDollar(kpiMonthlyCF) + '/mo', insufficientComps ? '—' : fmtDollar(kpiAnnualCF) + '/yr'],
+    ['Cash on Cash Return', insufficientComps ? '—' : kpiCoC.toFixed(1) + '%', fmtDollar(Math.round(v.totalInvested)) + ' invested']
+  ];
+  kpiData.forEach(function(kpi){
+    ws4.getCell(row, 1).value = kpi[0];
+    ws4.getCell(row, 1).font = labelFont;
+    ws4.getCell(row, 1).fill = cellFill;
+    ws4.getCell(row, 1).border = borderAll;
+    ws4.getCell(row, 2).value = kpi[1];
+    ws4.getCell(row, 2).font = valueBoldFont;
+    ws4.getCell(row, 2).fill = cellFill;
+    ws4.getCell(row, 2).border = borderAll;
+    ws4.getCell(row, 3).value = kpi[2];
+    ws4.getCell(row, 3).font = valueFont;
+    ws4.getCell(row, 3).fill = cellFill;
+    ws4.getCell(row, 3).border = borderAll;
+    ws4.getCell(row, 4).fill = cellFill;
+    ws4.getCell(row, 4).border = borderAll;
+    row++;
+  });
+  row++;
+
+  // Deal Temperature
+  const dealMonthlyNet = realisticCol.adjustedMonthlyNet;
+  const _dtHalf = Math.round(profitReq * 0.5);
+  let dealLabel, dealDescription;
+  if(insufficientComps){
+    dealLabel = 'Insufficient Data';
+    dealDescription = 'Add at least 3 competitors to calculate';
+  } else if(dealMonthlyNet >= profitReq){
+    dealLabel = 'HOT DEAL';
+    dealDescription = 'Cash flow meets or exceeds profit requirement of ' + fmtDollar(profitReq) + '/mo';
+  } else if(dealMonthlyNet >= _dtHalf){
+    dealLabel = 'WARM';
+    dealDescription = 'Cash flow meets 50%+ of profit requirement';
+  } else if(dealMonthlyNet > 0){
+    dealLabel = 'COOL';
+    dealDescription = 'Positive cash flow but below 50% of profit requirement';
+  } else {
+    dealLabel = 'COLD';
+    dealDescription = 'Negative cash flow — not profitable at current projections';
+  }
+
+  row = addSectionHeader(ws4, row, 'Deal Temperature', 4);
+  ws4.getCell(row, 1).value = 'Assessment';
+  ws4.getCell(row, 1).font = labelFont;
+  ws4.getCell(row, 1).fill = cellFill;
+  ws4.getCell(row, 1).border = borderAll;
+  ws4.getCell(row, 2).value = dealLabel;
+  ws4.getCell(row, 2).font = { name:'Arial', size:11, bold:true, color:{argb: dealMonthlyNet >= profitReq ? GREEN : dealMonthlyNet >= _dtHalf ? BLUE : dealMonthlyNet > 0 ? YELLOW : RED} };
+  ws4.getCell(row, 2).fill = cellFill;
+  ws4.getCell(row, 2).border = borderAll;
+  ws4.getCell(row, 3).fill = cellFill;
+  ws4.getCell(row, 3).border = borderAll;
+  ws4.getCell(row, 4).fill = cellFill;
+  ws4.getCell(row, 4).border = borderAll;
+  ws4.mergeCells(row, 2, row, 4);
+  row++;
+  ws4.getCell(row, 1).value = 'Description';
+  ws4.getCell(row, 1).font = labelFont;
+  ws4.getCell(row, 1).fill = cellFill;
+  ws4.getCell(row, 1).border = borderAll;
+  ws4.getCell(row, 2).value = dealDescription;
+  ws4.getCell(row, 2).font = valueFont;
+  ws4.getCell(row, 2).fill = cellFill;
+  ws4.getCell(row, 2).border = borderAll;
+  ws4.getCell(row, 2).alignment = { wrapText:true };
+  ws4.getCell(row, 3).fill = cellFill;
+  ws4.getCell(row, 3).border = borderAll;
+  ws4.getCell(row, 4).fill = cellFill;
+  ws4.getCell(row, 4).border = borderAll;
+  ws4.mergeCells(row, 2, row, 4);
+  row++;
+  row++;
+
+  // Payback Period
+  const inv = v.totalInvested;
+  const acf = kpiAnnualCF;
+  let breakEvenYear = null;
+  if(inv > 0 && acf > 0){
+    let cumRun = -inv;
+    for(let y=1; y<=10; y++){
+      const prev = cumRun;
+      cumRun += acf;
+      if(breakEvenYear === null && prev < 0 && cumRun >= 0){
+        breakEvenYear = y - 1 + (Math.abs(prev) / (Math.abs(prev) + cumRun));
+      }
+    }
+  }
+
+  row = addSectionHeader(ws4, row, 'Payback Period', 4);
+  let paybackText;
+  if(insufficientComps) paybackText = 'Insufficient data (need 3+ competitors)';
+  else if(inv === 0) paybackText = 'No investment entered';
+  else if(acf <= 0) paybackText = 'Not recoverable — cash flow is negative';
+  else if(breakEvenYear !== null){
+    const yrs = Math.floor(breakEvenYear);
+    const mos = Math.round((breakEvenYear - yrs) * 12);
+    paybackText = yrs + (yrs===1?' year':' years') + (mos > 0 ? ', ' + mos + (mos===1?' month':' months') : '') + ' to recover ' + fmtDollar(inv) + ' investment';
+  } else {
+    paybackText = '10+ years — investment not recovered within projection window';
+  }
+  ws4.getCell(row, 1).value = 'Estimated Payback';
+  ws4.getCell(row, 1).font = labelFont;
+  ws4.getCell(row, 1).fill = cellFill;
+  ws4.getCell(row, 1).border = borderAll;
+  ws4.getCell(row, 2).value = paybackText;
+  ws4.getCell(row, 2).font = valueBoldFont;
+  ws4.getCell(row, 2).fill = cellFill;
+  ws4.getCell(row, 2).border = borderAll;
+  ws4.getCell(row, 2).alignment = { wrapText:true };
+  ws4.getCell(row, 3).fill = cellFill;
+  ws4.getCell(row, 3).border = borderAll;
+  ws4.getCell(row, 4).fill = cellFill;
+  ws4.getCell(row, 4).border = borderAll;
+  ws4.mergeCells(row, 2, row, 4);
+
+  // ── Generate and download ──
+  try {
+    const buffer = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const addr = (r.property || 'Property').replace(/[<>:"/\\|?*]/g, '').trim();
+    a.href = url;
+    a.download = 'RentingRadar - ' + addr + '.xlsx';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 5000);
+    showAppAlert('Excel file downloaded successfully!', { title:'Export Complete', icon:'✅' });
+  } catch(err){
+    console.error('Export error:', err);
+    showAppAlert('Failed to generate Excel file: ' + (err.message || 'Unknown error'), { title:'Export Error', icon:'❌' });
+  }
+}
 </script>
 </body>
 </html>
