@@ -6723,9 +6723,7 @@ function handleEmailSignUp(){
   setAuthLoading(true);
   firebase.auth().createUserWithEmailAndPassword(email, password).then(function(result){
     return result.user.updateProfile({ displayName: name }).then(function(){
-      // Send verification email for email/password signups
-      return result.user.sendEmailVerification();
-    }).then(function(){
+      // Verification email is sent by showEmailVerificationScreen via onAuthStateChanged
       closeAuthModal();
       setUser(result.user);
     });
@@ -6788,6 +6786,23 @@ function showEmailVerificationScreen(user){
     <button onclick="_signOutFromVerification()" style="background:none;border:none;color:var(--text3,#6e7681);font-size:.8rem;cursor:pointer;text-decoration:underline;font-family:inherit">Sign out &amp; use a different account</button>
   </div>`;
   document.body.appendChild(overlay);
+
+  // Always send a fresh verification email when this screen appears
+  // This handles both new signups AND existing unverified users signing in
+  // (whose original link may have expired)
+  user.sendEmailVerification().then(function(){
+    var msg = document.getElementById('emailVerifyMsg');
+    if(msg){ msg.style.color = 'var(--success,#3fb950)'; msg.textContent = 'Verification email sent!'; }
+    // Auto-clear the success message after a few seconds
+    setTimeout(function(){ if(msg && msg.textContent === 'Verification email sent!') msg.textContent = ''; }, 5000);
+  }).catch(function(err){
+    var msg = document.getElementById('emailVerifyMsg');
+    if(err.code === 'auth/too-many-requests'){
+      if(msg){ msg.style.color = 'var(--text3,#6e7681)'; msg.textContent = 'A verification email was recently sent. Please check your inbox and spam folder.'; }
+    } else {
+      console.error('sendEmailVerification error:', err);
+    }
+  });
 }
 
 function _dismissEmailVerificationScreen(){
