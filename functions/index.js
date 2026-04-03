@@ -122,12 +122,12 @@ function buildFeatureList(features) {
 }
 
 function welcomeEmailHtml(displayName, tierName) {
-  const name = displayName ? displayName.split(" ")[0] : "there";
+  const firstName = displayName ? displayName.split(" ")[0] : null;
   const tier = tierName || "Free";
   const features = PLAN_FEATURES[tier] || PLAN_FEATURES.Free;
 
   return emailWrapper(`
-    <h2 style="margin:0 0 16px;font-size:20px;font-weight:700;color:#ffffff">Welcome to RentingRadar, ${name}!</h2>
+    <h2 style="margin:0 0 16px;font-size:20px;font-weight:700;color:#ffffff">${firstName ? 'Welcome to RentingRadar, ' + firstName + '!' : 'Welcome to RentingRadar!'}</h2>
     <p style="margin:0 0 14px;color:#c8cbd6">We're excited to have you on board. You've signed up for the <strong style="color:#6381fa">${tier}</strong> plan${tier !== "Free" ? "" : " — free forever, no credit card needed"}.</p>
 
     <div style="background:#1a1e30;border:1px solid #252a3d;border-radius:8px;padding:16px 20px;margin:20px 0">
