@@ -4366,10 +4366,13 @@ function openNoteImagePopup(recId, noteId, imgIdx){
 }
 
 function deleteRecord(id){
+  const r = records.find(x => x.id === id);
+  const name = r ? (r.property || r.name || 'Property') : 'Property';
   records = records.filter(x => x.id !== id);
   saveData();
   if(currentView === 'profile') closeDetail();
   else { document.getElementById('detailModal').classList.remove('open'); render(); }
+  showToast('Deleted "' + name + '"', 'error', 3000);
 }
 function confirmDeleteProperty(id){
   dismissAllOverlays();
