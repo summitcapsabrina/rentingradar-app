@@ -4386,12 +4386,12 @@ function confirmDeleteProperty(id){
     </div>
     <div class="multi-editor-body" style="text-align:center;padding:20px 16px">
       <div style="margin-bottom:12px">
-        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="1.5"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
       </div>
-      <div style="font-size:.95rem;font-weight:600;margin-bottom:6px">Are you sure you want to delete "${esc(name)}"?</div>
-      <div style="font-size:.82rem;color:var(--text3);margin-bottom:16px">This action is permanent and cannot be undone. All property data, notes, and activity history will be lost.</div>
-      <label style="display:flex;align-items:center;gap:8px;justify-content:center;margin-bottom:14px;font-size:.82rem;cursor:pointer">
-        <input type="checkbox" id="deleteUnderstandCheck" onchange="document.getElementById('deleteConfirmInput').disabled=!this.checked;document.getElementById('deleteConfirmInput').focus()"> I understand this cannot be undone
+      <div style="font-size:.95rem;font-weight:600;margin-bottom:6px;color:var(--text)">Are you sure you want to delete "${esc(name)}"?</div>
+      <div style="font-size:.82rem;color:var(--text2);margin-bottom:16px">This action is permanent and cannot be undone. All property data, notes, and activity history will be lost.</div>
+      <label style="display:flex;align-items:center;gap:8px;justify-content:center;margin-bottom:14px;font-size:.82rem;cursor:pointer;color:var(--text)">
+        <input type="checkbox" id="deleteUnderstandCheck" onchange="document.getElementById('deleteConfirmInput').disabled=!this.checked;document.getElementById('deleteConfirmInput').focus()" style="width:18px;height:18px;padding:0;margin:0;background:transparent;border:1px solid var(--border);accent-color:var(--danger);flex-shrink:0;cursor:pointer"> I understand this cannot be undone
       </label>
       <input type="text" id="deleteConfirmInput" disabled placeholder='Type "DELETE" to confirm' style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius);background:var(--input-bg);color:var(--text);text-align:center;font-size:.88rem;margin-bottom:12px" oninput="document.getElementById('deleteConfirmBtn').disabled=this.value!=='DELETE'">
       <button class="btn btn-danger" id="deleteConfirmBtn" disabled onclick="document.getElementById('deleteConfirmOverlay').remove();deleteRecord('${id}')" style="width:100%">Confirm Deletion</button>
