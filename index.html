@@ -1745,6 +1745,133 @@ function renderDashboard(){
 
   h += '</div>'; // end db-grid
 
+  // ── ANALYZED DEALS BY TEMPERATURE ──
+  h += renderAnalyzedDealsCard();
+
+  return h;
+}
+
+// Compute deal temperature for a single record. Returns null if not fully analyzed
+// (fewer than 3 comps with revenue data). Otherwise returns { temp, monthlyNet }.
+function getDealTempInfo(r){
+  try {
+    const v = calcComputeAll(r);
+    if(!v || v.compsCount < 3 || !v.projectedD || !v.hasProjectionData) return null;
+    const confidence = 0.55 + 0.45 * ((v.positionScore + 1) / 2);
+    const confidencePct = Math.round(confidence * 100);
+    const monthlyNet = Math.round(v.projectedD.monthlyCF * confidencePct / 100);
+    const an = getAnalysis(r);
+    const profitReq = parseFloat(an.profitRequirement) || 1000;
+    const halfReq = Math.round(profitReq * 0.5);
+    let temp;
+    if(monthlyNet >= profitReq) temp = 'slam-dunk';
+    else if(monthlyNet >= halfReq) temp = 'potential';
+    else if(monthlyNet > 0) temp = 'risky';
+    else temp = 'no-go';
+    return { temp: temp, monthlyNet: monthlyNet };
+  } catch(e){
+    return null;
+  }
+}
+
+// Dashboard state: currently selected deal temperature filter tab
+let _adDealsTab = 'all';
+
+function selectAnalyzedDealsTab(tab){
+  _adDealsTab = tab;
+  const container = document.getElementById('analyzedDealsCardContainer');
+  if(container) container.outerHTML = renderAnalyzedDealsCard();
+}
+
+function renderAnalyzedDealsCard(){
+  const TEMP_META = {
+    'slam-dunk': { label:'Slam-Dunk', icon:'🏆', color:'#10b981' },
+    'potential': { label:'Potential', icon:'🔥', color:'#3b82f6' },
+    'risky':     { label:'Risky',     icon:'⚠️', color:'#f59e0b' },
+    'no-go':     { label:'No-Go',     icon:'🚫', color:'#ef4444' }
+  };
+
+  // Build analyzed deals: only properties that have a deal temperature (i.e., fully analyzed)
+  const analyzedDate = {};
+  if(_analysisQuota && _analysisQuota.analyzedProperties){
+    _analysisQuota.analyzedProperties.forEach(a => { analyzedDate[a.id] = a.date; });
+  }
+  const deals = [];
+  records.forEach(r => {
+    const info = getDealTempInfo(r);
+    if(!info) return;
+    deals.push({
+      id: r.id,
+      property: r.property || 'Untitled Property',
+      temp: info.temp,
+      monthlyNet: info.monthlyNet,
+      analyzedAt: analyzedDate[r.id] || r.date || ''
+    });
+  });
+
+  // Counts per temp
+  const tempCounts = { 'slam-dunk':0, 'potential':0, 'risky':0, 'no-go':0 };
+  deals.forEach(d => { tempCounts[d.temp] = (tempCounts[d.temp]||0) + 1; });
+
+  // Filter & sort
+  let filtered = _adDealsTab === 'all' ? deals.slice() : deals.filter(d => d.temp === _adDealsTab);
+  filtered.sort((a,b) => (b.analyzedAt||'').localeCompare(a.analyzedAt||''));
+
+  let h = '<div id="analyzedDealsCardContainer" class="db-card" style="margin-top:12px">';
+  h += '<div class="db-card-hdr"><h3>🌡️ Analyzed Deals by Temperature</h3><span class="db-hdr-action" style="color:var(--text3);cursor:default">'+deals.length+' analyzed</span></div>';
+  h += '<div class="db-card-body">';
+
+  // Pill tabs
+  const tabs = [
+    { key:'all',       label:'All',       icon:'📊', color:'var(--primary)', count: deals.length }
+  ];
+  ['slam-dunk','potential','risky','no-go'].forEach(k => {
+    tabs.push({ key:k, label:TEMP_META[k].label, icon:TEMP_META[k].icon, color:TEMP_META[k].color, count: tempCounts[k] });
+  });
+
+  h += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">';
+  tabs.forEach(t => {
+    const active = _adDealsTab === t.key;
+    const bg = active ? t.color : 'var(--surface)';
+    const border = active ? t.color : 'var(--border)';
+    const color = active ? '#fff' : 'var(--text2)';
+    h += '<div onclick="selectAnalyzedDealsTab(\''+t.key+'\')" style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border:1.5px solid '+border+';background:'+bg+';color:'+color+';border-radius:999px;cursor:pointer;font-size:.78rem;font-weight:600;transition:all .15s;user-select:none">';
+    h += '<span>'+t.icon+'</span><span>'+esc(t.label)+'</span>';
+    h += '<span style="background:'+(active?'rgba(255,255,255,.25)':'var(--surface2)')+';padding:1px 7px;border-radius:999px;font-size:.68rem;font-weight:700">'+t.count+'</span>';
+    h += '</div>';
+  });
+  h += '</div>';
+
+  // Property list
+  if(filtered.length === 0){
+    if(deals.length === 0){
+      h += '<div class="db-empty">No properties have been fully analyzed yet. Add at least 3 competitors to a property\'s Analysis tab to get a deal temperature.</div>';
+    } else {
+      h += '<div class="db-empty">No properties match this temperature.</div>';
+    }
+  } else {
+    h += '<ul class="db-task-list" style="max-height:320px;overflow-y:auto">';
+    filtered.slice(0, 25).forEach(d => {
+      const meta = TEMP_META[d.temp];
+      const netColor = d.monthlyNet >= 0 ? 'var(--num-success,#10b981)' : 'var(--num-danger,#ef4444)';
+      const netPrefix = d.monthlyNet >= 0 ? '' : '-';
+      const netDisplay = netPrefix + '$' + Math.abs(d.monthlyNet).toLocaleString() + '/mo';
+      h += '<li class="db-task-item" onclick="openDetail(\''+d.id+'\')" style="cursor:pointer">';
+      h += '<div class="db-task-dot" style="background:'+meta.color+'"></div>';
+      h += '<div class="db-task-info">';
+      h += '<div class="db-task-property">'+esc(truncate(d.property,50))+'</div>';
+      h += '<div class="db-task-meta"><span style="display:inline-block;padding:1px 8px;border-radius:999px;background:'+meta.color+';color:#fff;font-size:.65rem;font-weight:700">'+meta.icon+' '+meta.label+'</span></div>';
+      h += '</div>';
+      h += '<div class="db-task-date" style="color:'+netColor+';font-weight:700">'+netDisplay+'</div>';
+      h += '</li>';
+    });
+    h += '</ul>';
+    if(filtered.length > 25){
+      h += '<div style="text-align:center;padding:8px;font-size:.72rem;color:var(--text3)">Showing 25 of '+filtered.length+' properties</div>';
+    }
+  }
+
+  h += '</div></div>';
   return h;
 }
 
