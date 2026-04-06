@@ -1803,6 +1803,7 @@ function renderAnalyzedDealsCard(){
     deals.push({
       id: r.id,
       property: r.property || 'Untitled Property',
+      contactName: r.name || '',
       temp: info.temp,
       monthlyNet: info.monthlyNet,
       analyzedAt: analyzedDate[r.id] || r.date || ''
@@ -1817,9 +1818,9 @@ function renderAnalyzedDealsCard(){
   let filtered = _adDealsTab === 'all' ? deals.slice() : deals.filter(d => d.temp === _adDealsTab);
   filtered.sort((a,b) => (b.analyzedAt||'').localeCompare(a.analyzedAt||''));
 
-  let h = '<div id="analyzedDealsCardContainer" class="db-card" style="margin-top:12px">';
-  h += '<div class="db-card-hdr"><h3>🌡️ Analyzed Deals by Temperature</h3><span class="db-hdr-action" style="color:var(--text3);cursor:default">'+deals.length+' analyzed</span></div>';
-  h += '<div class="db-card-body">';
+  let h = '<div id="analyzedDealsCardContainer" class="db-card" style="margin-top:12px;height:480px;display:flex;flex-direction:column">';
+  h += '<div class="db-card-hdr" style="flex-shrink:0"><h3>🌡️ Analyzed Deals by Temperature</h3><span class="db-hdr-action" style="color:var(--text3);cursor:default">'+deals.length+' analyzed</span></div>';
+  h += '<div class="db-card-body" style="flex:1;display:flex;flex-direction:column;min-height:0;overflow:hidden">';
 
   // Pill tabs
   const tabs = [
@@ -1829,7 +1830,7 @@ function renderAnalyzedDealsCard(){
     tabs.push({ key:k, label:TEMP_META[k].label, icon:TEMP_META[k].icon, color:TEMP_META[k].color, count: tempCounts[k] });
   });
 
-  h += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">';
+  h += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;flex-shrink:0">';
   tabs.forEach(t => {
     const active = _adDealsTab === t.key;
     const bg = active ? t.color : 'var(--surface)';
@@ -1842,7 +1843,8 @@ function renderAnalyzedDealsCard(){
   });
   h += '</div>';
 
-  // Property list
+  // Property list — flex:1 so it fills remaining card height, with its own scroll
+  h += '<div style="flex:1;min-height:0;overflow-y:auto;margin:0 -16px -16px;padding:0 16px 12px">';
   if(filtered.length === 0){
     if(deals.length === 0){
       h += '<div class="db-empty">No properties have been fully analyzed yet. Add at least 3 competitors to a property\'s Analysis tab to get a deal temperature.</div>';
@@ -1850,8 +1852,8 @@ function renderAnalyzedDealsCard(){
       h += '<div class="db-empty">No properties match this temperature.</div>';
     }
   } else {
-    h += '<ul class="db-task-list" style="max-height:320px;overflow-y:auto">';
-    filtered.slice(0, 25).forEach(d => {
+    h += '<ul class="db-task-list">';
+    filtered.forEach(d => {
       const meta = TEMP_META[d.temp];
       const netColor = d.monthlyNet >= 0 ? 'var(--num-success,#10b981)' : 'var(--num-danger,#ef4444)';
       const netPrefix = d.monthlyNet >= 0 ? '' : '-';
@@ -1860,16 +1862,17 @@ function renderAnalyzedDealsCard(){
       h += '<div class="db-task-dot" style="background:'+meta.color+'"></div>';
       h += '<div class="db-task-info">';
       h += '<div class="db-task-property">'+esc(truncate(d.property,50))+'</div>';
+      if(d.contactName){
+        h += '<div style="font-size:.78rem;color:var(--text3);margin:2px 0 3px">'+esc(d.contactName)+'</div>';
+      }
       h += '<div class="db-task-meta"><span style="display:inline-block;padding:1px 8px;border-radius:999px;background:'+meta.color+';color:#fff;font-size:.65rem;font-weight:700">'+meta.icon+' '+meta.label+'</span></div>';
       h += '</div>';
       h += '<div class="db-task-date" style="color:'+netColor+';font-weight:700">'+netDisplay+'</div>';
       h += '</li>';
     });
     h += '</ul>';
-    if(filtered.length > 25){
-      h += '<div style="text-align:center;padding:8px;font-size:.72rem;color:var(--text3)">Showing 25 of '+filtered.length+' properties</div>';
-    }
   }
+  h += '</div>'; // end scroll container
 
   h += '</div></div>';
   return h;
