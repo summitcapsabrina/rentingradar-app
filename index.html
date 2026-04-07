@@ -6289,7 +6289,7 @@ function _teRender(){
   }
 }
 
-// (escAttr defined elsewhere)
+function escAttr(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 // ── Mutations ──
 function _teAddChapter(){
