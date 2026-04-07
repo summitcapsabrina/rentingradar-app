@@ -1489,11 +1489,20 @@ function saveData(){
 
 /* ===== VIEW ROUTER ===== */
 let _handlingPopstate = false;
+let _teBypassDirtyCheck = false;
 
 function switchView(view){
   // Tutorial Editor unsaved-changes guard
-  if(currentView === 'tutorialEditor' && view !== 'tutorialEditor' && typeof _teIsDirty === 'function' && _teIsDirty()){
-    if(!confirm('You have unsaved changes in the Tutorial Editor. Leave without saving?')) return;
+  if(currentView === 'tutorialEditor' && view !== 'tutorialEditor' && !_teBypassDirtyCheck && typeof _teIsDirty === 'function' && _teIsDirty()){
+    showAppConfirm('You have unsaved changes in the Tutorial Editor. Leave without saving?', {
+      title: 'Unsaved Changes',
+      icon: '⚠️',
+      confirmText: 'Leave',
+      cancelText: 'Stay',
+      confirmClass: 'btn-primary',
+      onConfirm: () => { _teBypassDirtyCheck = true; try { switchView(view); } finally { _teBypassDirtyCheck = false; } }
+    });
+    return;
   }
   // Save current profile tab/scroll into history before navigating away
   if(!_handlingPopstate && currentView === 'profile' && currentProfileId){
@@ -6104,21 +6113,44 @@ async function _teSaveDraft(){
 async function _tePublishDraft(){
   if(!_teLoaded) return;
   if(!_teHasUnpublished()){ showToast('Nothing new to publish', 'info', 2000); return; }
+  // If there are unsaved changes, ask to save them first via styled confirm.
   if(_teIsDirty()){
-    if(!confirm('You have unsaved changes. Save them first, then publish?')) return;
-    await _teSaveDraft();
+    showAppConfirm('You have unsaved changes. Save them first, then publish?', {
+      title: 'Unsaved Changes',
+      icon: '💾',
+      confirmText: 'Save & Continue',
+      cancelText: 'Cancel',
+      confirmClass: 'btn-primary',
+      onConfirm: async () => {
+        await _teSaveDraft();
+        _tePromptPublishConfirm();
+      }
+    });
+    return;
   }
-  if(!confirm('Publish the current draft to all users? This will replace the live tutorial immediately.')) return;
-  try {
-    const payload = { chapters: _teState.chapters, steps: _teState.steps, updatedAt: firebase.firestore.FieldValue.serverTimestamp() };
-    await db.collection('tutorialContent').doc('published').set(payload);
-    _tePublishedSnapshot = _teSerialize(_teState);
-    showToast('Tutorial published to all users', 'success', 3000);
-    _teRender();
-  } catch(err){
-    console.error('Publish failed:', err);
-    showToast('Publish failed: ' + (err.message||err), 'error', 4000);
-  }
+  _tePromptPublishConfirm();
+}
+
+function _tePromptPublishConfirm(){
+  showAppConfirm('Publish the current draft to all users? This will replace the live tutorial immediately.', {
+    title: 'Publish Tutorial',
+    icon: '🚀',
+    confirmText: 'Publish',
+    cancelText: 'Cancel',
+    confirmClass: 'btn-primary',
+    onConfirm: async () => {
+      try {
+        const payload = { chapters: _teState.chapters, steps: _teState.steps, updatedAt: firebase.firestore.FieldValue.serverTimestamp() };
+        await db.collection('tutorialContent').doc('published').set(payload);
+        _tePublishedSnapshot = _teSerialize(_teState);
+        showToast('Tutorial published to all users', 'success', 3000);
+        _teRender();
+      } catch(err){
+        console.error('Publish failed:', err);
+        showAppAlert('Publish failed: ' + (err.message||err), { title: 'Publish Failed', icon: '❌' });
+      }
+    }
+  });
 }
 
 function renderTutorialEditor(){
@@ -6444,18 +6476,28 @@ function _teMoveChapter(ci, dir){
   });
 }
 function _teDeleteChapter(ci){
-  if(!confirm('Delete this chapter and all its lessons?')) return;
-  _teMutate(st => {
-    const removeIdxs = (st.chapters[ci].steps || []).slice().sort((a,b)=>b-a);
-    removeIdxs.forEach(idx => st.steps.splice(idx, 1));
-    st.chapters.splice(ci, 1);
-    // Recompute chapter step arrays from steps[].chapter
-    _teRecomputeChapterSteps(st);
-    // Decrement chapter indices > ci
-    st.steps.forEach(s => { if(s.chapter > ci) s.chapter--; else if(s.chapter === ci) s.chapter = Math.max(0, ci-1); });
-    _teRecomputeChapterSteps(st);
+  const ch = _teState.chapters[ci];
+  const chTitle = (ch && ch.title) || '(untitled)';
+  const lessonCount = ((ch && ch.steps) || []).length;
+  showAppConfirm('Delete the chapter "' + esc(chTitle) + '" and all ' + lessonCount + ' of its lesson' + (lessonCount===1?'':'s') + '? This cannot be undone (use Undo if you change your mind before saving).', {
+    title: 'Delete Chapter',
+    icon: '🗑️',
+    confirmText: 'Delete',
+    cancelText: 'Cancel',
+    confirmClass: 'btn-primary',
+    onConfirm: () => {
+      _teMutate(st => {
+        const removeIdxs = (st.chapters[ci].steps || []).slice().sort((a,b)=>b-a);
+        removeIdxs.forEach(idx => st.steps.splice(idx, 1));
+        st.chapters.splice(ci, 1);
+        _teRecomputeChapterSteps(st);
+        st.steps.forEach(s => { if(s.chapter > ci) s.chapter--; else if(s.chapter === ci) s.chapter = Math.max(0, ci-1); });
+        _teRecomputeChapterSteps(st);
+      });
+      _teSelectedStep = -1;
+      _teRender();
+    }
   });
-  _teSelectedStep = -1;
 }
 
 function _teRecomputeChapterSteps(st){
@@ -6595,12 +6637,23 @@ function _teMoveStepToChapter(si, newChapter){
 }
 
 function _teDeleteStep(si){
-  if(!confirm('Delete this lesson?')) return;
-  _teMutate(st => {
-    st.steps.splice(si, 1);
-    _teRecomputeChapterSteps(st);
+  const s = _teState.steps[si];
+  const lessonTitle = (s && s.title) || '(untitled)';
+  showAppConfirm('Delete the lesson "' + esc(lessonTitle) + '"? You can use Undo to bring it back if you change your mind before saving.', {
+    title: 'Delete Lesson',
+    icon: '🗑️',
+    confirmText: 'Delete',
+    cancelText: 'Cancel',
+    confirmClass: 'btn-primary',
+    onConfirm: () => {
+      _teMutate(st => {
+        st.steps.splice(si, 1);
+        _teRecomputeChapterSteps(st);
+      });
+      _teSelectedStep = -1;
+      _teRender();
+    }
   });
-  _teSelectedStep = -1;
 }
 
 function _teClearHighlight(si){
