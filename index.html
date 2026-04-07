@@ -6070,6 +6070,8 @@ async function _teLoadFromFirestore(){
 
     _teState.chapters = draft.chapters;
     _teState.steps = draft.steps;
+    // Merge any duplicate chapter names that may have crept into the data
+    _teConsolidateChapters(_teState);
     _teSavedSnapshot = _teSerialize(_teState);
     _tePublishedSnapshot = _teSerialize({ chapters: pub.chapters, steps: pub.steps });
     _teUndoStack = [];
@@ -6193,9 +6195,9 @@ function _teRender(){
   _teState.chapters.forEach((ch, ci) => {
     const tierColor = ch.tier==='free' ? '#34d399' : ch.tier==='basic' ? '#818cf8' : '#f59e0b';
     h += '<div style="margin-bottom:10px;border:1px solid var(--border);border-radius:8px;padding:8px 10px;background:rgba(255,255,255,.02)">';
-    h += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">';
-    h += '<input value="'+escAttr(ch.title||'')+'" oninput="_teEditChapterTitle('+ci+',this.value)" style="flex:1;padding:4px 8px;background:var(--input-bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-size:.82rem;font-weight:600">';
-    h += '<select onchange="_teEditChapterTier('+ci+',this.value)" style="padding:4px 6px;background:var(--input-bg);border:1px solid var(--border);border-radius:5px;color:'+tierColor+';font-size:.7rem;font-weight:700;text-transform:uppercase">';
+    h += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">';
+    h += '<input value="'+escAttr(ch.title||'')+'" placeholder="Chapter name" title="Chapter name (click to rename)" oninput="_teEditChapterTitle('+ci+',this.value)" style="flex:1;padding:5px 9px;background:var(--input-bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-size:.85rem;font-weight:600">';
+    h += '<select title="Tier (access level)" onchange="_teEditChapterTier('+ci+',this.value)" style="padding:4px 6px;background:var(--input-bg);border:1px solid var(--border);border-radius:5px;color:'+tierColor+';font-size:.7rem;font-weight:700;text-transform:uppercase">';
     ['free','basic','pro'].forEach(t => { h += '<option value="'+t+'"'+(ch.tier===t?' selected':'')+'>'+t+'</option>'; });
     h += '</select>';
     h += '</div>';
@@ -6293,16 +6295,31 @@ function escAttr(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/
 
 // ── Mutations ──
 function _teAddChapter(){
+  const name = prompt('Enter a name for the new chapter:', '');
+  if(name === null) return; // user cancelled
+  const trimmed = String(name).trim();
+  if(!trimmed){ alert('Chapter name cannot be empty.'); return; }
+  // Prevent exact duplicate names (case-insensitive)
+  const exists = _teState.chapters.some(c => String(c.title||'').trim().toLowerCase() === trimmed.toLowerCase());
+  if(exists){ alert('A chapter named "' + trimmed + '" already exists. Please choose a different name.'); return; }
   _teMutate(st => {
-    st.chapters.push({ title:'New Chapter', tier:'free', steps:[] });
+    st.chapters.push({ title: trimmed, tier:'free', steps:[] });
   });
 }
 function _teEditChapterTitle(ci, val){
-  // Don't push history on every keystroke — coalesce
+  // Don't push history on every keystroke — coalesce. And don't re-render
+  // mid-typing or we'll steal focus from the input.
   _teState.chapters[ci].title = val;
   if(!_teEditChapterTitle._pending){
     _teEditChapterTitle._pending = true;
-    setTimeout(() => { _teEditChapterTitle._pending = false; _tePushHistory(); _teRender(); }, 800);
+    setTimeout(() => {
+      _teEditChapterTitle._pending = false;
+      _tePushHistory();
+      const active = document.activeElement;
+      const isStillTyping = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA');
+      if(!isStillTyping) _teRender();
+      else _teRefreshToolbarDirty();
+    }, 800);
   }
 }
 function _teEditChapterTier(ci, val){
@@ -6344,6 +6361,33 @@ function _teRecomputeChapterSteps(st){
   });
 }
 
+// Merge chapters that share the same (case-insensitive, trimmed) title.
+// Keeps the first occurrence's tier; remaps every step's `chapter` index to
+// point at the surviving chapter; rebuilds chapters[].steps from scratch.
+function _teConsolidateChapters(st){
+  if(!st || !Array.isArray(st.chapters) || !Array.isArray(st.steps)) return;
+  const seen = {}; // normalizedTitle -> new index
+  const newChapters = [];
+  const remap = {}; // oldIndex -> newIndex
+  st.chapters.forEach((ch, oldIdx) => {
+    const key = String(ch.title||'').trim().toLowerCase();
+    if(key in seen){
+      remap[oldIdx] = seen[key];
+    } else {
+      const newIdx = newChapters.length;
+      seen[key] = newIdx;
+      remap[oldIdx] = newIdx;
+      newChapters.push({ title: ch.title, tier: ch.tier || 'free', steps: [] });
+    }
+  });
+  st.steps.forEach(s => {
+    const oldCh = (typeof s.chapter === 'number') ? s.chapter : 0;
+    s.chapter = (oldCh in remap) ? remap[oldCh] : 0;
+  });
+  st.chapters = newChapters;
+  _teRecomputeChapterSteps(st);
+}
+
 function _teAddStep(ci){
   _teMutate(st => {
     const newStep = { chapter:ci, image:'', title:'New Lesson', desc:'', highlight:null, tier: (st.chapters[ci] && st.chapters[ci].tier) || 'free' };
@@ -6364,30 +6408,53 @@ function _teSelectStep(si){
 function _teEditStepField(si, field, val){
   if(!_teState.steps[si]) return;
   _teState.steps[si][field] = val;
-  // Coalesce text-input history
+  // Coalesce text-input history. Do NOT re-render on every keystroke —
+  // a re-render rebuilds the textarea/input DOM and yanks focus away,
+  // making it impossible to type more than one character at a time.
   if(field === 'title' || field === 'desc'){
-    if(!_teEditStepField._pending){
-      _teEditStepField._pending = {};
-    }
+    if(!_teEditStepField._pending) _teEditStepField._pending = {};
     if(!_teEditStepField._pending[si+'_'+field]){
       _teEditStepField._pending[si+'_'+field] = true;
       setTimeout(() => {
         _teEditStepField._pending[si+'_'+field] = false;
         _tePushHistory();
-        _teRender();
+        // Only render if user is no longer focused on this field, to avoid
+        // stealing focus mid-typing.
+        const active = document.activeElement;
+        const isStillTyping = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA');
+        if(!isStillTyping) _teRender();
+        else _teRefreshToolbarDirty();
       }, 800);
     }
-    // Update toolbar dirty indicator immediately without re-render
-    _teRefreshToolbarDirty();
   } else {
     _teMutate(()=>{});
   }
 }
 
 function _teRefreshToolbarDirty(){
-  // Lightweight: just rerender so dirty indicator updates
-  // (re-render is fast enough for our scale)
-  _teRender();
+  // Update only the Save / Publish button states without re-rendering the
+  // whole editor (which would steal focus from the textarea/input the user
+  // is typing in). Falls back to a full render if buttons aren't found.
+  try {
+    const dirty = _teIsDirty();
+    const unpub = _teHasUnpublished();
+    const btns = document.querySelectorAll('#teRoot button');
+    btns.forEach(b => {
+      const t = (b.textContent||'').trim();
+      if(t.indexOf('Save Draft') !== -1){
+        b.disabled = !dirty;
+        b.style.background = dirty ? '#f59e0b' : 'transparent';
+        b.style.color = dirty ? '#000' : 'var(--text2)';
+        b.style.borderColor = dirty ? '#f59e0b' : 'var(--border)';
+        b.style.cursor = dirty ? 'pointer' : 'not-allowed';
+      } else if(t.indexOf('Publish') !== -1){
+        b.disabled = !unpub;
+        b.style.background = unpub ? 'var(--primary)' : 'rgba(99,129,250,.18)';
+        b.style.cursor = unpub ? 'pointer' : 'not-allowed';
+        b.style.opacity = unpub ? '1' : '.5';
+      }
+    });
+  } catch(e){ /* swallow */ }
 }
 
 function _teMoveStepInChapter(ci, posInChapter, dir){
