@@ -6247,16 +6247,11 @@ function _teRender(){
     h += '<div style="margin-bottom:12px"><label style="display:block;font-size:.72rem;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Description (HTML allowed: &lt;b&gt;)</label>';
     h += '<textarea oninput="_teEditStepField('+_teSelectedStep+',\'desc\',this.value)" style="width:100%;min-height:90px;padding:8px 10px;background:var(--input-bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.82rem;font-family:inherit;resize:vertical">'+esc(s.desc||'')+'</textarea></div>';
 
-    h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">';
-    h += '<div><label style="display:block;font-size:.72rem;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Tier</label>';
-    h += '<select onchange="_teEditStepField('+_teSelectedStep+',\'tier\',this.value)" style="width:100%;padding:7px 10px;background:var(--input-bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.82rem">';
-    ['free','basic','pro'].forEach(t => { h += '<option value="'+t+'"'+(s.tier===t?' selected':'')+'>'+t.toUpperCase()+'</option>'; });
-    h += '</select></div>';
-
-    h += '<div><label style="display:block;font-size:.72rem;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Chapter</label>';
+    h += '<div style="margin-bottom:14px">';
+    h += '<label style="display:block;font-size:.72rem;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Chapter</label>';
     h += '<select onchange="_teMoveStepToChapter('+_teSelectedStep+',parseInt(this.value))" style="width:100%;padding:7px 10px;background:var(--input-bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.82rem">';
     _teState.chapters.forEach((ch, ci) => { h += '<option value="'+ci+'"'+(s.chapter===ci?' selected':'')+'>'+esc(ch.title||'(untitled)')+'</option>'; });
-    h += '</select></div>';
+    h += '</select>';
     h += '</div>';
 
     // Screenshot section

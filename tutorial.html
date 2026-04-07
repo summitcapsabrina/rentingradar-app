@@ -255,7 +255,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text)}
   <div class="tut-welcome-card">
     <div class="tut-emoji">🏠</div>
     <h2>Welcome to RentingRadar!</h2>
-    <p>This tutorial walks you through every feature of the CRM — from adding properties to advanced negotiation tools. It covers all plan tiers so you can see everything RentingRadar has to offer.</p>
+    <p>This tutorial walks you through every feature of the CRM — from adding properties to advanced negotiation tools. Everything is open to you so you can get the most out of your free monthly analysis and explore everything RentingRadar has to offer.</p>
     <div style="text-align:left;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:14px 16px;margin:16px 0 20px;font-size:.82rem;color:#9399b2;line-height:1.6">
       <p style="margin:0 0 8px;color:#e4e6f0;font-weight:600;font-size:.85rem">Quick tips before you start:</p>
       <p style="margin:0 0 6px"><span style="color:#6381fa;font-weight:600">Navigate</span> — Use the arrow buttons or click any step in the sidebar to jump around freely.</p>
@@ -467,11 +467,9 @@ function renderSidebar(){
   const el = document.getElementById('tutChapters');
   let html = '';
   CHAPTERS.forEach((ch, ci) => {
-    const tierCls = 'ch-tier-' + ch.tier;
     html += '<div class="tut-chapter">';
     html += '<div class="tut-chapter-title" onclick="goToStep('+ch.steps[0]+')">';
     html += '<span class="ch-num">'+(ci+1)+'</span> '+ch.title;
-    html += '<span class="ch-tier '+tierCls+'">'+ch.tier+'</span>';
     html += '</div>';
     html += '<div class="tut-step-list" id="chSteps'+ci+'">';
     ch.steps.forEach(si => {
@@ -496,12 +494,9 @@ function renderStep(){
   document.getElementById('tutStepNum').textContent = currentStep + 1;
   document.getElementById('tutStepTitle').textContent = s.title;
 
+  // Tier badge removed — tutorial is fully open to all users.
   const badge = document.getElementById('tutTierBadge');
-  badge.textContent = s.tier.toUpperCase();
-  badge.className = 'tier-badge';
-  if(s.tier === 'free'){ badge.style.background='rgba(52,211,153,.12)'; badge.style.color='#34d399'; }
-  else if(s.tier === 'basic'){ badge.style.background='rgba(99,102,241,.12)'; badge.style.color='#818cf8'; }
-  else { badge.style.background='rgba(245,158,11,.12)'; badge.style.color='#f59e0b'; }
+  if(badge) badge.style.display = 'none';
 
   // Image with transition
   const container = document.getElementById('tutImgContainer');
@@ -778,7 +773,7 @@ function showFreshWelcome(){
   el.querySelector('.tut-welcome-card').innerHTML =
     '<div class="tut-emoji">🏠</div>'
     + '<h2>Welcome to RentingRadar!</h2>'
-    + '<p>This tutorial walks you through every feature of the CRM — from adding properties to advanced negotiation tools. It covers all plan tiers so you can see everything RentingRadar has to offer.</p>'
+    + '<p>This tutorial walks you through every feature of the CRM — from adding properties to advanced negotiation tools. Everything is open to you so you can get the most out of your free monthly analysis and explore everything RentingRadar has to offer.</p>'
     + '<div style="text-align:left;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:14px 16px;margin:16px 0 20px;font-size:.82rem;color:#9399b2;line-height:1.6">'
     + '<p style="margin:0 0 8px;color:#e4e6f0;font-weight:600;font-size:.85rem">Quick tips before you start:</p>'
     + '<p style="margin:0 0 6px"><span style="color:#6381fa;font-weight:600">Navigate</span> — Use the arrow buttons or click any step in the sidebar to jump around freely.</p>'
