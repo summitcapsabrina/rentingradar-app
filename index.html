@@ -1307,10 +1307,6 @@ h1 .hero-edit-input{font-size:1.35rem}
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>
         <span>Tutorial</span>
       </div>
-      <div class="nav-item" data-view="tutorialEditor" data-admin-only onclick="switchView('tutorialEditor')" title="Tutorial Editor" style="display:none">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 113 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-        <span>Tutorial Editor</span>
-      </div>
       <div class="nav-item" data-view="settings" onclick="switchView('settings')" title="Settings">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
         <span>Settings</span>
@@ -1327,6 +1323,11 @@ h1 .hero-edit-input{font-size:1.35rem}
       <div class="nav-item" data-view="help" onclick="switchView('help')" title="Help">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><circle cx="12" cy="17" r=".5" fill="currentColor"/></svg>
         <span>Help</span>
+      </div>
+      <div class="nav-section" data-admin-only style="display:none">Admin</div>
+      <div class="nav-item" data-view="tutorialEditor" data-admin-only onclick="switchView('tutorialEditor')" title="Tutorial Editor" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 113 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+        <span>Tutorial Editor</span>
       </div>
     </nav>
     <div class="sidebar-user" id="userSection">
@@ -5593,8 +5594,17 @@ function updateTierUI(){
   const badge = document.getElementById('navTierBadge');
   if(badge){
     const t = TIERS[currentTier];
-    badge.className = 'tier-badge ' + t.badge;
-    badge.textContent = t.badgeText;
+    if(_isAdmin){
+      badge.className = 'tier-badge';
+      badge.textContent = 'ADMIN';
+      badge.style.background = 'linear-gradient(135deg,#a855f7,#6366f1)';
+      badge.style.color = '#fff';
+    } else {
+      badge.className = 'tier-badge ' + t.badge;
+      badge.textContent = t.badgeText;
+      badge.style.background = '';
+      badge.style.color = '';
+    }
   }
 }
 
@@ -6010,13 +6020,25 @@ function _teResolveImageUrl(image){
   return 'tutorials/' + image;
 }
 
+let _teLoadError = null;
 async function _teLoadFromFirestore(){
   if(_teLoading) return;
   _teLoading = true;
+  _teLoadError = null;
   try {
+    if(typeof db === 'undefined' || !db){
+      throw new Error('Firestore (db) not initialized');
+    }
+    if(typeof firebase === 'undefined' || !firebase.firestore){
+      throw new Error('Firebase SDK not loaded');
+    }
+    console.log('[TutEditor] Loading tutorial content from Firestore…');
     const draftRef = db.collection('tutorialContent').doc('draft');
     const pubRef = db.collection('tutorialContent').doc('published');
-    const [draftDoc, pubDoc] = await Promise.all([draftRef.get(), pubRef.get()]);
+    const draftDoc = await draftRef.get();
+    console.log('[TutEditor] draft doc exists:', draftDoc.exists);
+    const pubDoc = await pubRef.get();
+    console.log('[TutEditor] published doc exists:', pubDoc.exists);
 
     let draft, pub;
     if(draftDoc.exists){
@@ -6030,12 +6052,13 @@ async function _teLoadFromFirestore(){
 
     // Seed if neither exists
     if(!draft && !pub){
+      console.log('[TutEditor] Seeding from baseline…');
       const seed = _teClone(TE_BASELINE);
       const seedPayload = { chapters: seed.chapters, steps: seed.steps, updatedAt: firebase.firestore.FieldValue.serverTimestamp() };
-      await Promise.all([
-        draftRef.set(seedPayload),
-        pubRef.set(seedPayload),
-      ]);
+      await draftRef.set(seedPayload);
+      console.log('[TutEditor] draft seeded');
+      await pubRef.set(seedPayload);
+      console.log('[TutEditor] published seeded');
       draft = seed;
       pub = _teClone(seed);
     } else if(!draft){
@@ -6052,9 +6075,11 @@ async function _teLoadFromFirestore(){
     _teUndoStack = [];
     _teRedoStack = [];
     _teLoaded = true;
+    console.log('[TutEditor] Loaded successfully:', _teState.chapters.length, 'chapters,', _teState.steps.length, 'steps');
   } catch(err){
-    console.error('Tutorial editor load failed:', err);
-    showToast('Failed to load tutorial content: ' + (err.message||err), 'error', 4000);
+    console.error('[TutEditor] Load failed:', err);
+    _teLoadError = (err && err.code ? '[' + err.code + '] ' : '') + (err && err.message ? err.message : String(err));
+    if(typeof showToast === 'function') showToast('Failed to load tutorial content: ' + _teLoadError, 'error', 5000);
   } finally {
     _teLoading = false;
   }
@@ -6099,11 +6124,40 @@ function renderTutorialEditor(){
 }
 
 async function initTutorialEditor(){
-  if(!_isAdmin) return;
-  if(!_teLoaded){
-    await _teLoadFromFirestore();
+  // Wait briefly for auth to settle if needed
+  if(!_isAdmin){
+    for(let i = 0; i < 30; i++){
+      await new Promise(r => setTimeout(r, 100));
+      if(_isAdmin) break;
+    }
   }
-  _teRender();
+  if(!_isAdmin){
+    const root = document.getElementById('teRoot');
+    if(root) root.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text2)">Access denied. You must be signed in as an admin (help@rentingradar.com) to use the Tutorial Editor.<br><br>Current user: ' + esc((currentUser&&currentUser.email)||'(not signed in)') + '</div>';
+    return;
+  }
+  if(!_teLoaded){
+    try {
+      await _teLoadFromFirestore();
+    } catch(err){
+      console.error('[TutEditor] init error:', err);
+    }
+  }
+  if(_teLoaded){
+    _teRender();
+  } else {
+    const root = document.getElementById('teRoot');
+    if(root){
+      root.innerHTML = '<div style="padding:40px;max-width:640px;margin:0 auto;text-align:center"><div style="font-size:1.1rem;font-weight:700;color:var(--danger);margin-bottom:8px">Could not load tutorial content</div>'
+        + '<div style="font-size:.85rem;color:var(--text2);margin-bottom:14px">' + (_teLoadError ? esc(_teLoadError) : 'Unknown error — check the browser console (F12) for details.') + '</div>'
+        + '<div style="font-size:.78rem;color:var(--text3);margin-bottom:14px;text-align:left;background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:6px;padding:12px">'
+        + '<b>Common causes:</b><br>'
+        + '1. Firestore rules for <code>tutorialContent</code> haven\'t been published yet.<br>'
+        + '2. You\'re not signed in as <code>help@rentingradar.com</code> (current: <code>' + esc((currentUser&&currentUser.email)||'(none)') + '</code>).<br>'
+        + '3. Network/Firebase outage.</div>'
+        + '<button onclick="initTutorialEditor()" style="padding:8px 18px;background:var(--primary);color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:600">Retry</button></div>';
+    }
+  }
 }
 
 function _teRender(){
@@ -7244,6 +7298,7 @@ firebase.auth().onAuthStateChanged(async (user) => {
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
       };
       await userRef.set(newUserData);
+      checkAndSetAdmin(user, newUserData);
       _disclaimerAcknowledged = false;
       setTier('free');
       // Initialize analysis quota with signup date
@@ -7334,6 +7389,8 @@ function applyAdminUI(){
   document.querySelectorAll('[data-admin-only]').forEach(el => {
     el.style.display = _isAdmin ? '' : 'none';
   });
+  // Refresh user section so the ADMIN badge appears immediately
+  try { renderUserSection(); } catch(e){}
 }
 
 // ===== AUTH MODAL =====
@@ -7733,9 +7790,9 @@ function renderUserSection(){
           : `<div class="su-avatar" style="background:var(--primary)">${initials}</div>`}
         <div class="su-info">
           <div class="su-name">${esc(currentUser.name)}</div>
-          <div class="su-tier"><span class="tier-badge ${t.badge}" id="navTierBadge" style="font-size:.6rem;padding:1px 7px">${t.badgeText}</span></div>
+          <div class="su-tier"><span class="tier-badge ${_isAdmin ? '' : t.badge}" id="navTierBadge" style="font-size:.6rem;padding:1px 7px${_isAdmin ? ';background:linear-gradient(135deg,#a855f7,#6366f1);color:#fff' : ''}">${_isAdmin ? 'ADMIN' : t.badgeText}</span></div>
         </div>
-        <div class="su-collapsed-tier"><span class="tier-badge ${t.badge}" style="font-size:.55rem;padding:1px 5px">${t.badgeText}</span></div>
+        <div class="su-collapsed-tier"><span class="tier-badge ${_isAdmin ? '' : t.badge}" style="font-size:.55rem;padding:1px 5px${_isAdmin ? ';background:linear-gradient(135deg,#a855f7,#6366f1);color:#fff' : ''}">${_isAdmin ? 'ADMIN' : t.badgeText}</span></div>
       </div>
       <div class="user-menu" id="userMenu">
         <div class="user-menu-header">
