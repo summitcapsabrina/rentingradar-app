@@ -6169,6 +6169,11 @@ function _teRender(){
     root.innerHTML = '<div style="text-align:center;padding:60px;color:var(--text2)">Loading tutorial content…</div>';
     return;
   }
+  // Preserve scroll position of the chapter list panel across re-renders so
+  // clicking up/down arrows or making edits doesn't snap the user back to the
+  // top of the list.
+  const _prevChapList = document.getElementById('teChapList');
+  const _prevChapScroll = _prevChapList ? _prevChapList.scrollTop : 0;
   const dirty = _teIsDirty();
   const unpub = _teHasUnpublished();
   const totalSteps = _teState.steps.length;
@@ -6189,8 +6194,23 @@ function _teRender(){
   h += '<div style="display:grid;grid-template-columns:340px 1fr;gap:16px;align-items:start">';
 
   // ── LEFT: Chapters & lessons list ──
-  h += '<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px;max-height:calc(100vh - 220px);overflow-y:auto">';
+  h += '<div id="teChapList" style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px;max-height:calc(100vh - 220px);overflow-y:auto">';
   h += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px"><div style="font-weight:600;font-size:.85rem;color:var(--text)">Chapters</div><button onclick="_teAddChapter()" title="Add chapter" style="padding:4px 9px;border:1px solid var(--border);background:transparent;color:var(--text);border-radius:5px;cursor:pointer;font-size:.78rem">+ Chapter</button></div>';
+
+  // Compute a global display number for every step based on visual order
+  // (chapters in order, lessons within each chapter in their listed order).
+  // This way, the number a user sees next to a lesson reflects its actual
+  // position in the overall tutorial flow, not its index in the steps array.
+  const _teDisplayNum = {};
+  let _teRunningNum = 0;
+  _teState.chapters.forEach((ch) => {
+    (ch.steps||[]).forEach(si => {
+      if(_teState.steps[si]){
+        _teRunningNum++;
+        _teDisplayNum[si] = _teRunningNum;
+      }
+    });
+  });
 
   _teState.chapters.forEach((ch, ci) => {
     h += '<div style="margin-bottom:14px;border:1px solid var(--border);border-radius:10px;padding:10px 12px 10px 12px;background:rgba(255,255,255,.02)">';
@@ -6218,7 +6238,7 @@ function _teRender(){
       const s = _teState.steps[si];
       const sel = _teSelectedStep === si;
       h += '<div onclick="_teSelectStep('+si+')" style="display:flex;align-items:center;gap:6px;padding:5px 8px;margin-bottom:3px;border-radius:5px;cursor:pointer;background:'+(sel?'rgba(99,129,250,.18)':'transparent')+';border:1px solid '+(sel?'rgba(99,129,250,.4)':'transparent')+'">';
-      h += '<span style="font-size:.7rem;color:var(--text3);min-width:18px">'+(si+1)+'</span>';
+      h += '<span style="font-size:.7rem;color:var(--text3);min-width:18px">'+(_teDisplayNum[si]||'')+'</span>';
       h += '<span style="flex:1;font-size:.78rem;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(s.title||'(untitled)')+'</span>';
       h += '<button onclick="event.stopPropagation();_teMoveStepInChapter('+ci+','+posInChapter+',-1)" '+(posInChapter===0?'disabled':'')+' style="padding:1px 5px;border:1px solid var(--border);background:transparent;color:var(--text3);border-radius:3px;cursor:pointer;font-size:.65rem">↑</button>';
       h += '<button onclick="event.stopPropagation();_teMoveStepInChapter('+ci+','+posInChapter+',1)" '+(posInChapter===stepIdxs.length-1?'disabled':'')+' style="padding:1px 5px;border:1px solid var(--border);background:transparent;color:var(--text3);border-radius:3px;cursor:pointer;font-size:.65rem">↓</button>';
@@ -6237,7 +6257,7 @@ function _teRender(){
   } else {
     const s = _teState.steps[_teSelectedStep];
     h += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">';
-    h += '<div style="font-weight:700;color:var(--text);font-size:.95rem">Lesson '+(_teSelectedStep+1)+'</div>';
+    h += '<div style="font-weight:700;color:var(--text);font-size:.95rem">Lesson '+(_teDisplayNum[_teSelectedStep]||'')+'</div>';
     h += '<button onclick="_teDeleteStep('+_teSelectedStep+')" style="margin-left:auto;padding:5px 11px;border:1px solid var(--danger);background:transparent;color:var(--danger);border-radius:5px;cursor:pointer;font-size:.75rem">Delete Lesson</button>';
     h += '</div>';
 
@@ -6283,6 +6303,11 @@ function _teRender(){
   h += '</div>'; // grid
 
   root.innerHTML = h;
+
+  // Restore chapter-list scroll position after re-render so the user stays
+  // anchored where they were when they clicked an up/down button.
+  const _newChapList = document.getElementById('teChapList');
+  if(_newChapList && _prevChapScroll) _newChapList.scrollTop = _prevChapScroll;
 
   // Wire highlight drag if image present
   if(_teSelectedStep >= 0 && _teState.steps[_teSelectedStep] && _teState.steps[_teSelectedStep].image){
