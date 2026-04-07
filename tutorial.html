@@ -489,13 +489,45 @@ function renderSidebar(){
   el.innerHTML = html;
 }
 
+// Compute the visual display position (1-based) of a step index, based on
+// walking chapters in order and lessons within each chapter in their listed
+// order. This matches what the user sees in the sidebar — so the "Step X of Y"
+// counter always reflects the lesson's actual position in the tutorial flow,
+// not its raw index in the TUTORIAL_STEPS array.
+function _tutDisplayPosition(stepIdx){
+  let pos = 0;
+  for(let ci = 0; ci < CHAPTERS.length; ci++){
+    const chSteps = CHAPTERS[ci].steps || [];
+    for(let i = 0; i < chSteps.length; i++){
+      if(TUTORIAL_STEPS[chSteps[i]]){
+        pos++;
+        if(chSteps[i] === stepIdx) return pos;
+      }
+    }
+  }
+  // Fallback: not found in any chapter — return raw index +1
+  return stepIdx + 1;
+}
+
+// Count how many steps are actually reachable through the chapter/lesson
+// structure. Used for the "of Y" total in the topbar.
+function _tutTotalSteps(){
+  let n = 0;
+  CHAPTERS.forEach(ch => {
+    (ch.steps || []).forEach(si => { if(TUTORIAL_STEPS[si]) n++; });
+  });
+  return n || TUTORIAL_STEPS.length;
+}
+
 // ===== RENDER STEP =====
 function renderStep(){
   const s = TUTORIAL_STEPS[currentStep];
   visited.add(currentStep);
 
-  // Topbar
-  document.getElementById('tutStepNum').textContent = currentStep + 1;
+  // Topbar — show position in the visual order, and total based on the live
+  // chapter/lesson structure (so editor changes flow through correctly).
+  document.getElementById('tutStepNum').textContent = _tutDisplayPosition(currentStep);
+  document.getElementById('tutStepTotal').textContent = _tutTotalSteps();
   document.getElementById('tutStepTitle').textContent = s.title;
 
   // Tier badge removed — tutorial is fully open to all users.
