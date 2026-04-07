@@ -321,6 +321,22 @@ const CHAPTERS = [
 
 const IMAGE_BASE = 'tutorials/';
 
+function _resolveTutImage(image){
+  if(!image) return '';
+  if(image.indexOf('http') === 0) return image;
+  return IMAGE_BASE + image;
+}
+
+// Replace TUTORIAL_STEPS / CHAPTERS in place (since they are const arrays).
+function _applyLiveContent(content){
+  if(!content || !Array.isArray(content.steps) || !Array.isArray(content.chapters)) return false;
+  TUTORIAL_STEPS.length = 0;
+  content.steps.forEach(s => TUTORIAL_STEPS.push(s));
+  CHAPTERS.length = 0;
+  content.chapters.forEach(c => CHAPTERS.push(c));
+  return true;
+}
+
 // ===== STATE =====
 let currentStep = 0;
 let visited = new Set();    // Steps the user has navigated to
@@ -442,7 +458,7 @@ const imageCache = {};
 function preloadImages(){
   const seen = new Set();
   TUTORIAL_STEPS.forEach(s => {
-    if(!seen.has(s.image)){ seen.add(s.image); const img = new Image(); img.src = IMAGE_BASE + s.image; imageCache[s.image] = img; }
+    if(!seen.has(s.image)){ seen.add(s.image); const img = new Image(); img.src = _resolveTutImage(s.image); imageCache[s.image] = img; }
   });
 }
 
@@ -492,7 +508,7 @@ function renderStep(){
   const img = document.getElementById('tutImg');
   const highlight = document.getElementById('tutHighlight');
 
-  const newSrc = IMAGE_BASE + s.image;
+  const newSrc = _resolveTutImage(s.image);
   if(img.src !== location.origin + '/' + newSrc && img.src !== newSrc && !img.src.endsWith(s.image)){
     container.classList.add('fading');
     setTimeout(() => {
@@ -859,8 +875,29 @@ document.addEventListener('keydown', function(e){
 });
 
 // ===== INIT =====
+async function _loadLiveTutorialContent(){
+  try {
+    if(!db) return;
+    const params = new URLSearchParams(location.search);
+    const docName = params.get('preview') === 'draft' ? 'draft' : 'published';
+    const doc = await db.collection('tutorialContent').doc(docName).get();
+    if(doc.exists){
+      const data = doc.data();
+      if(_applyLiveContent(data)){
+        // Refresh sidebar after replacing content
+        renderSidebar();
+        preloadImages();
+      }
+    }
+  } catch(err){
+    console.warn('Tutorial Firestore load failed, using fallback:', err);
+  }
+}
+
 preloadImages();
 renderSidebar();
+// Load Firestore content in background; will refresh sidebar/preload when ready
+_loadLiveTutorialContent();
 
 const params = new URLSearchParams(location.search);
 
