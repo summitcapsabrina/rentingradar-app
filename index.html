@@ -6183,7 +6183,6 @@ function _teRender(){
   h += '<button onclick="_teRedo()" '+(_teRedoStack.length===0?'disabled':'')+' title="Redo" style="padding:7px 12px;border:1px solid var(--border);background:transparent;color:var(--text);border-radius:6px;cursor:pointer;font-size:.8rem">↷ Redo</button>';
   h += '<button onclick="_teSaveDraft()" '+(!dirty?'disabled':'')+' style="padding:7px 14px;border:1px solid '+(dirty?'#f59e0b':'var(--border)')+';background:'+(dirty?'#f59e0b':'transparent')+';color:'+(dirty?'#000':'var(--text2)')+';border-radius:6px;cursor:'+(dirty?'pointer':'not-allowed')+';font-weight:600;font-size:.8rem">💾 Save Draft</button>';
   h += '<button onclick="_tePublishDraft()" '+(!unpub?'disabled':'')+' style="padding:7px 14px;border:none;background:'+(unpub?'var(--primary)':'rgba(99,129,250,.18)')+';color:#fff;border-radius:6px;cursor:'+(unpub?'pointer':'not-allowed')+';font-weight:600;font-size:.8rem;opacity:'+(unpub?'1':'.5')+'">🚀 Publish</button>';
-  h += '<button onclick="_teResetToBaseline()" title="Reset draft chapters and lessons to original baseline" style="margin-left:auto;padding:7px 12px;border:1px solid var(--border);background:transparent;color:var(--text2);border-radius:6px;cursor:pointer;font-size:.78rem">🔄 Reset to Baseline</button>';
   h += '</div>';
 
   // Two-column layout
@@ -6194,12 +6193,16 @@ function _teRender(){
   h += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px"><div style="font-weight:600;font-size:.85rem;color:var(--text)">Chapters</div><button onclick="_teAddChapter()" title="Add chapter" style="padding:4px 9px;border:1px solid var(--border);background:transparent;color:var(--text);border-radius:5px;cursor:pointer;font-size:.78rem">+ Chapter</button></div>';
 
   _teState.chapters.forEach((ch, ci) => {
-    const tierColor = ch.tier==='free' ? '#34d399' : ch.tier==='basic' ? '#818cf8' : '#f59e0b';
-    h += '<div style="margin-bottom:10px;border:1px solid var(--border);border-radius:8px;padding:8px 10px;background:rgba(255,255,255,.02)">';
-    h += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">';
-    h += '<input value="'+escAttr(ch.title||'')+'" placeholder="Chapter name" title="Chapter name (click to rename)" oninput="_teEditChapterTitle('+ci+',this.value)" style="flex:1;padding:5px 9px;background:var(--input-bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-size:.85rem;font-weight:600">';
-    h += '<select title="Tier (access level)" onchange="_teEditChapterTier('+ci+',this.value)" style="padding:4px 6px;background:var(--input-bg);border:1px solid var(--border);border-radius:5px;color:'+tierColor+';font-size:.7rem;font-weight:700;text-transform:uppercase">';
-    ['free','basic','pro'].forEach(t => { h += '<option value="'+t+'"'+(ch.tier===t?' selected':'')+'>'+t+'</option>'; });
+    h += '<div style="margin-bottom:14px;border:1px solid var(--border);border-radius:10px;padding:10px 12px 10px 12px;background:rgba(255,255,255,.02)">';
+    // Big editable chapter title heading at top of card
+    h += '<input value="'+escAttr(ch.title||'')+'" placeholder="Chapter name" title="Click to rename chapter" oninput="_teEditChapterTitle('+ci+',this.value)" style="width:100%;padding:6px 0;margin-bottom:8px;background:transparent;border:none;border-bottom:1px solid var(--border);color:var(--text);font-size:1rem;font-weight:700;outline:none">';
+    // Move-to-chapter dropdown (merge into another chapter)
+    h += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">';
+    h += '<label style="font-size:.68rem;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;font-weight:600">Chapter</label>';
+    h += '<select title="Select another chapter to merge this chapter\'s lessons into it" onchange="_teMergeChapterInto('+ci+',parseInt(this.value))" style="flex:1;padding:5px 8px;background:var(--input-bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-size:.78rem">';
+    _teState.chapters.forEach((other, oi) => {
+      h += '<option value="'+oi+'"'+(oi===ci?' selected':'')+'>'+esc(other.title || '(untitled)')+'</option>';
+    });
     h += '</select>';
     h += '</div>';
     h += '<div style="display:flex;gap:4px;margin-bottom:6px">';
@@ -6358,36 +6361,40 @@ function _teShowChapterPrompt(opts){
   setTimeout(() => { input.focus(); input.select(); }, 50);
 }
 
-// Wipe the draft and re-seed from TE_BASELINE. Useful if data has gotten
-// into a confused state with empty titles, duplicates, etc.
-async function _teResetToBaseline(){
-  showAppConfirm('This will discard the current draft and reset all chapters and lessons to the original baseline (5 chapters, 27 lessons). Your published version will NOT be affected until you click Publish. Continue?', {
-    title: 'Reset to Baseline',
-    icon: '🔄',
-    confirmText: 'Reset',
+// Merge all lessons from one chapter into another, then remove the source
+// chapter. Lessons are appended to the bottom of the destination chapter.
+function _teMergeChapterInto(fromIdx, toIdx){
+  if(fromIdx === toIdx) return; // no-op (user re-selected the current chapter)
+  if(!_teState.chapters[fromIdx] || !_teState.chapters[toIdx]){ _teRender(); return; }
+  const fromTitle = _teState.chapters[fromIdx].title || '(untitled)';
+  const toTitle = _teState.chapters[toIdx].title || '(untitled)';
+  showAppConfirm('Merge all lessons from "' + esc(fromTitle) + '" into "' + esc(toTitle) + '"? The "' + esc(fromTitle) + '" chapter will be removed.', {
+    title: 'Merge Chapters',
+    icon: '🔀',
+    confirmText: 'Merge',
     cancelText: 'Cancel',
     confirmClass: 'btn-primary',
-    onConfirm: async () => {
-      try {
-        const seed = _teClone(TE_BASELINE);
-        _teState.chapters = seed.chapters;
-        _teState.steps = seed.steps;
-        _teConsolidateChapters(_teState);
-        _teUndoStack = [];
-        _teRedoStack = [];
-        _teSelectedStep = -1;
-        const payload = { chapters: _teState.chapters, steps: _teState.steps, updatedAt: firebase.firestore.FieldValue.serverTimestamp() };
-        await db.collection('tutorialContent').doc('draft').set(payload);
-        _teSavedSnapshot = _teSerialize(_teState);
-        showToast('Reset to baseline. Click Publish to push to all users.', 'success', 3500);
-        _teRender();
-      } catch(err){
-        console.error('[TutEditor] Reset failed:', err);
-        showAppAlert('Reset failed: ' + (err.message || err), { title: 'Error', icon: '❌' });
-      }
+    onConfirm: () => {
+      _teMutate(st => {
+        // Reassign every step that lived in fromIdx to live in toIdx
+        st.steps.forEach(s => { if(s.chapter === fromIdx) s.chapter = toIdx; });
+        // Remove the source chapter
+        st.chapters.splice(fromIdx, 1);
+        // Decrement every step.chapter that was greater than fromIdx (since
+        // we just removed an entry from the chapters array)
+        st.steps.forEach(s => { if(s.chapter > fromIdx) s.chapter--; });
+        _teRecomputeChapterSteps(st);
+      });
+      _teSelectedStep = -1;
+      _teRender();
+    },
+    onCancel: () => {
+      // User cancelled — re-render so the dropdown reverts to current
+      _teRender();
     }
   });
 }
+
 function _teEditChapterTitle(ci, val){
   // Don't push history on every keystroke — coalesce. And don't re-render
   // mid-typing or we'll steal focus from the input.
@@ -6403,9 +6410,6 @@ function _teEditChapterTitle(ci, val){
       else _teRefreshToolbarDirty();
     }, 800);
   }
-}
-function _teEditChapterTier(ci, val){
-  _teMutate(st => { st.chapters[ci].tier = val; });
 }
 function _teMoveChapter(ci, dir){
   const ni = ci + dir;
