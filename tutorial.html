@@ -95,8 +95,12 @@ body{font-family:var(--font);background:var(--bg);color:var(--text)}
 .tut-zoom-info .zi-sep{opacity:.4;margin:0 1px}
 
 /* Highlight overlay */
-.tut-highlight-region{position:absolute;border:2px solid rgba(99,129,250,.85);border-radius:6px;background:rgba(99,129,250,.12);pointer-events:none;transition:all .4s ease;box-shadow:0 0 0 5px rgba(99,129,250,.28),0 0 24px rgba(99,129,250,.22),0 0 48px rgba(99,129,250,.1);animation:tutPulse 2s ease-in-out infinite}
-@keyframes tutPulse{0%,100%{box-shadow:0 0 0 5px rgba(99,129,250,.28),0 0 24px rgba(99,129,250,.22),0 0 48px rgba(99,129,250,.1)}50%{box-shadow:0 0 0 8px rgba(99,129,250,.4),0 0 36px rgba(99,129,250,.3),0 0 60px rgba(99,129,250,.15)}}
+/* Highlight region — base box stays static (border + subtle shadow). The
+   "breathing" glow is on a pseudo-element animating only opacity, which is
+   GPU-composited and stays perfectly smooth even on slower machines. */
+.tut-highlight-region{position:absolute;border:2px solid rgba(99,129,250,.85);border-radius:6px;background:rgba(99,129,250,.12);pointer-events:none;transition:left .4s ease, top .4s ease, width .4s ease, height .4s ease;box-shadow:0 0 0 5px rgba(99,129,250,.28),0 0 24px rgba(99,129,250,.22),0 0 48px rgba(99,129,250,.1)}
+.tut-highlight-region::before{content:'';position:absolute;inset:-3px;border-radius:8px;pointer-events:none;box-shadow:0 0 0 8px rgba(99,129,250,.4),0 0 36px rgba(99,129,250,.3),0 0 60px rgba(99,129,250,.15);opacity:0;animation:tutPulse 2.8s cubic-bezier(.45,.05,.55,.95) infinite;will-change:opacity;transform:translateZ(0)}
+@keyframes tutPulse{0%,100%{opacity:0}50%{opacity:1}}
 
 /* Info panel */
 .tut-info{background:var(--surface);border-top:1px solid var(--border);padding:20px 28px;display:flex;align-items:flex-start;gap:16px;flex-shrink:0;height:160px;overflow:hidden}
