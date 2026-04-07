@@ -120,6 +120,10 @@ body{font-family:var(--font);background:var(--bg);color:var(--text)}
 .tut-btn-complete{background:#34d399;color:#fff;padding:8px 20px;font-weight:600}
 .tut-btn-complete:hover{background:#2bc48a}
 .tut-btn-complete.completed{background:rgba(52,211,153,.15);color:#34d399;cursor:default}
+/* Wrapper so the keyboard hint can sit just below the Complete button */
+.tut-complete-wrap{display:flex;flex-direction:column;align-items:center;gap:3px}
+.tut-complete-hint{font-size:.62rem;color:var(--text3);opacity:.7;letter-spacing:.2px;line-height:1;user-select:none;pointer-events:none;white-space:nowrap}
+.tut-complete-hint kbd{display:inline-block;padding:1px 4px;font-family:inherit;font-size:.62rem;color:var(--text3);background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:3px;line-height:1}
 
 /* Arrow nav buttons */
 .tut-arrow-btn{width:36px;height:36px;display:flex;align-items:center;justify-content:center;border-radius:var(--radius);cursor:pointer;transition:all .15s;border:1px solid var(--border);background:transparent;color:var(--text2);font-size:1rem;flex-shrink:0}
@@ -248,7 +252,10 @@ body{font-family:var(--font);background:var(--bg);color:var(--text)}
         <button class="tut-uncomplete-btn" id="tutUncomplete" onclick="uncompleteStep()" title="Un-mark as completed" style="display:none">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 15L3 9l6-6"/><path d="M3 9h12a6 6 0 0 1 0 12h-3"/></svg>
         </button>
-        <button class="tut-btn tut-btn-complete" id="tutComplete" onclick="completeStep()">Complete</button>
+        <div class="tut-complete-wrap">
+          <button class="tut-btn tut-btn-complete" id="tutComplete" onclick="completeStep()" title="Mark as complete (Shift + Enter)">Complete</button>
+          <div class="tut-complete-hint" id="tutCompleteHint"><kbd>Shift</kbd> + <kbd>Enter</kbd></div>
+        </div>
       </div>
     </div>
   </div>
@@ -570,14 +577,17 @@ function renderStep(){
   // Complete button state
   const completeBtn = document.getElementById('tutComplete');
   const uncompleteBtn = document.getElementById('tutUncomplete');
+  const completeHint = document.getElementById('tutCompleteHint');
   if(completed.has(currentStep)){
     completeBtn.classList.add('completed');
     completeBtn.innerHTML = '✓ Completed';
     if(uncompleteBtn) uncompleteBtn.style.display = 'flex';
+    if(completeHint) completeHint.style.visibility = 'hidden';
   } else {
     completeBtn.classList.remove('completed');
     completeBtn.innerHTML = 'Complete';
     if(uncompleteBtn) uncompleteBtn.style.display = 'none';
+    if(completeHint) completeHint.style.visibility = 'visible';
   }
 
   // Progress — based on completed steps
@@ -900,6 +910,9 @@ document.addEventListener('keydown', function(e){
   }
   if(e.key === 'ArrowRight'){ nextStep(); e.preventDefault(); }
   else if(e.key === 'ArrowLeft'){ prevStep(); e.preventDefault(); }
+  // Shift+Enter is the documented "complete & advance" shortcut. Plain Enter
+  // and Space still work for users who don't know about it.
+  else if(e.key === 'Enter' && e.shiftKey){ completeStep(); e.preventDefault(); }
   else if(e.key === 'Enter' || e.key === ' '){ completeStep(); e.preventDefault(); }
   else if(e.key === 'Escape'){ closeTutorial(); e.preventDefault(); }
   else if(e.key === 'f' || e.key === 'F'){ toggleFullscreen(); e.preventDefault(); }
