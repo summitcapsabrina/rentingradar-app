@@ -6183,6 +6183,7 @@ function _teRender(){
   h += '<button onclick="_teRedo()" '+(_teRedoStack.length===0?'disabled':'')+' title="Redo" style="padding:7px 12px;border:1px solid var(--border);background:transparent;color:var(--text);border-radius:6px;cursor:pointer;font-size:.8rem">↷ Redo</button>';
   h += '<button onclick="_teSaveDraft()" '+(!dirty?'disabled':'')+' style="padding:7px 14px;border:1px solid '+(dirty?'#f59e0b':'var(--border)')+';background:'+(dirty?'#f59e0b':'transparent')+';color:'+(dirty?'#000':'var(--text2)')+';border-radius:6px;cursor:'+(dirty?'pointer':'not-allowed')+';font-weight:600;font-size:.8rem">💾 Save Draft</button>';
   h += '<button onclick="_tePublishDraft()" '+(!unpub?'disabled':'')+' style="padding:7px 14px;border:none;background:'+(unpub?'var(--primary)':'rgba(99,129,250,.18)')+';color:#fff;border-radius:6px;cursor:'+(unpub?'pointer':'not-allowed')+';font-weight:600;font-size:.8rem;opacity:'+(unpub?'1':'.5')+'">🚀 Publish</button>';
+  h += '<button onclick="_teResetToBaseline()" title="Reset draft chapters and lessons to original baseline" style="margin-left:auto;padding:7px 12px;border:1px solid var(--border);background:transparent;color:var(--text2);border-radius:6px;cursor:pointer;font-size:.78rem">🔄 Reset to Baseline</button>';
   h += '</div>';
 
   // Two-column layout
@@ -6295,15 +6296,96 @@ function escAttr(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/
 
 // ── Mutations ──
 function _teAddChapter(){
-  const name = prompt('Enter a name for the new chapter:', '');
-  if(name === null) return; // user cancelled
-  const trimmed = String(name).trim();
-  if(!trimmed){ alert('Chapter name cannot be empty.'); return; }
-  // Prevent exact duplicate names (case-insensitive)
-  const exists = _teState.chapters.some(c => String(c.title||'').trim().toLowerCase() === trimmed.toLowerCase());
-  if(exists){ alert('A chapter named "' + trimmed + '" already exists. Please choose a different name.'); return; }
-  _teMutate(st => {
-    st.chapters.push({ title: trimmed, tier:'free', steps:[] });
+  _teShowChapterPrompt({
+    title: 'Add New Chapter',
+    label: 'Chapter name',
+    initial: '',
+    okText: 'Add Chapter',
+    onSubmit: (raw) => {
+      const trimmed = String(raw||'').trim();
+      if(!trimmed){
+        showAppAlert('Chapter name cannot be empty.', { title: 'Invalid Name', icon: '⚠️' });
+        return false;
+      }
+      const exists = _teState.chapters.some(c => String(c.title||'').trim().toLowerCase() === trimmed.toLowerCase());
+      if(exists){
+        showAppAlert('A chapter named "' + esc(trimmed) + '" already exists. Please choose a different name.', { title: 'Duplicate Chapter', icon: '⚠️' });
+        return false;
+      }
+      _teMutate(st => {
+        st.chapters.push({ title: trimmed, tier:'free', steps:[] });
+      });
+      return true;
+    }
+  });
+}
+
+// CRM-styled prompt modal for chapter operations (matches showAppAlert/Confirm UI)
+function _teShowChapterPrompt(opts){
+  const { title='Chapter', label='Name', initial='', okText='OK', cancelText='Cancel', onSubmit=()=>true } = opts || {};
+  const existing = document.getElementById('teChapterPromptOverlay');
+  if(existing) existing.remove();
+  const overlay = document.createElement('div');
+  overlay.className = 'multi-editor-overlay';
+  overlay.id = 'teChapterPromptOverlay';
+  overlay.innerHTML = '<div class="multi-editor" style="max-width:460px">'
+    + '<div class="multi-editor-header">'
+    + '<h3>' + esc(title) + '</h3>'
+    + '<button class="modal-close" id="teChapterPromptClose"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>'
+    + '</div>'
+    + '<div class="multi-editor-body" style="padding:22px 24px">'
+    + '<label style="display:block;font-size:.78rem;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;font-weight:600">' + esc(label) + '</label>'
+    + '<input id="teChapterPromptInput" type="text" value="' + escAttr(initial) + '" placeholder="e.g. Getting Started" style="width:100%;padding:10px 12px;background:var(--input-bg);border:1px solid var(--border);border-radius:7px;color:var(--text);font-size:.92rem;outline:none">'
+    + '<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:18px">'
+    + '<button class="btn btn-secondary" id="teChapterPromptCancel" style="padding:9px 18px">' + esc(cancelText) + '</button>'
+    + '<button class="btn btn-primary" id="teChapterPromptOk" style="padding:9px 18px">' + esc(okText) + '</button>'
+    + '</div>'
+    + '</div></div>';
+  document.body.appendChild(overlay);
+  const input = document.getElementById('teChapterPromptInput');
+  const dismiss = () => { overlay.remove(); };
+  const submit = () => {
+    const result = onSubmit(input.value);
+    if(result !== false) dismiss();
+  };
+  document.getElementById('teChapterPromptClose').addEventListener('click', dismiss);
+  document.getElementById('teChapterPromptCancel').addEventListener('click', dismiss);
+  document.getElementById('teChapterPromptOk').addEventListener('click', submit);
+  input.addEventListener('keydown', (e) => {
+    if(e.key === 'Enter'){ e.preventDefault(); submit(); }
+    else if(e.key === 'Escape'){ e.preventDefault(); dismiss(); }
+  });
+  setTimeout(() => { input.focus(); input.select(); }, 50);
+}
+
+// Wipe the draft and re-seed from TE_BASELINE. Useful if data has gotten
+// into a confused state with empty titles, duplicates, etc.
+async function _teResetToBaseline(){
+  showAppConfirm('This will discard the current draft and reset all chapters and lessons to the original baseline (5 chapters, 27 lessons). Your published version will NOT be affected until you click Publish. Continue?', {
+    title: 'Reset to Baseline',
+    icon: '🔄',
+    confirmText: 'Reset',
+    cancelText: 'Cancel',
+    confirmClass: 'btn-primary',
+    onConfirm: async () => {
+      try {
+        const seed = _teClone(TE_BASELINE);
+        _teState.chapters = seed.chapters;
+        _teState.steps = seed.steps;
+        _teConsolidateChapters(_teState);
+        _teUndoStack = [];
+        _teRedoStack = [];
+        _teSelectedStep = -1;
+        const payload = { chapters: _teState.chapters, steps: _teState.steps, updatedAt: firebase.firestore.FieldValue.serverTimestamp() };
+        await db.collection('tutorialContent').doc('draft').set(payload);
+        _teSavedSnapshot = _teSerialize(_teState);
+        showToast('Reset to baseline. Click Publish to push to all users.', 'success', 3500);
+        _teRender();
+      } catch(err){
+        console.error('[TutEditor] Reset failed:', err);
+        showAppAlert('Reset failed: ' + (err.message || err), { title: 'Error', icon: '❌' });
+      }
+    }
   });
 }
 function _teEditChapterTitle(ci, val){
@@ -6369,15 +6451,22 @@ function _teConsolidateChapters(st){
   const seen = {}; // normalizedTitle -> new index
   const newChapters = [];
   const remap = {}; // oldIndex -> newIndex
+  let beforeCount = st.chapters.length;
   st.chapters.forEach((ch, oldIdx) => {
-    const key = String(ch.title||'').trim().toLowerCase();
+    // Aggressively normalize: trim, lowercase, collapse whitespace, strip
+    // surrounding punctuation. Empty titles all collapse to a single
+    // "Untitled" bucket so they don't pollute the list.
+    let raw = String(ch.title||'').trim();
+    let key = raw.toLowerCase().replace(/\s+/g,' ').replace(/^[\s\-_,.;:]+|[\s\-_,.;:]+$/g,'');
+    if(!key) key = '__untitled__';
     if(key in seen){
       remap[oldIdx] = seen[key];
     } else {
       const newIdx = newChapters.length;
       seen[key] = newIdx;
       remap[oldIdx] = newIdx;
-      newChapters.push({ title: ch.title, tier: ch.tier || 'free', steps: [] });
+      const displayTitle = raw || 'Untitled Chapter';
+      newChapters.push({ title: displayTitle, tier: ch.tier || 'free', steps: [] });
     }
   });
   st.steps.forEach(s => {
@@ -6386,6 +6475,9 @@ function _teConsolidateChapters(st){
   });
   st.chapters = newChapters;
   _teRecomputeChapterSteps(st);
+  if(newChapters.length !== beforeCount){
+    console.log('[TutEditor] Consolidated', beforeCount, '→', newChapters.length, 'chapters');
+  }
 }
 
 function _teAddStep(ci){
