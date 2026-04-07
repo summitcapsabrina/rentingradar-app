@@ -120,10 +120,12 @@ body{font-family:var(--font);background:var(--bg);color:var(--text)}
 .tut-btn-complete{background:#34d399;color:#fff;padding:8px 20px;font-weight:600}
 .tut-btn-complete:hover{background:#2bc48a}
 .tut-btn-complete.completed{background:rgba(52,211,153,.15);color:#34d399;cursor:default}
-/* Wrapper so the keyboard hint can sit just below the Complete button */
-.tut-complete-wrap{display:flex;flex-direction:column;align-items:center;gap:3px}
-.tut-complete-hint{font-size:.62rem;color:var(--text3);opacity:.7;letter-spacing:.2px;line-height:1;user-select:none;pointer-events:none;white-space:nowrap}
-.tut-complete-hint kbd{display:inline-block;padding:1px 4px;font-family:inherit;font-size:.62rem;color:var(--text3);background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:3px;line-height:1}
+/* Wrapper keeps the Complete button visually inline with the arrow buttons.
+   The keyboard hint floats below it via absolute positioning so it doesn't
+   add to the wrapper's height or knock the button out of alignment. */
+.tut-complete-wrap{position:relative;display:inline-flex;align-items:center}
+.tut-complete-hint{position:absolute;left:50%;top:100%;transform:translateX(-50%);margin-top:3px;font-size:.62rem;color:var(--text3);opacity:.7;letter-spacing:.2px;line-height:1;user-select:none;pointer-events:none;white-space:nowrap}
+.tut-complete-hint kbd{display:inline-block;padding:0;font-family:inherit;font-size:.62rem;color:var(--text3);background:transparent;border:none;line-height:1}
 
 /* Arrow nav buttons */
 .tut-arrow-btn{width:36px;height:36px;display:flex;align-items:center;justify-content:center;border-radius:var(--radius);cursor:pointer;transition:all .15s;border:1px solid var(--border);background:transparent;color:var(--text2);font-size:1rem;flex-shrink:0}
@@ -570,9 +572,11 @@ function renderStep(){
   document.getElementById('tutInfoTitle').textContent = s.title;
   document.getElementById('tutInfoDesc').innerHTML = s.desc;
 
-  // Nav buttons
-  document.getElementById('tutPrev').disabled = currentStep === 0;
-  document.getElementById('tutNext').disabled = currentStep === TUTORIAL_STEPS.length - 1;
+  // Nav buttons — disable based on visual order, not raw array index
+  const _navOrder = _tutVisualOrder();
+  const _navPos = _navOrder.indexOf(currentStep);
+  document.getElementById('tutPrev').disabled = _navPos <= 0;
+  document.getElementById('tutNext').disabled = _navPos === -1 || _navPos >= _navOrder.length - 1;
 
   // Complete button state
   const completeBtn = document.getElementById('tutComplete');
@@ -640,31 +644,60 @@ function completeStep(){
   goToNextUncompleted();
 }
 
+// Build a flat list of step indices in the order they appear visually
+// (chapters in order, lessons within each chapter in order). This is the
+// canonical "tutorial flow" order, and it matches what the user sees in the
+// sidebar — so navigation always feels predictable even after live content
+// from Firestore reorders the underlying TUTORIAL_STEPS array.
+function _tutVisualOrder(){
+  const order = [];
+  const seen = new Set();
+  CHAPTERS.forEach(ch => {
+    (ch.steps || []).forEach(si => {
+      if(TUTORIAL_STEPS[si] && !seen.has(si)){
+        seen.add(si);
+        order.push(si);
+      }
+    });
+  });
+  // Append any orphan steps not referenced by any chapter (defensive)
+  TUTORIAL_STEPS.forEach((_, si) => { if(!seen.has(si)){ order.push(si); seen.add(si); } });
+  return order;
+}
+
 function goToNextUncompleted(){
-  // Search forward from current step, wrapping around
-  for(let i = 1; i <= TUTORIAL_STEPS.length; i++){
-    const idx = (currentStep + i) % TUTORIAL_STEPS.length;
+  const order = _tutVisualOrder();
+  const curPos = order.indexOf(currentStep);
+  if(curPos === -1){ renderStep(); return; }
+  // Walk forward in visual order, wrapping around. Stop at the first
+  // uncompleted lesson we encounter.
+  for(let i = 1; i <= order.length; i++){
+    const idx = order[(curPos + i) % order.length];
     if(!completed.has(idx)){
       currentStep = idx;
       renderStep();
       return;
     }
   }
-  // Fallback (shouldn't reach here since allStepsCompleted is checked first)
   renderStep();
 }
 
 function nextStep(){
-  if(currentStep < TUTORIAL_STEPS.length - 1){
-    currentStep++;
+  // Move to the next lesson in visual order, not raw array order.
+  const order = _tutVisualOrder();
+  const curPos = order.indexOf(currentStep);
+  if(curPos !== -1 && curPos < order.length - 1){
+    currentStep = order[curPos + 1];
     renderStep();
   }
   // Never auto-close — user must click Complete on every step
 }
 
 function prevStep(){
-  if(currentStep > 0){
-    currentStep--;
+  const order = _tutVisualOrder();
+  const curPos = order.indexOf(currentStep);
+  if(curPos > 0){
+    currentStep = order[curPos - 1];
     renderStep();
   }
 }
