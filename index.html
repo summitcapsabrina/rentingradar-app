@@ -13288,9 +13288,9 @@ function renderHelp(){
         <div style="font-size:.7rem;color:var(--text3)">Fix common issues</div>
       </div>
       <div class="db-kpi" style="cursor:pointer;text-align:center" onclick="document.getElementById('helpFeature').scrollIntoView({behavior:'smooth'})">
-        <div style="font-size:1.5rem;margin-bottom:4px">💡</div>
-        <div style="font-size:.82rem;font-weight:600">Feature Request</div>
-        <div style="font-size:.7rem;color:var(--text3)">Suggest improvements</div>
+        <div style="font-size:1.5rem;margin-bottom:4px">❓</div>
+        <div style="font-size:.82rem;font-weight:600">Ask a Question</div>
+        <div style="font-size:.7rem;color:var(--text3)">Get help from our team</div>
       </div>
     </div>
 
@@ -13343,24 +13343,24 @@ function renderHelp(){
       </div>
     </div>
 
-    <!-- FEATURE REQUEST -->
+    <!-- ASK A QUESTION -->
     <div class="settings-section" id="helpFeature">
-      <div class="settings-section-header"><h3>💡 Suggest a Feature</h3></div>
+      <div class="settings-section-header"><h3>❓ Ask a Question</h3></div>
       <div class="settings-section-body">
-        <p style="font-size:.82rem;color:var(--text2);margin:0 0 12px">Have an idea that would make RentingRadar better? We'd love to hear it. Fill out the form below and our team will review your suggestion.</p>
+        <p style="font-size:.82rem;color:var(--text2);margin:0 0 12px">Have a question about RentingRadar? We're happy to help. Fill out the form below and our team will get back to you.</p>
         <div class="field-group" style="margin-bottom:10px"><label class="field-label">Your Name</label><input type="text" id="help_name" value="${esc((currentUser||{}).name||'')}" placeholder="Your name"></div>
         <div class="field-group" style="margin-bottom:10px"><label class="field-label">Email</label><input type="email" id="help_email" value="${esc((currentUser||{}).email||'')}" placeholder="you@email.com"></div>
         <div class="field-group" style="margin-bottom:10px">
           <label class="field-label">Category</label>
           <select id="help_category">
+            <option value="question" selected>Question</option>
             <option value="feature">Feature Request</option>
             <option value="bug">Bug Report</option>
             <option value="improvement">Improvement</option>
-            <option value="question">Question</option>
           </select>
         </div>
-        <div class="field-group" style="margin-bottom:10px"><label class="field-label">Subject</label><input type="text" id="help_subject" placeholder="Brief description of your idea or issue"></div>
-        <div class="field-group" style="margin-bottom:14px"><label class="field-label">Details</label><textarea id="help_details" rows="5" placeholder="Tell us more — what would this feature do? What problem does it solve? If reporting a bug, please include steps to reproduce it."></textarea></div>
+        <div class="field-group" style="margin-bottom:10px"><label class="field-label">Subject</label><input type="text" id="help_subject" placeholder="Brief description of your question"></div>
+        <div class="field-group" style="margin-bottom:14px"><label class="field-label">Details</label><textarea id="help_details" rows="5" placeholder="Tell us more — what would you like to know? The more context you provide, the better we can help."></textarea></div>
         <div style="display:flex;align-items:center;gap:12px">
           <button class="btn btn-primary" onclick="submitHelpRequest()">Submit</button>
           <span id="helpSubmitMsg" style="font-size:.8rem;color:var(--success);display:none">✓ Submitted — thank you!</span>
@@ -13410,7 +13410,7 @@ const FORMSPREE_ID = 'xpqygwvo';
 async function submitHelpRequest(){
   const name = document.getElementById('help_name')?.value?.trim() || '';
   const email = document.getElementById('help_email')?.value?.trim() || '';
-  const category = document.getElementById('help_category')?.value || 'feature';
+  const category = document.getElementById('help_category')?.value || 'question';
   const subject = document.getElementById('help_subject')?.value?.trim() || '';
   const details = document.getElementById('help_details')?.value?.trim() || '';
   if(!subject){ showAppAlert('Please enter a subject.', {title: 'Validation', icon: '⚠️'}); return; }
