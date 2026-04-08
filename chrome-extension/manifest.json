@@ -1,0 +1,64 @@
+{
+  "manifest_version": 3,
+  "name": "RentingRadar",
+  "version": "0.1.0",
+  "description": "Import AirDNA listings into RentingRadar competitor analysis and auto-fill property profiles from Zillow, Apartments.com, Hotpads, and Facebook Marketplace listings.",
+  "author": "Summit Capital LLC",
+  "homepage_url": "https://rentingradar.com",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "action": {
+    "default_title": "RentingRadar",
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png"
+    }
+  },
+  "background": {
+    "service_worker": "background/service-worker.js",
+    "type": "module"
+  },
+  "permissions": [
+    "storage",
+    "tabs",
+    "scripting",
+    "activeTab",
+    "alarms"
+  ],
+  "host_permissions": [
+    "https://*.airdna.co/*",
+    "https://www.zillow.com/*",
+    "https://www.apartments.com/*",
+    "https://*.hotpads.com/*",
+    "https://www.facebook.com/marketplace/*",
+    "https://app.rentingradar.com/*",
+    "https://rentingradar.com/*"
+  ],
+  "externally_connectable": {
+    "matches": [
+      "https://app.rentingradar.com/*",
+      "https://rentingradar.com/*"
+    ]
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://securetoken.googleapis.com https://identitytoolkit.googleapis.com https://firestore.googleapis.com https://app.rentingradar.com https://*.cloudfunctions.net;"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["content/airdna-scraper.js", "content/listing-scraper.js"],
+      "matches": [
+        "https://*.airdna.co/*",
+        "https://www.zillow.com/*",
+        "https://www.apartments.com/*",
+        "https://*.hotpads.com/*",
+        "https://www.facebook.com/marketplace/*"
+      ]
+    }
+  ]
+}

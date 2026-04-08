@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RentingRadar</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <header class="rr-header">
+    <div class="rr-brand">
+      <img src="../icons/icon-32.png" alt="" width="24" height="24" />
+      <span class="rr-brand-name">RentingRadar</span>
+    </div>
+    <div class="rr-account" id="rrAccount">
+      <span class="rr-account-dot" id="rrAccountDot"></span>
+      <span class="rr-account-label" id="rrAccountLabel">Not connected</span>
+    </div>
+  </header>
+
+  <main class="rr-main">
+    <!-- Not-connected state -->
+    <section class="rr-state" id="rrStateDisconnected" hidden>
+      <div class="rr-state-icon">🔗</div>
+      <h1 class="rr-state-title">Connect to RentingRadar</h1>
+      <p class="rr-state-body">
+        Link this extension to your RentingRadar account to import AirDNA listings and auto-fill property profiles.
+      </p>
+      <button class="rr-btn rr-btn-primary" id="rrBtnConnect">Connect account</button>
+      <p class="rr-state-foot">You'll need to be signed in to RentingRadar in another tab.</p>
+    </section>
+
+    <!-- Connected state -->
+    <section class="rr-state" id="rrStateConnected" hidden>
+      <label class="rr-label" for="rrUrlInput">AirDNA listing URL</label>
+      <div class="rr-input-row">
+        <input
+          type="url"
+          id="rrUrlInput"
+          class="rr-input"
+          placeholder="https://www.airdna.co/vacation-rental-data/app/..."
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <button class="rr-btn rr-btn-primary" id="rrBtnImport">Import</button>
+      </div>
+      <p class="rr-hint">
+        Paste a link from AirDNA. We'll pull the listing details and add it to your competitor analysis.
+      </p>
+
+      <div class="rr-status" id="rrStatus" hidden></div>
+
+      <div class="rr-recent" id="rrRecent" hidden>
+        <div class="rr-recent-header">Recent imports</div>
+        <ul class="rr-recent-list" id="rrRecentList"></ul>
+      </div>
+    </section>
+  </main>
+
+  <footer class="rr-footer">
+    <a href="https://rentingradar.com/terms.html" target="_blank" rel="noopener">Terms</a>
+    <span class="rr-sep">·</span>
+    <a href="https://rentingradar.com/privacy.html" target="_blank" rel="noopener">Privacy</a>
+    <span class="rr-sep">·</span>
+    <a href="https://app.rentingradar.com" target="_blank" rel="noopener">Open CRM</a>
+  </footer>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

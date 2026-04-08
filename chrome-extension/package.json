@@ -1,0 +1,20 @@
+{
+  "name": "chrome-extension",
+  "version": "1.0.0",
+  "description": "Thin companion extension for the RentingRadar CRM. Imports AirDNA listings into competitor analysis and auto-fills property profiles from rental listing sites (Zillow, Apartments.com, Hotpads, Facebook Marketplace).",
+  "main": "index.js",
+  "directories": {
+    "lib": "lib"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "esbuild": "^0.28.0",
+    "firebase": "^12.11.0"
+  }
+}
