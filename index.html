@@ -7499,9 +7499,6 @@ if(_launchTutorialAfterAuth){ history.replaceState(null, '', window.location.pat
 // load it unpacked for the first time (chrome://extensions shows it).
 window.RR_EXTENSION_ID = 'REPLACE_WITH_EXTENSION_ID';
 
-// Cloud Function endpoint for minting extension tokens
-window.RR_MINT_TOKEN_URL = 'https://us-central1-rentingradar.cloudfunctions.net/mintExtensionToken';
-
 const _rrExtensionParam = new URLSearchParams(window.location.search).get('extension');
 const _rrIsExtensionLink = _rrExtensionParam === 'link';
 const _rrIsExtensionWelcome = _rrExtensionParam === 'welcome';
@@ -7538,17 +7535,10 @@ async function _rrLinkExtensionForUser(user){
   }
   _rrShowExtensionOverlay('loading', 'Hang tight while we securely link this browser to your account.');
   try {
-    const idToken = await user.getIdToken();
-    const resp = await fetch(window.RR_MINT_TOKEN_URL, {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + idToken, 'Content-Type': 'application/json' },
-      body: JSON.stringify({})
-    });
-    const json = await resp.json();
-    if(!resp.ok || !json.result || !json.result.data || !json.result.data.token){
-      throw new Error((json && json.error && json.error.message) || 'Server rejected the request');
-    }
-    const customToken = json.result.data.token;
+    const mintToken = firebase.functions().httpsCallable('mintExtensionToken');
+    const result = await mintToken({});
+    const customToken = result && result.data && result.data.token;
+    if(!customToken) throw new Error('Server did not return a token');
     if(!window.chrome || !chrome.runtime || !chrome.runtime.sendMessage){
       throw new Error('Chrome extension API not available. Is the extension installed?');
     }

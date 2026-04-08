@@ -1242,32 +1242,36 @@ exports.syncSubscription = functions.https.onRequest((req, res) => {
 // CHROME EXTENSION AUTH BRIDGE
 // ============================================================
 // Called by the CRM's extension-link page after the user is signed in.
-// Verifies the caller's Firebase ID token and returns a short-lived custom
-// token that the Chrome extension uses to sign in as the same user.
-exports.mintExtensionToken = functions.https.onRequest((req, res) => {
-  cors(req, res, async () => {
-    try {
-      if (req.method !== "POST") {
-        return sendError(res, 405, "Method not allowed");
-      }
-      const authHeader = req.headers.authorization || "";
-      const match = authHeader.match(/^Bearer (.+)$/);
-      if (!match) {
-        return sendError(res, 401, "Missing bearer token");
-      }
-      const idToken = match[1];
-      const decoded = await admin.auth().verifyIdToken(idToken);
-      // Stamp a claim so the extension session is identifiable if we ever
-      // need to audit it. The custom token inherits the same uid, so the
-      // extension signs in as the exact same user with the same Firestore
-      // security rules applied.
-      const customToken = await admin.auth().createCustomToken(decoded.uid, {
-        source: "chrome_extension",
-      });
-      sendSuccess(res, { token: customToken, uid: decoded.uid, email: decoded.email });
-    } catch (err) {
-      console.error("mintExtensionToken error:", err);
-      sendError(res, 401, err.message || "Could not mint extension token.");
-    }
-  });
+// This is a Firebase *callable* function — the client calls it via
+// firebase.functions().httpsCallable('mintExtensionToken'), which
+// automatically includes the caller's Firebase ID token in an
+// auth-context object. No public IAM is needed because Firebase
+// handles the auth layer server-side.
+exports.mintExtensionToken = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError(
+      "unauthenticated",
+      "You must be signed in to link the Chrome extension."
+    );
+  }
+  try {
+    // Stamp a claim so the extension session is identifiable if we ever
+    // need to audit it. The custom token inherits the same uid, so the
+    // extension signs in as the exact same user with the same Firestore
+    // security rules applied.
+    const customToken = await admin.auth().createCustomToken(context.auth.uid, {
+      source: "chrome_extension",
+    });
+    return {
+      token: customToken,
+      uid: context.auth.uid,
+      email: context.auth.token.email || null,
+    };
+  } catch (err) {
+    console.error("mintExtensionToken error:", err);
+    throw new functions.https.HttpsError(
+      "internal",
+      err.message || "Could not mint extension token."
+    );
+  }
 });
