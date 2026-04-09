@@ -157,7 +157,12 @@ async function scrapeAny(url, hint) {
             }
             if (c.availableDate) {
               data.propertyDetails = data.propertyDetails || {};
-              if (!data.propertyDetails.availableDate) {
+              // c.availableDate has already been normalized by enrichWithOllama
+              // to 'now' or YYYY-MM-DD. We only overwrite if the existing value
+              // is missing or isn't in our normalized format.
+              const existing = data.propertyDetails.availableDate;
+              const existingValid = existing === 'now' || /^\d{4}-\d{2}-\d{2}$/.test(existing || '');
+              if (!existingValid) {
                 data.propertyDetails.availableDate = c.availableDate;
               }
             }
@@ -256,6 +261,93 @@ const OLLAMA_FIELD_OPTIONS = {
   safetyFeatures: ['Smoke Detectors','Carbon Monoxide Detectors','Fire Extinguisher','Security System/Alarm','Gated Entry','Deadbolt Locks','Smart Locks','Security Cameras','24-Hour Security'],
 };
 
+// Normalize whatever the model returns for availableDate into a value the
+// CRM's date picker can consume: either lowercase 'now', or ISO YYYY-MM-DD.
+// Anything unrecognizable returns null so we simply don't store the field
+// (preventing "undefined NaN" in the Contact & Status edit card).
+function normalizeAvailableDate(raw) {
+  if (raw == null) return null;
+  const s = String(raw).trim();
+  if (!s) return null;
+  const lower = s.toLowerCase();
+  if (/^(now|available now|immediately|move[\s-]*in ready|ready now|asap|today)$/.test(lower)) {
+    return 'now';
+  }
+  // ISO already: 2026-05-01
+  const iso = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (iso) {
+    const y = +iso[1], m = +iso[2], d = +iso[3];
+    if (m >= 1 && m <= 12 && d >= 1 && d <= 31) {
+      return y + '-' + String(m).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+    }
+    return null;
+  }
+  // US slash: 5/1/2026 or 05/01/26
+  const us = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (us) {
+    let y = +us[3]; if (y < 100) y += 2000;
+    const m = +us[1], d = +us[2];
+    if (m >= 1 && m <= 12 && d >= 1 && d <= 31) {
+      return y + '-' + String(m).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+    }
+    return null;
+  }
+  // "May 1", "May 1, 2026", "May 1st"
+  const MONTHS = { jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,sept:9,oct:10,nov:11,dec:12 };
+  const word = s.toLowerCase().match(/^([a-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?$/);
+  if (word) {
+    const mKey = word[1].slice(0, word[1].startsWith('sept') ? 4 : 3);
+    const m = MONTHS[mKey];
+    const d = +word[2];
+    if (m && d >= 1 && d <= 31) {
+      const now = new Date();
+      let y = word[3] ? +word[3] : now.getFullYear();
+      // If the date has already passed this year, assume next year
+      if (!word[3]) {
+        const guess = new Date(y, m - 1, d);
+        if (guess < new Date(now.getFullYear(), now.getMonth(), now.getDate())) y += 1;
+      }
+      return y + '-' + String(m).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+    }
+  }
+  return null;
+}
+
+// Drop bullets that reference facts clearly not present in the page text.
+// Small models will sometimes parrot the example bullets back ("Small pets
+// allowed", "Water & trash included") even when they're not in the listing.
+// We verify each bullet by checking that its key tokens actually appear in
+// the source text; any bullet that fails the check gets dropped.
+function filterHallucinatedBullets(bullets, pageText) {
+  if (!Array.isArray(bullets) || !bullets.length) return bullets || [];
+  const text = String(pageText || '').toLowerCase();
+  if (!text) return bullets;
+  const STOP = new Set(['the','a','an','and','or','of','with','to','in','on','at','by','for','is','are','be','has','have','from','as','it','this','that','these','those','per','mo','month','monthly','br','ba','sq','ft','bed','beds','bath','baths','bedroom','bedrooms','bathroom','bathrooms']);
+  const out = [];
+  for (const raw of bullets) {
+    const bullet = String(raw || '').trim();
+    if (!bullet) continue;
+    // Extract "content" tokens: 4+ letter words, lowercased
+    const tokens = (bullet.toLowerCase().match(/[a-z][a-z'-]{3,}/g) || [])
+      .filter((t) => !STOP.has(t));
+    if (!tokens.length) { out.push(bullet); continue; }
+    // Count how many of the distinguishing tokens appear in the source.
+    // Allow stemming: if "allowed" isn't found, try "allow".
+    let hits = 0;
+    for (const t of tokens) {
+      if (text.includes(t)) { hits++; continue; }
+      // crude stem
+      const stem = t.replace(/(ing|ed|s|es)$/, '');
+      if (stem.length >= 4 && text.includes(stem)) hits++;
+    }
+    // Keep the bullet if the majority of its tokens are sourced.
+    const ratio = hits / tokens.length;
+    if (ratio >= 0.6) out.push(bullet);
+    else console.log('[RR ext] dropped unsourced bullet:', bullet, '(hits', hits, '/', tokens.length, ')');
+  }
+  return out;
+}
+
 async function enrichWithOllama(scraped) {
   const health = await checkOllamaHealth();
   if (!health.running) {
@@ -300,8 +392,14 @@ async function enrichWithOllama(scraped) {
     "You MUST extract bedrooms, bathrooms, and price if they appear anywhere in the text. " +
     "Common phrasings: '3 bd', '3 beds', '3 bedroom', '1 ba', '1 bath', '1.5 bathrooms', '$2,350/mo', '$2,350 per month'. " +
     "A studio counts as bedrooms = 0. Half baths count as .5 (e.g. '1.5 baths'). " +
-    "For structured values (beds/baths/sqft/price/utilitiesIncluded/petsAllowed), NEVER invent values — omit the field if not stated. " +
-    "The 'bullets' field is ALWAYS REQUIRED — always return at least 5 bullet points summarizing the listing.";
+    "CRITICAL anti-hallucination rule: every fact you output — structured fields AND bullets — " +
+    "must appear VERBATIM or as an OBVIOUS paraphrase in the provided page text. " +
+    "If a fact is not in the text, OMIT it. Do NOT guess. Do NOT invent. " +
+    "Specifically: do NOT output petsAllowed unless the text explicitly discusses pet policy. " +
+    "Do NOT output a bullet like 'Small pets allowed', 'Water included', 'Hardwood floors', etc. " +
+    "unless those exact concepts are mentioned in the text. When in doubt, omit. " +
+    "The 'bullets' field is ALWAYS REQUIRED — always return at least 5 bullet points, but only " +
+    "about things the listing actually mentions.";
 
   // NOTE: small models handle FLAT schemas much better than nested ones,
   // and they handle short prompts much better than long ones. Keep this tight.
@@ -481,15 +579,17 @@ Only use values from the lists above. No invented labels.`;
   }
 
   // ---------- Assemble result ----------
+  const rawBullets = Array.isArray(passA && passA.bullets) ? passA.bullets : [];
+  const filteredBullets = filterHallucinatedBullets(rawBullets, fullPageText);
   const out = {
     propertyDetails: {},
-    propertyNoteBullets: Array.isArray(passA && passA.bullets) ? passA.bullets : [],
+    propertyNoteBullets: filteredBullets,
     core: {
       bedrooms: passA && passA.bedrooms,
       bathrooms: passA && passA.bathrooms,
       sqft: passA && passA.sqft,
       price: passA && passA.price,
-      availableDate: passA && passA.availableDate,
+      availableDate: normalizeAvailableDate(passA && passA.availableDate),
     },
   };
 
@@ -499,7 +599,14 @@ Only use values from the lists above. No invented labels.`;
       .filter((s) => OLLAMA_FIELD_OPTIONS.utilitiesIncluded.includes(s));
   }
   if (passA && typeof passA.petsAllowed === 'string' && OLLAMA_FIELD_OPTIONS.petsAllowed.includes(passA.petsAllowed)) {
-    out.propertyDetails.petsAllowed = passA.petsAllowed;
+    // Only honor petsAllowed if the source text actually discusses pets.
+    // Small models hallucinate this field from example prompts.
+    const sourceDiscussesPets = /\b(pets?|dogs?|cats?|animal|pet-friendly|no pets)\b/i.test(fullPageText);
+    if (sourceDiscussesPets) {
+      out.propertyDetails.petsAllowed = passA.petsAllowed;
+    } else {
+      console.log('[RR ext] dropped petsAllowed (source does not discuss pets):', passA.petsAllowed);
+    }
   }
 
   // Pass B: merge amenity arrays/strings, filtering invented labels

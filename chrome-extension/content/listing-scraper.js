@@ -126,7 +126,12 @@
       // Stripping it left the AI blind to the exact numbers we need.
       const main = document.querySelector('main, [role="main"], #main, .main, #content, .content') || document.body;
       const clone = main.cloneNode(true);
-      clone.querySelectorAll('script, style, nav, footer, noscript, iframe, svg, aside').forEach((n) => n.remove());
+      // NOTE: we intentionally KEEP <aside> — neighborhood / walk-score /
+      // nearby-transit / points-of-interest widgets live in asides on Zillow
+      // and Apartments.com, and the model needs that content to populate
+      // location bullets. The "similar listings" carousel asides are stripped
+      // below by class-name pattern matching.
+      clone.querySelectorAll('script, style, nav, footer, noscript, iframe, svg').forEach((n) => n.remove());
       // Remove "similar/nearby listings" widgets so they can't poison the model's
       // bed/bath extraction with numbers from unrelated units.
       clone.querySelectorAll(
