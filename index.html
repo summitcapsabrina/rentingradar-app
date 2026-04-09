@@ -4635,6 +4635,17 @@ async function rrGeocodeAddress(rawAddress) {
 
 async function handleExtensionListing(data) {
   if (!data) return;
+  // Dump the raw extension payload so we can see exactly what landed.
+  // (Open DevTools Console on app.rentingradar.com to inspect.)
+  try {
+    console.group('[RR] Extension listing import');
+    console.log('raw data:', data);
+    console.log('beds:', data.bedrooms, 'baths:', data.bathrooms, 'sqft:', data.sqft, 'price:', data.price);
+    console.log('propertyDetails keys:', data.propertyDetails ? Object.keys(data.propertyDetails) : []);
+    console.log('ai enriched:', data._aiEnriched, 'model:', data._aiModel);
+    if (data._debug) console.log('scraper debug:', data._debug);
+    console.groupEnd();
+  } catch (_) {}
 
   // If a specific record id is pending (from a legacy in-profile paste bar),
   // fill that record. Otherwise — including when the data came from the
@@ -4757,11 +4768,32 @@ async function handleExtensionListing(data) {
   if (typeof saveData === 'function') saveData();
   if (typeof render === 'function') render();
   const label = data.source ? data.source.charAt(0).toUpperCase() + data.source.slice(1) : 'Listing';
+
+  // Build a concise "what got filled" summary so the user can tell at a glance
+  // whether the import was a hit or a miss.
+  const coreFilled = [];
+  if (d.bedrooms != null && d.bedrooms !== '') coreFilled.push(d.bedrooms + ' bd');
+  if (d.bathrooms != null && d.bathrooms !== '') coreFilled.push(d.bathrooms + ' ba');
+  if (d.sqft != null && d.sqft !== '') coreFilled.push(d.sqft + ' sqft');
+  if (d.monthlyRent != null && d.monthlyRent !== '') coreFilled.push('$' + d.monthlyRent + '/mo');
+  const deepFilled = Object.keys(d).filter(k =>
+    !['bedrooms','bathrooms','sqft','monthlyRent','latitude','longitude','market','submarket'].includes(k) &&
+    d[k] != null && d[k] !== '' && (!Array.isArray(d[k]) || d[k].length > 0)
+  ).length;
+  const toneWarn = coreFilled.length === 0;
+  const coreSummary = coreFilled.length ? coreFilled.join(' · ') : 'no core details found';
+  const aiNote = data._aiEnriched ? ' · AI enriched' : (data._pageText === undefined && window.RR_OLLAMA_HEALTH && !window.RR_OLLAMA_HEALTH.modelInstalled ? ' · AI skipped (Ollama model missing)' : '');
+  const summary = coreSummary + ' · ' + deepFilled + ' detail fields' + aiNote;
+
   if (createdNew) {
-    showToast(label + ' imported as new property.' + (data.warning ? ' ' + data.warning : ''), 'success');
+    showToast(label + ' imported — ' + summary + (data.warning ? ' ' + data.warning : ''), toneWarn ? 'warning' : 'success');
     if (typeof openDetail === 'function') openDetail(r.id);
   } else {
-    showToast(label + ' details imported.' + (data.warning ? ' ' + data.warning : ''), 'success');
+    showToast(label + ' updated — ' + summary + (data.warning ? ' ' + data.warning : ''), toneWarn ? 'warning' : 'success');
+  }
+
+  if (toneWarn) {
+    console.warn('[RR] Import returned no core fields. Scraper debug trace:', data._debug || '(no debug trace)');
   }
 }
 

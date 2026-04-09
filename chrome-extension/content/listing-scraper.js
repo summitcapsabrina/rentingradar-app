@@ -49,7 +49,7 @@
 
   function deepFind(obj, pred, depth) {
     depth = depth || 0;
-    if (depth > 14 || !obj || typeof obj !== 'object') return null;
+    if (depth > 18 || !obj || typeof obj !== 'object') return null;
     if (pred(obj)) return obj;
     if (Array.isArray(obj)) {
       for (const item of obj) {
@@ -63,6 +63,28 @@
       if (hit) return hit;
     }
     return null;
+  }
+
+  // Walk the entire object tree and collect every object where pred() is
+  // truthy, then return the one with the highest score. This is much more
+  // resilient than deepFind() when multiple candidate objects exist and we
+  // want the "richest" one (e.g. Zillow caches stub property objects in
+  // several places; the real listing blob is the fattest one).
+  function deepFindBest(root, scoreFn) {
+    let best = null;
+    let bestScore = 0;
+    const seen = new WeakSet();
+    function walk(obj, depth) {
+      if (depth > 20 || !obj || typeof obj !== 'object') return;
+      if (seen.has(obj)) return;
+      seen.add(obj);
+      const s = scoreFn(obj) || 0;
+      if (s > bestScore) { bestScore = s; best = obj; }
+      if (Array.isArray(obj)) { for (const v of obj) walk(v, depth + 1); return; }
+      for (const k of Object.keys(obj)) walk(obj[k], depth + 1);
+    }
+    walk(root, 0);
+    return best;
   }
 
   // Collect all strings in a nested object into a single searchable blob
@@ -284,15 +306,56 @@
   //               exteriorFeatures, poolFeatures, petsAllowed, ... }
   function parseZillow() {
     const out = base('zillow');
+    out._debug = { source: 'zillow', url: location.href, steps: [] };
+    const log = (msg, extra) => out._debug.steps.push(extra ? (msg + ': ' + JSON.stringify(extra).slice(0, 200)) : msg);
+
+    // Zillow stores its listing state in several places — try them all and
+    // pick the object with the richest set of listing-shaped fields.
+    const candidates = [];
     const nd = findJsonFromScript('__NEXT_DATA__');
+    if (nd) { candidates.push(nd); log('found __NEXT_DATA__'); } else { log('__NEXT_DATA__ missing'); }
+    // Some Zillow pages stash data in window.__APOLLO_STATE__ or #hdpApolloPreloadedData
+    const apolloEl = document.getElementById('hdpApolloPreloadedData');
+    if (apolloEl) {
+      try {
+        const raw = apolloEl.textContent.trim();
+        // This script sometimes contains "!--" wrappers or double-stringified JSON
+        const clean = raw.replace(/^<!--/, '').replace(/-->$/, '').trim();
+        const parsed = JSON.parse(clean);
+        candidates.push(parsed);
+        log('found hdpApolloPreloadedData');
+      } catch (_) { log('hdpApolloPreloadedData parse failed'); }
+    }
+
+    // Score objects by how many listing-ish keys they expose. The fattest
+    // match wins — this handles Zillow variants where bedrooms is top-level
+    // vs. inside resoFacts vs. inside hdpModel.
+    function scoreListing(v) {
+      if (!v || typeof v !== 'object' || Array.isArray(v)) return 0;
+      let score = 0;
+      if (v.bedrooms != null) score += 3;
+      if (v.bathrooms != null) score += 3;
+      if (v.livingArea != null || v.livingAreaValue != null) score += 3;
+      if (v.price != null) score += 2;
+      if (v.streetAddress) score += 2;
+      if (v.zipcode) score += 1;
+      if (v.homeType) score += 1;
+      if (v.yearBuilt != null) score += 1;
+      if (v.resoFacts && typeof v.resoFacts === 'object') score += 5;
+      if (v.atAGlanceFacts) score += 1;
+      if (v.description) score += 1;
+      if (v.hugePhotos || v.photos) score += 1;
+      return score;
+    }
     let gdp = null;
-    if (nd) {
-      // Try the direct Apollo cache path first
-      gdp = deepFind(nd, (v) =>
-        v && typeof v === 'object' &&
-        (v.bedrooms != null || v.bathrooms != null) &&
-        (v.streetAddress || (v.address && v.address.streetAddress))
-      );
+    for (const root of candidates) {
+      const hit = deepFindBest(root, scoreListing);
+      if (hit && scoreListing(hit) > scoreListing(gdp)) gdp = hit;
+    }
+    if (gdp) {
+      log('gdp found', { score: scoreListing(gdp), keys: Object.keys(gdp).slice(0, 20) });
+    } else {
+      log('gdp NOT found');
     }
 
     if (gdp) {
@@ -471,10 +534,95 @@
       }
     }
 
-    // Fallbacks via DOM for partial pages
-    if (out.price == null) out.price = num(document.querySelector('[data-testid="price"]')?.textContent);
-    if (out.bedrooms == null) out.bedrooms = num(document.querySelector('[data-testid="bed-bath-sqft-fact-container"]')?.textContent);
+    // ---- Fallback 1: meta tags (og:title is "Address · 3 bd · 2 ba · 1,500 sqft · Zillow")
+    const ogTitle = document.querySelector('meta[property="og:title"]')?.content
+                 || document.querySelector('meta[name="twitter:title"]')?.content || '';
+    const ogDesc = document.querySelector('meta[property="og:description"]')?.content
+                || document.querySelector('meta[name="description"]')?.content || '';
+    const ogBlob = (ogTitle + ' ' + ogDesc).trim();
+    if (ogBlob) {
+      log('og meta present', { len: ogBlob.length });
+      if (out.bedrooms == null) out.bedrooms = num(ogBlob.match(/(\d+(?:\.\d+)?)\s*(?:bd|bed(?:room)?s?)/i)?.[1]);
+      if (out.bathrooms == null) out.bathrooms = num(ogBlob.match(/(\d+(?:\.\d+)?)\s*(?:ba|bath(?:room)?s?)/i)?.[1]);
+      if (out.sqft == null) out.sqft = num(ogBlob.match(/([\d,]+)\s*(?:sq\s*ft|sqft|square feet)/i)?.[1]);
+      if (out.price == null) out.price = num(ogBlob.match(/\$([\d,]+)(?:\/mo)?/i)?.[1]);
+      // Street address tends to be the first comma-delimited chunk of og:title
+      if (!out.address) {
+        const addrMatch = ogTitle.split('|')[0].split(/ · |  — /)[0].trim();
+        if (/\d/.test(addrMatch) && addrMatch.length < 200) out.address = addrMatch;
+      }
+    }
+
+    // ---- Fallback 2: JSON-LD (Zillow sometimes emits Residence / House / Apartment)
+    const jsonLd = findAllJsonLd();
+    jsonLd.forEach((block) => {
+      if (!block || typeof block !== 'object') return;
+      const t = Array.isArray(block['@type']) ? block['@type'].join(' ') : String(block['@type'] || '');
+      if (!/Residence|House|Apartment|Place|Product|Offer/i.test(t)) return;
+      if (!out.address && block.address && block.address.streetAddress) {
+        const a = block.address;
+        const csz = [a.addressLocality, a.addressRegion].filter(Boolean).join(' ') + (a.postalCode ? ' ' + a.postalCode : '');
+        out.address = [a.streetAddress, csz.trim()].filter(Boolean).join(', ');
+      }
+      if (out.bedrooms == null && block.numberOfBedrooms != null) out.bedrooms = num(block.numberOfBedrooms);
+      if (out.bathrooms == null && (block.numberOfBathroomsTotal != null || block.numberOfFullBathrooms != null)) {
+        out.bathrooms = num(block.numberOfBathroomsTotal || block.numberOfFullBathrooms);
+      }
+      if (out.sqft == null && block.floorSize && block.floorSize.value != null) out.sqft = num(block.floorSize.value);
+      if (out.price == null && block.offers && (block.offers.price || block.offers.priceSpecification)) {
+        out.price = num(block.offers.price || (block.offers.priceSpecification && block.offers.priceSpecification.price));
+      }
+    });
+
+    // ---- Fallback 3: broad DOM selectors (covers old + new Zillow layouts)
+    if (out.price == null) {
+      const priceEl = document.querySelector(
+        '[data-testid="price"], [data-testid="price-and-monthly-payment"], ' +
+        '.summary-container [data-testid="price"], span[data-test="property-card-price"], ' +
+        '[class*="summary"] [class*="price"], .ds-summary-row .ds-value'
+      );
+      if (priceEl) out.price = num(priceEl.textContent);
+    }
+    const bbsEl = document.querySelector(
+      '[data-testid="bed-bath-sqft-fact-container"], [data-testid="bed-bath-beyond"], ' +
+      '[data-testid="bed-bath-sqft-text__value"], .ds-bed-bath-living-area, ' +
+      '[class*="bed-bath"], [class*="BedBath"]'
+    );
+    if (bbsEl) {
+      const t = bbsEl.textContent;
+      if (out.bedrooms == null) out.bedrooms = num(t.match(/(\d+(?:\.\d+)?)\s*(?:bd|bed)/i)?.[1]);
+      if (out.bathrooms == null) out.bathrooms = num(t.match(/(\d+(?:\.\d+)?)\s*(?:ba|bath)/i)?.[1]);
+      if (out.sqft == null) out.sqft = num(t.match(/([\d,]+)\s*(?:sq\s*ft|sqft)/i)?.[1]);
+    }
+
+    // ---- Fallback 4: last-resort body text scan
+    if (out.bedrooms == null || out.bathrooms == null || out.sqft == null || out.price == null) {
+      const body = document.body.innerText || '';
+      if (out.bedrooms == null) out.bedrooms = num(body.match(/(\d+(?:\.\d+)?)\s*(?:bd|bed(?:room)?s?)\b/i)?.[1]);
+      if (out.bathrooms == null) out.bathrooms = num(body.match(/(\d+(?:\.\d+)?)\s*(?:ba|bath(?:room)?s?)\b/i)?.[1]);
+      if (out.sqft == null) out.sqft = num(body.match(/([\d,]+)\s*(?:sq\s*ft|sqft)/i)?.[1]);
+      if (out.price == null) {
+        const pm = body.match(/\$\s*([\d,]+)(?:\s*\/\s*mo)?/i);
+        if (pm) out.price = num(pm[1]);
+      }
+    }
+
+    // ---- Availability (if mentioned anywhere on the page)
+    const availMatch = (document.body.innerText || '').match(
+      /Available\s+(?:Now|Immediately|on\s+([A-Z][a-z]+\s+\d{1,2}(?:,\s*\d{4})?)|(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?))/i
+    );
+    if (availMatch) {
+      const avail = availMatch[1] || availMatch[2] || 'Now';
+      setPD(out.propertyDetails, 'availableDate', avail);
+      log('availability: ' + avail);
+    }
+
     out.title = document.title;
+    log('final', {
+      hasAddress: !!out.address,
+      beds: out.bedrooms, baths: out.bathrooms, sqft: out.sqft, price: out.price,
+      pdKeys: Object.keys(out.propertyDetails).length,
+    });
     return out;
   }
 
