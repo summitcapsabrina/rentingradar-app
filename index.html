@@ -8091,9 +8091,10 @@ function rrShowOllamaBanner(){
 
   const health = window.RR_OLLAMA_HEALTH || {};
   const notRunning = !health.running;
+  const pullCmd = 'ollama pull ' + RR_OLLAMA_REQUIRED_MODEL;
   const msg = notRunning
-    ? 'Install <strong>Ollama</strong> (free, runs locally) so RentingRadar can AI‑enrich pasted listings. Without it, listings still import but property details may be incomplete.'
-    : 'Ollama is running but the <code style="background:rgba(255,255,255,.2);padding:1px 6px;border-radius:4px">' + RR_OLLAMA_REQUIRED_MODEL + '</code> model isn\'t installed. Run <code style="background:rgba(255,255,255,.2);padding:1px 6px;border-radius:4px">ollama pull ' + RR_OLLAMA_REQUIRED_MODEL + '</code> in Terminal, then retry.';
+    ? 'Install <strong>Ollama</strong> (free, runs locally) so RentingRadar can AI‑enrich pasted listings. After install, open Terminal and run <code id="rrOllamaPullCmd" style="background:rgba(255,255,255,.2);padding:1px 6px;border-radius:4px">' + pullCmd + '</code> to download the model.'
+    : 'Ollama is running but the <code style="background:rgba(255,255,255,.2);padding:1px 6px;border-radius:4px">' + RR_OLLAMA_REQUIRED_MODEL + '</code> model isn\'t installed. Open Terminal and run <code id="rrOllamaPullCmd" style="background:rgba(255,255,255,.2);padding:1px 6px;border-radius:4px">' + pullCmd + '</code>, then click Retry.';
   const actionLabel = notRunning ? 'Download Ollama' : 'Ollama docs';
   const actionHref = notRunning ? RR_OLLAMA_DOWNLOAD_URL : 'https://ollama.com/library/' + RR_OLLAMA_REQUIRED_MODEL;
 
@@ -8102,6 +8103,7 @@ function rrShowOllamaBanner(){
   bar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9998;background:linear-gradient(90deg,#0ea5e9,#0369a1);color:#fff;padding:10px 14px;display:flex;align-items:center;gap:12px;font-size:.85rem;box-shadow:0 2px 10px rgba(0,0,0,.2)';
   bar.innerHTML = '<span style="font-size:1.1rem">🤖</span>' +
     '<span style="flex:1">' + msg + ' <a href="#" onclick="_rrRefreshOllamaHealth();return false;" style="color:#fff;text-decoration:underline">Retry detection</a></span>' +
+    '<button type="button" onclick="rrCopyOllamaPullCmd(this)" style="background:rgba(255,255,255,.2);color:#fff;border:1px solid rgba(255,255,255,.5);font-weight:600;padding:6px 12px;border-radius:6px;font-size:.78rem;cursor:pointer;white-space:nowrap">Copy command</button>' +
     '<a href="' + actionHref + '" target="_blank" rel="noopener" style="background:#fff;color:#0369a1;font-weight:600;padding:6px 14px;border-radius:6px;text-decoration:none;font-size:.82rem;white-space:nowrap">' + actionLabel + '</a>' +
     '<button type="button" aria-label="Dismiss" style="background:transparent;border:none;color:#fff;font-size:1.2rem;cursor:pointer;padding:0 4px;line-height:1" onclick="rrDismissOllamaBanner()">&times;</button>';
   document.body.appendChild(bar);
@@ -8119,6 +8121,25 @@ function rrHideOllamaBanner(){
 function rrDismissOllamaBanner(){
   try { localStorage.setItem(RR_OLLAMA_DISMISS_KEY, String(Date.now() + 7*24*60*60*1000)); } catch(_){}
   rrHideOllamaBanner();
+}
+
+function rrCopyOllamaPullCmd(btn){
+  const cmd = 'ollama pull ' + RR_OLLAMA_REQUIRED_MODEL;
+  try {
+    navigator.clipboard.writeText(cmd).then(() => {
+      const orig = btn.textContent;
+      btn.textContent = 'Copied!';
+      setTimeout(() => { btn.textContent = orig; }, 1800);
+    });
+  } catch(_){
+    // Fallback: use a temp textarea
+    const ta = document.createElement('textarea');
+    ta.value = cmd; document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); } catch(_){}
+    document.body.removeChild(ta);
+    btn.textContent = 'Copied!';
+    setTimeout(() => { btn.textContent = 'Copy command'; }, 1800);
+  }
 }
 
 // Decide which (if any) top-of-page banner to show based on current probe state

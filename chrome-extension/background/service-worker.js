@@ -170,8 +170,19 @@ async function scrapeAny(url, hint) {
           if (Array.isArray(enriched.propertyNoteBullets) && enriched.propertyNoteBullets.length) {
             data.propertyNoteBullets = enriched.propertyNoteBullets
               .map((s) => String(s || '').trim())
-              .filter((s) => s && s.length > 2 && s.length < 300)
-              .slice(0, 20);
+              // Strip any trailing punctuation and redundant prefixes
+              .map((s) => s.replace(/^[-•*]\s*/, '').replace(/[.;,]+$/, ''))
+              // Hard cap at 70 chars — if the model ignored the "telegraphic"
+              // instruction and produced full sentences, truncate cleanly
+              // at the last word boundary before 70 chars.
+              .map((s) => {
+                if (s.length <= 70) return s;
+                const cut = s.slice(0, 70);
+                const lastSpace = cut.lastIndexOf(' ');
+                return (lastSpace > 20 ? cut.slice(0, lastSpace) : cut).replace(/[.;,]+$/, '');
+              })
+              .filter((s) => s && s.length > 2)
+              .slice(0, 14);
           }
         }
       } catch (e) {
@@ -313,10 +324,24 @@ Return this JSON object. bedrooms, bathrooms, and price are REQUIRED if they app
   "availableDate": "Now" or "YYYY-MM-DD" or a phrase like "May 1",
   "utilitiesIncluded": [ any of: "Water","Hot Water","Gas","Electric","Trash","Sewer","Recycling","Internet/WiFi","Cable TV","Landscaping/Grounds","Pest Control" ],
   "petsAllowed": one of "Yes - All Pets","Dogs Only","Cats Only","Small Pets Only","Case by Case","Service Animals Only","No Pets",
-  "bullets": [ 5 to 12 short factual bullet points (<= 120 chars each) summarizing this listing for a short-term-rental arbitrage investor ]
+  "bullets": [ 6 to 12 TELEGRAPHIC bullet fragments (MAX 50 chars each) — no full sentences ]
 }
 
-Bullet guidance: call out neighborhood / walk / transit scores, parking, HOA or STR policy, recent renovations, unit quirks, pet policy specifics, utilities included, furnished status, lease flexibility, proximity to attractions. No marketing fluff ("charming", "must see"). Numbers and specifics only.
+AVAILABILITY: look for phrases like "Available Now", "Available [date]", "Move-in ready", "Ready [date]", "Available on MM/DD", etc. If you see any of those, include availableDate. "Available Now" → "Now". A specific date → "YYYY-MM-DD" or "Month Day".
+
+Bullet guidance: write SHORT telegraphic fragments like field labels, NOT sentences. Examples of the correct style:
+  "Walk score: 92"
+  "Transit: 85 (excellent)"
+  "In-unit W/D"
+  "Water + trash included"
+  "No pets"
+  "Hardwood throughout"
+  "Rooftop access"
+  "1 block to L train"
+  "Renovated 2023"
+  "No STR allowed — HOA"
+NOT like this: "The property is conveniently located near public transit options and has a high walk score."
+Call out: neighborhood quality, walk/transit scores, parking, HOA or STR policy, renovations, unit quirks, pet policy, utilities included, furnished status, lease flexibility, attraction proximity. Numbers and facts only. No marketing fluff.
 
 Return ONLY the JSON.`;
 
