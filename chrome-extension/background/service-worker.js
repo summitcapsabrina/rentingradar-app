@@ -244,8 +244,21 @@ async function scrapeAny(url, hint) {
       try {
         const enriched = await enrichWithOllama(data);
         if (enriched) {
+          // Merge dictionary-extracted propertyDetails ALWAYS, even if the
+          // LLM call failed inside enrichWithOllama. The dictionary path is
+          // deterministic and runs first; we never want to discard it just
+          // because the optional LLM step timed out.
           data.propertyDetails = mergePropertyDetails(data.propertyDetails || {}, enriched.propertyDetails || {});
-          data._aiEnriched = true;
+          // Honor the partial-result marker. enrichWithOllama no longer
+          // throws on Ollama failure — it returns dictionary data + an
+          // _aiError tag. Surface that to the CRM so the toast can say
+          // "AI partial — dictionary fields populated" instead of failing.
+          if (enriched._aiError) {
+            data._aiEnriched = false;
+            data._aiError = enriched._aiError;
+          } else {
+            data._aiEnriched = true;
+          }
           data._aiModel = OLLAMA_MODEL;
           // Ollama is AUTHORITATIVE on the core listing numbers. Fill in
           // anything the scraper couldn't lock down. Since we removed the
@@ -1031,12 +1044,36 @@ function resolvePropertyDetailsContradictions(pd) {
 }
 
 async function enrichWithOllama(scraped) {
+  // CRITICAL: this function ALWAYS returns a result, never throws.
+  // Earlier versions threw on Ollama health-check failure or LLM
+  // timeout, which caused the caller's catch block to discard ALL the
+  // dictionary-extracted propertyDetails along with the LLM error. The
+  // user saw "AI Timed Out" + a completely empty profile even though
+  // the deterministic dictionary extractor had perfectly good data
+  // ready. The fix: gracefully degrade. If Ollama is dead, run the
+  // dictionary extractor anyway and return its output with _aiError
+  // set so the caller can show the right toast.
+  const fullPageText = normalizePageText(scraped._pageText || '');
+  const lowerFullText = fullPageText.toLowerCase();
+  const earlyDict = () => {
+    const pd = extractPropertyDetailsFromText(fullPageText);
+    return {
+      propertyDetails: pd,
+      propertyNoteBullets: [],
+      core: { bedrooms: null, bathrooms: null, sqft: null, price: null, availableDate: null },
+    };
+  };
+
   const health = await checkOllamaHealth();
   if (!health.running) {
-    throw new Error('Ollama not running (' + (health.error || 'no response from 127.0.0.1:11434') + ')');
+    const out = earlyDict();
+    out._aiError = 'Ollama not running (' + (health.error || 'no response from 127.0.0.1:11434') + ')';
+    return out;
   }
   if (!health.modelInstalled) {
-    throw new Error('Model ' + OLLAMA_MODEL + ' not installed. Installed: ' + (health.installedModels.join(', ') || 'none'));
+    const out = earlyDict();
+    out._aiError = 'Model ' + OLLAMA_MODEL + ' not installed. Installed: ' + (health.installedModels.join(', ') || 'none');
+    return out;
   }
 
   // ---------- Build the prompt ----------
@@ -1054,14 +1091,10 @@ async function enrichWithOllama(scraped) {
   // in that much schema and either time out or produce malformed JSON. The
   // split fixes both problems.
 
-  // Normalize the raw scraped text BEFORE either the dictionary extractor
-  // or the LLM sees it. This strips relative timestamps, view counts, and
-  // other surface dynamic content that would otherwise cause the same
-  // listing to produce different results on re-imports.
-  const fullPageText = normalizePageText(scraped._pageText || '');
+  // fullPageText / lowerFullText were already computed at the top of the
+  // function so they can be shared with the early-return dictionary path.
   // 6KB is plenty — listings rarely have more than that in the useful area.
   const pageText = fullPageText.slice(0, 6000);
-  const lowerFullText = fullPageText.toLowerCase();
 
   // ----- DICTIONARY-FIRST EXTRACTION -----
   // Run the deterministic trigger-dictionary extractor over the full text.
@@ -1210,7 +1243,11 @@ Return ONLY the JSON.`;
             top_p: 1,
             repeat_penalty: 1.0,
             seed: 20260409,
-            num_ctx: 4096,
+            // 8192 ctx gives us headroom for the full prompt (~3KB) +
+            // structured JSON output (~2KB) + the model's internal scratch
+            // without truncation. qwen3:4b at 8192 is still well under
+            // 4 GB resident on a typical user machine.
+            num_ctx: 8192,
           },
           messages: [
             { role: 'system', content: sysPrompt },
@@ -1237,33 +1274,23 @@ Return ONLY the JSON.`;
     } finally { clearTimeout(t); }
   }
 
-  // ---------- MEGA-PASS (single consolidated call) ----------
-  // v0.4.4: collapsed Pass A + A' rescue + Pass B + Pass C into one
-  // structured call. The motivation is wall-clock latency: each Ollama
-  // round-trip on a 4B model is ~8-15s warm, so 4 passes = 30-60s and
-  // users were watching the loading toast time out before openDetail
-  // fired. One call gets us to ~12-18s end-to-end on a warm model.
+  // ---------- LITE-PASS (single small Ollama call) ----------
+  // v0.4.4: one slim LLM call that handles ONLY the things the dictionary
+  // can't do well: core numbers, utilities, pets, and Property Note bullets.
+  // Amenity enums (parking, pool, laundry, appliances, communityAmenities,
+  // etc.) are 100% handled by the deterministic dictionary extractor that
+  // already ran above (line ~1070, dictPropertyDetails) — that path is
+  // both faster AND more accurate than a small model trying to fill 15
+  // simultaneous enum dropdowns. The previous mega-pass crammed all 15
+  // enums into one prompt and qwen3:4b couldn't generate that much JSON
+  // inside the timeout window. Lite-pass total prompt is ~3KB, output is
+  // ~500 bytes — comfortably 5-10s on a warm 4B model.
   //
-  // We can do this safely because:
-  //   1. The dictionary extractor already filled propertyDetails before
-  //      we ever call the LLM, so amenity enums are mostly noise we add
-  //      to (not load-bearing).
-  //   2. groundPropertyDetails() drops anything the model invents that
-  //      isn't in the source text — so a wider schema doesn't increase
-  //      the hallucination risk that reaches the user.
-  //   3. The mega-pass schema is FLAT (no nesting) which Qwen3:4b handles
-  //      well in JSON mode.
-  const enumLines = Object.keys(OLLAMA_FIELD_OPTIONS)
-    .filter((k) => !['utilitiesIncluded', 'petsAllowed'].includes(k))
-    .map((k) => {
-      const isSingle = OLLAMA_SINGLE_SELECT_FIELDS.has(k);
-      const tag = isSingle ? ' (SINGLE — pick ONE string)' : ' (MULTI — array)';
-      const opts = OLLAMA_FIELD_OPTIONS[k].map((s) => '"' + s + '"').join(', ');
-      if (isSingle) return '  "' + k + '": <one of ' + opts + '>' + tag;
-      return '  "' + k + '": [ subset of: ' + opts + ' ]' + tag;
-    })
-    .join(',\n');
-  const megaUserPrompt =
+  // CRITICAL: this function MUST always return propertyDetails populated
+  // by the dictionary, even if the LLM call fails entirely. Earlier
+  // versions threw on Ollama timeout, which made the caller fall through
+  // to "no AI" and discard all the dictionary work too.
+  const litePrompt =
 `Source: ${scraperHints.source}
 Scraper guesses (verify against the page; they may be wrong):
 ${JSON.stringify(scraperHints)}
@@ -1273,29 +1300,29 @@ Page text (the hero block at the top contains beds/baths/price — read it first
 ${pageText}
 """
 
-Return this JSON object. Omit any field you cannot confirm from the page text.
-SINGLE fields are strings (one value). MULTI fields are arrays.
+Return ONLY this JSON. Omit any field you cannot confirm from the text. bedrooms, bathrooms, and price are REQUIRED if they appear anywhere.
 
 {
   "bedrooms": <int 0-20>,
   "bathrooms": <number, .5 allowed>,
   "sqft": <int>,
-  "price": <int monthly rent in USD>,
+  "price": <int monthly rent USD>,
   "availableDate": "Now" or "YYYY-MM-DD" or a phrase like "May 1",
   "utilitiesIncluded": [ any of: "Water","Hot Water","Gas","Electric","Trash","Sewer","Recycling","Internet/WiFi","Cable TV","Landscaping/Grounds","Pest Control" ],
   "petsAllowed": one of "Yes - All Pets","Dogs Only","Cats Only","Small Pets Only","Case by Case","Service Animals Only","No Pets",
-${enumLines},
   "bullets": [ 0-8 short fragments — see strict rules below ]
 }
 
-CORE NUMBERS: bedrooms, bathrooms, and price are REQUIRED if they appear in the text. Common phrasings: "3 bd", "3 beds", "1 ba", "1.5 bath", "1,250 sq ft", "$2,350/mo".
+CORE NUMBERS: common phrasings: "3 bd", "3 beds", "1 ba", "1.5 bath", "1,250 sq ft", "$2,350/mo".
 
-AVAILABILITY: look for phrases like "Available Now", "Available [date]", "Move-in ready", "Ready [date]". "Available Now" → "Now". A specific date → "YYYY-MM-DD" or "Month Day".
+AVAILABILITY: "Available Now" → "Now". A specific date → "YYYY-MM-DD" or "Month Day".
 
-AMENITY ENUMS: include only values from the allowed list. Never invent labels. Never create contradictions — if communityAmenities includes "Swimming Pool", pool cannot be "None". For SINGLE fields return ONE string, never an array.
+UTILITIES: only list a utility if the text says it is INCLUDED in rent (e.g. "water included", "all utilities included").
+
+PETS: only output petsAllowed if the text discusses pet policy explicitly (words like "pet", "dog", "cat", "no pets").
 
 BULLETS — STRICT RULES (the user is an Airbnb/VRBO investor, NOT a renter):
-The CRM already has dedicated fields for rent, beds, baths, sqft, laundry, A/C, heat, parking, pool, pets, utilities, appliances, interior features, exterior features, community amenities, and furnished status. Bullets must NEVER restate any of those — that's duplicate noise.
+The CRM already has dedicated fields for rent, beds, baths, sqft, laundry, A/C, heat, parking, pool, pets, utilities, appliances, interior/exterior features, community amenities, and furnished status. Bullets must NEVER restate any of those.
 
 Allowed topics (only when the listing literally mentions them):
 - Nearby landmarks, attractions, things to do/see — parks, beaches, museums, downtown, restaurants, shopping, universities, sports venues, tourist destinations.
@@ -1304,25 +1331,35 @@ Allowed topics (only when the listing literally mentions them):
 
 Each bullet: 6-14 words, fragment style, under 110 characters, fact-grounded in the listing text.
 DEDUPLICATION: each bullet must describe a UNIQUE fact. Never output two bullets that share the same key noun phrase.
-If the listing has nothing to say about landmarks/neighborhood/STR angles, return bullets: []. Empty is the correct answer for a sparse listing.
+If the listing has nothing to say about landmarks/neighborhood/STR angles, return bullets: []. Empty is the correct answer.
 
 Return ONLY the JSON.`;
 
-  let mega;
+  // The lite call is wrapped so a timeout / error does NOT discard the
+  // dictionary work. We always return at least { propertyDetails: dict, ... }.
+  let lite = null;
+  let liteError = null;
   try {
-    mega = await callOllama(systemPromptA, megaUserPrompt, OLLAMA_TIMEOUT_MS);
+    lite = await callOllama(systemPromptA, litePrompt, OLLAMA_TIMEOUT_MS);
   } catch (e) {
-    // Retry once with a shorter page text slice — catches cold-model timeouts.
-    console.log('[RR ext] Ollama mega-pass failed (' + (e && e.message) + '), retrying with 3KB page text');
-    const shortText = fullPageText.slice(0, 3000);
-    const shortPrompt = megaUserPrompt.replace(pageText, shortText);
-    mega = await callOllama(systemPromptA, shortPrompt, OLLAMA_TIMEOUT_MS);
+    console.log('[RR ext] Ollama lite-pass failed (' + ((e && e.message) || e) + '), retrying with 3KB page text');
+    try {
+      const shortText = fullPageText.slice(0, 3000);
+      const shortPrompt = litePrompt.replace(pageText, shortText);
+      lite = await callOllama(systemPromptA, shortPrompt, OLLAMA_TIMEOUT_MS);
+    } catch (e2) {
+      console.log('[RR ext] Ollama lite-pass retry also failed:', (e2 && e2.message) || e2);
+      liteError = (e2 && e2.message) || (e && e.message) || 'AI request failed';
+      lite = null;
+    }
   }
-  // passA / passB both alias the mega-pass — the assembly code below was
+  // passA / passB both alias the lite-pass — assembly code below was
   // originally written for two separate calls and we keep the variable
-  // names so the merge/grounding logic stays untouched.
-  const passA = mega || {};
-  const passB = mega || {};
+  // names so the merge/grounding logic stays untouched. passB gets an
+  // empty object so the amenity-merge loop is a no-op (the dictionary
+  // already filled those).
+  const passA = lite || {};
+  const passB = {};
 
   // ---------- Assemble result ----------
   const rawBullets = Array.isArray(passA && passA.bullets) ? passA.bullets : [];
@@ -1433,6 +1470,9 @@ Return ONLY the JSON.`;
     const n = Number(core.price);
     core.price = (Number.isFinite(n) && n >= 50 && n <= 200000) ? n : null;
   }
+  // Surface a partial-result marker so the caller can show the right toast.
+  // The dictionary-extracted propertyDetails are still in `out` either way.
+  if (liteError) out._aiError = liteError;
   return out;
 }
 
