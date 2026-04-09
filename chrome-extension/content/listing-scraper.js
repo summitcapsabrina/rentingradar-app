@@ -33,9 +33,16 @@
         out.bedrooms = num(gdp.bedrooms);
         out.bathrooms = num(gdp.bathrooms);
         out.sqft = num(gdp.livingArea);
-        out.address = gdp.streetAddress
-          ? [gdp.streetAddress, gdp.city, gdp.state, gdp.zipcode].filter(Boolean).join(', ')
-          : null;
+        // Build "Street, City ST ZIP" — single comma after street, then
+        // city/state/zip space-separated. The CRM's parseAddressParts()
+        // expects this exact format.
+        if (gdp.streetAddress) {
+          const cityState = [gdp.city, gdp.state].filter(Boolean).join(' ');
+          const csz = [cityState, gdp.zipcode].filter(Boolean).join(' ').trim();
+          out.address = [gdp.streetAddress, csz].filter(Boolean).join(', ');
+        } else {
+          out.address = null;
+        }
         out.description = (gdp.description || '').slice(0, 2000) || null;
         out.photoUrl = (gdp.hugePhotos && gdp.hugePhotos[0] && gdp.hugePhotos[0].url) ||
                        (gdp.photos && gdp.photos[0] && gdp.photos[0].url) || null;
@@ -52,10 +59,16 @@
   function parseApartments() {
     const out = base('apartments');
     out.title = document.querySelector('#propertyName')?.textContent?.trim() || document.title;
-    out.address = [
-      document.querySelector('.propertyAddressContainer .delivery-address')?.textContent?.trim(),
-      document.querySelector('.propertyAddressContainer h2')?.textContent?.trim(),
-    ].filter(Boolean).join(', ') || null;
+    // Apartments.com address: .delivery-address is usually "1234 Main St"
+    // and the h2 is "Phoenix, AZ 85048". Combine and normalize so we end
+    // up with exactly one comma (after street): "1234 Main St, Phoenix AZ 85048".
+    {
+      const street = document.querySelector('.propertyAddressContainer .delivery-address')?.textContent?.trim() || '';
+      let cityBlob = document.querySelector('.propertyAddressContainer h2')?.textContent?.trim() || '';
+      // Strip comma(s) inside the city blob so the city/state/zip are space-separated.
+      cityBlob = cityBlob.replace(/,/g, ' ').replace(/\s+/g, ' ').trim();
+      out.address = [street, cityBlob].filter(Boolean).join(', ') || null;
+    }
     // Rent range / bed / bath appear in .priceGridModelWrapper or similar
     const rentEl = document.querySelector('.rentInfoDetail, .priceBedRangeInfoInnerContainer');
     if (rentEl) {

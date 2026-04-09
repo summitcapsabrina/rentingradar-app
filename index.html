@@ -3152,7 +3152,7 @@ function _renderProfileInner(){
   const d = r.propertyDetails || {};
   const plat = detectPlatform(r.link);
   const hasDetails = Object.keys(d).some(k => d[k] && (Array.isArray(d[k]) ? d[k].length > 0 : true));
-  const showImport = r.link && !hasDetails;
+  const showImport = false; // Legacy Property Data Import dialog removed — imports now live only in the + Add Property slide-in
   const activeTab = profileActiveTab || 'details';
   // Analysis access: Pro always OK, otherwise check quota system
   const _isPro = currentTier === 'pro';
@@ -3302,37 +3302,9 @@ function _renderProfileInner(){
     </div>
   </div>`;
 
-  // Quick-import bar: paste a listing URL and auto-fill Property Details
-  html += `<div class="profile-card profile-full" style="margin-bottom:12px">
-    <div class="profile-card-body" style="padding:12px 16px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-      <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:260px">
-        <span style="font-size:1.1rem">🧩</span>
-        <input type="url" id="rrListingPasteInput_${r.id}" class="rr-paste-input" placeholder="Paste a listing link (Zillow, Apartments.com, Hotpads, FB Marketplace, Craigslist)" style="flex:1;padding:8px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text1);font-size:.85rem;outline:none" onkeydown="if(event.key==='Enter'){event.preventDefault();importListingFromPaste('${r.id}')}" />
-      </div>
-      <button class="btn btn-primary btn-sm" onclick="importListingFromPaste('${r.id}')" style="font-size:.8rem;padding:8px 14px">Import details</button>
-    </div>
-    <div style="padding:0 16px 10px;font-size:.72rem;color:var(--text3)">Auto-fills beds, baths, sq ft, rent, address, description — without leaving the CRM.</div>
-  </div>`;
-
-  // Import dialog
-  if(showImport){
-    html += `<div class="import-dialog" id="importContainer_${r.id}">
-      <h3>Property Data Import</h3>
-      <p>How would you like to populate this property's details?</p>
-      <div class="import-options">
-        <div class="import-option" onclick="autoImport('${r.id}')">
-          <div class="io-icon">🤖</div>
-          <div class="io-title">Automatically</div>
-          <div class="io-desc">Extract amenities, features, and pricing from the listing</div>
-        </div>
-        <div class="import-option" onclick="showManualEntry('${r.id}')">
-          <div class="io-icon">✏️</div>
-          <div class="io-title">Manually</div>
-          <div class="io-desc">Fill in all property details by hand</div>
-        </div>
-      </div>
-    </div>`;
-  }
+  // Note: the "paste a listing link" flow and legacy Property Data Import dialog
+  // have been moved to the + Add Property slide-in. Property Details is now
+  // purely for viewing/editing data on an existing property.
 
   // Property detail sections (read-only with hover edit button)
   PROP_SECTIONS.forEach((section, si) => {
@@ -4621,6 +4593,19 @@ function handleExtensionListing(data) {
     r = records.find(x => x.id === pendingId) || null;
   }
 
+  // Parse the scraped address into street/city/state/zip so the hero
+  // doesn't end up with "123 Main St, Phoenix, AZ, 85048" all jammed
+  // into the street line.
+  const addrParts = (typeof parseAddressParts === 'function' && data.address)
+    ? parseAddressParts(data.address)
+    : { street: data.address || '', unit: '', city: '', state: '', zip: '' };
+  // Canonical "Street, City ST ZIP" for the .property field
+  const canonical = (function(){
+    const s = addrParts.street || '';
+    const csz = [addrParts.city, addrParts.state].filter(Boolean).join(' ') + (addrParts.zip ? ' ' + addrParts.zip : '');
+    return [s, csz.trim()].filter(Boolean).join(', ') || data.address || data.title || 'New Property';
+  })();
+
   if (!r) {
     // Enforce tier/property-count limits just like the manual add flow
     if (typeof checkPropertyLimit === 'function' && !checkPropertyLimit()) return;
@@ -4628,8 +4613,8 @@ function handleExtensionListing(data) {
     createdNew = true;
     r = {
       id: (typeof uid === 'function' ? uid() : ('r_' + Date.now())),
-      property: data.address || (data.title || 'New Property'),
-      addressParts: { street: data.address || '', unit: '', city: '', state: '', zip: '' },
+      property: canonical,
+      addressParts: addrParts,
       name: '',
       phone: '',
       email: '',
@@ -4645,6 +4630,11 @@ function handleExtensionListing(data) {
       createdAt: new Date().toISOString(),
     };
     records.unshift(r);
+  } else {
+    // Fill in address parts on an existing record only if they were empty
+    if (!r.addressParts) r.addressParts = { street:'', unit:'', city:'', state:'', zip:'' };
+    if (!r.addressParts.street && addrParts.street) r.addressParts = addrParts;
+    if ((!r.property || r.property === 'New Property') && canonical) r.property = canonical;
   }
 
   if (!r.propertyDetails) r.propertyDetails = {};
@@ -4656,7 +4646,6 @@ function handleExtensionListing(data) {
     if (obj[key] == null || obj[key] === '' || obj[key] === 0) obj[key] = val;
   }
 
-  if (data.address && !r.property) r.property = data.address;
   if (data.sourceUrl && !r.link) r.link = data.sourceUrl;
 
   setIfEmpty(d, 'bedrooms', data.bedrooms);
@@ -4793,11 +4782,94 @@ function openAddModal(){
   panel.innerHTML = `
     <div class="modal-header"><h2>Add New Property</h2><button class="modal-close" onclick="closeAddModal()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>
     <div class="modal-body" id="addModalBody">
-      <div id="addStep1" style="display:none"></div>
-      <div id="addStep2"></div>
+      <div id="addStep1"></div>
+      <div id="addStep2" style="display:none"></div>
     </div>`;
   modal.classList.add('open');
-  showManualAddForm();
+  showAddChoice();
+}
+
+// Choice screen: paste a listing link OR enter details manually
+function showAddChoice(){
+  const step1 = document.getElementById('addStep1');
+  const step2 = document.getElementById('addStep2');
+  if(step2){ step2.style.display = 'none'; step2.innerHTML = ''; }
+  if(!step1) return;
+  step1.style.display = 'block';
+  step1.innerHTML = `
+    <div style="padding:4px 2px 8px;font-size:.85rem;color:var(--text2)">How would you like to add this property?</div>
+
+    <div class="field-group" style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:14px">
+      <label class="field-label" style="display:flex;align-items:center;gap:6px;font-weight:600;margin-bottom:2px">🧩 Paste a listing link</label>
+      <div style="font-size:.72rem;color:var(--text3);margin-bottom:8px">Creates a new Property Profile with address, beds, baths, sq ft, rent, and description auto-filled from Zillow, Apartments.com, Hotpads, Facebook Marketplace, or Craigslist.</div>
+      <div style="display:flex;gap:6px">
+        <input id="add_choice_url" type="url" placeholder="https://www.zillow.com/..." style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();importFromChoicePaste()}" />
+        <button type="button" class="btn btn-primary btn-sm" style="white-space:nowrap" onclick="importFromChoicePaste()">Import</button>
+      </div>
+      <div id="add_choice_status" style="font-size:.72rem;color:var(--text3);margin-top:6px;min-height:1em"></div>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:10px;margin:14px 2px;color:var(--text3);font-size:.72rem">
+      <div style="flex:1;height:1px;background:var(--border)"></div>
+      <span>OR</span>
+      <div style="flex:1;height:1px;background:var(--border)"></div>
+    </div>
+
+    <div class="field-group" style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px 16px">
+      <label class="field-label" style="display:flex;align-items:center;gap:6px;font-weight:600;margin-bottom:2px">✏️ Enter details manually</label>
+      <div style="font-size:.72rem;color:var(--text3);margin-bottom:10px">Fill in address and property information by hand.</div>
+      <button type="button" class="btn btn-secondary btn-sm" onclick="showManualAddForm()">Manual Entry</button>
+    </div>
+  `;
+  setTimeout(() => { const el = document.getElementById('add_choice_url'); if(el) el.focus(); }, 60);
+}
+
+// Triggered by the "Import" button on the add-property choice screen.
+// Scrapes via the Chrome extension, then delegates to handleExtensionListing
+// which creates a brand-new record and opens its profile.
+function importFromChoicePaste(){
+  const input = document.getElementById('add_choice_url');
+  const statusEl = document.getElementById('add_choice_status');
+  const url = input && input.value ? input.value.trim() : '';
+  if(!url){
+    if(statusEl){ statusEl.style.color = 'var(--warning)'; statusEl.textContent = 'Please paste a listing URL.'; }
+    return;
+  }
+  if(/airdna\.co/i.test(url)){
+    if(statusEl){ statusEl.style.color = 'var(--warning)'; statusEl.textContent = 'AirDNA links belong in the Competitor Analysis tab, not here.'; }
+    return;
+  }
+  if(typeof rrScrapeViaExtension !== 'function'){
+    if(statusEl){ statusEl.style.color = 'var(--warning)'; statusEl.textContent = 'Install the RentingRadar Chrome extension to auto-fill from listings.'; }
+    return;
+  }
+  if(input) input.disabled = true;
+  if(statusEl){ statusEl.style.color = 'var(--text2)'; statusEl.textContent = 'Importing listing…'; }
+
+  // Make sure handleExtensionListing creates a new record (not fills an existing one)
+  window._rrPendingListingRecordId = null;
+
+  rrScrapeViaExtension(url, 'listing').then((res) => {
+    if(input) input.disabled = false;
+    if(!res || !res.ok){
+      if(statusEl){
+        statusEl.style.color = 'var(--danger)';
+        if(res && res.error === 'extension-not-installed'){
+          statusEl.textContent = 'The RentingRadar Chrome extension isn\'t installed. Install it from the Chrome Web Store.';
+        } else {
+          statusEl.textContent = 'Could not import: ' + ((res && res.error) || 'Unknown error');
+        }
+      }
+      return;
+    }
+    // Close the Add Property modal; handleExtensionListing will open the new profile
+    const modal = document.getElementById('detailModal');
+    if(modal) modal.classList.remove('open');
+    handleExtensionListing(res.data || {});
+  }).catch((e) => {
+    if(input) input.disabled = false;
+    if(statusEl){ statusEl.style.color = 'var(--danger)'; statusEl.textContent = 'Import error: ' + (e.message || e); }
+  });
 }
 
 function closeAddModal(force){
@@ -4949,13 +5021,9 @@ function showManualAddForm(){
   if(step2){
     step2.style.display = 'block';
     step2.innerHTML = `
-      <div class="field-group" style="background:var(--bg2);border:1px dashed var(--border);border-radius:8px;padding:10px 12px;margin-bottom:10px">
-        <label class="field-label" style="display:flex;align-items:center;gap:6px">🧩 Quick import from listing <span style="font-size:.65rem;color:var(--text3);font-weight:400">(optional)</span></label>
-        <div style="display:flex;gap:6px">
-          <input id="add_paste_url" type="url" placeholder="Paste Zillow, Apartments.com, Hotpads, FB Marketplace, or Craigslist link" style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();importAddModalFromPaste()}" />
-          <button type="button" class="btn btn-secondary btn-sm" style="font-size:.78rem;white-space:nowrap" onclick="importAddModalFromPaste()">Auto-fill</button>
-        </div>
-        <div style="font-size:.7rem;color:var(--text3);margin-top:4px">Uses the RentingRadar Chrome extension to pull beds, baths, sq ft, rent & address.</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <button type="button" class="btn btn-secondary btn-sm" style="font-size:.72rem" onclick="showAddChoice()">← Back</button>
+        <div style="font-size:.72rem;color:var(--text3)">Manual entry</div>
       </div>
       <div class="field-group" style="position:relative"><label class="field-label">Property Address *</label><input id="add_property" type="text" placeholder="Start typing an address..." autocomplete="off" data-form-type="other"></div>
       <div class="field-row" style="gap:8px">
@@ -5019,13 +5087,9 @@ function showManualAddForm(){
     const body = document.getElementById('addModalBody');
     if(!body) return;
     body.innerHTML = `
-      <div class="field-group" style="background:var(--bg2);border:1px dashed var(--border);border-radius:8px;padding:10px 12px;margin-bottom:10px">
-        <label class="field-label" style="display:flex;align-items:center;gap:6px">🧩 Quick import from listing <span style="font-size:.65rem;color:var(--text3);font-weight:400">(optional)</span></label>
-        <div style="display:flex;gap:6px">
-          <input id="add_paste_url" type="url" placeholder="Paste Zillow, Apartments.com, Hotpads, FB Marketplace, or Craigslist link" style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();importAddModalFromPaste()}" />
-          <button type="button" class="btn btn-secondary btn-sm" style="font-size:.78rem;white-space:nowrap" onclick="importAddModalFromPaste()">Auto-fill</button>
-        </div>
-        <div style="font-size:.7rem;color:var(--text3);margin-top:4px">Uses the RentingRadar Chrome extension to pull beds, baths, sq ft, rent & address.</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <button type="button" class="btn btn-secondary btn-sm" style="font-size:.72rem" onclick="openAddModal()">← Back</button>
+        <div style="font-size:.72rem;color:var(--text3)">Manual entry</div>
       </div>
       <div class="field-group" style="position:relative"><label class="field-label">Property Address *</label><input id="add_property" type="text" placeholder="Start typing an address..." autocomplete="off" data-form-type="other"></div>
       <div class="field-row" style="gap:8px">
