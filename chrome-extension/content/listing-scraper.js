@@ -121,14 +121,40 @@
   // the main listing content. Capped at ~20KB before send.
   function capturePageText() {
     try {
+      // IMPORTANT: do NOT strip <header> — on Apartments.com and Zillow the
+      // beds / baths / price / unit-stats block lives inside the page header.
+      // Stripping it left the AI blind to the exact numbers we need.
       const main = document.querySelector('main, [role="main"], #main, .main, #content, .content') || document.body;
       const clone = main.cloneNode(true);
-      clone.querySelectorAll('script, style, nav, header, footer, noscript, iframe, svg').forEach((n) => n.remove());
-      const text = (clone.innerText || clone.textContent || '')
+      clone.querySelectorAll('script, style, nav, footer, noscript, iframe, svg, aside').forEach((n) => n.remove());
+      // Remove "similar/nearby listings" widgets so they can't poison the model's
+      // bed/bath extraction with numbers from unrelated units.
+      clone.querySelectorAll(
+        '[class*="similar"], [class*="Similar"], [class*="nearby"], [class*="Nearby"], ' +
+        '[class*="recommend"], [class*="Recommend"], [class*="carousel"], [class*="Carousel"]'
+      ).forEach((n) => n.remove());
+
+      const mainText = (clone.innerText || clone.textContent || '')
         .replace(/[ \t]+/g, ' ')
         .replace(/\n{3,}/g, '\n\n')
         .trim();
-      return text.slice(0, 20000);
+
+      // Assemble a "hero" preamble so the model sees the most important
+      // signals in the first few hundred tokens — this dramatically improves
+      // core-number extraction on small (3B) models.
+      const title = (document.querySelector('h1')?.innerText || document.title || '').trim();
+      const ogTitle = document.querySelector('meta[property="og:title"]')?.content || '';
+      const ogDesc = document.querySelector('meta[property="og:description"]')?.content || '';
+      const metaDesc = document.querySelector('meta[name="description"]')?.content || '';
+      const hero = [
+        title && 'TITLE: ' + title,
+        ogTitle && ogTitle !== title && 'OG_TITLE: ' + ogTitle,
+        ogDesc && 'OG_DESCRIPTION: ' + ogDesc,
+        metaDesc && metaDesc !== ogDesc && 'META_DESCRIPTION: ' + metaDesc,
+      ].filter(Boolean).join('\n');
+
+      const combined = (hero ? hero + '\n\n---\n\n' : '') + mainText;
+      return combined.slice(0, 20000);
     } catch (e) {
       return (document.body.innerText || '').slice(0, 20000);
     }

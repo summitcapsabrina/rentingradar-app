@@ -284,7 +284,12 @@ async function enrichWithOllama(scraped) {
   const systemPromptA =
     "You extract structured rental-listing data from raw page text. " +
     "Return ONLY a JSON object. No prose, no markdown, no code fences. " +
-    "Never guess. If a value is not stated in the page text, omit the field.";
+    "The page text you receive starts with a TITLE / OG_TITLE / OG_DESCRIPTION hero block — " +
+    "bedrooms, bathrooms, square footage, and monthly rent are almost always stated in that hero block. " +
+    "READ IT CAREFULLY. You MUST extract bedrooms, bathrooms, and price if they appear anywhere in the text. " +
+    "Common phrasings: '3 bd', '3 beds', '3 bedroom', '1 ba', '1 bath', '1.5 bathrooms', '$2,350/mo', '$2,350 per month'. " +
+    "A studio counts as bedrooms = 0. Half baths count as .5 (e.g. '1.5 baths'). " +
+    "Never invent values. If a field is truly not in the text, omit it.";
 
   // NOTE: small models handle FLAT schemas much better than nested ones,
   // and they handle short prompts much better than long ones. Keep this tight.
@@ -293,12 +298,12 @@ async function enrichWithOllama(scraped) {
 Scraper guesses (verify against the page; they may be wrong):
 ${JSON.stringify(scraperHints)}
 
-Page text:
+Page text (the hero block at the top contains beds/baths/price — read it first):
 """
 ${pageText}
 """
 
-Return this JSON object (omit any field you can't confirm):
+Return this JSON object. bedrooms, bathrooms, and price are REQUIRED if they appear in the text:
 
 {
   "bedrooms": <int 0-20>,
@@ -365,6 +370,42 @@ Return ONLY the JSON.`;
     const shortText = fullPageText.slice(0, 3000);
     const shortPrompt = userPromptA.replace(pageText, shortText);
     passA = await callOllama(systemPromptA, shortPrompt, OLLAMA_TIMEOUT_MS);
+  }
+
+  // ---------- Pass A' (core rescue) ----------
+  // If pass A came back without the core numbers, run a laser-focused
+  // second prompt that does NOTHING except extract beds/baths/sqft/price
+  // from the hero block. Small models tend to lose numbers when asked
+  // to produce bullets + utilities + core all at once.
+  const gotCore = passA && passA.bedrooms != null && passA.bathrooms != null;
+  if (!gotCore) {
+    try {
+      const heroSlice = fullPageText.slice(0, 2500);
+      const coreSys =
+        "You extract four numbers from rental-listing text. Return ONLY JSON. " +
+        "Never invent values. If a value is truly not present, omit the field.";
+      const coreUser =
+`Extract these four values from the text below. Look for phrases like "3 bd", "3 beds", "1 ba", "1.5 bath", "1,250 sq ft", "$2,350/mo":
+
+"""
+${heroSlice}
+"""
+
+Return ONLY:
+{ "bedrooms": <int, 0 for studio>, "bathrooms": <number, .5 ok>, "sqft": <int>, "price": <int monthly rent USD>, "availableDate": "Now" or date string }`;
+      const coreOnly = await callOllama(coreSys, coreUser, Math.floor(OLLAMA_TIMEOUT_MS * 0.5));
+      if (coreOnly && typeof coreOnly === 'object') {
+        passA = passA || {};
+        if (passA.bedrooms == null && coreOnly.bedrooms != null) passA.bedrooms = coreOnly.bedrooms;
+        if (passA.bathrooms == null && coreOnly.bathrooms != null) passA.bathrooms = coreOnly.bathrooms;
+        if (passA.sqft == null && coreOnly.sqft != null) passA.sqft = coreOnly.sqft;
+        if (passA.price == null && coreOnly.price != null) passA.price = coreOnly.price;
+        if (!passA.availableDate && coreOnly.availableDate) passA.availableDate = coreOnly.availableDate;
+        console.log('[RR ext] Core rescue pass result:', coreOnly);
+      }
+    } catch (e) {
+      console.log('[RR ext] Core rescue pass failed:', (e && e.message) || e);
+    }
   }
 
   // ---------- Pass B (optional — amenity enums) ----------
