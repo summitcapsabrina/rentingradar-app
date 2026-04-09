@@ -908,7 +908,83 @@
   function parseHotpads() {
     const out = base('hotpads');
     out.title = document.querySelector('h1')?.textContent?.trim() || document.title;
-    out.address = document.querySelector('[class*="address"]')?.textContent?.trim() || null;
+
+    // Address strategy (in priority order):
+    //   1) JSON-LD PostalAddress — most accurate when present
+    //   2) DOM selectors for street + city/state/zip blocks, concatenated
+    //   3) og:title / og:description
+    //   4) document.title
+    // The CRM's rrGeocodeAddress() then runs the resulting string through
+    // Google Places Text Search, which fills in anything we missed — but
+    // it NEEDS at minimum a street + city to disambiguate, so we do our
+    // best to hand it a full address string before it gets there.
+    let addr = null;
+
+    // 1) JSON-LD PostalAddress
+    try {
+      const blocks = findAllJsonLd();
+      for (const block of blocks) {
+        const postal = deepFind(block, (o) =>
+          o && typeof o === 'object' && (o['@type'] === 'PostalAddress' || o.streetAddress || o.addressLocality)
+        );
+        if (postal && (postal.streetAddress || postal.addressLocality)) {
+          const street = postal.streetAddress || '';
+          const city = postal.addressLocality || '';
+          const region = postal.addressRegion || '';
+          const zip = postal.postalCode || '';
+          const csz = [city, region].filter(Boolean).join(', ') + (zip ? ' ' + zip : '');
+          addr = [street, csz].filter((s) => s && s.trim()).join(', ').trim();
+          if (addr) break;
+        }
+      }
+    } catch (_) {}
+
+    // 2) DOM: try to assemble "street, city, state zip" from Hotpads'
+    //    separate address spans. The page ships the address split across
+    //    multiple small elements; grabbing only the first one gave us the
+    //    street fragment with no city/state/zip, which then made Places
+    //    geocoding fail. We collect ALL address-ish spans and concatenate.
+    if (!addr) {
+      const addrNodes = Array.from(document.querySelectorAll(
+        '[class*="address" i], [class*="Address" i], [class*="streetAddress" i], ' +
+        '[class*="cityStateZip" i], [class*="CityStateZip" i], [data-test*="address" i]'
+      ));
+      const parts = [];
+      for (const n of addrNodes) {
+        const t = (n.textContent || '').replace(/\s+/g, ' ').trim();
+        if (!t || t.length > 200) continue;
+        // Dedupe — Hotpads renders the same text in multiple widgets
+        if (!parts.some((p) => p === t || p.includes(t) || t.includes(p))) parts.push(t);
+      }
+      if (parts.length) {
+        // Prefer a concatenation that looks like "street, city, ST zip"
+        const combined = parts.join(', ').replace(/,\s*,/g, ',');
+        if (/,\s*[A-Z]{2}\s*\d{5}/.test(combined) || parts.length >= 2) addr = combined;
+        else addr = parts[0];
+      }
+    }
+
+    // 3) og:title / og:description often include the city
+    if (!addr || !/,\s*[A-Z]{2}/.test(addr || '')) {
+      const og = document.querySelector('meta[property="og:title"]')?.content || '';
+      const ogDesc = document.querySelector('meta[property="og:description"]')?.content || '';
+      const candidate = [og, ogDesc].find((s) => /,\s*[A-Z]{2}/.test(s || ''));
+      if (candidate) {
+        // Pull the "street, city, ST zip" fragment out
+        const m = candidate.match(/[\w\s.#\-]+,\s*[\w\s.\-]+,\s*[A-Z]{2}(?:\s*\d{5})?/);
+        if (m) addr = m[0];
+      }
+    }
+
+    // 4) document.title — Hotpads titles often read
+    //    "123 Main St, Brooklyn, NY 11201 | Hotpads"
+    if (!addr || !/,\s*[A-Z]{2}/.test(addr || '')) {
+      const t = (document.title || '').split('|')[0].trim();
+      if (/,\s*[A-Z]{2}/.test(t)) addr = t;
+    }
+
+    out.address = addr || null;
+
     const priceTxt = document.querySelector('[class*="price"]')?.textContent;
     out.price = num(priceTxt);
     const bodyText = document.body.innerText;
