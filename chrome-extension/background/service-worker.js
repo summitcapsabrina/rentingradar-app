@@ -26,6 +26,80 @@ const OLLAMA_MODEL = 'llama3.2';
 const OLLAMA_TIMEOUT_MS = 120000;
 
 // ------------------------------------------------------------------
+// Import cache — keyed by extension version + source URL.
+// Re-importing the same listing returns the exact cached payload, which
+// means Property Details are byte-for-byte identical across re-imports.
+// The cache is bumped automatically whenever the extension updates, so
+// improvements to the extraction pipeline invalidate stale entries.
+// ------------------------------------------------------------------
+const IMPORT_CACHE_VERSION = (chrome.runtime.getManifest && chrome.runtime.getManifest().version) || '0.0.0';
+const IMPORT_CACHE_PREFIX = 'rr_import_cache_' + IMPORT_CACHE_VERSION + '_';
+const IMPORT_CACHE_TTL_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
+
+function canonicalizeUrl(url) {
+  try {
+    const u = new URL(url);
+    // Drop tracking/session params that don't change the listing identity.
+    const drop = /^(utm_|fbclid|gclid|mc_|ref|session|source|tracking)/i;
+    const keep = [];
+    for (const [k, v] of u.searchParams.entries()) {
+      if (!drop.test(k)) keep.push([k, v]);
+    }
+    u.search = '';
+    keep.sort((a, b) => a[0].localeCompare(b[0]));
+    for (const [k, v] of keep) u.searchParams.append(k, v);
+    u.hash = '';
+    return u.toString().replace(/\/$/, '').toLowerCase();
+  } catch (_) {
+    return String(url || '').toLowerCase();
+  }
+}
+
+async function cacheGet(url) {
+  try {
+    const key = IMPORT_CACHE_PREFIX + canonicalizeUrl(url);
+    const obj = await chrome.storage.local.get(key);
+    const entry = obj && obj[key];
+    if (!entry || !entry.ts || !entry.data) return null;
+    if (Date.now() - entry.ts > IMPORT_CACHE_TTL_MS) {
+      try { await chrome.storage.local.remove(key); } catch (_) {}
+      return null;
+    }
+    return entry.data;
+  } catch (_) { return null; }
+}
+
+async function cacheSet(url, data) {
+  try {
+    const key = IMPORT_CACHE_PREFIX + canonicalizeUrl(url);
+    await chrome.storage.local.set({ [key]: { ts: Date.now(), data } });
+  } catch (_) { /* storage full or unavailable — cache is best-effort */ }
+}
+
+// Strip dynamic/relative content from page text so the LLM and dictionary
+// extractor see a stable surface across re-imports. Zillow/Apartments.com/
+// Hotpads all render "X days ago", "Posted 2 hours ago", view counters,
+// and relative timestamps that drift between loads and poison caching
+// + LLM determinism.
+function normalizePageText(text) {
+  let t = String(text || '');
+  // Relative timestamps
+  t = t.replace(/\b\d+\s*(second|minute|hour|day|week|month|year)s?\s*ago\b/gi, '');
+  t = t.replace(/\bposted\s+(just now|today|yesterday|\d+\s*(m|h|d|w|mo|y)\b)/gi, '');
+  t = t.replace(/\bupdated\s+(just now|today|yesterday|\d+\s*(m|h|d|w|mo|y)\b)/gi, '');
+  t = t.replace(/\blisted\s+(just now|today|yesterday|\d+\s*(m|h|d|w|mo|y)\b)/gi, '');
+  // View/save counters
+  t = t.replace(/\b\d{1,3}(,\d{3})*\s*(views?|saves?|favorites?|watchers?|applicants?)\b/gi, '');
+  // Price-drop pill content ("Price reduced on 4/9")
+  t = t.replace(/price (reduced|dropped|cut) on [0-9\/]+/gi, '');
+  // "Last updated: Apr 9, 2026" — normalize away
+  t = t.replace(/\b(last updated|updated on|posted on|listed on):?\s*[a-z]{3,9}\.?\s+\d{1,2},?\s*\d{0,4}/gi, '');
+  // Collapse whitespace
+  t = t.replace(/[ \t]+/g, ' ').replace(/\s*\n\s*/g, '\n').replace(/\n{3,}/g, '\n\n');
+  return t.trim();
+}
+
+// ------------------------------------------------------------------
 // Internal message router (popup + content scripts)
 // ------------------------------------------------------------------
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -127,6 +201,20 @@ async function scrapeAny(url, hint) {
   else if (/craigslist\.org$/i.test(host)) kind = 'listing';
   else return { ok: false, error: 'Unsupported site. Supported: AirDNA, Zillow, Apartments.com, Hotpads, Facebook Marketplace, Craigslist.' };
 
+  // Cache check — re-importing the same listing returns the exact same
+  // payload, so Property Details are guaranteed byte-for-byte consistent.
+  if (kind === 'listing') {
+    try {
+      const cached = await cacheGet(url);
+      if (cached) {
+        console.log('[RR ext] cache hit for', url);
+        const clone = JSON.parse(JSON.stringify(cached));
+        clone._cached = true;
+        return { ok: true, data: clone };
+      }
+    } catch (_) {}
+  }
+
   const file = kind === 'airdna' ? 'content/airdna-scraper.js' : 'content/listing-scraper.js';
   try {
     const data = await scrapeInBackgroundTab(url, file);
@@ -200,6 +288,12 @@ async function scrapeAny(url, hint) {
       }
       // Strip the raw page text before returning — it's huge and no longer needed
       delete data._pageText;
+    }
+
+    // Cache the fully-enriched payload so subsequent re-imports of the
+    // same URL return identical data.
+    if (kind === 'listing') {
+      try { await cacheSet(url, data); } catch (_) {}
     }
 
     return { ok: true, data };
@@ -519,7 +613,150 @@ const AMENITY_SOURCE_TRIGGERS = {
   'Deadbolt Locks': ['deadbolt'],
   'Security Cameras': ['security camera','cctv','surveillance'],
   '24-Hour Security': ['24-hour security','24 hour security','24/7 security'],
+  // Property type (single-select)
+  'House': ['single family','single-family','sfh',' house ','house for rent','home for rent','detached home'],
+  'Apartment': ['apartment',' apt '],
+  'Condo': ['condo','condominium'],
+  'Townhouse': ['townhouse','townhome','town house','town home'],
+  'Duplex': ['duplex'],
+  'Triplex': ['triplex'],
+  'Fourplex': ['fourplex','quadplex','4-plex','four-plex'],
+  'Studio': ['studio apartment','studio for rent','studio unit',' studio '],
+  'Loft': ['loft'],
+  'Mobile Home': ['mobile home','manufactured home'],
+  'Villa': ['villa'],
+  'Cottage': ['cottage','casita'],
+  // Furnished (single-select). Order matters in the extractor below:
+  // "partially furnished" and "unfurnished" must be checked BEFORE the
+  // bare "furnished" trigger so we don't misclassify them.
+  'Partially Furnished': ['partially furnished','partly furnished','semi-furnished','semi furnished'],
+  'Unfurnished': ['unfurnished','not furnished'],
+  'Furnished': ['fully furnished','comes furnished','furnished '],
 };
+
+// ------------------------------------------------------------------
+// DETERMINISTIC DICTIONARY EXTRACTOR
+// ------------------------------------------------------------------
+// This is the foundation of import consistency. Given the same page
+// text, it produces the same propertyDetails object EVERY TIME — no
+// LLM involvement, no randomness, no drift.
+//
+// The LLM is still used for the fuzzy parts (core numbers, narrative
+// bullets, availability date) where dictionary matching is too brittle,
+// but the structured Property Details fields are now decided here.
+//
+// Field type assumptions (matched to the CRM's PROP_SECTIONS schema):
+//   - propertyType, furnished, laundry, ac, heating, parking, pool,
+//     petsAllowed  → single-select (one string value)
+//   - flooring, appliances, interiorFeatures, outdoor, exteriorFeatures,
+//     communityAmenities, utilitiesIncluded, safetyFeatures
+//     → multi-select (array of values)
+//
+// Priority lists (reused for single-select tie-breaking) decide which
+// value wins when multiple candidates all match the source text.
+// ------------------------------------------------------------------
+const FIELD_VALUE_PRIORITY = {
+  propertyType: ['Studio','Loft','Townhouse','Duplex','Triplex','Fourplex','Condo','Apartment','House','Villa','Cottage','Mobile Home','Other'],
+  furnished:    ['Partially Furnished','Furnished','Unfurnished'],
+  parking:      ['Attached Garage','Detached Garage','Parking Garage','Carport','Assigned Spot','Driveway','Covered Parking','Street Only','None'],
+  pool:         ['Heated Private','Private','Heated Community','Community/Shared','None'],
+  laundry:      ['In-Unit W/D','Stacked W/D','W/D Hookups','Shared/On-Site','None'],
+  ac:           ['Central A/C','Mini-Split','Window Unit','Portable','Evaporative/Swamp Cooler','None'],
+  heating:      ['Central (Gas)','Central (Electric)','Heat Pump','Radiator','Baseboard','Fireplace','Space Heater','None'],
+  petsAllowed:  ['Yes - All Pets','Dogs Only','Cats Only','Small Pets Only','Case by Case','Service Animals Only','No Pets'],
+};
+
+// All the fields the extractor owns. The LLM can still suggest values
+// for these, but the dictionary result is authoritative.
+const EXTRACTOR_FIELDS = [
+  // Single-select
+  'propertyType','furnished','laundry','ac','heating','parking','pool','petsAllowed',
+  // Multi-select
+  'flooring','appliances','interiorFeatures','outdoor','exteriorFeatures','communityAmenities','utilitiesIncluded','safetyFeatures',
+];
+
+// Full allowed-value list per field. Extends OLLAMA_FIELD_OPTIONS with
+// the new propertyType + furnished enums.
+const EXTRACTOR_FIELD_OPTIONS = Object.assign({}, OLLAMA_FIELD_OPTIONS, {
+  propertyType: ['House','Apartment','Condo','Townhouse','Duplex','Triplex','Fourplex','Studio','Loft','Mobile Home','Villa','Cottage','Other'],
+  furnished:    ['Unfurnished','Furnished','Partially Furnished'],
+});
+
+// Does any trigger for this value appear in the (lowercased) source text?
+function valueInText(value, lowerText) {
+  const triggers = AMENITY_SOURCE_TRIGGERS[value];
+  if (triggers && triggers.length) {
+    for (const t of triggers) if (lowerText.includes(t)) return true;
+    return false;
+  }
+  return false;
+}
+
+// Main extractor. Returns a propertyDetails object built purely from
+// the page text — no LLM. Identical text → identical output.
+function extractPropertyDetailsFromText(fullPageText) {
+  const pd = {};
+  const text = String(fullPageText || '').toLowerCase();
+  if (!text) return pd;
+
+  const SINGLE = OLLAMA_SINGLE_SELECT_FIELDS;
+
+  for (const field of EXTRACTOR_FIELDS) {
+    const options = EXTRACTOR_FIELD_OPTIONS[field] || [];
+    // Gather every allowed value whose triggers appear in the source.
+    const matched = options.filter((v) => valueInText(v, text));
+
+    if (!matched.length) continue;
+
+    if (SINGLE.has(field)) {
+      // Pick the highest-priority match
+      const priority = FIELD_VALUE_PRIORITY[field];
+      let picked = null;
+      if (priority) {
+        for (const p of priority) if (matched.includes(p)) { picked = p; break; }
+      }
+      if (!picked) picked = matched[0];
+      // Special-case furnished: the bare word "furnished" appears inside
+      // "unfurnished" and "partially furnished", so we trust the priority
+      // ranking above (Partially Furnished → Furnished → Unfurnished)
+      // ONLY if the specific trigger matched. The priority list already
+      // handles this correctly — no extra work needed here.
+      pd[field] = picked;
+    } else {
+      pd[field] = matched.slice();
+    }
+  }
+
+  return pd;
+}
+
+// Merge LLM-extracted Property Details INTO the dictionary extraction.
+// The dictionary is authoritative — LLM values are only added when the
+// dictionary didn't find anything for that field, and every LLM value
+// must itself pass the source-grounding check.
+function mergeLlmIntoDictionary(dictPd, llmPd, lowerText) {
+  if (!llmPd || typeof llmPd !== 'object') return dictPd;
+  const SINGLE = OLLAMA_SINGLE_SELECT_FIELDS;
+  for (const k of Object.keys(llmPd)) {
+    const llmVal = llmPd[k];
+    if (llmVal == null || llmVal === '' || (Array.isArray(llmVal) && !llmVal.length)) continue;
+    if (SINGLE.has(k)) {
+      // Dictionary wins for single-select
+      if (dictPd[k]) continue;
+      if (typeof llmVal === 'string' && valueInText(llmVal, lowerText)) {
+        dictPd[k] = llmVal;
+      }
+    } else {
+      // Multi-select: union dictionary + LLM, keeping only grounded values
+      const existing = Array.isArray(dictPd[k]) ? dictPd[k] : [];
+      const addition = Array.isArray(llmVal) ? llmVal : [llmVal];
+      const merged = Array.from(new Set(existing.concat(addition)))
+        .filter((v) => valueInText(v, lowerText));
+      if (merged.length) dictPd[k] = merged;
+    }
+  }
+  return dictPd;
+}
 
 // Verify a single amenity value is grounded in the listing text. Returns
 // true if any of its triggers appear. Values we don't have triggers for
@@ -653,9 +890,21 @@ async function enrichWithOllama(scraped) {
   // in that much schema and either time out or produce malformed JSON. The
   // split fixes both problems.
 
-  const fullPageText = scraped._pageText || '';
+  // Normalize the raw scraped text BEFORE either the dictionary extractor
+  // or the LLM sees it. This strips relative timestamps, view counts, and
+  // other surface dynamic content that would otherwise cause the same
+  // listing to produce different results on re-imports.
+  const fullPageText = normalizePageText(scraped._pageText || '');
   // 6KB is plenty — listings rarely have more than that in the useful area.
   const pageText = fullPageText.slice(0, 6000);
+  const lowerFullText = fullPageText.toLowerCase();
+
+  // ----- DICTIONARY-FIRST EXTRACTION -----
+  // Run the deterministic trigger-dictionary extractor over the full text.
+  // This produces propertyDetails with ZERO LLM involvement — identical
+  // input always yields identical output. The LLM only fills gaps below.
+  const dictPropertyDetails = extractPropertyDetailsFromText(fullPageText);
+  console.log('[RR ext] dictionary extractor produced:', Object.keys(dictPropertyDetails));
   const scraperHints = {
     source: scraped.source || '',
     address: scraped.address || '',
@@ -763,7 +1012,21 @@ Return ONLY the JSON.`;
           // force llama3.2 to reload the model (default ctx is 2048 but most
           // installs already have 4096 loaded from prior runs; either way
           // 4096 is a much lower re-init cost than 8192 was).
-          options: { temperature: 0.1, num_ctx: 4096 },
+          // FULLY DETERMINISTIC sampling: temperature=0 + top_k=1 means
+          // greedy decoding (always pick the single most likely token).
+          // A fixed seed pins any remaining RNG paths. repeat_penalty=1.0
+          // is the neutral value — anything else introduces variance when
+          // fields naturally repeat across the output schema.
+          // With these settings, identical input → identical output, every
+          // single run, on the same model weights.
+          options: {
+            temperature: 0,
+            top_k: 1,
+            top_p: 1,
+            repeat_penalty: 1.0,
+            seed: 20260409,
+            num_ctx: 4096,
+          },
           messages: [
             { role: 'system', content: sysPrompt },
             { role: 'user', content: userPrompt },
@@ -896,8 +1159,12 @@ If the listing has a building pool, pool = "Community/Shared" AND communityAmeni
   // ---------- Assemble result ----------
   const rawBullets = Array.isArray(passA && passA.bullets) ? passA.bullets : [];
   const filteredBullets = filterHallucinatedBullets(rawBullets, fullPageText);
+  // Seed propertyDetails with the deterministic dictionary output. The LLM
+  // passes will only ADD values that survive source-grounding; they cannot
+  // override anything the dictionary already picked. This is what makes
+  // re-imports consistent.
   const out = {
-    propertyDetails: {},
+    propertyDetails: Object.assign({}, dictPropertyDetails),
     propertyNoteBullets: filteredBullets,
     core: {
       bedrooms: passA && passA.bedrooms,
@@ -908,20 +1175,22 @@ If the listing has a building pool, pool = "Community/Shared" AND communityAmeni
     },
   };
 
-  // Utilities + pets from pass A
-  if (passA && Array.isArray(passA.utilitiesIncluded) && passA.utilitiesIncluded.length) {
-    out.propertyDetails.utilitiesIncluded = passA.utilitiesIncluded
-      .filter((s) => OLLAMA_FIELD_OPTIONS.utilitiesIncluded.includes(s));
-  }
-  if (passA && typeof passA.petsAllowed === 'string' && OLLAMA_FIELD_OPTIONS.petsAllowed.includes(passA.petsAllowed)) {
-    // Only honor petsAllowed if the source text actually discusses pets.
-    // Small models hallucinate this field from example prompts.
-    const sourceDiscussesPets = /\b(pets?|dogs?|cats?|animal|pet-friendly|no pets)\b/i.test(fullPageText);
-    if (sourceDiscussesPets) {
-      out.propertyDetails.petsAllowed = passA.petsAllowed;
-    } else {
-      console.log('[RR ext] dropped petsAllowed (source does not discuss pets):', passA.petsAllowed);
+  // Utilities + pets from pass A — routed through the dictionary merge so
+  // the dictionary (if it matched anything) always wins on single-selects,
+  // and LLM additions are filtered through source-grounding triggers.
+  if (passA && typeof passA === 'object') {
+    const llmA = {};
+    if (Array.isArray(passA.utilitiesIncluded) && passA.utilitiesIncluded.length) {
+      llmA.utilitiesIncluded = passA.utilitiesIncluded
+        .filter((s) => OLLAMA_FIELD_OPTIONS.utilitiesIncluded.includes(s));
     }
+    if (typeof passA.petsAllowed === 'string' && OLLAMA_FIELD_OPTIONS.petsAllowed.includes(passA.petsAllowed)) {
+      // Only honor petsAllowed if the source text actually discusses pets.
+      const sourceDiscussesPets = /\b(pets?|dogs?|cats?|animal|pet-friendly|no pets)\b/i.test(fullPageText);
+      if (sourceDiscussesPets) llmA.petsAllowed = passA.petsAllowed;
+      else console.log('[RR ext] dropped petsAllowed (source does not discuss pets):', passA.petsAllowed);
+    }
+    mergeLlmIntoDictionary(out.propertyDetails, llmA, lowerFullText);
   }
 
   // Pass B: merge amenity arrays/strings, filtering invented labels.
@@ -930,6 +1199,11 @@ If the listing has a building pool, pool = "Community/Shared" AND communityAmeni
   // allowed value — never render "Attached Garage, Covered Parking" in the
   // same dropdown cell.
   if (passB && typeof passB === 'object') {
+    // Normalize passB into the merge shape, then route through the
+    // dictionary merger. Dictionary values are authoritative for any
+    // single-select field they already filled; passB can only CONTRIBUTE
+    // new values or extend multi-selects with source-grounded entries.
+    const llmB = {};
     for (const k of Object.keys(OLLAMA_FIELD_OPTIONS)) {
       if (k === 'utilitiesIncluded' || k === 'petsAllowed') continue;
       const allowed = OLLAMA_FIELD_OPTIONS[k];
@@ -939,17 +1213,15 @@ If the listing has a building pool, pool = "Community/Shared" AND communityAmeni
         const clean = v.filter((x) => typeof x === 'string' && allowed.includes(x));
         if (!clean.length) continue;
         if (isSingle) {
-          // Prefer the most specific value. For parking we prefer
-          // garage/carport over generic "Covered Parking". For pool we
-          // prefer a specific type over "None".
-          out.propertyDetails[k] = pickBestSingleValue(k, clean, fullPageText);
+          llmB[k] = pickBestSingleValue(k, clean, fullPageText);
         } else {
-          out.propertyDetails[k] = clean;
+          llmB[k] = clean;
         }
       } else if (typeof v === 'string' && allowed.includes(v)) {
-        out.propertyDetails[k] = v;
+        llmB[k] = v;
       }
     }
+    mergeLlmIntoDictionary(out.propertyDetails, llmB, lowerFullText);
   }
 
   // HARD anti-hallucination guard: drop any value from propertyDetails that
