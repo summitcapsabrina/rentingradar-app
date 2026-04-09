@@ -295,12 +295,13 @@ async function enrichWithOllama(scraped) {
   const systemPromptA =
     "You extract structured rental-listing data from raw page text. " +
     "Return ONLY a JSON object. No prose, no markdown, no code fences. " +
-    "The page text you receive starts with a TITLE / OG_TITLE / OG_DESCRIPTION hero block — " +
-    "bedrooms, bathrooms, square footage, and monthly rent are almost always stated in that hero block. " +
-    "READ IT CAREFULLY. You MUST extract bedrooms, bathrooms, and price if they appear anywhere in the text. " +
+    "The page text starts with a TITLE / OG_TITLE / OG_DESCRIPTION hero block — " +
+    "bedrooms, bathrooms, square footage, and monthly rent are usually stated there. " +
+    "You MUST extract bedrooms, bathrooms, and price if they appear anywhere in the text. " +
     "Common phrasings: '3 bd', '3 beds', '3 bedroom', '1 ba', '1 bath', '1.5 bathrooms', '$2,350/mo', '$2,350 per month'. " +
     "A studio counts as bedrooms = 0. Half baths count as .5 (e.g. '1.5 baths'). " +
-    "Never invent values. If a field is truly not in the text, omit it.";
+    "For structured values (beds/baths/sqft/price/utilitiesIncluded/petsAllowed), NEVER invent values — omit the field if not stated. " +
+    "The 'bullets' field is ALWAYS REQUIRED — always return at least 5 bullet points summarizing the listing.";
 
   // NOTE: small models handle FLAT schemas much better than nested ones,
   // and they handle short prompts much better than long ones. Keep this tight.
@@ -314,7 +315,7 @@ Page text (the hero block at the top contains beds/baths/price — read it first
 ${pageText}
 """
 
-Return this JSON object. bedrooms, bathrooms, and price are REQUIRED if they appear in the text:
+Return this JSON object. bedrooms, bathrooms, and price are REQUIRED if they appear in the text. bullets is ALWAYS REQUIRED.
 
 {
   "bedrooms": <int 0-20>,
@@ -324,24 +325,40 @@ Return this JSON object. bedrooms, bathrooms, and price are REQUIRED if they app
   "availableDate": "Now" or "YYYY-MM-DD" or a phrase like "May 1",
   "utilitiesIncluded": [ any of: "Water","Hot Water","Gas","Electric","Trash","Sewer","Recycling","Internet/WiFi","Cable TV","Landscaping/Grounds","Pest Control" ],
   "petsAllowed": one of "Yes - All Pets","Dogs Only","Cats Only","Small Pets Only","Case by Case","Service Animals Only","No Pets",
-  "bullets": [ 6 to 12 TELEGRAPHIC bullet fragments (MAX 50 chars each) — no full sentences ]
+  "bullets": [ 6 to 12 short fragments summarizing this listing — REQUIRED, never empty ]
 }
 
-AVAILABILITY: look for phrases like "Available Now", "Available [date]", "Move-in ready", "Ready [date]", "Available on MM/DD", etc. If you see any of those, include availableDate. "Available Now" → "Now". A specific date → "YYYY-MM-DD" or "Month Day".
+AVAILABILITY: look for phrases like "Available Now", "Available [date]", "Move-in ready", "Ready [date]", "Available on MM/DD". "Available Now" → "Now". A specific date → "YYYY-MM-DD" or "Month Day".
 
-Bullet guidance: write SHORT telegraphic fragments like field labels, NOT sentences. Examples of the correct style:
-  "Walk score: 92"
-  "Transit: 85 (excellent)"
-  "In-unit W/D"
-  "Water + trash included"
-  "No pets"
-  "Hardwood throughout"
-  "Rooftop access"
-  "1 block to L train"
-  "Renovated 2023"
-  "No STR allowed — HOA"
-NOT like this: "The property is conveniently located near public transit options and has a high walk score."
-Call out: neighborhood quality, walk/transit scores, parking, HOA or STR policy, renovations, unit quirks, pet policy, utilities included, furnished status, lease flexibility, attraction proximity. Numbers and facts only. No marketing fluff.
+BULLETS (REQUIRED — always return at least 5, ideally 8-10):
+Bullets are a short fact list summarizing whatever information IS in the listing. You do not need every category — just list what the listing actually mentions. Keep each bullet short and punchy: roughly 3-10 words, under 70 characters. Use fragments, not full sentences.
+
+Examples of good bullet style (these are examples; use whatever facts are actually in this particular listing):
+  - "Hardwood floors throughout"
+  - "In-unit washer/dryer"
+  - "Water & trash included"
+  - "Central A/C and heat"
+  - "Stainless steel appliances"
+  - "Small pets allowed"
+  - "Rooftop deck + gym"
+  - "2 blocks from subway"
+  - "Quiet residential street"
+  - "Recently renovated kitchen"
+  - "Available June 1"
+
+Topics to draw bullets from (pick whichever ARE mentioned in the listing — do NOT force topics that aren't):
+- unit features (flooring, appliances, A/C, heat, laundry, layout)
+- building amenities (gym, pool, roof, concierge, elevator)
+- location (neighborhood, walk/transit score, nearby subway/highway/attractions)
+- utilities included or excluded
+- pet policy specifics
+- parking
+- HOA or short-term-rental policy (if mentioned — important for arbitrage)
+- recent renovations or age of unit
+- lease terms (length, flexibility)
+- furnished status
+
+Avoid marketing fluff ("charming", "won't last", "must see"). Facts only.
 
 Return ONLY the JSON.`;
 
