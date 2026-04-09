@@ -12,40 +12,25 @@
       <img src="../icons/icon-32.png" alt="" width="24" height="24" />
       <span class="rr-brand-name">RentingRadar</span>
     </div>
-    <div class="rr-account" id="rrAccount">
-      <span class="rr-account-dot" id="rrAccountDot"></span>
-      <span class="rr-account-label" id="rrAccountLabel">Not connected</span>
-    </div>
   </header>
 
   <main class="rr-main">
-    <!-- Not-connected state -->
-    <section class="rr-state" id="rrStateDisconnected" hidden>
-      <div class="rr-state-icon">🔗</div>
-      <h1 class="rr-state-title">Connect to RentingRadar</h1>
-      <p class="rr-state-body">
-        Link this extension to your RentingRadar account to import AirDNA listings and auto-fill property profiles.
-      </p>
-      <button class="rr-btn rr-btn-primary" id="rrBtnConnect">Connect account</button>
-      <p class="rr-state-foot">You'll need to be signed in to RentingRadar in another tab.</p>
-    </section>
-
-    <!-- Connected state -->
-    <section class="rr-state" id="rrStateConnected" hidden>
-      <label class="rr-label" for="rrUrlInput">AirDNA listing URL</label>
+    <section class="rr-state">
+      <label class="rr-label" for="rrUrlInput">Paste a property listing link</label>
       <div class="rr-input-row">
         <input
           type="url"
           id="rrUrlInput"
           class="rr-input"
-          placeholder="https://www.airdna.co/vacation-rental-data/app/..."
+          placeholder="Zillow, Apartments.com, Hotpads, FB Marketplace, Craigslist"
           autocomplete="off"
           spellcheck="false"
         />
         <button class="rr-btn rr-btn-primary" id="rrBtnImport">Import</button>
       </div>
       <p class="rr-hint">
-        Paste a link from AirDNA. We'll pull the listing details and add it to your competitor analysis.
+        Auto-fills Property Details for the currently open property in your CRM.
+        For AirDNA competitor imports, use the paste box inside the Competitor Analysis tab.
       </p>
 
       <div class="rr-status" id="rrStatus" hidden></div>
@@ -65,6 +50,6 @@
     <a href="https://app.rentingradar.com" target="_blank" rel="noopener">Open CRM</a>
   </footer>
 
-  <script type="module" src="popup.js"></script>
+  <script src="popup.js"></script>
 </body>
 </html>

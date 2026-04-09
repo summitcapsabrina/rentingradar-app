@@ -3302,6 +3302,18 @@ function _renderProfileInner(){
     </div>
   </div>`;
 
+  // Quick-import bar: paste a listing URL and auto-fill Property Details
+  html += `<div class="profile-card profile-full" style="margin-bottom:12px">
+    <div class="profile-card-body" style="padding:12px 16px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:260px">
+        <span style="font-size:1.1rem">🧩</span>
+        <input type="url" id="rrListingPasteInput_${r.id}" class="rr-paste-input" placeholder="Paste a listing link (Zillow, Apartments.com, Hotpads, FB Marketplace, Craigslist)" style="flex:1;padding:8px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text1);font-size:.85rem;outline:none" onkeydown="if(event.key==='Enter'){event.preventDefault();importListingFromPaste('${r.id}')}" />
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="importListingFromPaste('${r.id}')" style="font-size:.8rem;padding:8px 14px">Import details</button>
+    </div>
+    <div style="padding:0 16px 10px;font-size:.72rem;color:var(--text3)">Auto-fills beds, baths, sq ft, rent, address, description — without leaving the CRM.</div>
+  </div>`;
+
   // Import dialog
   if(showImport){
     html += `<div class="import-dialog" id="importContainer_${r.id}">
@@ -4587,6 +4599,182 @@ function handleExtensionComp(compData) {
 }
 
 /**
+ * Handle a listing scraped via the Chrome extension (Zillow, Apartments.com,
+ * Hotpads, Facebook Marketplace, Craigslist). Fills the Property Details
+ * fields on the currently open record — or the record whose id matches
+ * window._rrPendingListingRecordId if set.
+ */
+function handleExtensionListing(data) {
+  if (!data) return;
+
+  // If a specific record id is pending (from the Property Details paste bar
+  // inside an open profile), fill that record. Otherwise — including when the
+  // data came from the extension popup — create a brand-new property and
+  // open its profile.
+  const pendingId = window._rrPendingListingRecordId;
+  window._rrPendingListingRecordId = null;
+
+  let r = null;
+  let createdNew = false;
+
+  if (pendingId) {
+    r = records.find(x => x.id === pendingId) || null;
+  }
+
+  if (!r) {
+    // Enforce tier/property-count limits just like the manual add flow
+    if (typeof checkPropertyLimit === 'function' && !checkPropertyLimit()) return;
+
+    createdNew = true;
+    r = {
+      id: (typeof uid === 'function' ? uid() : ('r_' + Date.now())),
+      property: data.address || (data.title || 'New Property'),
+      addressParts: { street: data.address || '', unit: '', city: '', state: '', zip: '' },
+      name: '',
+      phone: '',
+      email: '',
+      status: 'New',
+      link: data.sourceUrl || '',
+      note: '',
+      date: new Date().toISOString().split('T')[0],
+      followUpDate: null,
+      meetingDate: null,
+      notes: [],
+      propertyDetails: {},
+      propertyNotes: [],
+      createdAt: new Date().toISOString(),
+    };
+    records.unshift(r);
+  }
+
+  if (!r.propertyDetails) r.propertyDetails = {};
+  const d = r.propertyDetails;
+
+  // Only overwrite empty fields so we don't clobber user edits
+  function setIfEmpty(obj, key, val) {
+    if (val == null || val === '') return;
+    if (obj[key] == null || obj[key] === '' || obj[key] === 0) obj[key] = val;
+  }
+
+  if (data.address && !r.property) r.property = data.address;
+  if (data.sourceUrl && !r.link) r.link = data.sourceUrl;
+
+  setIfEmpty(d, 'bedrooms', data.bedrooms);
+  setIfEmpty(d, 'bathrooms', data.bathrooms);
+  setIfEmpty(d, 'sqft', data.sqft);
+  setIfEmpty(d, 'monthlyRent', data.price);
+
+  // Description → activity log note (only if we got one)
+  if (data.description && data.description.length > 20) {
+    if (!Array.isArray(r.notes)) r.notes = [];
+    r.notes.push({
+      id: (typeof uid === 'function' ? uid() : ('n_' + Date.now())),
+      type: 'note',
+      date: new Date().toISOString(),
+      text: 'Imported from ' + (data.source || 'listing') + ':\n\n' + data.description,
+      html: '<p><em>Imported from ' + (data.source || 'listing') + ':</em></p><p>' +
+        data.description.replace(/\n+/g, '</p><p>') + '</p>',
+    });
+  }
+
+  if (typeof saveData === 'function') saveData();
+  if (typeof render === 'function') render();
+  const label = data.source ? data.source.charAt(0).toUpperCase() + data.source.slice(1) : 'Listing';
+  if (createdNew) {
+    showToast(label + ' imported as new property.' + (data.warning ? ' ' + data.warning : ''), 'success');
+    if (typeof openDetail === 'function') openDetail(r.id);
+  } else {
+    showToast(label + ' details imported.' + (data.warning ? ' ' + data.warning : ''), 'success');
+  }
+}
+
+/**
+ * Called when user clicks "Import details" on the Property Details paste bar.
+ */
+function importListingFromPaste(recId) {
+  const input = document.getElementById('rrListingPasteInput_' + recId);
+  const url = input && input.value ? input.value.trim() : '';
+  if (!url) { showAppAlert('Please paste a listing URL.', {title: 'Validation', icon: '⚠️'}); return; }
+
+  if (/airdna\.co/i.test(url)) {
+    showAppAlert('AirDNA links go in the Competitor Analysis tab. Property Details accepts listing sites only (Zillow, Apartments.com, Hotpads, Facebook Marketplace, Craigslist).', {title: 'Wrong tab', icon: 'ℹ️'});
+    return;
+  }
+  if (typeof rrScrapeViaExtension !== 'function') {
+    showAppAlert('Install the RentingRadar Chrome extension to auto-fill from listings.', {title: 'Extension required', icon: '🧩'});
+    return;
+  }
+
+  window._rrPendingListingRecordId = recId;
+  if (input) { input.disabled = true; input.placeholder = 'Importing listing…'; }
+
+  rrScrapeViaExtension(url, 'listing').then((res) => {
+    if (input) { input.disabled = false; input.placeholder = 'Paste a listing link (Zillow, Apartments.com, Hotpads, FB Marketplace, Craigslist)'; input.value = ''; }
+    if (!res || !res.ok) {
+      if (res && res.error === 'extension-not-installed') {
+        showAppAlert('The RentingRadar Chrome extension isn\'t installed. Install it from the Chrome Web Store to enable auto-fill.', {title: 'Extension required', icon: '🧩'});
+      } else {
+        showAppAlert('Could not import listing: ' + ((res && res.error) || 'Unknown error'), {title: 'Import failed', icon: '⚠️'});
+      }
+      return;
+    }
+    handleExtensionListing(res.data || {});
+  }).catch((e) => {
+    if (input) { input.disabled = false; input.placeholder = 'Paste a listing link (Zillow, Apartments.com, Hotpads, FB Marketplace, Craigslist)'; }
+    showAppAlert('Import error: ' + (e.message || e), {title: 'Import failed', icon: '⚠️'});
+  });
+}
+
+/**
+ * Quick auto-fill from a listing link inside the + Add Property modal.
+ * Doesn't create a record — just populates the form fields.
+ */
+function importAddModalFromPaste(){
+  const input = document.getElementById('add_paste_url');
+  const url = input && input.value ? input.value.trim() : '';
+  if(!url){ showAppAlert('Please paste a listing URL.', {title: 'Validation', icon: '⚠️'}); return; }
+  if(/airdna\.co/i.test(url)){
+    showAppAlert('AirDNA links belong in the Competitor Analysis tab. Paste a listing site (Zillow, Apartments.com, Hotpads, FB Marketplace, Craigslist) here.', {title: 'Wrong link', icon: 'ℹ️'});
+    return;
+  }
+  if(typeof rrScrapeViaExtension !== 'function'){
+    showAppAlert('Install the RentingRadar Chrome extension to auto-fill from listings.', {title: 'Extension required', icon: '🧩'});
+    return;
+  }
+  if(input){ input.disabled = true; }
+  rrScrapeViaExtension(url, 'listing').then((res) => {
+    if(input){ input.disabled = false; }
+    if(!res || !res.ok){
+      if(res && res.error === 'extension-not-installed'){
+        showAppAlert('The RentingRadar Chrome extension isn\'t installed.', {title: 'Extension required', icon: '🧩'});
+      } else {
+        showAppAlert('Could not import: ' + ((res && res.error) || 'Unknown error'), {title: 'Import failed', icon: '⚠️'});
+      }
+      return;
+    }
+    const d = res.data || {};
+    const setVal = (id, v) => {
+      const el = document.getElementById(id);
+      if(el && v != null && v !== '' && !el.value) el.value = v;
+    };
+    setVal('add_property', d.address);
+    setVal('add_beds', d.bedrooms);
+    setVal('add_baths', d.bathrooms);
+    setVal('add_sqft', d.sqft);
+    setVal('add_rent', d.price);
+    setVal('add_link2', d.sourceUrl || url);
+    if(d.description){
+      const note = document.getElementById('add_note');
+      if(note && !note.value) note.value = d.description.slice(0, 500);
+    }
+    showToast('Details auto-filled from listing.', 'success');
+  }).catch((e) => {
+    if(input){ input.disabled = false; }
+    showAppAlert('Import error: ' + (e.message || e), {title: 'Import failed', icon: '⚠️'});
+  });
+}
+
+/**
  * When a property profile is opened, check for any pending extension comps and offer to add them.
  */
 function checkPendingExtensionComps() {
@@ -4761,6 +4949,14 @@ function showManualAddForm(){
   if(step2){
     step2.style.display = 'block';
     step2.innerHTML = `
+      <div class="field-group" style="background:var(--bg2);border:1px dashed var(--border);border-radius:8px;padding:10px 12px;margin-bottom:10px">
+        <label class="field-label" style="display:flex;align-items:center;gap:6px">🧩 Quick import from listing <span style="font-size:.65rem;color:var(--text3);font-weight:400">(optional)</span></label>
+        <div style="display:flex;gap:6px">
+          <input id="add_paste_url" type="url" placeholder="Paste Zillow, Apartments.com, Hotpads, FB Marketplace, or Craigslist link" style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();importAddModalFromPaste()}" />
+          <button type="button" class="btn btn-secondary btn-sm" style="font-size:.78rem;white-space:nowrap" onclick="importAddModalFromPaste()">Auto-fill</button>
+        </div>
+        <div style="font-size:.7rem;color:var(--text3);margin-top:4px">Uses the RentingRadar Chrome extension to pull beds, baths, sq ft, rent & address.</div>
+      </div>
       <div class="field-group" style="position:relative"><label class="field-label">Property Address *</label><input id="add_property" type="text" placeholder="Start typing an address..." autocomplete="off" data-form-type="other"></div>
       <div class="field-row" style="gap:8px">
         <div class="field-group" style="flex:2"><label class="field-label">City</label><input id="add_city" type="text" placeholder="Auto-filled" autocomplete="off" data-form-type="other"></div>
@@ -4823,6 +5019,14 @@ function showManualAddForm(){
     const body = document.getElementById('addModalBody');
     if(!body) return;
     body.innerHTML = `
+      <div class="field-group" style="background:var(--bg2);border:1px dashed var(--border);border-radius:8px;padding:10px 12px;margin-bottom:10px">
+        <label class="field-label" style="display:flex;align-items:center;gap:6px">🧩 Quick import from listing <span style="font-size:.65rem;color:var(--text3);font-weight:400">(optional)</span></label>
+        <div style="display:flex;gap:6px">
+          <input id="add_paste_url" type="url" placeholder="Paste Zillow, Apartments.com, Hotpads, FB Marketplace, or Craigslist link" style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();importAddModalFromPaste()}" />
+          <button type="button" class="btn btn-secondary btn-sm" style="font-size:.78rem;white-space:nowrap" onclick="importAddModalFromPaste()">Auto-fill</button>
+        </div>
+        <div style="font-size:.7rem;color:var(--text3);margin-top:4px">Uses the RentingRadar Chrome extension to pull beds, baths, sq ft, rent & address.</div>
+      </div>
       <div class="field-group" style="position:relative"><label class="field-label">Property Address *</label><input id="add_property" type="text" placeholder="Start typing an address..." autocomplete="off" data-form-type="other"></div>
       <div class="field-row" style="gap:8px">
         <div class="field-group" style="flex:2"><label class="field-label">City</label><input id="add_city" type="text" placeholder="Auto-filled" autocomplete="off" data-form-type="other"></div>
@@ -7488,113 +7692,139 @@ if(_launchTutorialAfterAuth){ history.replaceState(null, '', window.location.pat
 // ============================================================
 // CHROME EXTENSION BRIDGE
 // ============================================================
-// When the RentingRadar Chrome extension opens this page with
-// ?extension=link it wants a Firebase custom token so it can sign in as
-// the current user. We respond by calling the mintExtensionToken Cloud
-// Function with the current user's ID token, then postMessage the custom
-// token back to the extension via chrome.runtime.sendMessage.
-//
-// List of allowed extension IDs — development (unpacked) + Chrome Web Store.
-// We try each one in order when sending the custom token. Add the Web Store
-// ID here once the public listing is approved.
+// The RentingRadar Chrome extension scrapes listing sites (AirDNA,
+// Zillow, Apartments.com, Hotpads, Facebook Marketplace, Craigslist)
+// and delivers the parsed data to this CRM tab. The CRM — which is
+// already authenticated as the user — writes to Firestore. Because
+// the extension never touches Firebase, there's no auth bridge.
 window.RR_EXTENSION_IDS = [
   'caeefnfpdafpffkhoojkkalcpdinbkcm', // unpacked / development
 ];
 
-const _rrExtensionParam = new URLSearchParams(window.location.search).get('extension');
-const _rrIsExtensionLink = _rrExtensionParam === 'link';
-const _rrIsExtensionWelcome = _rrExtensionParam === 'welcome';
+// Track whether the extension is installed so the install-prompt
+// banner can render without probing on every paste.
+window.RR_EXTENSION_INSTALLED = null;
 
-function _rrShowExtensionOverlay(state, message){
-  let overlay = document.getElementById('rrExtensionOverlay');
-  if(!overlay){
-    overlay = document.createElement('div');
-    overlay.id = 'rrExtensionOverlay';
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(11,15,26,.96);z-index:99999;display:flex;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;';
-    overlay.innerHTML = '<div id="rrExtensionCard" style="max-width:420px;padding:32px 28px;background:#121826;border:1px solid #2a3449;border-radius:14px;text-align:center;color:#e8ecf4;box-shadow:0 20px 60px rgba(0,0,0,.5)"></div>';
-    document.body.appendChild(overlay);
+async function _rrProbeExtension(){
+  if(!window.chrome || !chrome.runtime || !chrome.runtime.sendMessage){
+    window.RR_EXTENSION_INSTALLED = false;
+    return false;
   }
-  const card = document.getElementById('rrExtensionCard');
-  const icon = state === 'success' ? '\u2705' : state === 'error' ? '\u26A0\uFE0F' : state === 'signin' ? '\uD83D\uDD10' : '\uD83D\uDD17';
-  const title = state === 'success' ? 'Extension connected!' : state === 'error' ? 'Connection failed' : state === 'signin' ? 'Sign in to continue' : 'Linking Chrome extension\u2026';
-  const color = state === 'success' ? '#2ec27e' : state === 'error' ? '#ef4444' : '#6381fa';
-  card.innerHTML =
-    '<div style="font-size:44px;margin-bottom:12px">' + icon + '</div>' +
-    '<h2 style="margin:0 0 10px;font-size:20px;font-weight:600;color:' + color + '">' + title + '</h2>' +
-    '<p style="margin:0 0 20px;font-size:13px;color:#a7b0c2;line-height:1.55">' + (message || '') + '</p>' +
-    (state === 'success' ? '<p style="margin:0;font-size:11px;color:#6f7a92">You can close this tab.</p>' : '') +
-    (state === 'error' ? '<button id="rrExtensionRetry" style="margin-top:6px;padding:10px 18px;background:#6381fa;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">Try again</button>' : '');
-  if(state === 'error'){
-    const retry = document.getElementById('rrExtensionRetry');
-    if(retry) retry.onclick = () => location.reload();
+  for(const extId of window.RR_EXTENSION_IDS){
+    try {
+      const ok = await new Promise((resolve) => {
+        try {
+          chrome.runtime.sendMessage(extId, { type: 'PING' }, (response) => {
+            if(chrome.runtime.lastError){ resolve(false); return; }
+            resolve(!!(response && response.ok));
+          });
+        } catch(e){ resolve(false); }
+      });
+      if(ok){
+        window.RR_EXTENSION_INSTALLED = extId;
+        return extId;
+      }
+    } catch(_){}
   }
+  window.RR_EXTENSION_INSTALLED = false;
+  return false;
 }
 
-async function _rrLinkExtensionForUser(user){
-  if(!user){
-    _rrShowExtensionOverlay('signin', 'Please sign in to RentingRadar below, then the extension will link automatically.');
-    return;
-  }
-  _rrShowExtensionOverlay('loading', 'Hang tight while we securely link this browser to your account.');
+// Call the extension to scrape a URL. Returns { ok, data } or { ok:false, error }.
+async function rrScrapeViaExtension(url, kind){
+  const extId = window.RR_EXTENSION_INSTALLED || await _rrProbeExtension();
+  if(!extId) return { ok: false, error: 'extension-not-installed' };
+  return new Promise((resolve) => {
+    try {
+      chrome.runtime.sendMessage(
+        extId,
+        { type: 'SCRAPE_URL', url: url, kind: kind || 'auto' },
+        (response) => {
+          if(chrome.runtime.lastError){
+            resolve({ ok: false, error: chrome.runtime.lastError.message });
+            return;
+          }
+          if(!response){ resolve({ ok: false, error: 'No response from extension' }); return; }
+          resolve(response);
+        }
+      );
+    } catch(e){
+      resolve({ ok: false, error: e.message || String(e) });
+    }
+  });
+}
+
+// Receive data pushed in from the extension popup via our content script.
+// The content script forwards chrome.runtime.onMessage payloads as
+// window.postMessage({ rrExtension: true, type, data }).
+window.addEventListener('message', (event) => {
+  if(event.source !== window) return;
+  const m = event.data;
+  if(!m || m.rrExtension !== true) return;
+  console.log('[RR crm] got extension message', m.type);
   try {
-    const mintToken = firebase.functions().httpsCallable('mintExtensionToken');
-    const result = await mintToken({});
-    const customToken = result && result.data && result.data.token;
-    if(!customToken) throw new Error('Server did not return a token');
-    if(!window.chrome || !chrome.runtime || !chrome.runtime.sendMessage){
-      throw new Error('Chrome extension API not available. Is the RentingRadar extension installed in this browser?');
+    if(m.type === 'READY'){
+      // Extension content script announced itself — probe once so
+      // RR_EXTENSION_INSTALLED gets set, then hide any install banner.
+      _rrProbeExtension().then((extId) => { if(extId) rrHideInstallBanner(); });
+    } else if(m.type === 'COMP_IMPORTED' && typeof handleExtensionComp === 'function'){
+      handleExtensionComp(m.data);
+    } else if(m.type === 'LISTING_IMPORTED' && typeof handleExtensionListing === 'function'){
+      handleExtensionListing(m.data);
     }
-    if(!window.RR_EXTENSION_IDS || !window.RR_EXTENSION_IDS.length){
-      throw new Error('Extension ID not configured in this build of the CRM.');
-    }
-    // Try each configured extension ID until one acknowledges
-    let lastErr = null;
-    let delivered = false;
-    for(const extId of window.RR_EXTENSION_IDS){
-      try {
-        await new Promise((resolve, reject) => {
-          try {
-            chrome.runtime.sendMessage(
-              extId,
-              { type: 'EXTENSION_TOKEN', token: customToken },
-              (response) => {
-                if(chrome.runtime.lastError){ reject(new Error(chrome.runtime.lastError.message)); return; }
-                if(!response || !response.ok){ reject(new Error((response && response.error) || 'Extension did not acknowledge')); return; }
-                resolve();
-              }
-            );
-          } catch(e){ reject(e); }
-        });
-        delivered = true;
-        break;
-      } catch(e){ lastErr = e; }
-    }
-    if(!delivered) throw lastErr || new Error('Could not reach the extension.');
-    _rrShowExtensionOverlay('success', 'The RentingRadar Chrome extension is now signed in as ' + (user.email || 'you') + '.');
-  } catch(err){
-    console.error('Extension link failed:', err);
-    _rrShowExtensionOverlay('error', err.message || 'Something went wrong while linking the extension.');
-  }
+  } catch(e){ console.error('RR extension message handler error:', e); }
+});
+
+// Install-prompt banner — renders at the top of the app when the
+// Chrome extension isn't detected. Dismissible; remembers dismissal
+// for 7 days via localStorage.
+const RR_EXT_WEB_STORE_URL = 'https://chromewebstore.google.com/detail/rentingradar/caeefnfpdafpffkhoojkkalcpdinbkcm';
+const RR_EXT_DISMISS_KEY = 'rrExtDismissedUntil';
+
+function rrShowInstallBanner(){
+  // Only on Chromium browsers (where the extension can actually run)
+  if(!window.chrome || !chrome.runtime){ return; }
+  // Respect dismissal
+  try {
+    const until = parseInt(localStorage.getItem(RR_EXT_DISMISS_KEY) || '0', 10);
+    if(until && Date.now() < until) return;
+  } catch(_){}
+  if(document.getElementById('rrExtBanner')) return;
+  const bar = document.createElement('div');
+  bar.id = 'rrExtBanner';
+  bar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:linear-gradient(90deg,#6381fa,#8a5cf6);color:#fff;padding:10px 14px;display:flex;align-items:center;gap:12px;font-size:.85rem;box-shadow:0 2px 10px rgba(0,0,0,.2)';
+  bar.innerHTML = '<span style="font-size:1.1rem">🧩</span>' +
+    '<span style="flex:1">Install the <strong>RentingRadar Chrome extension</strong> to paste listings from Zillow, Apartments.com, Hotpads, FB Marketplace, Craigslist, and AirDNA directly into your CRM.</span>' +
+    '<a href="' + RR_EXT_WEB_STORE_URL + '" target="_blank" rel="noopener" style="background:#fff;color:#4f46e5;font-weight:600;padding:6px 14px;border-radius:6px;text-decoration:none;font-size:.82rem;white-space:nowrap">Install</a>' +
+    '<button type="button" aria-label="Dismiss" style="background:transparent;border:none;color:#fff;font-size:1.2rem;cursor:pointer;padding:0 4px;line-height:1" onclick="rrDismissInstallBanner()">&times;</button>';
+  document.body.appendChild(bar);
+  // Push page content down so the banner doesn't cover the header
+  document.body.style.paddingTop = (bar.offsetHeight || 44) + 'px';
 }
 
-if(_rrIsExtensionLink || _rrIsExtensionWelcome){
-  // Pop the overlay immediately so the user sees something while auth resolves
-  _rrShowExtensionOverlay(_rrIsExtensionWelcome ? 'loading' : 'loading',
-    _rrIsExtensionWelcome
-      ? 'Welcome! Hang on while we finish connecting the extension.'
-      : 'One moment\u2026');
+function rrHideInstallBanner(){
+  const bar = document.getElementById('rrExtBanner');
+  if(bar) bar.remove();
+  document.body.style.paddingTop = '';
 }
+
+function rrDismissInstallBanner(){
+  try { localStorage.setItem(RR_EXT_DISMISS_KEY, String(Date.now() + 7*24*60*60*1000)); } catch(_){}
+  rrHideInstallBanner();
+}
+
+// Probe for the extension shortly after load so the UI can reflect install state
+setTimeout(() => {
+  _rrProbeExtension().then((extId) => {
+    if(extId){ rrHideInstallBanner(); }
+    else { rrShowInstallBanner(); }
+  });
+}, 1500);
 
 // Listen for auth state changes
 let _authDataLoaded = false;
 firebase.auth().onAuthStateChanged(async (user) => {
   try {
-  // Chrome extension link flow — hand a custom token to the extension.
-  // Runs regardless of the rest of the CRM boot so the link tab is fast.
-  if(_rrIsExtensionLink || _rrIsExtensionWelcome){
-    _rrLinkExtensionForUser(user);
-    // Fall through so the CRM still loads normally in this tab
-  }
   if(user){
     setUser(user);
     loadEmailPrefs();
@@ -10345,7 +10575,7 @@ function renderAnalysisTab(r){
     // Add comp input (if section has < 10 comps)
     if(count < 10){
       html += '<div class="comp-add-row">';
-      html += '<input type="text" id="compLinkInput_'+category+'" placeholder="Paste Airbnb link here..." onkeydown="if(event.key===\'Enter\'){event.preventDefault();addComp(\''+recId+'\', \''+category+'\')}" />';
+      html += '<input type="text" id="compLinkInput_'+category+'" placeholder="Paste AirDNA link here..." onkeydown="if(event.key===\'Enter\'){event.preventDefault();addComp(\''+recId+'\', \''+category+'\')}" />';
       html += '<button onclick="addComp(\''+recId+'\', \''+category+'\')">+ Add Competitor</button>';
       html += '</div>';
       html += '<div style="text-align:right;font-size:.68rem;color:var(--text3);margin-top:4px">Enter to add</div>';
@@ -10372,7 +10602,47 @@ function addComp(recId, category){
   if(!r) return;
   const input = document.getElementById('compLinkInput_' + category);
   const link = input?.value?.trim();
-  if(!link){ showAppAlert('Please paste an Airbnb link', {title: 'Validation', icon: '⚠️'}); return }
+  if(!link){ showAppAlert('Please paste an AirDNA link', {title: 'Validation', icon: '⚠️'}); return }
+
+  // Only AirDNA links are accepted for competitor analysis. If the
+  // user pastes anything else, tell them.
+  const isAirdna = /^https?:\/\/(?:www\.)?airdna\.co\//i.test(link);
+  if(!isAirdna){
+    showAppAlert('Competitor Analysis accepts AirDNA links only. Please paste a URL from airdna.co.', {title: 'AirDNA link required', icon: '⚠️'});
+    return;
+  }
+
+  // Route through the Chrome extension: it opens the AirDNA page,
+  // scrapes the metrics (and underlying Airbnb link), and delivers
+  // the result via window.postMessage → handleExtensionComp.
+  if(typeof rrScrapeViaExtension === 'function'){
+    // Remember which category/record this import belongs to so
+    // handleExtensionComp can route it correctly.
+    window._rrPendingCompCategory = category;
+    if(input){ input.disabled = true; input.placeholder = 'Importing from AirDNA…'; }
+    rrScrapeViaExtension(link, 'airdna').then((res) => {
+      if(input){ input.disabled = false; input.placeholder = 'Paste AirDNA link here...'; }
+      if(!res || !res.ok){
+        if(res && res.error === 'extension-not-installed'){
+          showAppAlert('Install the RentingRadar Chrome extension to import from AirDNA. Open the banner above and click Install.', {title: 'Extension required', icon: '🧩'});
+        } else {
+          showAppAlert('Could not import from AirDNA: ' + ((res && res.error) || 'Unknown error'), {title: 'Import failed', icon: '⚠️'});
+        }
+        return;
+      }
+      // Response includes data — tag it for routing and hand off
+      const data = res.data || {};
+      data.rating = category;
+      data.airdnaUrl = data.airdnaUrl || link;
+      if(typeof handleExtensionComp === 'function') handleExtensionComp(data);
+      if(input){ input.value = ''; }
+    }).catch((e) => {
+      if(input){ input.disabled = false; input.placeholder = 'Paste AirDNA link here...'; }
+      showAppAlert('Import error: ' + (e.message || e), {title: 'Import failed', icon: '⚠️'});
+    });
+    return;
+  }
+
   const comps = getComps(r);
   const sectionCount = comps.filter(c => c.rating === category).length;
   if(sectionCount >= 10){ showAppAlert('Maximum 10 competitors per section', {title: 'Limit Reached', icon: '📊'}); return }

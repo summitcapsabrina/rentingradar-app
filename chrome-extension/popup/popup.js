@@ -1,148 +1,123 @@
-// RentingRadar extension popup
-// Handles: checking auth state, connecting to CRM, and triggering AirDNA imports.
+// RentingRadar popup — paste-a-link flow
+//
+// The popup never authenticates. It simply forwards the URL to the
+// service worker, which opens a background tab, scrapes the page, and
+// hands the result to any open CRM tab.
 
-const $ = (id) => document.getElementById(id);
+const urlInput = document.getElementById('rrUrlInput');
+const importBtn = document.getElementById('rrBtnImport');
+const statusEl = document.getElementById('rrStatus');
+const recentWrap = document.getElementById('rrRecent');
+const recentList = document.getElementById('rrRecentList');
 
-const ui = {
-  account: $('rrAccount'),
-  accountDot: $('rrAccountDot'),
-  accountLabel: $('rrAccountLabel'),
-  stateDisc: $('rrStateDisconnected'),
-  stateConn: $('rrStateConnected'),
-  btnConnect: $('rrBtnConnect'),
-  urlInput: $('rrUrlInput'),
-  btnImport: $('rrBtnImport'),
-  status: $('rrStatus'),
-  recent: $('rrRecent'),
-  recentList: $('rrRecentList'),
-};
-
-function showState(connected, email) {
-  ui.stateDisc.hidden = connected;
-  ui.stateConn.hidden = !connected;
-  if (connected) {
-    ui.account.classList.add('connected');
-    ui.accountLabel.textContent = email || 'Connected';
-  } else {
-    ui.account.classList.remove('connected');
-    ui.accountLabel.textContent = 'Not connected';
-  }
-}
+const RECENT_KEY = 'rrRecentImports';
+const MAX_RECENT = 5;
 
 function setStatus(msg, kind) {
-  if (!msg) {
-    ui.status.hidden = true;
-    ui.status.textContent = '';
-    ui.status.className = 'rr-status';
-    return;
-  }
-  ui.status.hidden = false;
-  ui.status.className = 'rr-status' + (kind ? ' ' + kind : '');
-  ui.status.innerHTML = '';
-  if (kind === 'loading') {
-    const s = document.createElement('span');
-    s.className = 'rr-spin';
-    ui.status.appendChild(s);
-  }
-  ui.status.appendChild(document.createTextNode(msg));
+  statusEl.hidden = false;
+  statusEl.className = 'rr-status' + (kind ? ' ' + kind : '');
+  statusEl.innerHTML = msg;
 }
 
-async function refreshAuth() {
-  const res = await chrome.runtime.sendMessage({ type: 'GET_AUTH_STATE' });
-  showState(!!(res && res.signedIn), res && res.email);
-  return res;
+function clearStatus() {
+  statusEl.hidden = true;
+  statusEl.textContent = '';
 }
 
-async function renderRecent() {
-  const { rrRecent = [] } = await chrome.storage.local.get('rrRecent');
-  if (!rrRecent.length) {
-    ui.recent.hidden = true;
-    return;
-  }
-  ui.recent.hidden = false;
-  ui.recentList.innerHTML = '';
-  for (const item of rrRecent.slice(0, 5)) {
-    const li = document.createElement('li');
-    const title = document.createElement('span');
-    title.className = 'rr-recent-title';
-    title.textContent = item.title || item.url;
-    const time = document.createElement('span');
-    time.className = 'rr-recent-time';
-    time.textContent = timeAgo(item.importedAt);
-    li.appendChild(title);
-    li.appendChild(time);
-    ui.recentList.appendChild(li);
-  }
+function setBusy(busy) {
+  importBtn.disabled = busy;
+  urlInput.disabled = busy;
+  importBtn.textContent = busy ? 'Importing…' : 'Import';
 }
 
-function timeAgo(ts) {
-  if (!ts) return '';
-  const secs = Math.max(1, Math.round((Date.now() - ts) / 1000));
-  if (secs < 60) return secs + 's ago';
-  const mins = Math.round(secs / 60);
-  if (mins < 60) return mins + 'm ago';
-  const hrs = Math.round(mins / 60);
-  if (hrs < 24) return hrs + 'h ago';
-  const days = Math.round(hrs / 24);
-  return days + 'd ago';
+function loadRecent() {
+  chrome.storage.local.get([RECENT_KEY], (res) => {
+    const list = Array.isArray(res[RECENT_KEY]) ? res[RECENT_KEY] : [];
+    if (!list.length) { recentWrap.hidden = true; return; }
+    recentWrap.hidden = false;
+    recentList.innerHTML = '';
+    list.slice(0, MAX_RECENT).forEach((item) => {
+      const li = document.createElement('li');
+      const title = document.createElement('span');
+      title.className = 'rr-recent-title';
+      title.textContent = item.title || item.url || '(untitled)';
+      const time = document.createElement('span');
+      time.className = 'rr-recent-time';
+      time.textContent = item.kind || '';
+      li.appendChild(title);
+      li.appendChild(time);
+      recentList.appendChild(li);
+    });
+  });
 }
 
-ui.btnConnect.addEventListener('click', async () => {
-  ui.btnConnect.disabled = true;
-  setStatus('Opening RentingRadar to link your account…', 'loading');
+function pushRecent(entry) {
+  chrome.storage.local.get([RECENT_KEY], (res) => {
+    const list = Array.isArray(res[RECENT_KEY]) ? res[RECENT_KEY] : [];
+    list.unshift(entry);
+    chrome.storage.local.set({ [RECENT_KEY]: list.slice(0, MAX_RECENT) }, loadRecent);
+  });
+}
+
+function detectKind(url) {
   try {
-    await chrome.runtime.sendMessage({ type: 'START_CONNECT' });
-    // The background worker opens a tab; we poll for auth state every 1s.
-    const poll = setInterval(async () => {
-      const st = await refreshAuth();
-      if (st && st.signedIn) {
-        clearInterval(poll);
-        setStatus('Connected!', 'success');
-        setTimeout(() => setStatus(null), 1500);
-      }
-    }, 1000);
-    // Stop polling after 2 minutes regardless.
-    setTimeout(() => clearInterval(poll), 120000);
-  } catch (e) {
-    setStatus('Could not open RentingRadar: ' + e.message, 'error');
-  } finally {
-    ui.btnConnect.disabled = false;
-  }
-});
+    const h = new URL(url).hostname.replace(/^www\./, '').toLowerCase();
+    if (/airdna\.co$/.test(h)) return 'airdna-rejected';
+    if (/(zillow|apartments|hotpads)\.com$/.test(h)) return 'listing';
+    if (/facebook\.com$/.test(h) && /\/marketplace\//.test(url)) return 'listing';
+    if (/craigslist\.org$/.test(h)) return 'listing';
+  } catch (_) {}
+  return null;
+}
 
-ui.btnImport.addEventListener('click', async () => {
-  const url = (ui.urlInput.value || '').trim();
+async function doImport() {
+  clearStatus();
+  const url = (urlInput.value || '').trim();
   if (!url) {
-    setStatus('Paste an AirDNA listing URL first.', 'error');
+    setStatus('Please paste a listing URL.', 'error');
     return;
   }
-  if (!/airdna\.co/i.test(url)) {
-    setStatus('That doesn\u2019t look like an AirDNA link.', 'error');
+  const kind = detectKind(url);
+  if (kind === 'airdna-rejected') {
+    setStatus('AirDNA links belong in the <strong>Competitor Analysis</strong> tab inside the CRM, not here. Open a property in the CRM and paste the AirDNA link into the Loses To / Competes With / Beats section.', 'error');
     return;
   }
-  ui.btnImport.disabled = true;
-  setStatus('Opening AirDNA and extracting listing details…', 'loading');
-  try {
-    const res = await chrome.runtime.sendMessage({ type: 'IMPORT_AIRDNA', url });
-    if (!res || !res.ok) {
-      throw new Error((res && res.error) || 'Import failed');
+  if (!kind) {
+    setStatus('That URL isn\'t from a supported site. Supported: Zillow, Apartments.com, Hotpads, Facebook Marketplace, Craigslist.', 'error');
+    return;
+  }
+
+  setBusy(true);
+  setStatus('<span class="rr-spin"></span>Opening the listing and reading details…');
+
+  chrome.runtime.sendMessage({ type: 'SCRAPE_URL', url, kind }, (response) => {
+    setBusy(false);
+    if (chrome.runtime.lastError) {
+      setStatus('Extension error: ' + chrome.runtime.lastError.message, 'error');
+      return;
     }
-    setStatus('Added "' + (res.title || 'listing') + '" to your competitor analysis.', 'success');
-    ui.urlInput.value = '';
-    renderRecent();
-  } catch (e) {
-    setStatus(e.message || 'Import failed', 'error');
-  } finally {
-    ui.btnImport.disabled = false;
+    if (!response || !response.ok) {
+      setStatus('Import failed: ' + ((response && response.error) || 'Unknown error'), 'error');
+      return;
+    }
+    const data = response.data || {};
+    const title = data.title || data.address || data.host || 'Imported listing';
+    setStatus('Property details sent to your CRM. Switch to the CRM tab to see them.', 'success');
+    pushRecent({ url, title, kind, ts: Date.now() });
+    urlInput.value = '';
+  });
+}
+
+importBtn.addEventListener('click', doImport);
+urlInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') doImport(); });
+
+// Prefill with the active tab URL if it's a supported site — lets the
+// user click Import in one motion while browsing a listing.
+chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+  const t = tabs && tabs[0];
+  if (t && t.url && detectKind(t.url)) {
+    urlInput.value = t.url;
   }
 });
 
-ui.urlInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') ui.btnImport.click();
-});
-
-// Initial paint
-(async function init() {
-  await refreshAuth();
-  renderRecent();
-})();
+loadRecent();

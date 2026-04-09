@@ -128,11 +128,46 @@
     return null;
   }
 
+  // ---- Craigslist ------------------------------------------------
+  function parseCraigslist() {
+    const out = base('craigslist');
+    out.title = document.querySelector('#titletextonly')?.textContent?.trim()
+      || document.querySelector('.postingtitletext')?.textContent?.trim()
+      || document.title;
+    const priceTxt = document.querySelector('.price')?.textContent;
+    out.price = num(priceTxt);
+
+    // Attributes are in a group of <p class="attrgroup"> blocks
+    const attrText = Array.from(document.querySelectorAll('.attrgroup span, .attrgroup'))
+      .map((n) => n.textContent || '')
+      .join(' | ');
+    out.bedrooms = num(attrText.match(/(\d+(?:\.\d+)?)\s*BR/i)?.[1])
+      || num(attrText.match(/(\d+(?:\.\d+)?)\s*bed/i)?.[1]);
+    out.bathrooms = num(attrText.match(/(\d+(?:\.\d+)?)\s*Ba/i)?.[1])
+      || num(attrText.match(/(\d+(?:\.\d+)?)\s*bath/i)?.[1]);
+    out.sqft = num(attrText.match(/([\d,]+)\s*ft2/i)?.[1])
+      || num(attrText.match(/([\d,]+)\s*sq\s*ft/i)?.[1]);
+
+    // Address / neighborhood
+    const mapAddr = document.querySelector('.mapaddress')?.textContent?.trim();
+    const hood = document.querySelector('.postingtitletext small')?.textContent?.trim()
+      ?.replace(/^[()\s]+|[()\s]+$/g, '');
+    out.address = mapAddr || hood || null;
+
+    out.description = document.querySelector('#postingbody')?.textContent
+      ?.replace(/QR Code Link to This Post/i, '')
+      .trim()
+      .slice(0, 2000) || null;
+    out.photoUrl = document.querySelector('.slide.first img, #thumbs a img, .gallery img')?.src || null;
+    return out;
+  }
+
   function parse() {
     if (host.endsWith('zillow.com')) return parseZillow();
     if (host.endsWith('apartments.com')) return parseApartments();
     if (host.endsWith('hotpads.com')) return parseHotpads();
     if (host.endsWith('facebook.com')) return parseFacebook();
+    if (host.endsWith('craigslist.org')) return parseCraigslist();
     throw new Error('Unsupported host: ' + host);
   }
 

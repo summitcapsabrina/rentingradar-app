@@ -1,63 +1,48 @@
 // RentingRadar extension service worker (MV3 background)
-// Responsibilities:
-//   1. Hold auth state (Firebase custom token exchanged via CRM)
-//   2. Handle messages from popup: GET_AUTH_STATE, START_CONNECT, IMPORT_AIRDNA
-//   3. Handle messages from CRM (externally_connectable): SCRAPE_LISTING
-//   4. Drive background tabs that run content scripts to scrape AirDNA / listing sites
 //
-// Firebase is loaded lazily (ES module import from ./firebase.js) the first
-// time we need it, to keep the service worker cold start fast.
+// This version is a pure scrape service. It never authenticates to
+// Firebase and never touches user credentials. Its only job is:
+//
+//   1. Listen for SCRAPE_URL messages (from the popup OR from the CRM)
+//   2. Open the target URL in a background tab
+//   3. Inject the appropriate content script (AirDNA or listing parser)
+//   4. Wait for the scraped payload, close the tab
+//   5. Return the payload to whoever asked
+//
+// When the source of the scrape was the popup, we additionally forward
+// the payload to any open CRM tab so the CRM can consume it.
 
 const CRM_ORIGIN = 'https://app.rentingradar.com';
-const CRM_LINK_URL = CRM_ORIGIN + '/?extension=link';
-const CONNECT_CHECK_INTERVAL_MS = 1000;
 const SCRAPE_TIMEOUT_MS = 30000;
 
-let firebaseModule = null;
-async function getFirebase() {
-  if (!firebaseModule) {
-    firebaseModule = await import('../lib/firebase.js');
-    await firebaseModule.ensureReady();
-  }
-  return firebaseModule;
-}
-
 // ------------------------------------------------------------------
-// Message router (popup + content scripts)
+// Internal message router (popup + content scripts)
 // ------------------------------------------------------------------
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   (async () => {
     try {
       switch (msg && msg.type) {
-        case 'GET_AUTH_STATE': {
-          const fb = await getFirebase();
-          const user = fb.getCurrentUser();
-          sendResponse({ signedIn: !!user, email: user ? user.email : null, uid: user ? user.uid : null });
+        case 'PING':
+          sendResponse({ ok: true, version: chrome.runtime.getManifest().version });
           return;
-        }
-        case 'START_CONNECT': {
-          await openConnectTab();
-          sendResponse({ ok: true });
-          return;
-        }
-        case 'SIGN_OUT': {
-          const fb = await getFirebase();
-          await fb.signOut();
-          sendResponse({ ok: true });
-          return;
-        }
-        case 'IMPORT_AIRDNA': {
-          const result = await importAirDnaListing(msg.url);
+
+        case 'SCRAPE_URL': {
+          // From the popup: scrape + forward to CRM tab
+          const result = await scrapeAny(msg.url, msg.kind);
+          if (result.ok && result.data) {
+            await forwardToCrm(result.data);
+          }
           sendResponse(result);
           return;
         }
-        // Content scripts post scraped payloads here
+
         case 'SCRAPE_RESULT': {
-          // Handled via the per-tab promise map below.
+          // Content script reporting back
           resolveScrape(sender.tab && sender.tab.id, msg.payload, msg.error);
           sendResponse({ ok: true });
           return;
         }
+
         default:
           sendResponse({ ok: false, error: 'Unknown message type' });
       }
@@ -70,12 +55,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 });
 
 // ------------------------------------------------------------------
-// External messages (from the CRM page)
+// External messages (from the CRM page via externally_connectable)
 // ------------------------------------------------------------------
 chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
   (async () => {
     try {
-      // Only accept from known CRM origin
       if (!sender.url || !sender.url.startsWith(CRM_ORIGIN)) {
         sendResponse({ ok: false, error: 'Unauthorized origin' });
         return;
@@ -84,19 +68,14 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
         case 'PING':
           sendResponse({ ok: true, version: chrome.runtime.getManifest().version });
           return;
-        case 'EXTENSION_TOKEN': {
-          // CRM hands us a Firebase custom token
-          const fb = await getFirebase();
-          await fb.signInWithCustomToken(msg.token);
-          sendResponse({ ok: true });
+
+        case 'SCRAPE_URL': {
+          // From the CRM: scrape and return result directly (no forwarding)
+          const result = await scrapeAny(msg.url, msg.kind);
+          sendResponse(result);
           return;
         }
-        case 'SCRAPE_LISTING': {
-          // CRM wants us to scrape a Zillow/Apartments/etc URL
-          const data = await scrapeListing(msg.url);
-          sendResponse({ ok: true, data });
-          return;
-        }
+
         default:
           sendResponse({ ok: false, error: 'Unknown external message' });
       }
@@ -108,80 +87,74 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
 });
 
 // ------------------------------------------------------------------
-// Auth bridge: open CRM in a new tab so user can link
+// Detect which scraper to use and run it
 // ------------------------------------------------------------------
-async function openConnectTab() {
-  const existing = await chrome.tabs.query({ url: CRM_ORIGIN + '/*' });
-  if (existing.length) {
-    const tab = existing[0];
-    await chrome.tabs.update(tab.id, { active: true, url: CRM_LINK_URL });
-    return tab.id;
+async function scrapeAny(url, hint) {
+  if (!url || !/^https?:\/\//i.test(url)) {
+    return { ok: false, error: 'Invalid URL' };
   }
-  const tab = await chrome.tabs.create({ url: CRM_LINK_URL, active: true });
-  return tab.id;
-}
+  let host = '';
+  try { host = new URL(url).hostname.replace(/^www\./, '').toLowerCase(); }
+  catch (_) { return { ok: false, error: 'Invalid URL' }; }
 
-// ------------------------------------------------------------------
-// AirDNA import flow
-// ------------------------------------------------------------------
-async function importAirDnaListing(url) {
-  const fb = await getFirebase();
-  const user = fb.getCurrentUser();
-  if (!user) return { ok: false, error: 'Not connected to RentingRadar. Click Connect first.' };
+  let kind;
+  if (hint === 'airdna' || /airdna\.co$/i.test(host)) kind = 'airdna';
+  else if (/(zillow|apartments|hotpads)\.com$/i.test(host)) kind = 'listing';
+  else if (/facebook\.com$/i.test(host) && /\/marketplace\//i.test(url)) kind = 'listing';
+  else if (/craigslist\.org$/i.test(host)) kind = 'listing';
+  else return { ok: false, error: 'Unsupported site. Supported: AirDNA, Zillow, Apartments.com, Hotpads, Facebook Marketplace, Craigslist.' };
 
-  if (!/^https?:\/\/(www\.)?airdna\.co\//i.test(url)) {
-    return { ok: false, error: 'URL must be an airdna.co link.' };
-  }
-
-  // Open the AirDNA page in a background tab so the user's AirDNA cookies come along,
-  // inject the scraper, wait for the payload, close the tab.
-  const data = await scrapeInBackgroundTab(url, 'content/airdna-scraper.js');
-  if (!data) return { ok: false, error: 'Could not read listing details from AirDNA. Are you signed in there?' };
-
-  // Write to Firestore under the current user
+  const file = kind === 'airdna' ? 'content/airdna-scraper.js' : 'content/listing-scraper.js';
   try {
-    await fb.addCompetitor(user.uid, {
-      source: 'airdna',
-      sourceUrl: url,
-      title: data.title || null,
-      address: data.address || null,
-      bedrooms: data.bedrooms || null,
-      bathrooms: data.bathrooms || null,
-      adr: data.adr || null,
-      occupancy: data.occupancy || null,
-      revenue: data.revenue || null,
-      raw: data.raw || null,
-      importedAt: Date.now(),
-    });
+    const data = await scrapeInBackgroundTab(url, file);
+    if (!data) return { ok: false, error: 'Could not read details from the page. Make sure you are signed in where required.' };
+    // Tag the payload with its kind so the CRM knows how to route it
+    data._kind = kind;
+    return { ok: true, data };
   } catch (e) {
-    // If tier gate rejects, surface a friendly message
-    const msg = e && e.message ? e.message : 'Could not save to RentingRadar.';
-    if (/quota|limit|permission/i.test(msg)) {
-      return { ok: false, error: 'You have reached your monthly analysis limit. Upgrade your plan in RentingRadar.' };
-    }
-    return { ok: false, error: msg };
+    return { ok: false, error: e.message || 'Scrape failed.' };
   }
-
-  // Update recent-imports cache
-  const { rrRecent = [] } = await chrome.storage.local.get('rrRecent');
-  rrRecent.unshift({ url, title: data.title || url, importedAt: Date.now() });
-  await chrome.storage.local.set({ rrRecent: rrRecent.slice(0, 20) });
-
-  return { ok: true, title: data.title || 'listing' };
 }
 
 // ------------------------------------------------------------------
-// Listing site scrape (used by CRM via external message)
+// Forward scraped data to any open CRM tab
 // ------------------------------------------------------------------
-async function scrapeListing(url) {
-  if (!/^https?:\/\//i.test(url)) throw new Error('Invalid URL');
-  const host = new URL(url).hostname.toLowerCase();
-  const supported = /(zillow|apartments|hotpads|facebook)\.com$/.test(host.replace(/^www\./, '').split('.').slice(-2).join('.')) ||
-                    /zillow\.com$|apartments\.com$|hotpads\.com$|facebook\.com$/.test(host);
-  if (!supported) throw new Error('Unsupported listing site');
-  const data = await scrapeInBackgroundTab(url, 'content/listing-scraper.js');
-  if (!data) throw new Error('Could not read listing details.');
-  return data;
+async function forwardToCrm(data) {
+  try {
+    console.log('[RR ext] forwardToCrm: looking for CRM tabs', CRM_ORIGIN);
+    const tabs = await chrome.tabs.query({ url: CRM_ORIGIN + '/*' });
+    console.log('[RR ext] forwardToCrm: found', tabs.length, 'CRM tab(s)');
+    if (!tabs.length) {
+      // No CRM open yet — open it. The content script will buffer
+      // until the page is ready.
+      await chrome.tabs.create({ url: CRM_ORIGIN + '/', active: true });
+      // Give the new tab a moment to initialize the content script
+      await new Promise(r => setTimeout(r, 1500));
+      const retryTabs = await chrome.tabs.query({ url: CRM_ORIGIN + '/*' });
+      for (const t of retryTabs) {
+        try { await chrome.tabs.sendMessage(t.id, { type: 'CRM_DELIVER', data }); } catch (_) {}
+      }
+      return;
+    }
+    // Prefer an active CRM tab if any
+    const active = tabs.find(t => t.active) || tabs[0];
+    console.log('[RR ext] forwardToCrm: delivering to tab', active.id, active.url);
+    try {
+      await chrome.tabs.sendMessage(active.id, { type: 'CRM_DELIVER', data });
+      console.log('[RR ext] forwardToCrm: delivered OK');
+    } catch (err) {
+      console.warn('[RR ext] forwardToCrm: active tab send failed, broadcasting', err);
+      // Fall back to broadcasting
+      for (const t of tabs) {
+        try { await chrome.tabs.sendMessage(t.id, { type: 'CRM_DELIVER', data }); } catch (_) {}
+      }
+    }
+    // Bring the CRM tab to the front so the user sees the result land
+    try { await chrome.tabs.update(active.id, { active: true }); } catch (_) {}
+    try { await chrome.windows.update(active.windowId, { focused: true }); } catch (_) {}
+  } catch (e) {
+    console.error('[RR ext] forwardToCrm failed', e);
+  }
 }
 
 // ------------------------------------------------------------------
@@ -211,7 +184,6 @@ async function scrapeInBackgroundTab(url, contentScriptPath) {
 
     pendingScrapes.set(tab.id, { resolve, reject, timer });
 
-    // Wait for the tab to finish loading, then inject the content script.
     const listener = (tabId, changeInfo) => {
       if (tabId !== tab.id || changeInfo.status !== 'complete') return;
       chrome.tabs.onUpdated.removeListener(listener);
@@ -230,10 +202,10 @@ async function scrapeInBackgroundTab(url, contentScriptPath) {
 }
 
 // ------------------------------------------------------------------
-// First-install hook
+// First-install hook — open a "welcome" CRM tab if installed fresh
 // ------------------------------------------------------------------
 chrome.runtime.onInstalled.addListener((details) => {
   if (details.reason === 'install') {
-    chrome.tabs.create({ url: CRM_ORIGIN + '/?extension=welcome' });
+    chrome.tabs.create({ url: CRM_ORIGIN + '/' });
   }
 });

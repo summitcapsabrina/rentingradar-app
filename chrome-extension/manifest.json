@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "RentingRadar",
-  "version": "0.1.0",
-  "description": "Import AirDNA listings into RentingRadar competitor analysis and auto-fill property profiles from Zillow, Apartments.com, Hotpads, and Facebook Marketplace listings.",
+  "version": "0.2.0",
+  "description": "Paste a listing link (AirDNA, Zillow, Apartments.com, Hotpads, Facebook Marketplace, Craigslist) and RentingRadar auto-fills the property or competitor details in your CRM.",
   "author": "Summit Capital LLC",
   "homepage_url": "https://rentingradar.com",
   "icons": {
@@ -21,24 +21,23 @@
     }
   },
   "background": {
-    "service_worker": "background/service-worker.js",
-    "type": "module"
+    "service_worker": "background/service-worker.js"
   },
   "permissions": [
     "storage",
     "tabs",
     "scripting",
-    "activeTab",
-    "alarms"
+    "activeTab"
   ],
   "host_permissions": [
     "https://*.airdna.co/*",
+    "https://*.airbnb.com/*",
     "https://www.zillow.com/*",
     "https://www.apartments.com/*",
     "https://*.hotpads.com/*",
     "https://www.facebook.com/marketplace/*",
-    "https://app.rentingradar.com/*",
-    "https://rentingradar.com/*"
+    "https://*.craigslist.org/*",
+    "https://app.rentingradar.com/*"
   ],
   "externally_connectable": {
     "matches": [
@@ -46,19 +45,12 @@
       "https://rentingradar.com/*"
     ]
   },
-  "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://securetoken.googleapis.com https://identitytoolkit.googleapis.com https://firestore.googleapis.com https://app.rentingradar.com https://*.cloudfunctions.net;"
-  },
-  "web_accessible_resources": [
+  "content_scripts": [
     {
-      "resources": ["content/airdna-scraper.js", "content/listing-scraper.js"],
-      "matches": [
-        "https://*.airdna.co/*",
-        "https://www.zillow.com/*",
-        "https://www.apartments.com/*",
-        "https://*.hotpads.com/*",
-        "https://www.facebook.com/marketplace/*"
-      ]
+      "matches": ["https://app.rentingradar.com/*"],
+      "js": ["content/crm-bridge.js"],
+      "run_at": "document_idle",
+      "all_frames": false
     }
   ]
 }
