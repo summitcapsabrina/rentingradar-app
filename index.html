@@ -1238,6 +1238,7 @@ h1 .hero-edit-input{font-size:1.35rem}
 .rr-toast.loading{background:#8b5cf6}
 .rr-toast.loading .rr-toast-msg::before{content:"";display:inline-block;width:.85em;height:.85em;margin-right:.55em;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;vertical-align:-2px;animation:rrToastSpin .8s linear infinite}
 @keyframes rrToastSpin{to{transform:rotate(360deg)}}
+@keyframes rrFadeIn{from{opacity:0}to{opacity:1}}
 /* Comp Note Popup (centered) */
 .comp-note-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:250;display:none;align-items:center;justify-content:center}
 .comp-note-overlay.open{display:flex}
@@ -8142,6 +8143,132 @@ function rrCopyOllamaPullCmd(btn){
   }
 }
 
+// ======================================================================
+// Ollama first-run setup wizard
+// ----------------------------------------------------------------------
+// A one-time modal that walks the user through the three steps needed
+// to get AI-enriched listing imports working:
+//   1. Install Ollama
+//   2. Run "ollama pull llama3.2" in Terminal
+//   3. Verify (health check passes)
+// The modal polls _rrRefreshOllamaHealth every 2s while open so each
+// step checks itself off live as the user completes it. Once all three
+// steps are green, the user hits "Finish" and a localStorage flag keeps
+// it from reappearing. If the user dismisses before finishing, the
+// regular top-of-page banner still nudges them.
+// ======================================================================
+const RR_OLLAMA_SETUP_KEY = 'rrOllamaSetupCompleted';
+
+function rrOllamaSetupCompleted(){
+  try { return localStorage.getItem(RR_OLLAMA_SETUP_KEY) === '1'; } catch(_){ return false; }
+}
+
+function rrMarkOllamaSetupCompleted(){
+  try { localStorage.setItem(RR_OLLAMA_SETUP_KEY, '1'); } catch(_){}
+}
+
+let _rrOllamaSetupPoll = null;
+
+function rrShowOllamaSetupModal(){
+  if(document.getElementById('rrOllamaSetupModal')) return;
+
+  const overlay = document.createElement('div');
+  overlay.id = 'rrOllamaSetupModal';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:10000;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);padding:20px;animation:rrFadeIn .25s ease';
+
+  overlay.innerHTML = `
+    <div style="background:var(--bg1,#1a1d2e);color:var(--text1,#fff);border:1px solid var(--border,#2a2e42);border-radius:14px;max-width:560px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.5);overflow:hidden">
+      <div style="padding:20px 24px 4px;display:flex;align-items:center;gap:10px">
+        <span style="font-size:1.5rem">🤖</span>
+        <h2 style="margin:0;font-size:1.15rem;font-weight:700">Set up AI listing enrichment</h2>
+        <button type="button" aria-label="Close" onclick="rrCloseOllamaSetupModal(false)" style="margin-left:auto;background:transparent;border:none;color:var(--text3,#8a8fa3);font-size:1.4rem;cursor:pointer;line-height:1;padding:0 4px">&times;</button>
+      </div>
+      <div style="padding:4px 24px 0;font-size:.82rem;color:var(--text2,#b8bdd0);line-height:1.5">
+        RentingRadar uses a free, local AI engine called <strong>Ollama</strong> to read listing pages and auto-fill property details. Everything runs on your own Mac — no data ever leaves your computer. One-time setup:
+      </div>
+      <div id="rrOllamaSetupSteps" style="padding:16px 24px 20px;display:flex;flex-direction:column;gap:12px"></div>
+      <div style="padding:14px 24px 18px;border-top:1px solid var(--border,#2a2e42);display:flex;justify-content:space-between;align-items:center;gap:10px;background:rgba(0,0,0,.15)">
+        <button type="button" onclick="rrCloseOllamaSetupModal(false)" style="background:transparent;border:1px solid var(--border,#2a2e42);color:var(--text2,#b8bdd0);padding:8px 14px;border-radius:8px;font-size:.8rem;cursor:pointer">Skip for now</button>
+        <button type="button" id="rrOllamaSetupFinish" disabled onclick="rrCloseOllamaSetupModal(true)" style="background:#10b981;border:none;color:#fff;font-weight:600;padding:9px 18px;border-radius:8px;font-size:.85rem;cursor:pointer;opacity:.5">Finish</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  rrRenderOllamaSetupSteps();
+
+  // Kick off a fresh probe immediately, then poll every 2s while the
+  // modal is open so each step self-verifies as the user completes it.
+  _rrRefreshOllamaHealth();
+  if(_rrOllamaSetupPoll) clearInterval(_rrOllamaSetupPoll);
+  _rrOllamaSetupPoll = setInterval(() => {
+    _rrRefreshOllamaHealth().then(() => rrRenderOllamaSetupSteps());
+  }, 2500);
+}
+
+function rrRenderOllamaSetupSteps(){
+  const host = document.getElementById('rrOllamaSetupSteps');
+  if(!host) return;
+  const health = window.RR_OLLAMA_HEALTH || {};
+  const step1Done = !!health.running; // Ollama installed AND running implies install done
+  const step2Done = !!health.modelInstalled;
+  const step3Done = step1Done && step2Done;
+
+  function stepRow(n, done, title, bodyHtml){
+    const dot = done
+      ? '<span style="display:inline-flex;width:22px;height:22px;border-radius:50%;background:#10b981;color:#fff;align-items:center;justify-content:center;font-size:.78rem;font-weight:700;flex-shrink:0">✓</span>'
+      : '<span style="display:inline-flex;width:22px;height:22px;border-radius:50%;background:var(--bg2,#252940);color:var(--text2,#b8bdd0);border:1px solid var(--border,#2a2e42);align-items:center;justify-content:center;font-size:.78rem;font-weight:700;flex-shrink:0">' + n + '</span>';
+    return (
+      '<div style="display:flex;gap:12px;align-items:flex-start">' +
+      dot +
+      '<div style="flex:1;min-width:0">' +
+      '<div style="font-weight:600;font-size:.88rem;margin-bottom:4px;' + (done ? 'color:#10b981' : '') + '">' + title + '</div>' +
+      '<div style="font-size:.78rem;color:var(--text2,#b8bdd0);line-height:1.5">' + bodyHtml + '</div>' +
+      '</div>' +
+      '</div>'
+    );
+  }
+
+  const step1Body = step1Done
+    ? 'Ollama is running on your Mac. ✓'
+    : 'Download and install Ollama, then open the app so it runs in your menu bar.<div style="margin-top:6px"><a href="' + RR_OLLAMA_DOWNLOAD_URL + '" target="_blank" rel="noopener" style="display:inline-block;background:#4f6ef7;color:#fff;padding:6px 14px;border-radius:6px;text-decoration:none;font-size:.78rem;font-weight:600">Download Ollama</a></div>';
+
+  const step2Body = step2Done
+    ? 'The <code style="background:var(--bg2,#252940);padding:1px 5px;border-radius:3px">' + RR_OLLAMA_REQUIRED_MODEL + '</code> model is installed. ✓'
+    : 'Open Terminal and paste this command. It downloads the ~2&nbsp;GB model (one-time):' +
+      '<div style="margin-top:6px;display:flex;gap:6px;align-items:center;background:var(--bg2,#252940);border:1px solid var(--border,#2a2e42);border-radius:6px;padding:6px 10px">' +
+      '<code style="flex:1;font-size:.78rem;color:#fff;font-family:ui-monospace,Menlo,monospace">ollama pull ' + RR_OLLAMA_REQUIRED_MODEL + '</code>' +
+      '<button type="button" onclick="rrCopyOllamaPullCmd(this)" style="background:#4f6ef7;border:none;color:#fff;font-weight:600;padding:5px 10px;border-radius:4px;font-size:.72rem;cursor:pointer;white-space:nowrap">Copy</button>' +
+      '</div>' +
+      '<div style="margin-top:4px;font-size:.72rem;color:var(--text3,#8a8fa3)">Leave the modal open — it\'ll check itself off when the download finishes.</div>';
+
+  const step3Body = step3Done
+    ? '<span style="color:#10b981;font-weight:600">All set — AI enrichment is ready.</span> Click <strong>Finish</strong> below.'
+    : 'Once both steps above are complete, this step will turn green automatically.' +
+      '<div style="margin-top:6px"><button type="button" onclick="_rrRefreshOllamaHealth().then(rrRenderOllamaSetupSteps)" style="background:transparent;border:1px solid var(--border,#2a2e42);color:var(--text2,#b8bdd0);padding:5px 12px;border-radius:5px;font-size:.72rem;cursor:pointer">Check now</button></div>';
+
+  host.innerHTML =
+    stepRow(1, step1Done, 'Install Ollama', step1Body) +
+    stepRow(2, step2Done, 'Download the llama3.2 model', step2Body) +
+    stepRow(3, step3Done, 'Verify', step3Body);
+
+  const finishBtn = document.getElementById('rrOllamaSetupFinish');
+  if(finishBtn){
+    finishBtn.disabled = !step3Done;
+    finishBtn.style.opacity = step3Done ? '1' : '.5';
+    finishBtn.style.cursor = step3Done ? 'pointer' : 'not-allowed';
+  }
+}
+
+function rrCloseOllamaSetupModal(markCompleted){
+  if(_rrOllamaSetupPoll){ clearInterval(_rrOllamaSetupPoll); _rrOllamaSetupPoll = null; }
+  const overlay = document.getElementById('rrOllamaSetupModal');
+  if(overlay) overlay.remove();
+  if(markCompleted) rrMarkOllamaSetupCompleted();
+  // Refresh the top banner state so if they skipped, the nudge reappears
+  _rrProbeExtension().then((extId) => rrUpdateTopBanners(extId));
+}
+
 // Decide which (if any) top-of-page banner to show based on current probe state
 function rrUpdateTopBanners(extId){
   if(!extId){
@@ -8151,10 +8278,21 @@ function rrUpdateTopBanners(extId){
   }
   rrHideInstallBanner();
   const health = window.RR_OLLAMA_HEALTH;
-  if(!health || !health.running || !health.modelInstalled){
-    rrShowOllamaBanner();
+  const aiReady = health && health.running && health.modelInstalled;
+  if(!aiReady){
+    // Extension is installed but AI isn't ready. First-run users see the
+    // full setup wizard; returning users (who already dismissed/finished)
+    // get the lighter banner nudge.
+    if(!rrOllamaSetupCompleted()){
+      rrHideOllamaBanner();
+      rrShowOllamaSetupModal();
+    } else {
+      rrShowOllamaBanner();
+    }
   } else {
     rrHideOllamaBanner();
+    // If AI is now ready, mark setup completed so the modal never reappears.
+    rrMarkOllamaSetupCompleted();
   }
 }
 
