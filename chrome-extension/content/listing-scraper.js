@@ -35,14 +35,36 @@
     try { return JSON.parse(el.textContent); } catch (_) { return null; }
   }
 
+  // v0.6.1: recursively flatten @graph arrays AND mainEntity / subjectOf /
+  // itemReviewed containers so callers see every candidate real-estate
+  // block as a top-level entry — regardless of how deeply the site nested
+  // its schema.org wrappers. Apartments.com wraps units in:
+  //   { @type: [Product, RealEstateListing], mainEntity: { @type: ApartmentComplex, numberOfBedrooms: 3, ... } }
+  // Previously we only expanded @graph, so the beds/baths on the inner
+  // mainEntity were never reached and every Apartments.com listing with
+  // this wrapper silently dropped core numbers.
   function findAllJsonLd() {
     const blocks = [];
+    const seen = new WeakSet();
+    function push(obj) {
+      if (!obj || typeof obj !== 'object') return;
+      if (seen.has(obj)) return;
+      seen.add(obj);
+      if (Array.isArray(obj)) { obj.forEach(push); return; }
+      blocks.push(obj);
+      // Recurse into container fields that commonly wrap the real entity.
+      if (obj['@graph']) push(obj['@graph']);
+      if (obj.mainEntity) push(obj.mainEntity);
+      if (obj.subjectOf) push(obj.subjectOf);
+      if (obj.itemReviewed) push(obj.itemReviewed);
+      if (obj.about) push(obj.about);
+      // containsPlace is already handled by per-site parsers for unit lists,
+      // but flattening it here makes the data available to anyone who just
+      // iterates findAllJsonLd() output.
+      if (Array.isArray(obj.containsPlace)) obj.containsPlace.forEach(push);
+    }
     document.querySelectorAll('script[type="application/ld+json"]').forEach((s) => {
-      try {
-        const parsed = JSON.parse(s.textContent);
-        if (Array.isArray(parsed)) blocks.push(...parsed);
-        else blocks.push(parsed);
-      } catch (_) {}
+      try { push(JSON.parse(s.textContent)); } catch (_) {}
     });
     return blocks;
   }
@@ -1398,7 +1420,16 @@
       const hasAll = cfc >= 4;
       const hasEnough = cfc >= 2 || (cfc >= 1 && !!data.address);
       if (hasAll || hasEnough || attempt >= 7) {
-        data._pageText = captureListingSnippet();
+        // v0.6.1: prepend the parser-extracted description (from JSON-LD,
+        // __NEXT_DATA__, etc.) to the LLM snippet. On Apartments.com and
+        // other sites, the rich description prose lives only in JSON-LD
+        // and is NOT in the DOM, so captureListingSnippet() alone misses
+        // the best source material for Property Note bullets.
+        const snippet = captureListingSnippet();
+        const prelude = data.description
+          ? 'LISTING_DESCRIPTION: ' + String(data.description).replace(/\s+/g, ' ').trim() + '\n\n---\n\n'
+          : '';
+        data._pageText = (prelude + snippet).slice(0, 5000);
         data._fullPageText = captureFullPageText();
         if (data._debug) {
           data._debug.finalAttempt = attempt;
