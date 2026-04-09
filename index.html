@@ -1235,8 +1235,13 @@ h1 .hero-edit-input{font-size:1.35rem}
 .rr-toast.warning{background:#f59e0b;color:#1a1d2e}
 .rr-toast.error{background:#ef4444}
 .rr-toast.info{background:#4f6ef7}
-.rr-toast.loading{background:#8b5cf6}
-.rr-toast.loading .rr-toast-msg::before{content:"";display:inline-block;width:.85em;height:.85em;margin-right:.55em;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;vertical-align:-2px;animation:rrToastSpin .8s linear infinite}
+.rr-toast.loading{background:#0f1220;border:1px solid #8b5cf6;color:#fff;padding:12px 20px 18px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,.4),0 0 20px rgba(139,92,246,.25)}
+/* Progress bar is anchored to the left edge; width grows as the import
+   progresses, which visually fills the purple bar from left to right. */
+.rr-toast.loading .rr-toast-progress{position:absolute;left:0;bottom:0;height:4px;width:0%;background:linear-gradient(to right,#7c3aed,#8b5cf6 30%,#a78bfa);box-shadow:0 0 10px rgba(139,92,246,.7);transition:width .25s linear;border-bottom-left-radius:9px}
+/* Only reach the right corner radius once the bar is nearly full */
+.rr-toast.loading .rr-toast-progress[data-full="1"]{border-bottom-right-radius:9px}
+.rr-toast:not(.loading) .rr-toast-progress{display:none}
 @keyframes rrToastSpin{to{transform:rotate(360deg)}}
 @keyframes rrFadeIn{from{opacity:0}to{opacity:1}}
 /* Comp Note Popup (centered) */
@@ -4503,10 +4508,44 @@ function showToast(msg, type = 'info', duration = 4000, opts = {}) {
     toast.className = 'rr-toast';
     document.body.appendChild(toast);
   }
-  toast.innerHTML = '<span class="rr-toast-msg">' + msg + '</span><button class="rr-toast-close" onclick="event.stopPropagation();document.getElementById(\'rr-toast\').classList.remove(\'visible\')">&times;</button>';
+  // Cancel any in-flight progress animation left over from a previous
+  // loading toast — otherwise the purple bar would keep filling under a
+  // success/error toast that's replacing it.
+  if (toast._progressTimer) { clearInterval(toast._progressTimer); toast._progressTimer = null; }
+
+  const isLoading = type === 'loading';
+  const progressHtml = isLoading ? '<div class="rr-toast-progress"></div>' : '';
+  toast.innerHTML = '<span class="rr-toast-msg">' + msg + '</span>'
+    + '<button class="rr-toast-close" onclick="event.stopPropagation();document.getElementById(\'rr-toast\').classList.remove(\'visible\')">&times;</button>'
+    + progressHtml;
   toast.className = 'rr-toast ' + type + (opts.recordId ? ' clickable' : '');
   toast.onclick = opts.recordId ? function(){ toast.classList.remove('visible'); openDetail(opts.recordId); } : null;
   requestAnimationFrame(() => { toast.classList.add('visible'); });
+
+  if (isLoading) {
+    // The import doesn't report real progress, so we simulate it with an
+    // ease-out curve that reaches 92% over ~22 seconds (the typical Ollama
+    // Pass A + Pass B duration on a 3B model) and then holds. When the
+    // success/incomplete/failed toast replaces this one, the animation is
+    // cancelled and the new toast renders on top.
+    const bar = toast.querySelector('.rr-toast-progress');
+    const startedAt = performance.now();
+    const targetMs = opts.progressTargetMs || 22000;
+    const plateau = 92;
+    toast._progressTimer = setInterval(() => {
+      const elapsed = performance.now() - startedAt;
+      const t = Math.min(1, elapsed / targetMs);
+      // Ease-out cubic — fast at first, slows near the plateau
+      const eased = 1 - Math.pow(1 - t, 3);
+      const pct = eased * plateau;
+      if (bar) {
+        bar.style.width = pct.toFixed(1) + '%';
+        if (pct >= 90) bar.setAttribute('data-full', '1');
+      }
+      if (t >= 1) { clearInterval(toast._progressTimer); toast._progressTimer = null; }
+    }, 120);
+  }
+
   clearTimeout(toast._timer);
   toast._timer = setTimeout(() => { toast.classList.remove('visible'); }, duration);
 }
