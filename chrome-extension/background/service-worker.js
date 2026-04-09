@@ -363,6 +363,211 @@ function filterHallucinatedBullets(bullets, pageText) {
   return out;
 }
 
+// Source-grounding for amenity enum values. Each allowed value (e.g.
+// "Stainless Steel Appliances", "Attached Garage", "Swimming Pool") has
+// a set of trigger phrases. If NONE of those phrases appear in the
+// listing's page text, the model invented the value and we drop it.
+// This is the strongest anti-hallucination guard we have — the Pass A/B
+// prompts request grounding too, but small models still slip, so we
+// verify here as a hard filter.
+const AMENITY_SOURCE_TRIGGERS = {
+  // Interior features
+  'Fireplace': ['fireplace','firepl','wood burning','gas fire'],
+  'Ceiling Fans': ['ceiling fan'],
+  'Walk-In Closets': ['walk-in closet','walk in closet','walkin closet'],
+  'High Ceilings': ['high ceiling','tall ceiling','9-foot','10-foot','9 ft ceiling','10 ft ceiling'],
+  'Vaulted Ceilings': ['vaulted','cathedral ceiling'],
+  'Open Floor Plan': ['open floor plan','open concept','open layout'],
+  'Natural Light': ['natural light','sun-drenched','sun drenched','bright','sunlit','large windows','floor-to-ceiling window'],
+  'Crown Molding': ['crown molding','crown moulding'],
+  'Recessed Lighting': ['recessed light','can light','pot light'],
+  'Smart Thermostat': ['smart thermostat','nest thermostat','ecobee'],
+  'Smart Locks': ['smart lock','keyless entry'],
+  'Built-In Shelving': ['built-in shelv','built in shelv','bookshel'],
+  'Pantry': ['pantry'],
+  'Kitchen Island': ['kitchen island','island'],
+  'Breakfast Bar': ['breakfast bar','breakfast nook'],
+  'Stainless Steel Appliances': ['stainless','stainless steel'],
+  'Double Vanity': ['double vanity','dual vanity','his and hers'],
+  'Soaking Tub': ['soaking tub','clawfoot','deep tub'],
+  'Walk-In Shower': ['walk-in shower','walk in shower'],
+  'Separate Tub/Shower': ['separate tub','separate shower'],
+  'Linen Closet': ['linen closet'],
+  'Storage Unit': ['storage unit','storage space','storage locker'],
+  'Window Blinds': ['blinds'],
+  'Blackout Curtains': ['blackout'],
+  // Appliances
+  'Dishwasher': ['dishwasher'],
+  'Garbage Disposal': ['garbage disposal','disposal'],
+  'Microwave': ['microwave'],
+  'Oven/Range (Gas)': ['gas oven','gas range','gas stove','gas cooktop'],
+  'Oven/Range (Electric)': ['electric oven','electric range','electric stove','oven','range','stove','cooktop'],
+  'Refrigerator': ['refrigerator','fridge'],
+  'Ice Maker': ['ice maker','icemaker'],
+  'Trash Compactor': ['trash compactor','compactor'],
+  'Wine Cooler': ['wine cooler','wine fridge'],
+  // Flooring
+  'Hardwood': ['hardwood','wood floor'],
+  'Carpet': ['carpet'],
+  'Tile': ['tile floor','ceramic tile','porcelain tile','tiled'],
+  'Laminate': ['laminate'],
+  'Vinyl Plank': ['vinyl plank','lvp','luxury vinyl'],
+  'Concrete': ['concrete floor','polished concrete'],
+  'Marble': ['marble floor'],
+  'Stone': ['stone floor','slate floor','travertine'],
+  'Mixed': [],
+  // Laundry (single)
+  'In-Unit W/D': ['in-unit washer','in unit washer','in-unit w/d','washer/dryer in','washer and dryer in','w/d in unit'],
+  'W/D Hookups': ['hookup','w/d hookup','washer hookup','dryer hookup'],
+  'Shared/On-Site': ['shared laundry','on-site laundry','on site laundry','laundry room','laundry on site','community laundry'],
+  'Stacked W/D': ['stacked washer','stacked w/d'],
+  // A/C (single)
+  'Central A/C': ['central a/c','central ac','central air'],
+  'Window Unit': ['window unit','window a/c','window ac'],
+  'Mini-Split': ['mini-split','mini split','ductless'],
+  'Evaporative/Swamp Cooler': ['swamp cooler','evaporative cooler'],
+  'Portable': ['portable a/c','portable ac'],
+  // Heating (single)
+  'Central (Gas)': ['central heat','gas heat','gas furnace','forced air gas','gas heating','central heating'],
+  'Central (Electric)': ['electric heat','electric furnace','heat pump','forced air electric'],
+  'Baseboard': ['baseboard heat','baseboard'],
+  'Radiator': ['radiator','steam heat'],
+  'Heat Pump': ['heat pump'],
+  'Space Heater': ['space heater'],
+  // Parking (single)
+  'Attached Garage': ['attached garage','attached 1-car','attached 2-car','attached two-car'],
+  'Detached Garage': ['detached garage'],
+  'Carport': ['carport'],
+  'Covered Parking': ['covered parking','covered spot','covered space'],
+  'Assigned Spot': ['assigned parking','assigned spot','reserved parking','reserved spot'],
+  'Street Only': ['street parking','on-street parking','on street parking'],
+  'Driveway': ['driveway'],
+  'Parking Garage': ['parking garage','garage parking'],
+  // Pool (single)
+  'Private': ['private pool','own pool','backyard pool','in-ground pool'],
+  'Community/Shared': ['community pool','shared pool','pool access','building pool','complex pool'],
+  'Heated Private': ['heated pool'],
+  'Heated Community': ['heated community pool','heated shared pool'],
+  // Outdoor
+  'Balcony': ['balcony','balconies'],
+  'Patio': ['patio'],
+  'Deck': ['deck'],
+  'Porch': ['porch'],
+  'Screened Porch': ['screened porch','screen porch'],
+  'Sunroom': ['sunroom','sun room'],
+  'Rooftop': ['rooftop','roof deck','roof top','roof terrace'],
+  'Courtyard': ['courtyard'],
+  'Lanai': ['lanai'],
+  // Exterior features
+  'Fenced Yard': ['fenced yard','fenced-in yard','fenced backyard','privacy fence'],
+  'Sprinkler System': ['sprinkler'],
+  'Outdoor Lighting': ['outdoor lighting','landscape lighting'],
+  'Outdoor Kitchen/BBQ': ['outdoor kitchen','bbq','barbecue','grill station','built-in grill'],
+  'Fire Pit': ['fire pit','firepit'],
+  'Garden Space': ['garden','planter'],
+  'Shed/Outbuilding': ['shed','outbuilding'],
+  'RV Parking': ['rv parking'],
+  'Boat Parking': ['boat parking','boat dock'],
+  'EV Charging': ['ev charg','electric vehicle charg','tesla charg'],
+  'Gated Entry': ['gated','gate entry','gated community'],
+  'Desert Landscaping': ['desert landscap','xeriscap'],
+  'Pool Fence': ['pool fence'],
+  // Community amenities
+  'Gym/Fitness Center': ['gym','fitness center','fitness room','workout'],
+  'Clubhouse': ['clubhouse','club house'],
+  'Business Center': ['business center','business lounge'],
+  'Package Lockers': ['package locker','parcel locker','amazon locker','luxer'],
+  'Dog Park': ['dog park','dog run'],
+  'Playground': ['playground','play area'],
+  'Swimming Pool': ['pool','swimming'],
+  'Community Spa/Hot Tub': ['hot tub','spa','jacuzzi'],
+  'Sauna': ['sauna'],
+  'Elevator': ['elevator','lift'],
+  'Concierge/Doorman': ['concierge','doorman','front desk'],
+  'On-Site Management': ['on-site management','on site management','on-site manager'],
+  'On-Site Maintenance': ['on-site maintenance','on site maintenance'],
+  'Bike Storage': ['bike storage','bicycle storage','bike room'],
+  'BBQ/Grill Area': ['bbq','barbecue','grill area','grilling station'],
+  'Rooftop Lounge': ['rooftop lounge','rooftop deck','sky lounge','rooftop terrace'],
+  'Tennis Court': ['tennis court','tennis'],
+  'Pickleball Court': ['pickleball'],
+  // Utilities included
+  'Water': ['water included','includes water','water is included'],
+  'Hot Water': ['hot water included','includes hot water'],
+  'Gas': ['gas included','includes gas'],
+  'Electric': ['electric included','electricity included','includes electric'],
+  'Trash': ['trash included','garbage included','includes trash'],
+  'Sewer': ['sewer included','includes sewer'],
+  'Recycling': ['recycling included'],
+  'Internet/WiFi': ['internet included','wifi included','wi-fi included','includes wifi'],
+  'Cable TV': ['cable included','cable tv included'],
+  'Landscaping/Grounds': ['landscaping included','grounds maintenance'],
+  'Pest Control': ['pest control included'],
+  // Pets
+  'Yes - All Pets': ['pets welcome','pets allowed','pet friendly','pet-friendly'],
+  'Dogs Only': ['dogs only','dogs allowed','dogs welcome'],
+  'Cats Only': ['cats only','cats allowed','cats welcome'],
+  'Small Pets Only': ['small pets','small dogs','small animal'],
+  'Case by Case': ['case by case','case-by-case','upon approval','with approval'],
+  'Service Animals Only': ['service animal'],
+  'No Pets': ['no pets','pets not allowed','pet free','pet-free'],
+  // Safety
+  'Smoke Detectors': ['smoke detector','smoke alarm'],
+  'Carbon Monoxide Detectors': ['carbon monoxide','co detector'],
+  'Fire Extinguisher': ['fire extinguisher'],
+  'Security System/Alarm': ['security system','alarm system','burglar alarm'],
+  'Deadbolt Locks': ['deadbolt'],
+  'Security Cameras': ['security camera','cctv','surveillance'],
+  '24-Hour Security': ['24-hour security','24 hour security','24/7 security'],
+};
+
+// Verify a single amenity value is grounded in the listing text. Returns
+// true if any of its triggers appear. Values we don't have triggers for
+// fall back to a generic "key word appears in text" check.
+function isAmenityInSource(value, text) {
+  if (typeof value !== 'string' || !value) return false;
+  if (!text) return false;
+  const triggers = AMENITY_SOURCE_TRIGGERS[value];
+  if (triggers && triggers.length) {
+    for (const t of triggers) if (text.includes(t)) return true;
+    return false;
+  }
+  // Fallback: take the first two "content words" of the value and require
+  // at least one in the source. "None" always passes (it's an absence).
+  if (value === 'None') return true;
+  const words = value.toLowerCase().replace(/[/()-]/g, ' ').match(/[a-z]{4,}/g) || [];
+  if (!words.length) return true;
+  return words.some((w) => text.includes(w));
+}
+
+// Strip any values from the merged propertyDetails that aren't traceable
+// to the listing's page text. This is applied to Pass A + Pass B outputs.
+function groundPropertyDetails(pd, fullPageText) {
+  const text = String(fullPageText || '').toLowerCase();
+  if (!text || !pd || typeof pd !== 'object') return;
+  // availableDate + petsAllowed + numeric fields are handled elsewhere
+  const SKIP = new Set(['availableDate','latitude','longitude']);
+  for (const k of Object.keys(pd)) {
+    if (SKIP.has(k)) continue;
+    const v = pd[k];
+    if (Array.isArray(v)) {
+      const kept = v.filter((x) => isAmenityInSource(x, text));
+      if (kept.length) pd[k] = kept;
+      else { delete pd[k]; console.log('[RR ext] grounded: dropped empty', k); }
+      const dropped = v.filter((x) => !kept.includes(x));
+      if (dropped.length) console.log('[RR ext] grounded: dropped', k, dropped);
+    } else if (typeof v === 'string') {
+      // Only apply to known amenity fields
+      if (OLLAMA_FIELD_OPTIONS[k] || k === 'pool' || k === 'parking' || k === 'laundry' || k === 'ac' || k === 'heating' || k === 'petsAllowed' || k === 'hotTub') {
+        if (!isAmenityInSource(v, text)) {
+          delete pd[k];
+          console.log('[RR ext] grounded: dropped', k, '=', v);
+        }
+      }
+    }
+  }
+}
+
 // For single-select fields, when the model hands us multiple candidates,
 // pick the one that's (a) most specific and (b) actually mentioned in the
 // source text. Falls back to the first allowed value.
@@ -468,12 +673,16 @@ async function enrichWithOllama(scraped) {
     "You MUST extract bedrooms, bathrooms, and price if they appear anywhere in the text. " +
     "Common phrasings: '3 bd', '3 beds', '3 bedroom', '1 ba', '1 bath', '1.5 bathrooms', '$2,350/mo', '$2,350 per month'. " +
     "A studio counts as bedrooms = 0. Half baths count as .5 (e.g. '1.5 baths'). " +
-    "CRITICAL anti-hallucination rule: every fact you output — structured fields AND bullets — " +
-    "must appear VERBATIM or as an OBVIOUS paraphrase in the provided page text. " +
-    "If a fact is not in the text, OMIT it. Do NOT guess. Do NOT invent. " +
-    "Specifically: do NOT output petsAllowed unless the text explicitly discusses pet policy. " +
+    "ABSOLUTE ANTI-HALLUCINATION RULE: every fact you output — structured fields AND bullets — " +
+    "MUST correspond to text that literally appears in the provided page text. " +
+    "If the word or phrase is not in the text, you CANNOT output the value. When in doubt, OMIT. " +
+    "It is far better to leave a field empty than to invent a value. " +
+    "Do NOT infer. Do NOT assume standard apartment features. Do NOT fill in what you think a typical listing would have. " +
+    "Specifically: do NOT output petsAllowed unless the text explicitly discusses pet policy (words like 'pet', 'dog', 'cat', 'animal'). " +
+    "Do NOT output utilitiesIncluded values unless the text explicitly says that utility is INCLUDED in rent — 'water included', 'gas included', etc. " +
     "Do NOT output a bullet like 'Small pets allowed', 'Water included', 'Hardwood floors', etc. " +
-    "unless those exact concepts are mentioned in the text. When in doubt, omit. " +
+    "unless those exact concepts are mentioned verbatim in the text. " +
+    "SELF-CHECK before every value: can I point to the exact words in the page text that justify this? If no, remove it. " +
     "The 'bullets' field is ALWAYS REQUIRED — always return at least 5 bullet points, but only " +
     "about things the listing actually mentions.";
 
@@ -631,14 +840,26 @@ Return ONLY:
   let passB = null;
   try {
     const systemPromptB =
-      "You tag rental-listing amenities from raw page text. Return ONLY a JSON object. " +
-      "SINGLE-SELECT fields are dropdowns that take exactly ONE value (string). " +
+      "You tag rental-listing amenities from raw page text. Return ONLY a JSON object.\n" +
+      "\n" +
+      "ABSOLUTE ANTI-HALLUCINATION RULE: Every value you output MUST correspond to text that literally appears in the page text. If the word or phrase is not in the text, you CANNOT output the value. When in doubt, OMIT. It is far better to leave a field empty than to invent a value.\n" +
+      "\n" +
+      "SELF-CHECK before outputting each value: ask 'does the page text contain a direct phrase for this?' If no, remove it. Examples of grounding:\n" +
+      "  - 'Stainless Steel Appliances' requires 'stainless' in the text\n" +
+      "  - 'Attached Garage' requires 'attached garage' (not just 'parking')\n" +
+      "  - 'Hardwood' flooring requires 'hardwood' or 'wood floors'\n" +
+      "  - 'Swimming Pool' requires 'pool' or 'swimming' in the text\n" +
+      "  - 'In-Unit W/D' requires 'in-unit washer/dryer' or similar — NOT just 'laundry'\n" +
+      "  - 'Dishwasher' requires the word 'dishwasher'\n" +
+      "DO NOT infer. DO NOT assume standard apartment features. If the listing doesn't explicitly mention it, it doesn't exist.\n" +
+      "\n" +
+      "SINGLE-SELECT fields are dropdowns that take exactly ONE value (a string, not an array). " +
       "MULTI-SELECT fields are checkbox groups that take an array of values. " +
-      "Include only values that appear in the allowed list below. " +
-      "If you can't confirm any value for a field, omit the field entirely. " +
-      "CRITICAL: never contradict yourself. If communityAmenities includes 'Swimming Pool', " +
-      "pool cannot be 'None'. If communityAmenities includes 'Community Spa/Hot Tub', " +
-      "hotTub cannot be 'None'. If the listing says 'No Pets', do not list a Dog Park.";
+      "Include only values from the allowed list. If you cannot confirm any value for a field, omit the field entirely.\n" +
+      "\n" +
+      "CONTRADICTION RULE: never contradict yourself. If communityAmenities includes 'Swimming Pool', " +
+      "pool cannot be 'None'. If communityAmenities includes 'Community Spa/Hot Tub', hotTub cannot be 'None'. " +
+      "If the listing says 'No Pets', do not list a Dog Park.";
     const enumLines = Object.keys(OLLAMA_FIELD_OPTIONS)
       .filter((k) => !['utilitiesIncluded', 'petsAllowed'].includes(k)) // already done in pass A
       .map((k) => {
@@ -731,12 +952,21 @@ If the listing has a building pool, pool = "Community/Shared" AND communityAmeni
     }
   }
 
+  // HARD anti-hallucination guard: drop any value from propertyDetails that
+  // isn't traceable to the listing's source text. This runs BEFORE the
+  // contradiction resolver so the resolver only sees grounded facts.
+  groundPropertyDetails(out.propertyDetails, fullPageText);
+
   // Resolve contradictions between the dropdowns and the multi-select
   // amenity lists. Example: pool="None" while communityAmenities contains
   // "Swimming Pool". We trust the more specific evidence (the amenity list
   // is built from bullet-by-bullet matches) and upgrade the single-select
   // accordingly.
   resolvePropertyDetailsContradictions(out.propertyDetails);
+
+  // Run grounding ONCE MORE after contradiction resolution, in case the
+  // resolver inferred a value that itself isn't in the source.
+  groundPropertyDetails(out.propertyDetails, fullPageText);
 
   // Validate core numbers
   const core = out.core;
