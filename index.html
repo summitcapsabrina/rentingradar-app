@@ -4752,62 +4752,65 @@ async function handleExtensionListing(data) {
   }
 
   // Listing description → Property Note (singular), NOT the Activity Log.
-  // We prefer AI-extracted bullet points (data.propertyNoteBullets). If the
-  // AI didn't run or didn't return bullets, fall back to the raw description
-  // rendered as a single paragraph. We only overwrite the Property Note if
-  // it's currently empty — never clobber a note the user has already written.
+  // We ONLY use AI-extracted bullet points (data.propertyNoteBullets). If
+  // Ollama didn't run or didn't return bullets, we leave the Property Note
+  // empty rather than dumping the raw listing description — the raw dump
+  // was unreadable and the user explicitly asked us to stop doing that.
   const hasExistingNote = r.propertyNote && (r.propertyNote.text || r.propertyNote.html);
-  if (!hasExistingNote) {
-    let noteHtml = null;
-    let noteText = null;
-    if (Array.isArray(data.propertyNoteBullets) && data.propertyNoteBullets.length) {
-      const bullets = data.propertyNoteBullets;
-      noteHtml = '<ul>' + bullets.map((b) => '<li>' + esc(b) + '</li>').join('') + '</ul>';
-      noteText = bullets.map((b) => '• ' + b).join('\n');
-    } else if (data.description && data.description.length > 20) {
-      const paragraphs = data.description.split(/\n\s*\n|\r\n\r\n/).filter((p) => p.trim());
-      noteHtml = paragraphs.map((p) => '<p>' + esc(p.trim()).replace(/\n/g, '<br>') + '</p>').join('');
-      noteText = data.description;
-    }
-    if (noteHtml) {
-      r.propertyNote = {
-        text: noteText,
-        html: noteHtml,
-        date: new Date().toISOString(),
-        source: 'Auto-Import (' + (data.source || 'listing') + ')',
-      };
-    }
+  if (!hasExistingNote && Array.isArray(data.propertyNoteBullets) && data.propertyNoteBullets.length) {
+    const bullets = data.propertyNoteBullets;
+    const noteHtml = '<ul>' + bullets.map((b) => '<li>' + esc(b) + '</li>').join('') + '</ul>';
+    const noteText = bullets.map((b) => '• ' + b).join('\n');
+    r.propertyNote = {
+      text: noteText,
+      html: noteHtml,
+      date: new Date().toISOString(),
+      source: 'Auto-Import (' + (data.source || 'listing') + ')',
+    };
   }
 
   if (typeof saveData === 'function') saveData();
   if (typeof render === 'function') render();
-  const label = data.source ? data.source.charAt(0).toUpperCase() + data.source.slice(1) : 'Listing';
 
-  // Build a concise "what got filled" summary so the user can tell at a glance
-  // whether the import was a hit or a miss.
-  const coreFilled = [];
-  if (d.bedrooms != null && d.bedrooms !== '') coreFilled.push(d.bedrooms + ' bd');
-  if (d.bathrooms != null && d.bathrooms !== '') coreFilled.push(d.bathrooms + ' ba');
-  if (d.sqft != null && d.sqft !== '') coreFilled.push(d.sqft + ' sqft');
-  if (d.monthlyRent != null && d.monthlyRent !== '') coreFilled.push('$' + d.monthlyRent + '/mo');
-  const deepFilled = Object.keys(d).filter(k =>
-    !['bedrooms','bathrooms','sqft','monthlyRent','latitude','longitude','market','submarket'].includes(k) &&
-    d[k] != null && d[k] !== '' && (!Array.isArray(d[k]) || d[k].length > 0)
-  ).length;
-  const toneWarn = coreFilled.length === 0;
-  const coreSummary = coreFilled.length ? coreFilled.join(' · ') : 'no core details found';
-  const aiNote = data._aiEnriched ? ' · AI enriched' : (data._pageText === undefined && window.RR_OLLAMA_HEALTH && !window.RR_OLLAMA_HEALTH.modelInstalled ? ' · AI skipped (Ollama model missing)' : '');
-  const summary = coreSummary + ' · ' + deepFilled + ' detail fields' + aiNote;
+  // ---- Toast: successful / incomplete / failed ----
+  // "successful" = all four core fields + AI bullets
+  // "incomplete" = imported something but missing core fields or AI bullets
+  // "failed" = nothing usable came back
+  const coreCount =
+    (d.bedrooms != null && d.bedrooms !== '' ? 1 : 0) +
+    (d.bathrooms != null && d.bathrooms !== '' ? 1 : 0) +
+    (d.sqft != null && d.sqft !== '' ? 1 : 0) +
+    (d.monthlyRent != null && d.monthlyRent !== '' ? 1 : 0);
+  const hasBullets = Array.isArray(data.propertyNoteBullets) && data.propertyNoteBullets.length > 0;
+  const hasAnyDetails = Object.keys(d).some((k) => {
+    const v = d[k];
+    return v != null && v !== '' && (!Array.isArray(v) || v.length > 0);
+  });
 
-  if (createdNew) {
-    showToast(label + ' imported — ' + summary + (data.warning ? ' ' + data.warning : ''), toneWarn ? 'warning' : 'success');
-    if (typeof openDetail === 'function') openDetail(r.id);
+  let toastMsg, toastTone;
+  if (coreCount === 0 && !hasAnyDetails) {
+    toastMsg = 'Import failed — nothing could be read from this listing.';
+    toastTone = 'error';
+  } else if (coreCount >= 3 && hasBullets && data._aiEnriched) {
+    toastMsg = createdNew ? 'Import successful.' : 'Property updated from listing.';
+    toastTone = 'success';
   } else {
-    showToast(label + ' updated — ' + summary + (data.warning ? ' ' + data.warning : ''), toneWarn ? 'warning' : 'success');
+    let why;
+    if (data._aiError) why = 'AI unavailable';
+    else if (!data._aiEnriched) why = 'AI skipped';
+    else if (coreCount < 3) why = 'missing core details';
+    else if (!hasBullets) why = 'no summary generated';
+    else why = 'partial data';
+    toastMsg = 'Import incomplete — ' + why + '.';
+    toastTone = 'warning';
   }
 
-  if (toneWarn) {
-    console.warn('[RR] Import returned no core fields. Scraper debug trace:', data._debug || '(no debug trace)');
+  showToast(toastMsg + (data.warning ? ' ' + data.warning : ''), toastTone);
+
+  if (createdNew && typeof openDetail === 'function') openDetail(r.id);
+
+  if (toastTone !== 'success') {
+    console.warn('[RR] Import status:', toastMsg, '— debug:', data._debug || '(no debug trace)', 'ai error:', data._aiError || '(none)');
   }
 }
 

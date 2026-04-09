@@ -140,6 +140,26 @@ async function scrapeAny(url, hint) {
           data.propertyDetails = mergePropertyDetails(data.propertyDetails || {}, enriched.propertyDetails || {});
           data._aiEnriched = true;
           data._aiModel = OLLAMA_MODEL;
+          // Ollama is AUTHORITATIVE on the core listing numbers. Fill in
+          // anything the scraper couldn't lock down. Since we removed the
+          // fragile body-text regex from the scrapers, these values land
+          // directly from the model's structured JSON output.
+          if (enriched.core) {
+            const c = enriched.core;
+            if (c.bedrooms != null && data.bedrooms == null) data.bedrooms = c.bedrooms;
+            if (c.bathrooms != null && data.bathrooms == null) data.bathrooms = c.bathrooms;
+            if (c.sqft != null && data.sqft == null) data.sqft = c.sqft;
+            if (c.price != null && data.price == null) {
+              data.price = c.price;
+              if (data.monthlyRent == null) data.monthlyRent = c.price;
+            }
+            if (c.availableDate) {
+              data.propertyDetails = data.propertyDetails || {};
+              if (!data.propertyDetails.availableDate) {
+                data.propertyDetails.availableDate = c.availableDate;
+              }
+            }
+          }
           if (enriched.descriptionSummary && !data.description) {
             data.description = enriched.descriptionSummary;
           }
@@ -195,124 +215,188 @@ async function checkOllamaHealth() {
 }
 
 // ------------------------------------------------------------------
-// Ollama enrichment — feed the scraped structured data + page text
-// into llama3.2 and ask it to return a JSON object keyed by the
-// CRM's PROP_SECTIONS fields.
+// Ollama extraction — THE AUTHORITATIVE EXTRACTION PATH. The scraper
+// provides the raw page text and the minimum structured data it can
+// grab from JSON-LD; Ollama reads the full page and produces ALL the
+// listing fields including the core numbers (beds/baths/sqft/rent/
+// availability). If Ollama is unavailable the import is flagged as
+// incomplete and the scraper's partial data is still returned.
 // ------------------------------------------------------------------
+const OLLAMA_FIELD_OPTIONS = {
+  propertyType: ['House','Apartment','Condo','Townhouse','Duplex','Triplex','Fourplex','Studio','Loft','Mobile Home','Villa','Cottage','Other'],
+  furnished: ['Unfurnished','Furnished','Partially Furnished'],
+  flooring: ['Hardwood','Carpet','Tile','Laminate','Vinyl Plank','Concrete','Marble','Stone','Mixed'],
+  appliances: ['Dishwasher','Garbage Disposal','Microwave','Oven/Range (Gas)','Oven/Range (Electric)','Refrigerator','Ice Maker','Trash Compactor','Wine Cooler'],
+  laundry: ['In-Unit W/D','W/D Hookups','Shared/On-Site','Stacked W/D','None'],
+  ac: ['Central A/C','Window Unit','Mini-Split','Evaporative/Swamp Cooler','Portable','None'],
+  heating: ['Central (Gas)','Central (Electric)','Baseboard','Radiator','Heat Pump','Space Heater','Fireplace','None'],
+  interiorFeatures: ['Fireplace','Ceiling Fans','Walk-In Closets','High Ceilings','Vaulted Ceilings','Open Floor Plan','Natural Light','Crown Molding','Recessed Lighting','Smart Thermostat','Smart Locks','Built-In Shelving','Pantry','Kitchen Island','Breakfast Bar','Stainless Steel Appliances','Double Vanity','Soaking Tub','Walk-In Shower','Separate Tub/Shower','Linen Closet','Storage Unit','Window Blinds','Blackout Curtains'],
+  parking: ['Attached Garage','Detached Garage','Carport','Covered Parking','Assigned Spot','Street Only','Driveway','Parking Garage','None'],
+  pool: ['Private','Community/Shared','Heated Private','Heated Community','None'],
+  outdoor: ['Balcony','Patio','Deck','Porch','Screened Porch','Sunroom','Rooftop','Courtyard','Lanai'],
+  exteriorFeatures: ['Fenced Yard','Sprinkler System','Outdoor Lighting','Outdoor Kitchen/BBQ','Fire Pit','Garden Space','Shed/Outbuilding','RV Parking','Boat Parking','EV Charging','Gated Entry','Desert Landscaping','Pool Fence'],
+  communityAmenities: ['Gym/Fitness Center','Clubhouse','Business Center','Package Lockers','Dog Park','Playground','Swimming Pool','Community Spa/Hot Tub','Sauna','Elevator','Concierge/Doorman','On-Site Management','On-Site Maintenance','Bike Storage','BBQ/Grill Area','Rooftop Lounge','Tennis Court','Pickleball Court'],
+  utilitiesIncluded: ['Water','Hot Water','Gas','Electric','Trash','Sewer','Recycling','Internet/WiFi','Cable TV','Landscaping/Grounds','Pest Control'],
+  petsAllowed: ['Yes - All Pets','Dogs Only','Cats Only','Small Pets Only','Case by Case','Service Animals Only','No Pets'],
+  safetyFeatures: ['Smoke Detectors','Carbon Monoxide Detectors','Fire Extinguisher','Security System/Alarm','Gated Entry','Deadbolt Locks','Smart Locks','Security Cameras','24-Hour Security'],
+};
+
 async function enrichWithOllama(scraped) {
   const health = await checkOllamaHealth();
-  if (!health.running || !health.modelInstalled) {
-    throw new Error(health.running ? 'Model not installed' : 'Ollama not running');
-  }
+  if (!health.running) throw new Error('Ollama not running');
+  if (!health.modelInstalled) throw new Error('Model ' + OLLAMA_MODEL + ' not installed');
 
-  const pageText = (scraped._pageText || '').slice(0, 14000); // ~14KB cap
-  const knownFields = {
+  // Build a compact schema description — one line per field — so llama3.2
+  // (3B params) doesn't drown in schema text. Shorter prompts dramatically
+  // improve small-model JSON quality.
+  const fieldLines = Object.keys(OLLAMA_FIELD_OPTIONS).map((k) => {
+    const opts = OLLAMA_FIELD_OPTIONS[k];
+    return '- ' + k + ': ' + opts.join(' | ');
+  }).join('\n');
+
+  // Keep the prompt short. 8KB of page text is plenty for most listings.
+  const pageText = (scraped._pageText || '').slice(0, 8000);
+  const scraperHints = {
+    source: scraped.source,
     address: scraped.address,
-    price: scraped.price,
-    bedrooms: scraped.bedrooms,
-    bathrooms: scraped.bathrooms,
-    sqft: scraped.sqft,
+    scraperBeds: scraped.bedrooms,
+    scraperBaths: scraped.bathrooms,
+    scraperSqft: scraped.sqft,
+    scraperPrice: scraped.price,
   };
 
-  const systemPrompt = `You are a real estate data extraction assistant. Given a rental listing page, extract structured property details and return ONLY a single JSON object — no prose, no markdown wrapper, no code fences. Use values that are explicitly stated OR clearly implied in the listing description and page text. Be thorough: extract as many fields as possible from the listing blurb/description, not just from labeled fields. Never invent details that aren't supported by the text. If a field is not mentioned, omit it entirely (do not output null).`;
+  const systemPrompt =
+    "You are a precise rental-listing data extractor. You receive the full text of a rental listing page and return a single JSON object describing the property. " +
+    "RULES: " +
+    "(1) Return ONLY valid JSON — no prose, no markdown, no code fences. " +
+    "(2) Omit any field you cannot confirm from the listing text. Do not guess. Do not output null. " +
+    "(3) For enum/array fields use ONLY the exact option strings provided. Do not invent labels. " +
+    "(4) Read the description prose carefully — most amenities are mentioned there, not in labeled tables. " +
+    "(5) Bedroom/bathroom/sqft/rent numbers should come from the primary listing, NOT from nearby-listings widgets or similar-homes sections.";
 
-  const userPrompt = `SCRAPED (already known) FIELDS:
-${JSON.stringify(knownFields, null, 2)}
+  const userPrompt =
+`LISTING SOURCE: ${scraperHints.source}
+SCRAPER HINTS (may be wrong — verify against the page text):
+${JSON.stringify(scraperHints, null, 2)}
 
 LISTING PAGE TEXT:
 """
 ${pageText}
 """
 
-Return a single JSON object with this exact shape (omit any field not clearly mentioned in the listing):
+Return a JSON object with this shape. Omit any field you can't confirm.
 
 {
-  "propertyDetails": {
-    "propertyType": "House|Apartment|Condo|Townhouse|Duplex|Triplex|Fourplex|Studio|Loft|Mobile Home|Villa|Cottage|Other",
-    "yearBuilt": <number>,
-    "stories": "1|2|3|4+",
-    "lotSize": "<string like '0.25 acres' or '5000 sqft'>",
-    "furnished": "Unfurnished|Furnished|Partially Furnished",
-    "view": "City|Mountain|Desert|Pool|Courtyard|Lake|Park|Golf Course|Water|None",
-    "architecturalStyle": "Modern|Contemporary|Ranch|Mediterranean|Colonial|Craftsman|Spanish|Victorian|Mid-Century|Southwest|Other",
-    "flooring": ["Hardwood","Carpet","Tile","Laminate","Vinyl Plank","Concrete","Marble","Stone","Mixed"],
-    "countertops": "Granite|Quartz|Marble|Laminate|Butcher Block|Concrete|Tile|Corian",
-    "appliances": ["Dishwasher","Garbage Disposal","Microwave","Oven/Range (Gas)","Oven/Range (Electric)","Refrigerator","Ice Maker","Trash Compactor","Wine Cooler"],
-    "laundry": "In-Unit W/D|W/D Hookups|Shared/On-Site|Stacked W/D|None",
-    "ac": "Central A/C|Window Unit|Mini-Split|Evaporative/Swamp Cooler|Portable|None",
-    "heating": "Central (Gas)|Central (Electric)|Baseboard|Radiator|Heat Pump|Space Heater|Fireplace|None",
-    "interiorFeatures": ["Fireplace","Ceiling Fans","Walk-In Closets","High Ceilings","Vaulted Ceilings","Open Floor Plan","Natural Light","Crown Molding","Recessed Lighting","Smart Thermostat","Smart Locks","Built-In Shelving","Pantry","Kitchen Island","Breakfast Bar","Stainless Steel Appliances","Double Vanity","Soaking Tub","Walk-In Shower","Separate Tub/Shower","Linen Closet","Storage Unit","Window Blinds","Blackout Curtains","Ceiling Lighting"],
-    "storage": "Walk-In Closet|Standard Closets|Garage Storage|Storage Unit|Attic|Basement|None",
-    "parking": "Attached Garage|Detached Garage|Carport|Covered Parking|Assigned Spot|Street Only|Driveway|Parking Garage|None",
-    "parkingSpaces": <number>,
-    "pool": "Private|Community/Shared|Heated Private|Heated Community|None",
-    "hotTub": "Private|Community/Shared|None",
-    "outdoor": ["Balcony","Patio","Deck","Porch","Screened Porch","Sunroom","Rooftop","Courtyard","Lanai"],
-    "yard": "Private Fenced|Private Unfenced|Shared|None",
-    "exteriorFeatures": ["Fenced Yard","Sprinkler System","Outdoor Lighting","Outdoor Kitchen/BBQ","Fire Pit","Garden Space","Shed/Outbuilding","RV Parking","Boat Parking","EV Charging","Gated Entry","Desert Landscaping","Pool Fence"],
-    "communityAmenities": ["Gym/Fitness Center","Clubhouse","Business Center","Package Lockers","Dog Park","Playground","Swimming Pool","Community Spa/Hot Tub","Sauna","Elevator","Concierge/Doorman","On-Site Management","On-Site Maintenance"],
-    "utilitiesIncluded": ["Water","Hot Water","Gas","Electric","Trash","Sewer","Recycling","Internet/WiFi","Cable TV","Landscaping/Grounds","Pest Control"],
-    "petsAllowed": "Yes - All Pets|Dogs Only|Cats Only|Small Pets Only|Case by Case|Service Animals Only|No Pets",
-    "petWeightLimit": <number>,
-    "maxPets": <number>,
-    "breedRestrictions": "<string>",
-    "safetyFeatures": ["Smoke Detectors","Carbon Monoxide Detectors","Fire Extinguisher","Security System/Alarm","Gated Entry","Deadbolt Locks","Smart Locks","Security Cameras","24-Hour Security"],
-    "hoaFee": <number>,
-    "hoaStrPolicy": "Allowed|Allowed with Restrictions|30+ Day Minimum|Not Allowed|Unknown"
+  "core": {
+    "bedrooms": <integer 0-20>,
+    "bathrooms": <number, can be .5>,
+    "sqft": <integer>,
+    "price": <integer monthly rent in dollars>,
+    "availableDate": "Now" | "YYYY-MM-DD" | "Month Day" (e.g. "May 1")
   },
-  "descriptionSummary": "<optional 2-3 sentence summary of the listing>",
-  "propertyNoteBullets": [
-    "<bullet 1 — concise, factual detail from the listing>",
-    "<bullet 2>",
-    "..."
+  "details": {
+${fieldLines.split('\n').map((l) => '    ' + l.replace(/^- /, '"').replace(/:/, '":')).join(',\n')}
+    ,"yearBuilt": <integer>,
+    "stories": "1" | "2" | "3" | "4+",
+    "lotSize": "<string>",
+    "parkingSpaces": <integer>,
+    "hoaFee": <integer>,
+    "petWeightLimit": <integer>
+  },
+  "bullets": [
+    "<5-15 short factual bullet points summarizing THIS listing for a short-term-rental arbitrage operator>"
   ]
 }
 
-IMPORTANT GUIDANCE FOR FIELD EXTRACTION:
-- Read the listing DESCRIPTION carefully — most details live there, not in labeled fields. Phrases like "hardwood floors throughout", "stainless steel kitchen", "in-unit laundry", "private balcony", "gated community", "assigned parking" all map to fields above.
-- Extract propertyType, yearBuilt, flooring, appliances, interiorFeatures, outdoor, communityAmenities, petsAllowed, and safetyFeatures even if they are only mentioned in prose.
-- For multi-select array fields (flooring, appliances, interiorFeatures, outdoor, exteriorFeatures, communityAmenities, utilitiesIncluded, safetyFeatures): use the EXACT option strings listed above. Do not invent new labels.
+BULLET GUIDANCE: bullets should call out facts a rental arbitrage investor would care about: neighborhood quality, walk/transit score, parking situation, HOA/STR policy, recent renovations, standout features, unit layout quirks, pet policy specifics, utilities included, proximity to attractions, furnished vs unfurnished, lease flexibility. Skip marketing fluff ("charming", "must see", "won't last"). Each bullet ≤ 120 chars. Facts already in the 'core' or 'details' objects may still appear in bullets if they matter for rental arbitrage (e.g. "Water included in rent").
 
-PROPERTY NOTE BULLETS:
-Extract 5-15 short, factual bullet points summarizing the listing description in the user's own words. Each bullet should be a single concise fact (e.g. "Recently renovated kitchen with quartz countertops", "Walking distance to subway", "Pet friendly — small dogs under 30 lbs", "Rooftop deck with city views"). Skip generic marketing fluff ("don't miss this opportunity!"). Skip facts already captured in propertyDetails above. These bullets will become the property's main note in the CRM.
+Return ONLY the JSON object.`;
 
-Return ONLY the JSON object. No explanation, no markdown wrapper, no code fences.`;
-
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), OLLAMA_TIMEOUT_MS);
-  let resp;
-  try {
-    resp = await fetch(OLLAMA_HOST + '/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      signal: ctrl.signal,
-      body: JSON.stringify({
-        model: OLLAMA_MODEL,
-        stream: false,
-        format: 'json',
-        options: { temperature: 0.1 },
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-      }),
-    });
-  } finally { clearTimeout(t); }
-
-  if (!resp.ok) throw new Error('Ollama HTTP ' + resp.status);
-  const json = await resp.json();
-  const content = json && json.message && json.message.content;
-  if (!content) throw new Error('Empty response from Ollama');
+  // Make the Ollama call with a retry path: if the first call times out or
+  // returns invalid JSON, retry once with a shorter prompt.
+  async function callOllama(promptText, timeoutMs) {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+      const resp = await fetch(OLLAMA_HOST + '/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: ctrl.signal,
+        body: JSON.stringify({
+          model: OLLAMA_MODEL,
+          stream: false,
+          format: 'json',
+          options: { temperature: 0.1, num_ctx: 8192 },
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: promptText },
+          ],
+        }),
+      });
+      if (!resp.ok) throw new Error('Ollama HTTP ' + resp.status);
+      const json = await resp.json();
+      const content = json && json.message && json.message.content;
+      if (!content) throw new Error('Empty response from Ollama');
+      try { return JSON.parse(content); }
+      catch (_) {
+        const m = content.match(/\{[\s\S]*\}/);
+        if (!m) throw new Error('Ollama did not return JSON');
+        return JSON.parse(m[0]);
+      }
+    } finally { clearTimeout(t); }
+  }
 
   let parsed;
-  try { parsed = JSON.parse(content); }
-  catch (_) {
-    // llama3.2 occasionally wraps JSON in a code fence even with format:'json'
-    const m = content.match(/\{[\s\S]*\}/);
-    if (!m) throw new Error('Ollama did not return JSON');
-    parsed = JSON.parse(m[0]);
+  try {
+    parsed = await callOllama(userPrompt, OLLAMA_TIMEOUT_MS);
+  } catch (e) {
+    // Retry once with a shorter page text slice (4KB) — this almost always
+    // succeeds when the first call timed out on a long listing description.
+    const shortPageText = (scraped._pageText || '').slice(0, 4000);
+    const shortPrompt = userPrompt.replace(pageText, shortPageText);
+    console.log('[RR ext] Ollama first attempt failed (' + (e && e.message) + '), retrying with shorter prompt');
+    parsed = await callOllama(shortPrompt, Math.floor(OLLAMA_TIMEOUT_MS * 0.7));
   }
-  return parsed;
+
+  // Normalize the response into the shape the CRM expects.
+  const out = {
+    propertyDetails: (parsed && parsed.details) || {},
+    propertyNoteBullets: Array.isArray(parsed && parsed.bullets) ? parsed.bullets : [],
+    core: (parsed && parsed.core) || {},
+  };
+
+  // Sanity-clean the details object: drop any array values that contain
+  // labels not in our allowed options (llama sometimes invents near-misses).
+  for (const k of Object.keys(OLLAMA_FIELD_OPTIONS)) {
+    const allowed = OLLAMA_FIELD_OPTIONS[k];
+    const v = out.propertyDetails[k];
+    if (Array.isArray(v)) {
+      out.propertyDetails[k] = v.filter((x) => allowed.includes(x));
+      if (out.propertyDetails[k].length === 0) delete out.propertyDetails[k];
+    } else if (typeof v === 'string') {
+      if (!allowed.includes(v)) delete out.propertyDetails[k];
+    }
+  }
+
+  // Validate core numbers
+  const core = out.core;
+  if (core.bedrooms != null) {
+    const n = Number(core.bedrooms);
+    core.bedrooms = (Number.isFinite(n) && n >= 0 && n <= 20) ? n : null;
+  }
+  if (core.bathrooms != null) {
+    const n = Number(core.bathrooms);
+    core.bathrooms = (Number.isFinite(n) && n > 0 && n <= 15) ? n : null;
+  }
+  if (core.sqft != null) {
+    const n = Number(core.sqft);
+    core.sqft = (Number.isFinite(n) && n >= 50 && n <= 50000) ? n : null;
+  }
+  if (core.price != null) {
+    const n = Number(core.price);
+    core.price = (Number.isFinite(n) && n >= 50 && n <= 200000) ? n : null;
+  }
+  return out;
 }
 
 // Merge AI-enriched propertyDetails into structured-scrape propertyDetails.

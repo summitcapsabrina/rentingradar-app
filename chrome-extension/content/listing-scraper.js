@@ -595,11 +595,13 @@
       if (out.sqft == null) out.sqft = num(t.match(/([\d,]+)\s*(?:sq\s*ft|sqft)/i)?.[1]);
     }
 
-    // ---- Fallback 4: last-resort body text scan
-    if (out.bedrooms == null || out.bathrooms == null || out.sqft == null || out.price == null) {
+    // NOTE: beds/baths are NO LONGER extracted via body-text regex here.
+    // That approach hits "3 bed" strings inside "similar listings" widgets
+    // and nearby-home carousels, poisoning the numbers. Ollama sees the
+    // full page text downstream and extracts the authoritative values.
+    // We still allow price/sqft body fallback as a convenience.
+    if (out.sqft == null || out.price == null) {
       const body = document.body.innerText || '';
-      if (out.bedrooms == null) out.bedrooms = num(body.match(/(\d+(?:\.\d+)?)\s*(?:bd|bed(?:room)?s?)\b/i)?.[1]);
-      if (out.bathrooms == null) out.bathrooms = num(body.match(/(\d+(?:\.\d+)?)\s*(?:ba|bath(?:room)?s?)\b/i)?.[1]);
       if (out.sqft == null) out.sqft = num(body.match(/([\d,]+)\s*(?:sq\s*ft|sqft)/i)?.[1]);
       if (out.price == null) {
         const pm = body.match(/\$\s*([\d,]+)(?:\s*\/\s*mo)?/i);
@@ -757,9 +759,13 @@
       }
     }
 
-    if (out.price == null || out.bedrooms == null || out.bathrooms == null || out.sqft == null) {
-      // Try all likely price/bed/bath containers — newer layouts use flat
-      // containers with multiple spans; older ones use .rentInfoDetail.
+    // NOTE: Previously this block ran regex-based bed/bath extraction
+    // against DOM containers and whole-page text. That approach kept
+    // mis-reading "nearby listings" widgets and reporting the wrong
+    // unit's beds/baths. Now Ollama extracts beds/baths/sqft from the
+    // captured page text downstream, and we only attempt simple sqft /
+    // price fallbacks here from clearly-scoped hero containers.
+    if (out.price == null || out.sqft == null) {
       const containers = document.querySelectorAll(
         '.priceBedRangeInfo, .priceBedRangeInfoInnerContainer, .rentInfoDetail, ' +
         '[data-tag="pricingBedsRange"], .unitPriceBed, .priceBed, ' +
@@ -772,56 +778,16 @@
           const p = t.match(/\$\s*([\d,]+)(?:\s*\/\s*mo)?/);
           if (p) out.price = num(p[1]);
         }
-        if (out.bedrooms == null) out.bedrooms = num(t.match(/(\d+(?:\.\d+)?)\s*(?:bd|bed)/i)?.[1]);
-        if (out.bathrooms == null) out.bathrooms = num(t.match(/(\d+(?:\.\d+)?)\s*(?:ba|bath)/i)?.[1]);
         if (out.sqft == null) out.sqft = num(t.match(/([\d,]+)\s*(?:sq\s*ft|sqft)/i)?.[1]);
       });
-      log('after DOM containers', { beds: out.bedrooms, baths: out.bathrooms, sqft: out.sqft, price: out.price });
-    }
-
-    // ---- Pass 4: scoped hero-area compound regex ----
-    // Using whole-page body text is risky because apartments.com pages have
-    // "Nearby listings" widgets with their own beds/baths that can poison a
-    // naive first-match regex. Instead we scope the search to the header/hero
-    // area that contains THIS listing's unit stats, and only accept a
-    // well-ordered compound match "X bed … X bath … X sqft".
-    const heroNodes = document.querySelectorAll(
-      'header, [class*="hero"], [class*="Hero"], [class*="unitDetails"], ' +
-      '[class*="UnitDetails"], [data-tag="unitContainer"], [class*="summary"], ' +
-      '[class*="Summary"], [class*="priceBed"], [class*="rentInfo"], main'
-    );
-    const heroText = Array.from(heroNodes).slice(0, 5).map((n) => n.innerText || '').join(' \n ').slice(0, 6000);
-    const bodyText = document.body.innerText || '';
-
-    function tryCompound(text) {
-      // Bed-first ordering (most common)
-      let m = text.match(/(\d+(?:\.\d+)?)\s*(?:bd|bed(?:room)?s?)[^\n]{0,80}?(\d+(?:\.\d+)?)\s*(?:ba|bath(?:room)?s?)(?:[^\n]{0,80}?([\d,]+)\s*(?:sq\s*ft|sqft))?/i);
-      if (m) return { bed: num(m[1]), bath: num(m[2]), sqft: m[3] ? num(m[3]) : null };
-      // Bath-first ordering (less common but happens)
-      m = text.match(/(\d+(?:\.\d+)?)\s*(?:ba|bath(?:room)?s?)[^\n]{0,80}?(\d+(?:\.\d+)?)\s*(?:bd|bed(?:room)?s?)(?:[^\n]{0,80}?([\d,]+)\s*(?:sq\s*ft|sqft))?/i);
-      if (m) return { bed: num(m[2]), bath: num(m[1]), sqft: m[3] ? num(m[3]) : null };
-      return null;
-    }
-
-    if (out.bedrooms == null || out.bathrooms == null || out.sqft == null) {
-      const compound = tryCompound(heroText) || tryCompound(bodyText.slice(0, 4000));
-      if (compound) {
-        if (out.bedrooms == null && compound.bed != null && compound.bed >= 0 && compound.bed <= 20) {
-          out.bedrooms = compound.bed;
-        }
-        if (out.bathrooms == null && compound.bath != null && compound.bath > 0 && compound.bath <= 15) {
-          out.bathrooms = compound.bath;
-        }
-        if (out.sqft == null && compound.sqft != null) out.sqft = compound.sqft;
-        log('compound matched', compound);
-      }
+      log('after DOM containers', { sqft: out.sqft, price: out.price });
     }
 
     if (out.price == null) {
-      // Prefer a price tagged with /mo; fall back to any dollar amount in hero
-      const priceFrom = heroText + ' ' + bodyText.slice(0, 4000);
-      const nearRent = priceFrom.match(/\$\s*([\d,]+)\s*(?:\/\s*mo|\/\s*month)/i);
-      out.price = num((nearRent && nearRent[1]) || priceFrom.match(/\$\s*([\d,]+)/)?.[1]);
+      // Last-resort: look for "$1,234/mo" anywhere in main page text.
+      const bodyText = (document.querySelector('main') || document.body).innerText || '';
+      const nearRent = bodyText.match(/\$\s*([\d,]+)\s*(?:\/\s*mo|\/\s*month)/i);
+      if (nearRent) out.price = num(nearRent[1]);
     }
 
     // ---- Sanity guard: reject obviously-bogus beds/baths ----
