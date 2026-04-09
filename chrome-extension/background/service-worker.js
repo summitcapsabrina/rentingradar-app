@@ -13,7 +13,7 @@
 // the payload to any open CRM tab so the CRM can consume it.
 
 const CRM_ORIGIN = 'https://app.rentingradar.com';
-const SCRAPE_TIMEOUT_MS = 30000;
+const SCRAPE_TIMEOUT_MS = 45000;
 
 // Local Ollama AI engine for property-detail enrichment. Requires the user
 // to run Ollama on their own machine (http://ollama.com/download) and to
@@ -145,8 +145,10 @@ async function scrapeAny(url, hint) {
           }
         }
       } catch (e) {
-        console.log('[RR ext] Ollama enrichment skipped:', e && e.message);
+        const reason = (e && e.message) || String(e);
+        console.log('[RR ext] Ollama enrichment skipped:', reason);
         data._aiEnriched = false;
+        data._aiError = reason; // surface the reason to the CRM console
       }
       // Strip the raw page text before returning — it's huge and no longer needed
       delete data._pageText;

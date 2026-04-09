@@ -627,81 +627,244 @@
   }
 
   // ---- Apartments.com ----------------------------------------------
+  // Apartments.com is a .NET site, not React/Next, but it embeds rich JSON-LD
+  // blocks plus newer server-rendered layouts that changed class names several
+  // times. This parser tries, in order:
+  //   1. JSON-LD @type Apartment/ApartmentComplex/SingleFamilyResidence/Place
+  //   2. og:title / og:description / twitter meta
+  //   3. Modern data-tag-* and class*= DOM selectors
+  //   4. Legacy selectors
+  //   5. Body-text regex last resort
   function parseApartments() {
     const out = base('apartments');
-    out.title = document.querySelector('#propertyName')?.textContent?.trim() || document.title;
-
-    // Address
-    {
-      const street = document.querySelector('.propertyAddressContainer .delivery-address')?.textContent?.trim() || '';
-      let cityBlob = document.querySelector('.propertyAddressContainer h2')?.textContent?.trim() || '';
-      cityBlob = cityBlob.replace(/,/g, ' ').replace(/\s+/g, ' ').trim();
-      out.address = [street, cityBlob].filter(Boolean).join(', ') || null;
-    }
-
-    // Rent / beds / baths
-    const rentEl = document.querySelector('.rentInfoDetail, .priceBedRangeInfoInnerContainer');
-    if (rentEl) {
-      const txt = rentEl.textContent;
-      out.price = num(txt.match(/\$[\d,]+/)?.[0]);
-      out.bedrooms = num(txt.match(/(\d+(?:\.\d+)?)\s*bed/i)?.[1]);
-      out.bathrooms = num(txt.match(/(\d+(?:\.\d+)?)\s*bath/i)?.[1]);
-      out.sqft = num(txt.match(/([\d,]+)\s*sq\s*ft/i)?.[1]);
-    }
-    out.description = document.querySelector('#descriptionSection .descriptionContent')?.textContent?.trim()?.slice(0, 2000) || null;
-    out.photoUrl = document.querySelector('.mainCarouselImage, .carouselContent img')?.src || null;
-
-    // Amenity sections — Apartments.com structures these as labeled groups
-    // Collect all text from the amenity/feature/policies sections
+    out._debug = { source: 'apartments', url: location.href, steps: [] };
+    const log = (m, x) => out._debug.steps.push(x ? (m + ': ' + JSON.stringify(x).slice(0, 220)) : m);
     const pd = out.propertyDetails;
-    const amenityNodes = document.querySelectorAll(
-      '#amenitiesSection, .amenitiesSection, .specList, .feesPoliciesSection, #feesAndPolicies, .uniqueFeatures, .propertyAmenities, .communityAmenities'
-    );
-    const amenityBlob = Array.from(amenityNodes).map(n => n.textContent).join(' ').toLowerCase();
-    const bodyBlob = (document.body.innerText || '').toLowerCase();
-    const searchBlob = amenityBlob || bodyBlob;
 
+    // ---- Pass 1: JSON-LD (most reliable when it's present) ----
+    const jsonLd = findAllJsonLd();
+    log('jsonLd blocks', jsonLd.length);
+    // Flatten any @graph arrays so we can iterate uniformly
+    const ldBlocks = [];
+    jsonLd.forEach((b) => {
+      if (!b || typeof b !== 'object') return;
+      if (Array.isArray(b['@graph'])) ldBlocks.push(...b['@graph']);
+      else ldBlocks.push(b);
+    });
+    ldBlocks.forEach((block) => {
+      if (!block || typeof block !== 'object') return;
+      const t = Array.isArray(block['@type']) ? block['@type'].join(' ') : String(block['@type'] || '');
+      // Address
+      if (!out.address && block.address && typeof block.address === 'object') {
+        const a = block.address;
+        if (a.streetAddress) {
+          const csz = [a.addressLocality, a.addressRegion].filter(Boolean).join(' ') +
+                      (a.postalCode ? ' ' + a.postalCode : '');
+          out.address = [a.streetAddress, csz.trim()].filter(Boolean).join(', ');
+          log('address from JSON-LD ' + t);
+        }
+      }
+      // Name / title
+      if (!out.title && block.name && /Apartment|Residence|House|Place/i.test(t)) {
+        out.title = String(block.name).slice(0, 300);
+      }
+      // Description
+      if (!out.description && block.description) {
+        out.description = String(block.description).slice(0, 2000);
+      }
+      // Beds/baths/sqft
+      if (out.bedrooms == null && block.numberOfBedrooms != null) out.bedrooms = num(block.numberOfBedrooms);
+      if (out.bedrooms == null && block.numberOfRooms != null) out.bedrooms = num(block.numberOfRooms);
+      if (out.bathrooms == null && (block.numberOfBathroomsTotal != null || block.numberOfFullBathrooms != null)) {
+        out.bathrooms = num(block.numberOfBathroomsTotal || block.numberOfFullBathrooms);
+      }
+      if (out.sqft == null && block.floorSize && block.floorSize.value != null) out.sqft = num(block.floorSize.value);
+      // Price — from offers or priceSpecification
+      const priceCandidates = [];
+      if (block.offers) {
+        const offers = Array.isArray(block.offers) ? block.offers : [block.offers];
+        offers.forEach((o) => {
+          if (o && o.price != null) priceCandidates.push(num(o.price));
+          if (o && o.priceSpecification) {
+            const ps = Array.isArray(o.priceSpecification) ? o.priceSpecification : [o.priceSpecification];
+            ps.forEach((p) => { if (p && p.price != null) priceCandidates.push(num(p.price)); });
+          }
+          if (o && o.lowPrice != null) priceCandidates.push(num(o.lowPrice));
+        });
+      }
+      const goodPrice = priceCandidates.filter((p) => p != null && p > 0)[0];
+      if (out.price == null && goodPrice != null) out.price = goodPrice;
+      // Contained places (unit listings under an ApartmentComplex)
+      if (Array.isArray(block.containsPlace)) {
+        block.containsPlace.forEach((sub) => {
+          if (!sub || typeof sub !== 'object') return;
+          if (out.bedrooms == null && sub.numberOfBedrooms != null) out.bedrooms = num(sub.numberOfBedrooms);
+          if (out.bathrooms == null && (sub.numberOfBathroomsTotal != null || sub.numberOfFullBathrooms != null)) {
+            out.bathrooms = num(sub.numberOfBathroomsTotal || sub.numberOfFullBathrooms);
+          }
+          if (out.sqft == null && sub.floorSize && sub.floorSize.value != null) out.sqft = num(sub.floorSize.value);
+        });
+      }
+      // Photo
+      if (!out.photoUrl && block.image) {
+        out.photoUrl = Array.isArray(block.image) ? block.image[0] : block.image;
+      }
+    });
+    log('after JSON-LD', { beds: out.bedrooms, baths: out.bathrooms, sqft: out.sqft, price: out.price, addr: !!out.address });
+
+    // ---- Pass 2: og/meta tags ----
+    const ogTitle = document.querySelector('meta[property="og:title"]')?.content
+                 || document.querySelector('meta[name="twitter:title"]')?.content || '';
+    const ogDesc  = document.querySelector('meta[property="og:description"]')?.content
+                 || document.querySelector('meta[name="description"]')?.content || '';
+    const ogBlob  = (ogTitle + ' ' + ogDesc).trim();
+    if (ogBlob) log('og len ' + ogBlob.length);
+    if (ogBlob) {
+      if (out.bedrooms == null) out.bedrooms = num(ogBlob.match(/(\d+(?:\.\d+)?)\s*(?:bd|bed(?:room)?s?)/i)?.[1]);
+      if (out.bathrooms == null) out.bathrooms = num(ogBlob.match(/(\d+(?:\.\d+)?)\s*(?:ba|bath(?:room)?s?)/i)?.[1]);
+      if (out.sqft == null) out.sqft = num(ogBlob.match(/([\d,]+)\s*(?:sq\s*ft|sqft|square feet)/i)?.[1]);
+      if (out.price == null) out.price = num(ogBlob.match(/\$\s*([\d,]+)(?:\s*\/\s*mo)?/i)?.[1]);
+    }
+
+    // ---- Pass 3: modern DOM selectors ----
+    // Apartments.com current (2024+) markup uses data-tag-* attributes and
+    // semantic class names like .priceBedRangeInfo, .rent-info, etc.
+    if (!out.title) {
+      out.title = document.querySelector(
+        'h1.propertyName, #propertyName, [data-tag="propertyName"], h1[class*="property"], h1'
+      )?.textContent?.trim() || document.title;
+    }
+
+    if (!out.address) {
+      const street = document.querySelector(
+        '.propertyAddressContainer .delivery-address, [data-tag="listingAddress"], ' +
+        '.propertyAddress span:first-child, [class*="listingAddress"]'
+      )?.textContent?.trim() || '';
+      const cityEl = document.querySelector(
+        '.propertyAddressContainer h2, .propertyAddressContainer .stateZipContainer, ' +
+        '[data-tag="cityStateZip"], .propertyAddress span:nth-child(2)'
+      );
+      let cityBlob = cityEl ? (cityEl.textContent || '').trim() : '';
+      cityBlob = cityBlob.replace(/\s+/g, ' ').replace(/,\s*,/g, ',').trim();
+      if (street || cityBlob) {
+        out.address = [street.replace(/,\s*$/, ''), cityBlob].filter(Boolean).join(', ');
+      }
+    }
+
+    if (out.price == null || out.bedrooms == null || out.bathrooms == null || out.sqft == null) {
+      // Try all likely price/bed/bath containers — newer layouts use flat
+      // containers with multiple spans; older ones use .rentInfoDetail.
+      const containers = document.querySelectorAll(
+        '.priceBedRangeInfo, .priceBedRangeInfoInnerContainer, .rentInfoDetail, ' +
+        '[data-tag="pricingBedsRange"], .unitPriceBed, .priceBed, ' +
+        '[class*="unitPrice"], [class*="UnitPrice"], [class*="rentRange"], ' +
+        '[class*="pricing"], [class*="Pricing"], .rent-info, .unit-info'
+      );
+      containers.forEach((el) => {
+        const t = el.textContent || '';
+        if (out.price == null) {
+          const p = t.match(/\$\s*([\d,]+)(?:\s*\/\s*mo)?/);
+          if (p) out.price = num(p[1]);
+        }
+        if (out.bedrooms == null) out.bedrooms = num(t.match(/(\d+(?:\.\d+)?)\s*(?:bd|bed)/i)?.[1]);
+        if (out.bathrooms == null) out.bathrooms = num(t.match(/(\d+(?:\.\d+)?)\s*(?:ba|bath)/i)?.[1]);
+        if (out.sqft == null) out.sqft = num(t.match(/([\d,]+)\s*(?:sq\s*ft|sqft)/i)?.[1]);
+      });
+      log('after DOM containers', { beds: out.bedrooms, baths: out.bathrooms, sqft: out.sqft, price: out.price });
+    }
+
+    // ---- Pass 4: body-text last resort ----
+    const bodyText = document.body.innerText || '';
+    if (out.bedrooms == null || out.bathrooms == null || out.sqft == null || out.price == null) {
+      // Apartments.com pages usually render "1 Bed · 1 Bath · 650 Sq Ft" as a
+      // single block somewhere in the unit details.
+      const unitLine = bodyText.match(/(\d+(?:\.\d+)?)\s*(?:bd|bed)[^\n]{0,60}?(\d+(?:\.\d+)?)\s*(?:ba|bath)[^\n]{0,60}?(\d[\d,]*)\s*(?:sq\s*ft|sqft)/i);
+      if (unitLine) {
+        if (out.bedrooms == null) out.bedrooms = num(unitLine[1]);
+        if (out.bathrooms == null) out.bathrooms = num(unitLine[2]);
+        if (out.sqft == null) out.sqft = num(unitLine[3]);
+        log('unitLine matched');
+      }
+      if (out.bedrooms == null) out.bedrooms = num(bodyText.match(/(\d+(?:\.\d+)?)\s*(?:bd|bed(?:room)?s?)\b/i)?.[1]);
+      if (out.bathrooms == null) out.bathrooms = num(bodyText.match(/(\d+(?:\.\d+)?)\s*(?:ba|bath(?:room)?s?)\b/i)?.[1]);
+      if (out.sqft == null) out.sqft = num(bodyText.match(/([\d,]+)\s*(?:sq\s*ft|sqft)/i)?.[1]);
+      if (out.price == null) {
+        // Prefer a price near the word "rent" or "/mo"
+        const nearRent = bodyText.match(/\$\s*([\d,]+)\s*(?:\/\s*mo|\/\s*month)/i);
+        out.price = num((nearRent && nearRent[1]) || bodyText.match(/\$\s*([\d,]+)/)?.[1]);
+      }
+    }
+
+    // ---- Description + photo fallbacks ----
+    if (!out.description) {
+      out.description = document.querySelector(
+        '#descriptionSection .descriptionContent, [data-tag="description"], ' +
+        '.description, [class*="descriptionText"], [class*="DescriptionText"]'
+      )?.textContent?.trim()?.slice(0, 2000) || null;
+    }
+    if (!out.photoUrl) {
+      out.photoUrl = document.querySelector(
+        '.mainCarouselImage, .carouselContent img, [data-tag="heroImage"] img, [class*="heroImage"] img, meta[property="og:image"]'
+      )?.src || document.querySelector('meta[property="og:image"]')?.content || null;
+    }
+
+    // ---- Amenity dictionary sweep ----
+    const amenityNodes = document.querySelectorAll(
+      '#amenitiesSection, .amenitiesSection, .specList, .feesPoliciesSection, ' +
+      '#feesAndPolicies, .uniqueFeatures, .propertyAmenities, .communityAmenities, ' +
+      '[data-tag="amenities"], [class*="amenit"], [class*="Amenit"], ' +
+      '[class*="feature"], [class*="Feature"]'
+    );
+    const amenityBlob = Array.from(amenityNodes).map((n) => n.textContent).join(' ').toLowerCase();
+    const searchBlob = (amenityBlob + ' ' + bodyText).toLowerCase();
     const dictMatches = matchAmenities(searchBlob);
     for (const k in dictMatches) pd[k] = dictMatches[k];
+    log('dict match keys', Object.keys(dictMatches));
 
     // Property type heuristic
-    if (/apartment/i.test(out.title || '')) setPD(pd, 'propertyType', 'Apartment');
-    else if (/condo/i.test(out.title || '')) setPD(pd, 'propertyType', 'Condo');
-    else if (/townhouse/i.test(out.title || '')) setPD(pd, 'propertyType', 'Townhouse');
+    if (!pd.propertyType) {
+      if (/condo/i.test(out.title || '')) setPD(pd, 'propertyType', 'Condo');
+      else if (/townhouse|townhome/i.test(out.title || '')) setPD(pd, 'propertyType', 'Townhouse');
+      else if (/house/i.test(out.title || '')) setPD(pd, 'propertyType', 'House');
+      else setPD(pd, 'propertyType', 'Apartment');
+    }
 
-    // Pets — look for "Pet Policy" section
+    // Pets
     if (/no pets|pets not allowed/i.test(searchBlob)) setPD(pd, 'petsAllowed', 'No Pets');
     else if (/dogs? allowed/i.test(searchBlob) && /cats? allowed/i.test(searchBlob)) setPD(pd, 'petsAllowed', 'Yes - All Pets');
     else if (/dogs? allowed/i.test(searchBlob)) setPD(pd, 'petsAllowed', 'Dogs Only');
     else if (/cats? allowed/i.test(searchBlob)) setPD(pd, 'petsAllowed', 'Cats Only');
 
     // Parking
-    if (/garage/i.test(searchBlob)) setPD(pd, 'parking', 'Attached Garage');
+    if (/attached garage/i.test(searchBlob)) setPD(pd, 'parking', 'Attached Garage');
+    else if (/detached garage/i.test(searchBlob)) setPD(pd, 'parking', 'Detached Garage');
+    else if (/garage/i.test(searchBlob)) setPD(pd, 'parking', 'Attached Garage');
     else if (/covered parking/i.test(searchBlob)) setPD(pd, 'parking', 'Covered Parking');
     else if (/carport/i.test(searchBlob)) setPD(pd, 'parking', 'Carport');
     else if (/assigned/i.test(searchBlob)) setPD(pd, 'parking', 'Assigned Spot');
+    else if (/street parking/i.test(searchBlob)) setPD(pd, 'parking', 'Street Only');
 
     // Laundry
-    if (/washer.*dryer in unit|in.?unit laundry|w\/d in unit/i.test(searchBlob)) setPD(pd, 'laundry', 'In-Unit W/D');
+    if (/washer.*dryer in unit|in.?unit laundry|w\/d in unit|w\/d in-unit/i.test(searchBlob)) setPD(pd, 'laundry', 'In-Unit W/D');
     else if (/w\/d hookup|washer.*dryer hookup/i.test(searchBlob)) setPD(pd, 'laundry', 'W/D Hookups');
     else if (/laundry room|on-?site laundry/i.test(searchBlob)) setPD(pd, 'laundry', 'Shared/On-Site');
 
     // A/C
     if (/central (a\/c|air)/i.test(searchBlob)) setPD(pd, 'ac', 'Central A/C');
     else if (/window unit/i.test(searchBlob)) setPD(pd, 'ac', 'Window Unit');
+    else if (/mini.?split/i.test(searchBlob)) setPD(pd, 'ac', 'Mini-Split');
 
-    // JSON-LD fallback for address / price
-    const jsonLd = findAllJsonLd();
-    jsonLd.forEach((block) => {
-      if (block && block['@type'] === 'Apartment' && block.address) {
-        if (!out.address && block.address.streetAddress) {
-          const csz = [block.address.addressLocality, block.address.addressRegion].filter(Boolean).join(' ') +
-                      (block.address.postalCode ? ' ' + block.address.postalCode : '');
-          out.address = [block.address.streetAddress, csz.trim()].filter(Boolean).join(', ');
-        }
-      }
+    // Availability
+    const avail = bodyText.match(/Available\s+(Now|Immediately|on\s+([A-Z][a-z]+\s+\d{1,2}(?:,\s*\d{4})?)|(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?))/i);
+    if (avail) setPD(pd, 'availableDate', avail[2] || avail[3] || avail[1] || 'Now');
+
+    log('final', {
+      hasAddress: !!out.address,
+      beds: out.bedrooms, baths: out.bathrooms, sqft: out.sqft, price: out.price,
+      pdKeys: Object.keys(pd).length,
     });
 
+    if (!out.title) out.title = document.title;
     return out;
   }
 
@@ -806,18 +969,35 @@
     throw new Error('Unsupported host: ' + host);
   }
 
+  // A "ready" page must have at least TWO of the four core listing fields
+  // populated (or address + one). This prevents us from sending a half-
+  // hydrated React page that only has a title like "$2,350" and nothing else.
+  function coreFieldCount(d) {
+    let n = 0;
+    if (d.bedrooms != null) n++;
+    if (d.bathrooms != null) n++;
+    if (d.sqft != null) n++;
+    if (d.price != null) n++;
+    return n;
+  }
+
   function run(attempt) {
     try {
       const data = parse();
-      const hasContent = data.title || data.price != null || data.bedrooms != null || data.address;
-      if (hasContent || attempt >= 8) {
-        // Attach cleaned page text so the service worker can pass it to Ollama
+      const cfc = coreFieldCount(data);
+      const hasEnough = cfc >= 2 || (cfc >= 1 && !!data.address);
+      // Give React/Apollo pages more time to hydrate (12 attempts × 750ms = ~9s)
+      if (hasEnough || attempt >= 12) {
         data._pageText = capturePageText();
+        if (data._debug) {
+          data._debug.finalAttempt = attempt;
+          data._debug.finalCoreFieldCount = cfc;
+        }
         chrome.runtime.sendMessage({ type: 'SCRAPE_RESULT', payload: data });
         return;
       }
     } catch (e) {
-      if (attempt >= 8) {
+      if (attempt >= 12) {
         chrome.runtime.sendMessage({ type: 'SCRAPE_RESULT', error: e.message });
         return;
       }

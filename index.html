@@ -4642,7 +4642,7 @@ async function handleExtensionListing(data) {
     console.log('raw data:', data);
     console.log('beds:', data.bedrooms, 'baths:', data.bathrooms, 'sqft:', data.sqft, 'price:', data.price);
     console.log('propertyDetails keys:', data.propertyDetails ? Object.keys(data.propertyDetails) : []);
-    console.log('ai enriched:', data._aiEnriched, 'model:', data._aiModel);
+    console.log('ai enriched:', data._aiEnriched, 'model:', data._aiModel, 'error:', data._aiError || '(none)');
     if (data._debug) console.log('scraper debug:', data._debug);
     console.groupEnd();
   } catch (_) {}
