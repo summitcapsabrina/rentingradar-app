@@ -15,6 +15,14 @@
 const CRM_ORIGIN = 'https://app.rentingradar.com';
 const SCRAPE_TIMEOUT_MS = 30000;
 
+// Local Ollama AI engine for property-detail enrichment. Requires the user
+// to run Ollama on their own machine (http://ollama.com/download) and to
+// have pulled the llama3.2 model. The extension never calls any hosted LLM
+// API — all inference is local, free, and private.
+const OLLAMA_HOST = 'http://127.0.0.1:11434';
+const OLLAMA_MODEL = 'llama3.2';
+const OLLAMA_TIMEOUT_MS = 45000;
+
 // ------------------------------------------------------------------
 // Internal message router (popup + content scripts)
 // ------------------------------------------------------------------
@@ -25,6 +33,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         case 'PING':
           sendResponse({ ok: true, version: chrome.runtime.getManifest().version });
           return;
+
+        case 'HEALTH': {
+          // Returns extension version + Ollama install/model status
+          const ollama = await checkOllamaHealth();
+          sendResponse({ ok: true, version: chrome.runtime.getManifest().version, ollama });
+          return;
+        }
 
         case 'SCRAPE_URL': {
           // From the popup: scrape + forward to CRM tab
@@ -69,6 +84,12 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
           sendResponse({ ok: true, version: chrome.runtime.getManifest().version });
           return;
 
+        case 'HEALTH': {
+          const ollama = await checkOllamaHealth();
+          sendResponse({ ok: true, version: chrome.runtime.getManifest().version, ollama });
+          return;
+        }
+
         case 'SCRAPE_URL': {
           // From the CRM: scrape and return result directly (no forwarding)
           const result = await scrapeAny(msg.url, msg.kind);
@@ -110,10 +131,184 @@ async function scrapeAny(url, hint) {
     if (!data) return { ok: false, error: 'Could not read details from the page. Make sure you are signed in where required.' };
     // Tag the payload with its kind so the CRM knows how to route it
     data._kind = kind;
+
+    // AI enrichment (listings only — AirDNA already has everything in metric cards)
+    if (kind === 'listing') {
+      try {
+        const enriched = await enrichWithOllama(data);
+        if (enriched) {
+          data.propertyDetails = mergePropertyDetails(data.propertyDetails || {}, enriched.propertyDetails || {});
+          data._aiEnriched = true;
+          data._aiModel = OLLAMA_MODEL;
+          if (enriched.descriptionSummary && !data.description) {
+            data.description = enriched.descriptionSummary;
+          }
+        }
+      } catch (e) {
+        console.log('[RR ext] Ollama enrichment skipped:', e && e.message);
+        data._aiEnriched = false;
+      }
+      // Strip the raw page text before returning — it's huge and no longer needed
+      delete data._pageText;
+    }
+
     return { ok: true, data };
   } catch (e) {
     return { ok: false, error: e.message || 'Scrape failed.' };
   }
+}
+
+// ------------------------------------------------------------------
+// Ollama health check — reports whether the daemon is running
+// and whether the llama3.2 model is pulled.
+// ------------------------------------------------------------------
+async function checkOllamaHealth() {
+  const result = { running: false, modelInstalled: false, model: OLLAMA_MODEL, error: null };
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 2500);
+    const resp = await fetch(OLLAMA_HOST + '/api/tags', { signal: ctrl.signal });
+    clearTimeout(t);
+    if (!resp.ok) { result.error = 'HTTP ' + resp.status; return result; }
+    result.running = true;
+    const json = await resp.json();
+    const models = (json && json.models) || [];
+    result.modelInstalled = models.some((m) => {
+      const name = (m && m.name) || '';
+      // Match "llama3.2", "llama3.2:latest", "llama3.2:3b" etc.
+      return name === OLLAMA_MODEL || name.startsWith(OLLAMA_MODEL + ':');
+    });
+  } catch (e) {
+    result.error = (e && e.message) || String(e);
+  }
+  return result;
+}
+
+// ------------------------------------------------------------------
+// Ollama enrichment — feed the scraped structured data + page text
+// into llama3.2 and ask it to return a JSON object keyed by the
+// CRM's PROP_SECTIONS fields.
+// ------------------------------------------------------------------
+async function enrichWithOllama(scraped) {
+  const health = await checkOllamaHealth();
+  if (!health.running || !health.modelInstalled) {
+    throw new Error(health.running ? 'Model not installed' : 'Ollama not running');
+  }
+
+  const pageText = (scraped._pageText || '').slice(0, 14000); // ~14KB cap
+  const knownFields = {
+    address: scraped.address,
+    price: scraped.price,
+    bedrooms: scraped.bedrooms,
+    bathrooms: scraped.bathrooms,
+    sqft: scraped.sqft,
+  };
+
+  const systemPrompt = `You are a real estate data extraction assistant. Given a rental listing page, extract structured property details and return ONLY a single JSON object — no prose, no markdown, no code fences. Use only values that are explicitly stated or clearly implied in the listing. Never invent details. If a field is not mentioned, omit it.`;
+
+  const userPrompt = `SCRAPED (already known) FIELDS:
+${JSON.stringify(knownFields, null, 2)}
+
+LISTING PAGE TEXT:
+"""
+${pageText}
+"""
+
+Return a single JSON object with this exact shape (omit any field not clearly mentioned in the listing):
+
+{
+  "propertyDetails": {
+    "propertyType": "House|Apartment|Condo|Townhouse|Duplex|Triplex|Fourplex|Studio|Loft|Mobile Home|Villa|Cottage|Other",
+    "yearBuilt": <number>,
+    "stories": "1|2|3|4+",
+    "lotSize": "<string like '0.25 acres' or '5000 sqft'>",
+    "furnished": "Unfurnished|Furnished|Partially Furnished",
+    "view": "City|Mountain|Desert|Pool|Courtyard|Lake|Park|Golf Course|Water|None",
+    "architecturalStyle": "Modern|Contemporary|Ranch|Mediterranean|Colonial|Craftsman|Spanish|Victorian|Mid-Century|Southwest|Other",
+    "flooring": ["Hardwood","Carpet","Tile","Laminate","Vinyl Plank","Concrete","Marble","Stone","Mixed"],
+    "countertops": "Granite|Quartz|Marble|Laminate|Butcher Block|Concrete|Tile|Corian",
+    "appliances": ["Dishwasher","Garbage Disposal","Microwave","Oven/Range (Gas)","Oven/Range (Electric)","Refrigerator","Ice Maker","Trash Compactor","Wine Cooler"],
+    "laundry": "In-Unit W/D|W/D Hookups|Shared/On-Site|Stacked W/D|None",
+    "ac": "Central A/C|Window Unit|Mini-Split|Evaporative/Swamp Cooler|Portable|None",
+    "heating": "Central (Gas)|Central (Electric)|Baseboard|Radiator|Heat Pump|Space Heater|Fireplace|None",
+    "interiorFeatures": ["Fireplace","Ceiling Fans","Walk-In Closets","High Ceilings","Vaulted Ceilings","Open Floor Plan","Natural Light","Crown Molding","Recessed Lighting","Smart Thermostat","Smart Locks","Built-In Shelving","Pantry","Kitchen Island","Breakfast Bar","Stainless Steel Appliances","Double Vanity","Soaking Tub","Walk-In Shower","Separate Tub/Shower","Linen Closet","Storage Unit","Window Blinds","Blackout Curtains","Ceiling Lighting"],
+    "storage": "Walk-In Closet|Standard Closets|Garage Storage|Storage Unit|Attic|Basement|None",
+    "parking": "Attached Garage|Detached Garage|Carport|Covered Parking|Assigned Spot|Street Only|Driveway|Parking Garage|None",
+    "parkingSpaces": <number>,
+    "pool": "Private|Community/Shared|Heated Private|Heated Community|None",
+    "hotTub": "Private|Community/Shared|None",
+    "outdoor": ["Balcony","Patio","Deck","Porch","Screened Porch","Sunroom","Rooftop","Courtyard","Lanai"],
+    "yard": "Private Fenced|Private Unfenced|Shared|None",
+    "exteriorFeatures": ["Fenced Yard","Sprinkler System","Outdoor Lighting","Outdoor Kitchen/BBQ","Fire Pit","Garden Space","Shed/Outbuilding","RV Parking","Boat Parking","EV Charging","Gated Entry","Desert Landscaping","Pool Fence"],
+    "communityAmenities": ["Gym/Fitness Center","Clubhouse","Business Center","Package Lockers","Dog Park","Playground","Swimming Pool","Community Spa/Hot Tub","Sauna","Elevator","Concierge/Doorman","On-Site Management","On-Site Maintenance"],
+    "utilitiesIncluded": ["Water","Hot Water","Gas","Electric","Trash","Sewer","Recycling","Internet/WiFi","Cable TV","Landscaping/Grounds","Pest Control"],
+    "petsAllowed": "Yes - All Pets|Dogs Only|Cats Only|Small Pets Only|Case by Case|Service Animals Only|No Pets",
+    "petWeightLimit": <number>,
+    "maxPets": <number>,
+    "breedRestrictions": "<string>",
+    "safetyFeatures": ["Smoke Detectors","Carbon Monoxide Detectors","Fire Extinguisher","Security System/Alarm","Gated Entry","Deadbolt Locks","Smart Locks","Security Cameras","24-Hour Security"],
+    "hoaFee": <number>,
+    "hoaStrPolicy": "Allowed|Allowed with Restrictions|30+ Day Minimum|Not Allowed|Unknown"
+  },
+  "descriptionSummary": "<optional 2-3 sentence summary of the listing>"
+}
+
+Return ONLY the JSON object. No explanation, no markdown, no code fences.`;
+
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), OLLAMA_TIMEOUT_MS);
+  let resp;
+  try {
+    resp = await fetch(OLLAMA_HOST + '/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: ctrl.signal,
+      body: JSON.stringify({
+        model: OLLAMA_MODEL,
+        stream: false,
+        format: 'json',
+        options: { temperature: 0.1 },
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+      }),
+    });
+  } finally { clearTimeout(t); }
+
+  if (!resp.ok) throw new Error('Ollama HTTP ' + resp.status);
+  const json = await resp.json();
+  const content = json && json.message && json.message.content;
+  if (!content) throw new Error('Empty response from Ollama');
+
+  let parsed;
+  try { parsed = JSON.parse(content); }
+  catch (_) {
+    // llama3.2 occasionally wraps JSON in a code fence even with format:'json'
+    const m = content.match(/\{[\s\S]*\}/);
+    if (!m) throw new Error('Ollama did not return JSON');
+    parsed = JSON.parse(m[0]);
+  }
+  return parsed;
+}
+
+// Merge AI-enriched propertyDetails into structured-scrape propertyDetails.
+// Structured data wins for single-value fields (more reliable), but we
+// union array fields so AI can add amenities the scraper missed.
+function mergePropertyDetails(base, ai) {
+  const out = Object.assign({}, base);
+  for (const k in ai) {
+    if (!Object.prototype.hasOwnProperty.call(ai, k)) continue;
+    const v = ai[k];
+    if (v == null || v === '' || (Array.isArray(v) && v.length === 0)) continue;
+    if (Array.isArray(v)) {
+      const existing = Array.isArray(out[k]) ? out[k] : [];
+      out[k] = Array.from(new Set(existing.concat(v)));
+    } else if (out[k] == null || out[k] === '' || out[k] === 0) {
+      out[k] = v;
+    }
+  }
+  return out;
 }
 
 // ------------------------------------------------------------------

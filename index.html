@@ -4576,13 +4576,70 @@ function handleExtensionComp(compData) {
  * fields on the currently open record — or the record whose id matches
  * window._rrPendingListingRecordId if set.
  */
-function handleExtensionListing(data) {
+/**
+ * Normalize a free-form address string via the Google Places API
+ * (reuses GPLACES_KEY which already powers manual-entry autocomplete).
+ * Returns { street, unit, city, state, zip, lat, lng, formattedAddress }.
+ * Falls back to the local regex parser on any failure.
+ */
+async function rrGeocodeAddress(rawAddress) {
+  const fallback = () => {
+    const local = (typeof parseAddressParts === 'function' && rawAddress)
+      ? parseAddressParts(rawAddress)
+      : { street: rawAddress || '', unit: '', city: '', state: '', zip: '' };
+    return { ...local, lat: null, lng: null, formattedAddress: rawAddress || '' };
+  };
+  if (!rawAddress || typeof rawAddress !== 'string') return fallback();
+  if (typeof GPLACES_KEY !== 'string' || !GPLACES_KEY) return fallback();
+  try {
+    // 1) Find the place ID via searchText
+    const searchResp = await fetch('https://places.googleapis.com/v1/places:searchText', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': GPLACES_KEY,
+        'X-Goog-FieldMask': 'places.id,places.formattedAddress,places.addressComponents,places.location',
+      },
+      body: JSON.stringify({ textQuery: rawAddress, maxResultCount: 1 }),
+    });
+    const searchData = await searchResp.json();
+    const place = searchData && searchData.places && searchData.places[0];
+    if (!place || !place.addressComponents) return fallback();
+    const comps = place.addressComponents;
+    const get = (type) => (comps.find(c => (c.types || []).includes(type)) || {}).longText || '';
+    const getShort = (type) => (comps.find(c => (c.types || []).includes(type)) || {}).shortText || '';
+    const streetNum = get('street_number');
+    const route = getShort('route') || get('route');
+    const street = [streetNum, route].filter(Boolean).join(' ');
+    const subpremise = get('subpremise');
+    // Format unit as "Unit <subpremise>" when present — matches manual-entry convention
+    const unit = subpremise ? ('Unit ' + subpremise) : '';
+    const city = get('locality') || get('sublocality_level_1') || get('administrative_area_level_2') || '';
+    const state = getShort('administrative_area_level_1') || '';
+    const zip = get('postal_code') || '';
+    return {
+      street: street || rawAddress,
+      unit,
+      city,
+      state,
+      zip,
+      lat: place.location ? place.location.latitude : null,
+      lng: place.location ? place.location.longitude : null,
+      formattedAddress: place.formattedAddress || rawAddress,
+    };
+  } catch (e) {
+    console.log('[RR] rrGeocodeAddress error:', e && e.message);
+    return fallback();
+  }
+}
+
+async function handleExtensionListing(data) {
   if (!data) return;
 
-  // If a specific record id is pending (from the Property Details paste bar
-  // inside an open profile), fill that record. Otherwise — including when the
-  // data came from the extension popup — create a brand-new property and
-  // open its profile.
+  // If a specific record id is pending (from a legacy in-profile paste bar),
+  // fill that record. Otherwise — including when the data came from the
+  // extension popup or the + Add Property paste — create a brand-new property
+  // and open its profile.
   const pendingId = window._rrPendingListingRecordId;
   window._rrPendingListingRecordId = null;
 
@@ -4593,17 +4650,22 @@ function handleExtensionListing(data) {
     r = records.find(x => x.id === pendingId) || null;
   }
 
-  // Parse the scraped address into street/city/state/zip so the hero
-  // doesn't end up with "123 Main St, Phoenix, AZ, 85048" all jammed
-  // into the street line.
-  const addrParts = (typeof parseAddressParts === 'function' && data.address)
-    ? parseAddressParts(data.address)
-    : { street: data.address || '', unit: '', city: '', state: '', zip: '' };
+  // Geocode the scraped address through Places — gives us proper
+  // street/unit/city/state/zip + lat/lng in one call (no new API key,
+  // reuses the existing manual-entry autocomplete setup).
+  const geo = await rrGeocodeAddress(data.address);
+  const addrParts = {
+    street: geo.street || '',
+    unit: geo.unit || '',
+    city: geo.city || '',
+    state: geo.state || '',
+    zip: geo.zip || '',
+  };
   // Canonical "Street, City ST ZIP" for the .property field
   const canonical = (function(){
     const s = addrParts.street || '';
     const csz = [addrParts.city, addrParts.state].filter(Boolean).join(' ') + (addrParts.zip ? ' ' + addrParts.zip : '');
-    return [s, csz.trim()].filter(Boolean).join(', ') || data.address || data.title || 'New Property';
+    return [s, csz.trim()].filter(Boolean).join(', ') || geo.formattedAddress || data.address || data.title || 'New Property';
   })();
 
   if (!r) {
@@ -4648,10 +4710,36 @@ function handleExtensionListing(data) {
 
   if (data.sourceUrl && !r.link) r.link = data.sourceUrl;
 
+  // Core fields
   setIfEmpty(d, 'bedrooms', data.bedrooms);
   setIfEmpty(d, 'bathrooms', data.bathrooms);
   setIfEmpty(d, 'sqft', data.sqft);
   setIfEmpty(d, 'monthlyRent', data.price);
+
+  // Lat/lng from Places geocoding → enables the map view to show this property immediately
+  if (geo.lat != null && geo.lng != null) {
+    setIfEmpty(d, 'latitude', geo.lat);
+    setIfEmpty(d, 'longitude', geo.lng);
+  }
+
+  // Deep fields: the scraper populates data.propertyDetails with any
+  // PROP_SECTIONS-keyed values it could pull out of structured data.
+  // Merge those in without overwriting user edits.
+  if (data.propertyDetails && typeof data.propertyDetails === 'object') {
+    for (const k in data.propertyDetails) {
+      if (!Object.prototype.hasOwnProperty.call(data.propertyDetails, k)) continue;
+      const v = data.propertyDetails[k];
+      if (v == null || v === '' || (Array.isArray(v) && v.length === 0)) continue;
+      if (Array.isArray(v)) {
+        // For multi-select fields, union with existing (if any)
+        const existing = Array.isArray(d[k]) ? d[k] : [];
+        const merged = Array.from(new Set(existing.concat(v)));
+        if (merged.length) d[k] = merged;
+      } else {
+        setIfEmpty(d, k, v);
+      }
+    }
+  }
 
   // Description → activity log note (only if we got one)
   if (data.description && data.description.length > 20) {
@@ -7768,6 +7856,8 @@ window.RR_EXTENSION_IDS = [
 // Track whether the extension is installed so the install-prompt
 // banner can render without probing on every paste.
 window.RR_EXTENSION_INSTALLED = null;
+// Cached Ollama health: { running, modelInstalled, model, error } or null
+window.RR_OLLAMA_HEALTH = null;
 
 async function _rrProbeExtension(){
   if(!window.chrome || !chrome.runtime || !chrome.runtime.sendMessage){
@@ -7776,22 +7866,63 @@ async function _rrProbeExtension(){
   }
   for(const extId of window.RR_EXTENSION_IDS){
     try {
-      const ok = await new Promise((resolve) => {
+      // Use HEALTH instead of PING so we also get Ollama status in one round-trip
+      const health = await new Promise((resolve) => {
         try {
-          chrome.runtime.sendMessage(extId, { type: 'PING' }, (response) => {
-            if(chrome.runtime.lastError){ resolve(false); return; }
-            resolve(!!(response && response.ok));
+          chrome.runtime.sendMessage(extId, { type: 'HEALTH' }, (response) => {
+            if(chrome.runtime.lastError){ resolve(null); return; }
+            resolve(response || null);
           });
-        } catch(e){ resolve(false); }
+        } catch(e){ resolve(null); }
       });
-      if(ok){
+      if(health && health.ok){
         window.RR_EXTENSION_INSTALLED = extId;
+        window.RR_OLLAMA_HEALTH = health.ollama || null;
+        // Also reflect into legacy extensionHealth for the existing Plan page UI
+        extensionHealth = {
+          extension: true,
+          version: health.version,
+          ollama: health.ollama && health.ollama.running,
+          model: health.ollama && health.ollama.modelInstalled,
+        };
+        extensionReady = true;
         return extId;
       }
     } catch(_){}
   }
   window.RR_EXTENSION_INSTALLED = false;
+  window.RR_OLLAMA_HEALTH = null;
   return false;
+}
+
+// Re-probe just the Ollama health without re-running extension detection.
+// Used by the "Retry detection" links in the Ollama banner and Plan page.
+async function _rrRefreshOllamaHealth(){
+  const extId = window.RR_EXTENSION_INSTALLED;
+  if(!extId) return null;
+  return new Promise((resolve) => {
+    try {
+      chrome.runtime.sendMessage(extId, { type: 'HEALTH' }, (response) => {
+        if(chrome.runtime.lastError){ resolve(null); return; }
+        if(response && response.ok){
+          window.RR_OLLAMA_HEALTH = response.ollama || null;
+          extensionHealth = {
+            extension: true,
+            version: response.version,
+            ollama: response.ollama && response.ollama.running,
+            model: response.ollama && response.ollama.modelInstalled,
+          };
+          resolve(response.ollama);
+        } else {
+          resolve(null);
+        }
+      });
+    } catch(e){ resolve(null); }
+  }).then((ollama) => {
+    // Re-render top banners to reflect the refreshed state
+    try { if(typeof rrUpdateTopBanners === 'function') rrUpdateTopBanners(window.RR_EXTENSION_INSTALLED); } catch(_){}
+    return ollama;
+  });
 }
 
 // Call the extension to scrape a URL. Returns { ok, data } or { ok:false, error }.
@@ -7877,11 +8008,73 @@ function rrDismissInstallBanner(){
   rrHideInstallBanner();
 }
 
+// Ollama-missing banner — shown when the extension IS installed but the
+// local Ollama daemon isn't running or the required model isn't pulled.
+// Without Ollama, paste-a-link still works but data is likely incomplete.
+const RR_OLLAMA_DOWNLOAD_URL = 'https://ollama.com/download';
+const RR_OLLAMA_DISMISS_KEY = 'rrOllamaDismissedUntil';
+const RR_OLLAMA_REQUIRED_MODEL = 'llama3.2';
+
+function rrShowOllamaBanner(){
+  if(!window.chrome || !chrome.runtime){ return; }
+  try {
+    const until = parseInt(localStorage.getItem(RR_OLLAMA_DISMISS_KEY) || '0', 10);
+    if(until && Date.now() < until) return;
+  } catch(_){}
+  if(document.getElementById('rrOllamaBanner')) return;
+
+  const health = window.RR_OLLAMA_HEALTH || {};
+  const notRunning = !health.running;
+  const msg = notRunning
+    ? 'Install <strong>Ollama</strong> (free, runs locally) so RentingRadar can AI‑enrich pasted listings. Without it, listings still import but property details may be incomplete.'
+    : 'Ollama is running but the <code style="background:rgba(255,255,255,.2);padding:1px 6px;border-radius:4px">' + RR_OLLAMA_REQUIRED_MODEL + '</code> model isn\'t installed. Run <code style="background:rgba(255,255,255,.2);padding:1px 6px;border-radius:4px">ollama pull ' + RR_OLLAMA_REQUIRED_MODEL + '</code> in Terminal, then retry.';
+  const actionLabel = notRunning ? 'Download Ollama' : 'Ollama docs';
+  const actionHref = notRunning ? RR_OLLAMA_DOWNLOAD_URL : 'https://ollama.com/library/' + RR_OLLAMA_REQUIRED_MODEL;
+
+  const bar = document.createElement('div');
+  bar.id = 'rrOllamaBanner';
+  bar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9998;background:linear-gradient(90deg,#0ea5e9,#0369a1);color:#fff;padding:10px 14px;display:flex;align-items:center;gap:12px;font-size:.85rem;box-shadow:0 2px 10px rgba(0,0,0,.2)';
+  bar.innerHTML = '<span style="font-size:1.1rem">🤖</span>' +
+    '<span style="flex:1">' + msg + ' <a href="#" onclick="_rrRefreshOllamaHealth();return false;" style="color:#fff;text-decoration:underline">Retry detection</a></span>' +
+    '<a href="' + actionHref + '" target="_blank" rel="noopener" style="background:#fff;color:#0369a1;font-weight:600;padding:6px 14px;border-radius:6px;text-decoration:none;font-size:.82rem;white-space:nowrap">' + actionLabel + '</a>' +
+    '<button type="button" aria-label="Dismiss" style="background:transparent;border:none;color:#fff;font-size:1.2rem;cursor:pointer;padding:0 4px;line-height:1" onclick="rrDismissOllamaBanner()">&times;</button>';
+  document.body.appendChild(bar);
+  document.body.style.paddingTop = (bar.offsetHeight || 44) + 'px';
+}
+
+function rrHideOllamaBanner(){
+  const bar = document.getElementById('rrOllamaBanner');
+  if(bar) bar.remove();
+  if(!document.getElementById('rrExtBanner')){
+    document.body.style.paddingTop = '';
+  }
+}
+
+function rrDismissOllamaBanner(){
+  try { localStorage.setItem(RR_OLLAMA_DISMISS_KEY, String(Date.now() + 7*24*60*60*1000)); } catch(_){}
+  rrHideOllamaBanner();
+}
+
+// Decide which (if any) top-of-page banner to show based on current probe state
+function rrUpdateTopBanners(extId){
+  if(!extId){
+    rrHideOllamaBanner();
+    rrShowInstallBanner();
+    return;
+  }
+  rrHideInstallBanner();
+  const health = window.RR_OLLAMA_HEALTH;
+  if(!health || !health.running || !health.modelInstalled){
+    rrShowOllamaBanner();
+  } else {
+    rrHideOllamaBanner();
+  }
+}
+
 // Probe for the extension shortly after load so the UI can reflect install state
 setTimeout(() => {
   _rrProbeExtension().then((extId) => {
-    if(extId){ rrHideInstallBanner(); }
-    else { rrShowInstallBanner(); }
+    rrUpdateTopBanners(extId);
   });
 }, 1500);
 

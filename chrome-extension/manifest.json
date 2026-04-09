@@ -37,7 +37,9 @@
     "https://*.hotpads.com/*",
     "https://www.facebook.com/marketplace/*",
     "https://*.craigslist.org/*",
-    "https://app.rentingradar.com/*"
+    "https://app.rentingradar.com/*",
+    "http://localhost:11434/*",
+    "http://127.0.0.1:11434/*"
   ],
   "externally_connectable": {
     "matches": [
