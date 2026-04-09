@@ -379,6 +379,7 @@
     if (v.livingArea != null || v.livingAreaValue != null) score += 3;
     if (v.price != null) score += 2;
     if (v.streetAddress) score += 2;
+    if (v.unitNumber || v.unit) score += 1;
     if (v.zipcode) score += 1;
     if (v.homeType) score += 1;
     if (v.yearBuilt != null) score += 1;
@@ -395,15 +396,31 @@
   function applyGdpToOut(gdp, out, pd) {
     if (!gdp || typeof gdp !== 'object') return;
 
-    // Address
+    // Address — and CRITICALLY: pull the unit number out of the gdp blob
+    // and append it to the street address with the "#" shorthand. Zillow's
+    // gdp.streetAddress is just "2010 Ocean Ave" with the unit stored
+    // separately in gdp.unitNumber / gdp.unit / gdp.address.unitNumber.
+    // If we don't include it here, the CRM's geocoder calls Google Places
+    // with no unit reference, then falls back to defaulting the prefix to
+    // "Unit" — which is wrong for any listing that uses #, Apt, Ste, etc.
     const streetAddress = gdp.streetAddress || (gdp.address && gdp.address.streetAddress);
+    const unitNumber = gdp.unitNumber || gdp.unit
+                    || (gdp.address && (gdp.address.unitNumber || gdp.address.unit))
+                    || null;
     const city = gdp.city || (gdp.address && gdp.address.city);
     const state = gdp.state || (gdp.address && gdp.address.state);
     const zipcode = gdp.zipcode || (gdp.address && gdp.address.zipcode);
     if (!out.address && streetAddress) {
+      // If the unit isn't already baked into streetAddress, append it as
+      // "#<unit>" — that's the universal shorthand the CRM's prefix detector
+      // recognizes and that matches how listing sites display the unit.
+      let street = streetAddress;
+      if (unitNumber && !/(#|\b(?:unit|ste|suite|apt|apartment|bldg|building)\b)/i.test(street)) {
+        street = street.trim().replace(/,\s*$/, '') + ' #' + String(unitNumber).trim();
+      }
       const cityState = [city, state].filter(Boolean).join(' ');
       const csz = [cityState, zipcode].filter(Boolean).join(' ').trim();
-      out.address = [streetAddress, csz].filter(Boolean).join(', ');
+      out.address = [street, csz].filter(Boolean).join(', ');
     }
 
     // Price / beds / baths / sqft / description / photo

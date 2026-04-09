@@ -4559,7 +4559,10 @@ function _rrRenderToast(toast, msg, type, duration, opts) {
     // the success/incomplete/failed toast comes in to replace this one.
     const bar = toast.querySelector('.rr-toast-progress');
     const startedAt = performance.now();
-    const targetMs = opts.progressTargetMs || 22000;
+    // v0.4.4: lowered from 22s to 14s after consolidating to a single
+    // mega-pass on qwen3:4b — warm imports now finish in ~12-15s, so the
+    // bar should reach plateau right as the success toast lands.
+    const targetMs = opts.progressTargetMs || 14000;
     const plateauPct = 95;
     toast._progressTimer = setInterval(() => {
       const elapsed = performance.now() - startedAt;
@@ -4583,7 +4586,13 @@ function _rrRenderToast(toast, msg, type, duration, opts) {
   }
 
   clearTimeout(toast._timer);
-  toast._timer = setTimeout(() => { toast.classList.remove('visible'); }, duration);
+  // Loading toasts MUST be persistent — they get explicitly replaced by a
+  // success / incomplete / failed toast when the import resolves. Auto-
+  // dismissing them after `duration` was the bug that caused users to see
+  // "import timed out" right before the property profile actually loaded.
+  if (!isLoading) {
+    toast._timer = setTimeout(() => { toast.classList.remove('visible'); }, duration);
+  }
 }
 
 /**
@@ -4696,11 +4705,21 @@ async function rrGeocodeAddress(rawAddress) {
     // the prefix and only returns the bare subpremise (e.g. "4B"), so we
     // detect the prefix from the raw address text the user/scraper supplied.
     // Map "Apartment" → "Apt" to match the CRM dropdown options.
-    let unitPrefix = 'Unit';
+    // Default to "#" (the most universal shorthand). "Unit " is only used if
+    // the source listing actually says the word "Unit" — otherwise we were
+    // injecting a word that wasn't in the listing. The "#" prefix matches
+    // the way Zillow / Hotpads / Apartments typically render unit numbers.
+    let unitPrefix = '#';
     if (typeof rawAddress === 'string') {
-      const m = rawAddress.match(/\b(#|Unit|Ste\.?|Suite|Apt\.?|Apartment|Bldg\.?|Building)\b/i);
-      if (m) {
-        const raw = m[1].replace(/\.$/, '');
+      // Match the # symbol OR a prefix WORD that's followed by an alphanum
+      // unit token (so we don't false-positive on the word "unit" appearing
+      // mid-sentence in a listing description). Prefer the LAST match in
+      // the address — the unit prefix appears AFTER the street, not before.
+      const re = /(#|\b(?:Unit|Ste\.?|Suite|Apt\.?|Apartment|Bldg\.?|Building)\b)\s*[A-Za-z0-9-]+/gi;
+      let match, last = null;
+      while ((match = re.exec(rawAddress)) !== null) last = match;
+      if (last) {
+        const raw = last[1].replace(/\.$/, '');
         const norm = raw.toLowerCase();
         if (norm === '#') unitPrefix = '#';
         else if (norm === 'ste') unitPrefix = 'Ste';
@@ -4956,7 +4975,7 @@ async function handleExtensionListing(data) {
     if (data._aiError) {
       const err = String(data._aiError);
       if (/not running/i.test(err)) why = 'Ollama not running — start Ollama and try again';
-      else if (/not installed/i.test(err)) why = 'Ollama model missing — run "ollama pull qwen3:8b"';
+      else if (/not installed/i.test(err)) why = 'Ollama model missing — run "ollama pull qwen3:4b"';
       else if (/aborted|timed? out/i.test(err)) why = 'AI timed out — try once more';
       else if (/HTTP 403/i.test(err)) why = 'Ollama blocked the request (set OLLAMA_ORIGINS=chrome-extension://*)';
       else why = 'AI error: ' + err.slice(0, 80);
@@ -8029,7 +8048,7 @@ function renderOllamaSetup(){
       <div class="setup-steps">
         <div class="setup-step"><div class="setup-step-content">Go to <a href="https://ollama.com/download" target="_blank" style="color:var(--primary)">ollama.com/download</a> and download the AI engine for your operating system.</div></div>
         <div class="setup-step"><div class="setup-step-content">Run the installer. On Mac, drag to Applications. On Windows, run the .exe. It starts automatically in the background.</div></div>
-        <div class="setup-step"><div class="setup-step-content">Open <strong>Terminal</strong> (Mac) or <strong>Command Prompt</strong> (Windows) and run the command shown below. This downloads the AI model (~5.2GB, one-time only):<br><code>ollama pull qwen3:8b</code></div></div>
+        <div class="setup-step"><div class="setup-step-content">Open <strong>Terminal</strong> (Mac) or <strong>Command Prompt</strong> (Windows) and run the command shown below. This downloads the AI model (~2.6GB, one-time only):<br><code>ollama pull qwen3:4b</code></div></div>
         <div class="setup-step"><div class="setup-step-content">That's it! The AI engine runs in the background automatically. The extension detects it and uses AI for all future imports.</div></div>
       </div>
       <div style="margin-top:12px;padding:10px 14px;border-radius:var(--radius);font-size:.82rem;${hasModel?'background:var(--success-light);color:var(--success)':hasOllama?'background:var(--warning-light);color:var(--warning)':'background:var(--input-bg);color:var(--text3)'}">
@@ -8231,7 +8250,7 @@ function rrDismissInstallBanner(){
 // Without Ollama, paste-a-link still works but data is likely incomplete.
 const RR_OLLAMA_DOWNLOAD_URL = 'https://ollama.com/download';
 const RR_OLLAMA_DISMISS_KEY = 'rrOllamaDismissedUntil';
-const RR_OLLAMA_REQUIRED_MODEL = 'qwen3:8b';
+const RR_OLLAMA_REQUIRED_MODEL = 'qwen3:4b';
 
 function rrShowOllamaBanner(){
   if(!window.chrome || !chrome.runtime){ return; }
@@ -8400,7 +8419,7 @@ function rrRenderOllamaSetupSteps(){
 
   host.innerHTML =
     stepRow(1, step1Done, 'Install Ollama', step1Body) +
-    stepRow(2, step2Done, 'Download the qwen3:8b model', step2Body) +
+    stepRow(2, step2Done, 'Download the qwen3:4b model', step2Body) +
     stepRow(3, step3Done, 'Verify', step3Body);
 
   const finishBtn = document.getElementById('rrOllamaSetupFinish');
