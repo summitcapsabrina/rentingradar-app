@@ -477,6 +477,70 @@
     return out;
   }
 
+  // v0.6.2: Generic labeled-list extractor. Walks the DOM looking for a
+  // heading (h1-h6, or any element with "header"/"label" in its class name)
+  // whose visible text matches `labelRegex`, then collects the values from
+  // the nearest descendant list (li / [class*=column] / [class*=Column]).
+  // This rescues bare-value labeled blocks that the free-text dictionary
+  // regexes miss — e.g. Apartments.com's "Utilities Included" section which
+  // just lists "Water" under a heading, with no "included" verb anywhere on
+  // the page. Returns an array of trimmed strings (may be empty).
+  function extractLabeledList(labelRegex) {
+    const items = [];
+    const seen = new Set();
+    const headingSel =
+      'h1, h2, h3, h4, h5, h6, ' +
+      '[class*="header"], [class*="Header"], [class*="label"], [class*="Label"]';
+    const headings = document.querySelectorAll(headingSel);
+    for (const h of headings) {
+      const t = ((h.innerText || h.textContent || '') + '').replace(/\s+/g, ' ').trim();
+      if (!t || !labelRegex.test(t)) continue;
+      // Walk up a few levels looking for a sibling/descendant list of values.
+      let container = h.parentElement;
+      for (let depth = 0; depth < 5 && container; depth++) {
+        const cells = container.querySelectorAll(
+          'li, [class*="column"]:not([class*="header"]), [class*="Column"]:not([class*="Header"])'
+        );
+        let foundAny = false;
+        for (const c of cells) {
+          // Skip cells that still contain the heading itself.
+          if (c.contains(h)) continue;
+          const v = ((c.innerText || c.textContent || '') + '').replace(/\s+/g, ' ').trim();
+          if (!v || v.length > 80) continue;
+          if (v.toLowerCase() === t.toLowerCase()) continue;
+          if (seen.has(v)) continue;
+          seen.add(v);
+          items.push(v);
+          foundAny = true;
+        }
+        if (foundAny) break;
+        container = container.parentElement;
+      }
+    }
+    return items;
+  }
+
+  // v0.6.2: Normalize a raw utility label ("Water", "hot water", "electric",
+  // "garbage", etc.) to the canonical value the CRM expects. Returns null if
+  // the input doesn't match any known utility.
+  function normalizeUtility(raw) {
+    const s = String(raw || '').toLowerCase().replace(/\s+/g, ' ').trim();
+    if (!s) return null;
+    if (/\bhot\s*water\b/.test(s)) return 'Hot Water';
+    if (/\bwater\b/.test(s)) return 'Water';
+    if (/\bsewer\b/.test(s)) return 'Sewer';
+    if (/\btrash|garbage|refuse\b/.test(s)) return 'Trash';
+    if (/\brecycl/.test(s)) return 'Recycling';
+    if (/\belectric(ity)?\b/.test(s)) return 'Electric';
+    if (/\bgas\b/.test(s)) return 'Gas';
+    if (/\b(internet|wi-?fi|wifi)\b/.test(s)) return 'Internet/WiFi';
+    if (/\bcable\b/.test(s)) return 'Cable TV';
+    if (/\bheat\b/.test(s)) return 'Heat';
+    if (/\bpest\b/.test(s)) return 'Pest Control';
+    if (/\blandscap|grounds\b/.test(s)) return 'Landscaping/Grounds';
+    return null;
+  }
+
   // ---- shared structured-data helpers ------------------------------
   // Both Zillow and Hotpads are Zillow Group properties and share the same
   // listing-shape schema in their state blobs (the "gdp" object — short for
@@ -1106,6 +1170,28 @@
     const dictMatches = matchAmenities(searchBlob);
     for (const k in dictMatches) pd[k] = dictMatches[k];
     log('dict match keys', Object.keys(dictMatches));
+
+    // v0.6.2: Apartments.com renders "Utilities Included" (and several other
+    // labeled sections) as a heading + ul/li list with BARE values — "Water"
+    // under a heading, not "water included" anywhere in the text. The dict
+    // sweep misses these because the regex expects the "included" verb to
+    // sit beside the utility name. Pull them straight from the DOM.
+    try {
+      const utilItems = extractLabeledList(/^utilities\s+included$/i);
+      if (utilItems.length) {
+        const mapped = [];
+        for (const raw of utilItems) {
+          const canon = normalizeUtility(raw);
+          if (canon && !mapped.includes(canon)) mapped.push(canon);
+        }
+        if (mapped.length) {
+          const existing = Array.isArray(pd.utilitiesIncluded) ? pd.utilitiesIncluded.slice() : [];
+          for (const m of mapped) if (!existing.includes(m)) existing.push(m);
+          pd.utilitiesIncluded = existing;
+          log('labeled utilities', mapped);
+        }
+      }
+    } catch (e) { log('labeled utilities error', String(e && e.message || e)); }
 
     // Property type heuristic
     if (!pd.propertyType) {

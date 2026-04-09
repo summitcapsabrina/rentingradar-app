@@ -4550,29 +4550,31 @@ function _rrRenderToast(toast, msg, type, duration, opts) {
   requestAnimationFrame(() => { toast.classList.add('visible'); });
 
   if (isLoading) {
-    // v0.6.1: purely linear ramp 0 → 100 over targetMs. No plateau, no
-    // asymptotic crawl near the end. When the import actually completes,
-    // showToast() catches the loading→success swap, snaps the bar to 100%
-    // with a quick CSS transition, and then replaces the toast. If the
-    // import runs longer than targetMs the bar simply holds at 100 until
-    // the real completion — no "fake" activity. If the import finishes
-    // earlier than targetMs, the snap-to-100 in showToast() jumps the
-    // bar forward smoothly via the CSS width transition.
+    // v0.6.2: asymptotic progress. The bar moves smoothly and constantly
+    // toward 100 but NEVER reaches it on its own — the real completion
+    // snaps it to 100 via showToast()'s loading→success swap. This way
+    // the bar is always moving in unison with elapsed time, and the
+    // property profile opens AT THE MOMENT the bar reaches the end, not
+    // before (plateau) or after (bar stuck at 100 waiting for work).
     //
-    // targetMs is tuned slightly HIGHER than the typical end-to-end
-    // import time so most imports see a smooth fill that nearly reaches
-    // 100 on its own, with only a small final jump at success.
+    // pct(t) = 100 * (1 - exp(-t / tau))
+    // With tau = 6500ms this gives roughly:
+    //   t= 2s →  27%
+    //   t= 5s →  54%
+    //   t= 8s →  71%
+    //   t=12s →  84%
+    //   t=20s →  95%
+    //   t=30s →  99%
+    // Always moving forward, never stalling, never overshooting.
     const bar = toast.querySelector('.rr-toast-progress');
     const startedAt = performance.now();
-    const targetMs = opts.progressTargetMs || 11000;
+    const tau = opts.progressTau || 6500;
     toast._progressTimer = setInterval(() => {
       const elapsed = performance.now() - startedAt;
-      const pct = Math.min(100, (elapsed / targetMs) * 100);
-      if (bar) {
-        bar.style.width = pct.toFixed(1) + '%';
-        if (pct >= 100) bar.setAttribute('data-full', '1');
-      }
-    }, 100);
+      // Cap just below 100 so the real completion snap is always visible.
+      const pct = Math.min(99.5, 100 * (1 - Math.exp(-elapsed / tau)));
+      if (bar) bar.style.width = pct.toFixed(2) + '%';
+    }, 80);
   }
 
   clearTimeout(toast._timer);

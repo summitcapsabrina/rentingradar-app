@@ -332,15 +332,29 @@ async function scrapeAny(url, hint) {
 // flexibility in how they pulled the model.
 // ------------------------------------------------------------------
 async function checkOllamaHealth() {
-  const result = { running: false, modelInstalled: false, model: OLLAMA_MODEL, error: null, installedModels: [] };
+  const result = {
+    running: false,
+    modelInstalled: false,
+    model: OLLAMA_MODEL,
+    error: null,
+    installedModels: [],
+    // v0.6.2: when /api/tags aborts or errors but the daemon COULD be up
+    // (common when it's mid-inference and tags is queued behind a generate
+    // request), we don't know for sure if it's running. We set "unknown"
+    // and let the caller try the chat request anyway rather than failing
+    // the import with a scary "No response from Ollama" toast.
+    unknown: false,
+  };
   try {
     const ctrl = new AbortController();
-    // 8s — on a cold laptop Ollama's first response can take a few seconds
-    // because it's just started up or just woke from sleep.
-    const t = setTimeout(() => ctrl.abort(), 8000);
+    // v0.6.2: 15s — qwen3:4b can hold the HTTP worker for several seconds
+    // while it's generating, so /api/tags queues behind it. Previously 8s
+    // caused spurious "No response from Ollama" errors whenever the user
+    // triggered a second import back-to-back.
+    const t = setTimeout(() => ctrl.abort(), 15000);
     const resp = await fetch(OLLAMA_HOST + '/api/tags', { signal: ctrl.signal });
     clearTimeout(t);
-    if (!resp.ok) { result.error = 'HTTP ' + resp.status; return result; }
+    if (!resp.ok) { result.error = 'HTTP ' + resp.status; result.unknown = true; return result; }
     result.running = true;
     const json = await resp.json();
     const models = (json && json.models) || [];
@@ -356,6 +370,12 @@ async function checkOllamaHealth() {
     });
   } catch (e) {
     result.error = (e && e.message) || String(e);
+    // v0.6.2: a thrown fetch error means one of: (a) daemon isn't running,
+    // (b) daemon IS running but /api/tags aborted because the worker was
+    // busy, (c) CORS / permission glitch. We can't distinguish. Mark the
+    // result "unknown" so enrichWithOllama will try the chat request and
+    // surface a real error if it fails.
+    result.unknown = true;
   }
   return result;
 }
@@ -1054,12 +1074,20 @@ async function enrichWithOllama(scraped) {
   };
 
   const health = await checkOllamaHealth();
-  if (!health.running) {
+  // v0.6.2: Only short-circuit on a DEFINITELY-down daemon. If health is
+  // "unknown" (tags probe aborted / errored but the daemon might still be
+  // up — e.g. it's mid-inference from a previous import), fall through and
+  // let the chat request be the real test. This fixes the spurious "No
+  // response from Ollama" toast that appeared when /api/tags was queued
+  // behind a generate worker.
+  if (!health.running && !health.unknown) {
     const out = earlyDict();
     out._aiError = 'Ollama not running (' + (health.error || 'no response from 127.0.0.1:11434') + ')';
     return out;
   }
-  if (!health.modelInstalled) {
+  // Skip the modelInstalled guard when we couldn't actually enumerate
+  // models (unknown === true means we have no list to check against).
+  if (!health.unknown && !health.modelInstalled) {
     const out = earlyDict();
     out._aiError = 'Model ' + OLLAMA_MODEL + ' not installed. Installed: ' + (health.installedModels.join(', ') || 'none');
     return out;
