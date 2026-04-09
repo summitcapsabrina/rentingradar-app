@@ -4559,11 +4559,11 @@ function _rrRenderToast(toast, msg, type, duration, opts) {
     // the success/incomplete/failed toast comes in to replace this one.
     const bar = toast.querySelector('.rr-toast-progress');
     const startedAt = performance.now();
-    // v0.5.0: the LLM is now async and off the critical path. The fast
-    // path returns in 1-3 seconds (just the page scrape), so we ramp the
-    // progress bar to plateau in 3 seconds. The success toast that
-    // replaces this will snap to 100% — the user sees a quick fill.
-    const targetMs = opts.progressTargetMs || 3000;
+    // v0.5.1: the LLM is back on the critical path. Scrape + dictionary
+    // + lite-pass typically lands in 10-15s, so we ramp the progress bar
+    // to plateau in ~14s. The success toast that replaces this will snap
+    // to 100% — the user sees the bar finish when the profile opens.
+    const targetMs = opts.progressTargetMs || 14000;
     const plateauPct = 95;
     toast._progressTimer = setInterval(() => {
       const elapsed = performance.now() - startedAt;
@@ -4960,22 +4960,10 @@ async function handleExtensionListing(data) {
     return v != null && v !== '' && (!Array.isArray(v) || v.length > 0);
   });
 
-  // Tag the record so the async LISTING_ENRICHMENT patcher can find it.
-  if (data._aiPending) {
-    r._aiPending = true;
-    r._aiSourceUrl = data.sourceUrl || data.url || r.link || '';
-  }
-
   let toastMsg, toastTone;
   if (coreCount === 0 && !hasAnyDetails) {
     toastMsg = 'Import failed — nothing could be read from this listing.';
     toastTone = 'error';
-  } else if (data._aiPending) {
-    // Fast path complete — profile opens immediately. AI enrichment is
-    // running in the background and will land in 5-15s with no further
-    // user wait. Subtle short-lived toast, not the dramatic loading bar.
-    toastMsg = (createdNew ? 'Imported.' : 'Updated.') + ' AI enriching in background…';
-    toastTone = 'success';
   } else if (coreCount >= 3 && data._aiEnriched) {
     toastMsg = createdNew ? 'Import successful.' : 'Property updated from listing.';
     toastTone = 'success';

@@ -239,61 +239,81 @@ async function scrapeAny(url, hint) {
     // Tag the payload with its kind so the CRM knows how to route it
     data._kind = kind;
 
+    // ----- SYNCHRONOUS AI ENRICHMENT (v0.5.1) -----
+    // The LLM is back on the critical path with a 10-15s budget. The
+    // dictionary extractor handles ~80% of propertyDetails deterministically,
+    // the LLM contributes core numbers (beds/baths/sqft/price/availDate),
+    // utilities, pets, and Property Note bullets. enrichWithOllama is now
+    // resilient — it never throws, so even if Ollama is down or times out
+    // we still get the dictionary output through and the profile opens
+    // with the dictionary fields populated.
     if (kind === 'listing') {
-      // ----- ASYNC AI ARCHITECTURE (v0.5.0) -----
-      // The LLM is no longer on the critical path. We:
-      //   1. Run the deterministic dictionary extractor synchronously
-      //      (sub-millisecond) — propertyDetails populated.
-      //   2. Return the result IMMEDIATELY so the CRM can open the
-      //      profile in 1-3 seconds total.
-      //   3. Kick off the slow LLM enrichment in the background and
-      //      forward a second LISTING_ENRICHMENT message to the CRM
-      //      tab when it finishes (or doesn't).
-      //
-      // The dictionary extractor was already populating ~80% of fields
-      // before; the LLM only contributed Property Note bullets, util/
-      // pets, and core-number rescue when the scraper missed them. All
-      // of that can land 5-15s after the profile opens with no UX
-      // penalty — the user is already looking at their listing.
-      try {
-        const fullPageText = normalizePageText(data._pageText || '');
-        const dictPropertyDetails = extractPropertyDetailsFromText(fullPageText);
-        data.propertyDetails = mergePropertyDetails(data.propertyDetails || {}, dictPropertyDetails);
-        console.log('[RR ext] dictionary extractor produced (fast path):', Object.keys(dictPropertyDetails));
-      } catch (e) {
-        console.log('[RR ext] dictionary extractor failed:', (e && e.message) || e);
+      const enriched = await enrichWithOllama(data);
+      if (enriched) {
+        // Merge dictionary-extracted propertyDetails ALWAYS, even if the
+        // LLM call failed inside enrichWithOllama. The dictionary path is
+        // deterministic and runs first; we never want to discard it just
+        // because the optional LLM step timed out.
+        data.propertyDetails = mergePropertyDetails(data.propertyDetails || {}, enriched.propertyDetails || {});
+        if (enriched._aiError) {
+          data._aiEnriched = false;
+          data._aiError = enriched._aiError;
+        } else {
+          data._aiEnriched = true;
+        }
+        data._aiModel = OLLAMA_MODEL;
+        // The LLM is AUTHORITATIVE on the core listing numbers. The
+        // scrapers' JSON-LD/state-blob extraction handles many listings
+        // but Hotpads/Craigslist/FB Marketplace often don't expose those
+        // numbers in structured data — we depend on the LLM to read the
+        // hero block and pull beds/baths/sqft/rent out. Fill in anything
+        // the scraper couldn't lock down.
+        if (enriched.core) {
+          const c = enriched.core;
+          if (c.bedrooms != null && data.bedrooms == null) data.bedrooms = c.bedrooms;
+          if (c.bathrooms != null && data.bathrooms == null) data.bathrooms = c.bathrooms;
+          if (c.sqft != null && data.sqft == null) data.sqft = c.sqft;
+          if (c.price != null && data.price == null) {
+            data.price = c.price;
+            if (data.monthlyRent == null) data.monthlyRent = c.price;
+          }
+          if (c.availableDate) {
+            data.propertyDetails = data.propertyDetails || {};
+            const existing = data.propertyDetails.availableDate;
+            const existingValid = existing === 'now' || /^\d{4}-\d{2}-\d{2}$/.test(existing || '');
+            if (!existingValid) {
+              data.propertyDetails.availableDate = c.availableDate;
+            }
+          }
+        }
+        // Property Note bullets — sanitized list ready for the CRM.
+        if (Array.isArray(enriched.propertyNoteBullets) && enriched.propertyNoteBullets.length) {
+          const _bulletSeen = new Set();
+          data.propertyNoteBullets = enriched.propertyNoteBullets
+            .map((s) => String(s || '').trim())
+            .map((s) => s.replace(/^[-•*]\s*/, '').replace(/[.;,]+$/, ''))
+            .filter((s) => {
+              const fp = s.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+              if (!fp || _bulletSeen.has(fp)) return false;
+              _bulletSeen.add(fp);
+              return true;
+            })
+            .map((s) => {
+              if (s.length <= 120) return s;
+              const cut = s.slice(0, 120);
+              const lastSpace = cut.lastIndexOf(' ');
+              return (lastSpace > 40 ? cut.slice(0, lastSpace) : cut).replace(/[.;,]+$/, '');
+            })
+            .filter((s) => s && s.length > 2)
+            .slice(0, 14);
+        }
       }
-      // Mark this as the fast result. The CRM uses this to render an
-      // "AI working..." indicator instead of "AI failed".
-      data._aiPending = true;
-      data._aiEnriched = false;
-      data._aiModel = OLLAMA_MODEL;
-
-      // Fire-and-forget the LLM enrichment. We retain the raw page text
-      // on a copy so the LLM still has it, but strip it from the data we
-      // return synchronously below.
-      const aiInput = {
-        sourceUrl: data.sourceUrl || url,
-        source: data.source,
-        address: data.address,
-        bedrooms: data.bedrooms,
-        bathrooms: data.bathrooms,
-        sqft: data.sqft,
-        price: data.price,
-        _pageText: data._pageText,
-        _propertyDetails: data.propertyDetails, // baseline so cache merge is correct
-      };
-      enrichInBackground(url, aiInput).catch((e) => {
-        console.error('[RR ext] background enrichment crashed:', e);
-      });
-
-      // Strip the raw page text from the synchronous response (huge).
+      // Strip the raw page text before returning — it's huge and no longer needed.
       delete data._pageText;
     }
 
-    // Cache the fast result. The background enrichment will UPDATE the
-    // cache entry with the LLM additions when it completes, so the next
-    // re-import of the same URL gets a fully enriched payload right away.
+    // Cache the fully-enriched payload so re-imports of the same URL
+    // return identical data instantly.
     if (kind === 'listing') {
       try { await cacheSet(url, data); } catch (_) {}
     }
@@ -302,103 +322,6 @@ async function scrapeAny(url, hint) {
   } catch (e) {
     return { ok: false, error: e.message || 'Scrape failed.' };
   }
-}
-
-// Background enrichment — runs the LLM AFTER the synchronous fast path
-// has already returned to the CRM. Forwards a LISTING_ENRICHMENT message
-// to any open CRM tab when complete (or when the LLM fails). Updates the
-// import cache so subsequent re-imports of the same URL get the fully
-// enriched payload immediately.
-async function enrichInBackground(url, aiInput) {
-  let enriched = null;
-  let error = null;
-  try {
-    enriched = await enrichWithOllama(aiInput);
-  } catch (e) {
-    error = (e && e.message) || String(e);
-    console.log('[RR ext] background enrichment threw:', error);
-  }
-
-  // Build the patch payload that the CRM will merge into the open record.
-  const patch = {
-    sourceUrl: aiInput.sourceUrl || url,
-    propertyDetails: {},
-    propertyNoteBullets: [],
-    _aiEnriched: false,
-    _aiModel: OLLAMA_MODEL,
-  };
-
-  if (enriched) {
-    if (enriched.propertyDetails) {
-      patch.propertyDetails = enriched.propertyDetails;
-    }
-    if (enriched.core) {
-      const c = enriched.core;
-      if (c.bedrooms != null) patch.bedrooms = c.bedrooms;
-      if (c.bathrooms != null) patch.bathrooms = c.bathrooms;
-      if (c.sqft != null) patch.sqft = c.sqft;
-      if (c.price != null) { patch.price = c.price; patch.monthlyRent = c.price; }
-      if (c.availableDate) patch.propertyDetails.availableDate = c.availableDate;
-    }
-    if (Array.isArray(enriched.propertyNoteBullets) && enriched.propertyNoteBullets.length) {
-      const _bulletSeen = new Set();
-      patch.propertyNoteBullets = enriched.propertyNoteBullets
-        .map((s) => String(s || '').trim())
-        .map((s) => s.replace(/^[-•*]\s*/, '').replace(/[.;,]+$/, ''))
-        .filter((s) => {
-          const fp = s.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
-          if (!fp || _bulletSeen.has(fp)) return false;
-          _bulletSeen.add(fp);
-          return true;
-        })
-        .map((s) => {
-          if (s.length <= 120) return s;
-          const cut = s.slice(0, 120);
-          const lastSpace = cut.lastIndexOf(' ');
-          return (lastSpace > 40 ? cut.slice(0, lastSpace) : cut).replace(/[.;,]+$/, '');
-        })
-        .filter((s) => s && s.length > 2)
-        .slice(0, 14);
-    }
-    if (enriched._aiError) {
-      patch._aiError = enriched._aiError;
-    } else {
-      patch._aiEnriched = true;
-    }
-  } else if (error) {
-    patch._aiError = error;
-  }
-
-  // Update the cached fast-result with the LLM additions so a re-import
-  // of the same URL gets a fully enriched payload right away.
-  try {
-    const cached = await cacheGet(url);
-    if (cached) {
-      const merged = JSON.parse(JSON.stringify(cached));
-      merged.propertyDetails = mergePropertyDetails(merged.propertyDetails || {}, patch.propertyDetails || {});
-      if (patch.bedrooms != null && merged.bedrooms == null) merged.bedrooms = patch.bedrooms;
-      if (patch.bathrooms != null && merged.bathrooms == null) merged.bathrooms = patch.bathrooms;
-      if (patch.sqft != null && merged.sqft == null) merged.sqft = patch.sqft;
-      if (patch.price != null && merged.price == null) { merged.price = patch.price; merged.monthlyRent = patch.price; }
-      if (patch.propertyNoteBullets && patch.propertyNoteBullets.length) {
-        merged.propertyNoteBullets = patch.propertyNoteBullets;
-      }
-      merged._aiEnriched = patch._aiEnriched;
-      merged._aiPending = false;
-      if (patch._aiError) merged._aiError = patch._aiError;
-      await cacheSet(url, merged);
-    }
-  } catch (_) {}
-
-  // Push the enrichment patch to all open CRM tabs.
-  try {
-    const tabs = await chrome.tabs.query({ url: CRM_ORIGIN + '/*' });
-    for (const t of tabs) {
-      try {
-        await chrome.tabs.sendMessage(t.id, { type: 'CRM_ENRICHMENT', patch });
-      } catch (_) {}
-    }
-  } catch (_) {}
 }
 
 // ------------------------------------------------------------------
