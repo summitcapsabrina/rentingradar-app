@@ -457,6 +457,89 @@ function filterHallucinatedBullets(bullets, pageText) {
   return out;
 }
 
+// Drop bullets that just restate things already captured in the structured
+// Property Details fields. Property Notes are reserved for value the
+// dropdowns cannot capture — landmarks, neighborhood character, STR/investor
+// angles. Anything that mentions rent, beds/baths, laundry type, A/C type,
+// heat, parking, pool, pet policy, utilities, appliances, flooring, etc., is
+// duplicate noise and gets dropped here even if the LLM produced it.
+const DUPLICATIVE_BULLET_PATTERNS = [
+  // Rent / price
+  /\$\s*\d/, /\bper\s+(month|mo)\b/i, /\b\/\s*(month|mo)\b/i, /\bmonthly rent\b/i, /\brent (is|of)\b/i,
+  // Beds / baths / sqft
+  /\b\d+(\.\d+)?\s*(bed|bd|br|bath|ba|bedroom|bathroom)/i, /\bstudio\b/i, /\b\d{3,4}\s*(sq\.?\s*ft|sqft|square feet)\b/i,
+  // Laundry
+  /\b(washer|dryer|w\/d|laundry)\b/i,
+  // A/C and heating
+  /\b(central a\/?c|window unit|mini[- ]split|swamp cooler|portable a\/?c)\b/i,
+  /\b(forced[- ]air|heat pump|baseboard heat|radiator|gas heat|electric heat|space heater|fireplace)\b/i,
+  // Parking
+  /\b(attached garage|detached garage|carport|covered parking|driveway|street parking|assigned spot|parking garage)\b/i,
+  // Pool / hot tub
+  /\b(swimming pool|community pool|private pool|heated pool|hot tub|spa)\b/i,
+  // Pets
+  /\b(pet|dog|cat|animal|pet[- ]friendly|no pets)\b/i,
+  // Utilities included
+  /\b(water|gas|electric|trash|sewer|internet|wifi|cable)\s+(included|included in rent|paid)\b/i,
+  /\b(includes?|paid)\s+(water|gas|electric|trash|sewer|internet|wifi|cable)/i,
+  // Appliances and flooring
+  /\b(dishwasher|microwave|refrigerator|oven|range|stainless steel|garbage disposal|ice maker)\b/i,
+  /\b(hardwood|carpet|tile|laminate|vinyl plank|concrete|marble|stone)\s*(floor|flooring)?/i,
+  // Building amenities (already in communityAmenities)
+  /\b(gym|fitness center|clubhouse|business center|package locker|dog park|playground|sauna|elevator|concierge|doorman|bike storage|tennis court|pickleball)\b/i,
+  // Furnished status
+  /\b(fully furnished|partially furnished|unfurnished|comes furnished)\b/i,
+  // Interior/exterior features already captured
+  /\b(walk[- ]in closet|vaulted ceiling|crown molding|recessed lighting|smart thermostat|granite|quartz)\b/i,
+  /\b(fenced yard|sprinkler|outdoor kitchen|fire pit|ev charging|gated entry)\b/i,
+];
+
+// Allowed topic patterns. A bullet must hit at least one of these to be kept
+// in Property Notes. This catches the case where the LLM produces something
+// that isn't on the forbidden list but still isn't an "interesting" note.
+const ALLOWED_BULLET_PATTERNS = [
+  // Landmarks / attractions / proximity
+  /\b(near|close to|next to|across from|steps from|walking distance|minutes? (?:from|to)|blocks? (?:from|to)|across the street)\b/i,
+  /\b(park|beach|downtown|museum|university|college|school|stadium|arena|theater|theatre|district|waterfront|riverfront|lake|harbor|marina)\b/i,
+  /\b(restaurants?|shops?|shopping|cafes?|nightlife|dining|bars?|grocery|supermarket|mall|market)\b/i,
+  /\b(subway|metro|train station|bus stop|highway|airport|interstate|freeway)\b/i,
+  // Neighborhood character
+  /\b(neighborhood|community|residential|historic|vibrant|quiet|peaceful|tree[- ]lined|walkable|bustling|tucked away|sought[- ]after)\b/i,
+  /\b(view|skyline|mountain|ocean|city|panoramic|sunset|sunrise)\b/i,
+  // STR / investor angles
+  /\b(short[- ]term rental|str|airbnb|vrbo|hoa|lease|rental rules|investor|renovat|remodel|updated in|built in|year built|new construction|new roof)\b/i,
+  /\b(rooftop|terrace|balcony view|deck view)\b/i,
+];
+
+function filterDuplicativeBullets(bullets) {
+  if (!Array.isArray(bullets) || !bullets.length) return bullets || [];
+  const out = [];
+  for (const raw of bullets) {
+    const b = String(raw || '').trim();
+    if (!b) continue;
+    // Drop if it matches any forbidden topic
+    let dup = false;
+    for (const re of DUPLICATIVE_BULLET_PATTERNS) {
+      if (re.test(b)) { dup = true; break; }
+    }
+    if (dup) {
+      console.log('[RR ext] dropped duplicative bullet:', b);
+      continue;
+    }
+    // Require it to hit at least one allowed-topic pattern
+    let allowed = false;
+    for (const re of ALLOWED_BULLET_PATTERNS) {
+      if (re.test(b)) { allowed = true; break; }
+    }
+    if (!allowed) {
+      console.log('[RR ext] dropped off-topic bullet:', b);
+      continue;
+    }
+    out.push(b);
+  }
+  return out;
+}
+
 // Source-grounding for amenity enum values. Each allowed value (e.g.
 // "Stainless Steel Appliances", "Attached Garage", "Swimming Pool") has
 // a set of trigger phrases. If NONE of those phrases appear in the
@@ -929,11 +1012,17 @@ async function enrichWithOllama(scraped) {
     "Do NOT infer. Do NOT assume standard apartment features. Do NOT fill in what you think a typical listing would have. " +
     "Specifically: do NOT output petsAllowed unless the text explicitly discusses pet policy (words like 'pet', 'dog', 'cat', 'animal'). " +
     "Do NOT output utilitiesIncluded values unless the text explicitly says that utility is INCLUDED in rent — 'water included', 'gas included', etc. " +
-    "Do NOT output a bullet like 'Small pets allowed', 'Water included', 'Hardwood floors', etc. " +
-    "unless those exact concepts are mentioned verbatim in the text. " +
     "SELF-CHECK before every value: can I point to the exact words in the page text that justify this? If no, remove it. " +
-    "The 'bullets' field is ALWAYS REQUIRED — always return at least 5 bullet points, but only " +
-    "about things the listing actually mentions.";
+    "The 'bullets' field is OPTIONAL. Return an empty array [] if the listing has nothing interesting beyond beds/baths/rent/amenities. " +
+    "Bullets are NOT a feature list — bullets describe things that are NOT already captured in the structured fields above. " +
+    "FORBIDDEN BULLET TOPICS (these are already captured in structured fields — do NOT mention them in bullets): " +
+    "rent amount, beds, baths, square footage, laundry type, A/C type, heating type, parking type, pool type, " +
+    "pet policy, utilities included, appliances list, flooring, interior features, exterior features, community amenities, safety features, furnished status. " +
+    "ALLOWED BULLET TOPICS (only include if the listing literally mentions them): " +
+    "1) nearby landmarks and attractions — parks, beaches, downtown, museums, restaurants, shopping, sports venues, universities, tourist destinations; " +
+    "2) neighborhood character — quiet block, vibrant area, historic district, waterfront, mountain views, walkability to dining; " +
+    "3) STR/investor angles — short-term-rental rules, HOA STR policy, lease flexibility, recent renovations, age of building, view quality, rooftop access, unique selling points relevant to a property investor considering Airbnb/VRBO. " +
+    "If the listing does not actually mention any of these topics, return bullets: [].";
 
   // NOTE: small models handle FLAT schemas much better than nested ones,
   // and they handle short prompts much better than long ones. Keep this tight.
@@ -947,7 +1036,7 @@ Page text (the hero block at the top contains beds/baths/price — read it first
 ${pageText}
 """
 
-Return this JSON object. bedrooms, bathrooms, and price are REQUIRED if they appear in the text. bullets is ALWAYS REQUIRED.
+Return this JSON object. bedrooms, bathrooms, and price are REQUIRED if they appear in the text. bullets is OPTIONAL — return [] if nothing applies.
 
 {
   "bedrooms": <int 0-20>,
@@ -957,40 +1046,43 @@ Return this JSON object. bedrooms, bathrooms, and price are REQUIRED if they app
   "availableDate": "Now" or "YYYY-MM-DD" or a phrase like "May 1",
   "utilitiesIncluded": [ any of: "Water","Hot Water","Gas","Electric","Trash","Sewer","Recycling","Internet/WiFi","Cable TV","Landscaping/Grounds","Pest Control" ],
   "petsAllowed": one of "Yes - All Pets","Dogs Only","Cats Only","Small Pets Only","Case by Case","Service Animals Only","No Pets",
-  "bullets": [ 6 to 12 short fragments summarizing this listing — REQUIRED, never empty ]
+  "bullets": [ 0-8 short fragments — see strict rules below ]
 }
 
 AVAILABILITY: look for phrases like "Available Now", "Available [date]", "Move-in ready", "Ready [date]", "Available on MM/DD". "Available Now" → "Now". A specific date → "YYYY-MM-DD" or "Month Day".
 
-BULLETS (REQUIRED — always return 8-14 bullets when the listing has enough content):
-Bullets are a concise fact list summarizing what the listing actually says. Each bullet should be a descriptive phrase — more substantive than a tag, shorter than a sentence. Target 6-14 words, under 110 characters. Use fragments, not full sentences. Include supporting detail when the listing provides it (e.g. "Updated kitchen with stainless steel appliances and quartz counters" instead of just "Updated kitchen").
+BULLETS — STRICT RULES (the user is an Airbnb/VRBO investor, NOT a renter):
+The CRM already has dedicated fields for rent, beds, baths, sqft, laundry, A/C, heat, parking, pool, pets, utilities, appliances, interior features, exterior features, community amenities, and furnished status. Bullets must NEVER restate any of those — that's duplicate noise. Bullets exist only to capture VALUE THE STRUCTURED FIELDS CANNOT.
 
-YOU MUST cover the NEIGHBORHOOD / LOCATION whenever the listing mentions it. Look for: walk score, transit score, nearby subway/bus stops, parks, schools, shopping, restaurants, landmarks, neighborhood name, distance to downtown/attractions. At least 1-3 of your bullets should be location/neighborhood bullets if the listing provides that information.
+Allowed topics (only when the listing literally mentions them):
+- Nearby landmarks, attractions, things to do/see — parks, beaches, museums, downtown, restaurants, shopping, universities, sports venues, tourist destinations.
+- Neighborhood character — quiet residential, vibrant nightlife, historic district, waterfront, mountain views, walkable to dining/cafes.
+- STR/investor angles — short-term-rental rules, HOA STR policy, lease flexibility, recent renovations, age of building, view quality, rooftop access, unique selling points for Airbnb/VRBO use.
 
-Examples of good bullet style (these are STYLE examples only — do NOT copy these facts; use whatever is actually in this particular listing):
-  - "Hardwood floors throughout the main living areas"
-  - "In-unit washer/dryer and dishwasher included"
-  - "Updated kitchen with stainless steel appliances"
-  - "Central A/C and forced-air gas heat"
-  - "Private rooftop deck with city views"
-  - "Two blocks from the 2/3 subway at 125th St"
-  - "Walk Score 92 — groceries, cafes, and parks nearby"
-  - "Quiet tree-lined residential block in Park Slope"
-  - "Close to Prospect Park and Brooklyn Museum"
-  - "Building amenities include gym, doorman, and bike storage"
-  - "Water, hot water, and trash included in rent"
+Each bullet: 6-14 words, fragment style, under 110 characters, fact-grounded in the listing text.
 
-Topics to draw bullets from (pick whichever ARE mentioned in the listing — do NOT force topics that aren't):
-- unit features (flooring, appliances, A/C, heat, laundry, layout)
-- building amenities (gym, pool, roof, concierge, elevator)
-- location (neighborhood, walk/transit score, nearby subway/highway/attractions)
-- utilities included or excluded
-- pet policy specifics
-- parking
-- HOA or short-term-rental policy (if mentioned — important for arbitrage)
-- recent renovations or age of unit
-- lease terms (length, flexibility)
-- furnished status
+Examples of GOOD bullets (style only — do NOT copy these facts):
+  - "Two blocks from Prospect Park's main entrance"
+  - "Quiet tree-lined residential street in historic district"
+  - "Walking distance to downtown restaurants and waterfront"
+  - "Recently renovated in 2024 with new windows and roof"
+  - "HOA permits short-term rentals with 7-night minimum"
+  - "Panoramic mountain views from west-facing balcony"
+  - "Steps from the Wynwood arts district and Miami Beach"
+
+Examples of FORBIDDEN bullets (these duplicate Property Details — do NOT output):
+  - "Rent is $2,350/month"
+  - "3 bedrooms and 2 bathrooms"
+  - "Cats and dogs allowed"
+  - "Shared laundry on site"
+  - "Hardwood floors throughout"
+  - "Stainless steel appliances"
+  - "Central A/C and gas heat"
+  - "Attached garage parking"
+  - "Building has gym and pool"
+  - "Water and trash included"
+
+If the listing has nothing to say about landmarks/neighborhood/STR angles, return bullets: []. An empty bullets array is the CORRECT answer for a sparse listing. Never invent.
 
 Avoid marketing fluff ("charming", "won't last", "must see"). Facts only.
 
@@ -1158,7 +1250,14 @@ If the listing has a building pool, pool = "Community/Shared" AND communityAmeni
 
   // ---------- Assemble result ----------
   const rawBullets = Array.isArray(passA && passA.bullets) ? passA.bullets : [];
-  const filteredBullets = filterHallucinatedBullets(rawBullets, fullPageText);
+  // Two-stage bullet filter:
+  //   1) drop bullets the model invented that aren't grounded in the source
+  //   2) drop bullets that just restate Property Details (rent, beds, laundry, etc.)
+  //      and require each surviving bullet to hit an allowed STR/landmark/
+  //      neighborhood topic pattern. Empty result = empty Property Notes,
+  //      which is the correct outcome for a sparse listing.
+  const sourcedBullets = filterHallucinatedBullets(rawBullets, fullPageText);
+  const filteredBullets = filterDuplicativeBullets(sourcedBullets);
   // Seed propertyDetails with the deterministic dictionary output. The LLM
   // passes will only ADD values that survive source-grounding; they cannot
   // override anything the dictionary already picked. This is what makes

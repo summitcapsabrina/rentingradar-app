@@ -4691,8 +4691,30 @@ async function rrGeocodeAddress(rawAddress) {
     const route = getShort('route') || get('route');
     const street = [streetNum, route].filter(Boolean).join(' ');
     const subpremise = get('subpremise');
-    // Format unit as "Unit <subpremise>" when present — matches manual-entry convention
-    const unit = subpremise ? ('Unit ' + subpremise) : '';
+    // Preserve the original unit prefix the listing used (Suite, Apt, Ste, #,
+    // Bldg, Apartment) instead of always saying "Unit". Google Places strips
+    // the prefix and only returns the bare subpremise (e.g. "4B"), so we
+    // detect the prefix from the raw address text the user/scraper supplied.
+    // Map "Apartment" → "Apt" to match the CRM dropdown options.
+    let unitPrefix = 'Unit';
+    if (typeof rawAddress === 'string') {
+      const m = rawAddress.match(/\b(#|Unit|Ste\.?|Suite|Apt\.?|Apartment|Bldg\.?|Building)\b/i);
+      if (m) {
+        const raw = m[1].replace(/\.$/, '');
+        const norm = raw.toLowerCase();
+        if (norm === '#') unitPrefix = '#';
+        else if (norm === 'ste') unitPrefix = 'Ste';
+        else if (norm === 'suite') unitPrefix = 'Suite';
+        else if (norm === 'apt' || norm === 'apartment') unitPrefix = 'Apt';
+        else if (norm === 'bldg' || norm === 'building') unitPrefix = 'Bldg';
+        else if (norm === 'unit') unitPrefix = 'Unit';
+      }
+    }
+    // For "#" prefix the convention is "#4B" (no space); everything else is
+    // "<Prefix> <Number>" — matches the manual-entry format builder.
+    const unit = subpremise
+      ? (unitPrefix === '#' ? ('#' + subpremise) : (unitPrefix + ' ' + subpremise))
+      : '';
     const city = get('locality') || get('sublocality_level_1') || get('administrative_area_level_2') || '';
     const state = getShort('administrative_area_level_1') || '';
     const zip = get('postal_code') || '';
@@ -4921,7 +4943,11 @@ async function handleExtensionListing(data) {
   if (coreCount === 0 && !hasAnyDetails) {
     toastMsg = 'Import failed — nothing could be read from this listing.';
     toastTone = 'error';
-  } else if (coreCount >= 3 && hasBullets && data._aiEnriched) {
+  } else if (coreCount >= 3 && data._aiEnriched) {
+    // Empty bullets is now a CORRECT outcome — Property Notes are reserved
+    // for landmarks/neighborhood/STR angles, and many listings simply have
+    // nothing to say beyond what the structured fields capture. Don't
+    // downgrade the import to "incomplete" just because notes are empty.
     toastMsg = createdNew ? 'Import successful.' : 'Property updated from listing.';
     toastTone = 'success';
   } else {
@@ -4937,7 +4963,6 @@ async function handleExtensionListing(data) {
     }
     else if (!data._aiEnriched) why = 'AI skipped';
     else if (coreCount < 3) why = 'missing core details';
-    else if (!hasBullets) why = 'no summary generated';
     else why = 'partial data';
     toastMsg = 'Import incomplete — ' + why + '.';
     toastTone = 'warning';
