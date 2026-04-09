@@ -143,6 +143,14 @@ async function scrapeAny(url, hint) {
           if (enriched.descriptionSummary && !data.description) {
             data.description = enriched.descriptionSummary;
           }
+          // Bullet-point summary of the listing — the CRM will drop these
+          // into the Property Note field.
+          if (Array.isArray(enriched.propertyNoteBullets) && enriched.propertyNoteBullets.length) {
+            data.propertyNoteBullets = enriched.propertyNoteBullets
+              .map((s) => String(s || '').trim())
+              .filter((s) => s && s.length > 2 && s.length < 300)
+              .slice(0, 20);
+          }
         }
       } catch (e) {
         const reason = (e && e.message) || String(e);
@@ -206,7 +214,7 @@ async function enrichWithOllama(scraped) {
     sqft: scraped.sqft,
   };
 
-  const systemPrompt = `You are a real estate data extraction assistant. Given a rental listing page, extract structured property details and return ONLY a single JSON object — no prose, no markdown, no code fences. Use only values that are explicitly stated or clearly implied in the listing. Never invent details. If a field is not mentioned, omit it.`;
+  const systemPrompt = `You are a real estate data extraction assistant. Given a rental listing page, extract structured property details and return ONLY a single JSON object — no prose, no markdown wrapper, no code fences. Use values that are explicitly stated OR clearly implied in the listing description and page text. Be thorough: extract as many fields as possible from the listing blurb/description, not just from labeled fields. Never invent details that aren't supported by the text. If a field is not mentioned, omit it entirely (do not output null).`;
 
   const userPrompt = `SCRAPED (already known) FIELDS:
 ${JSON.stringify(knownFields, null, 2)}
@@ -252,10 +260,23 @@ Return a single JSON object with this exact shape (omit any field not clearly me
     "hoaFee": <number>,
     "hoaStrPolicy": "Allowed|Allowed with Restrictions|30+ Day Minimum|Not Allowed|Unknown"
   },
-  "descriptionSummary": "<optional 2-3 sentence summary of the listing>"
+  "descriptionSummary": "<optional 2-3 sentence summary of the listing>",
+  "propertyNoteBullets": [
+    "<bullet 1 — concise, factual detail from the listing>",
+    "<bullet 2>",
+    "..."
+  ]
 }
 
-Return ONLY the JSON object. No explanation, no markdown, no code fences.`;
+IMPORTANT GUIDANCE FOR FIELD EXTRACTION:
+- Read the listing DESCRIPTION carefully — most details live there, not in labeled fields. Phrases like "hardwood floors throughout", "stainless steel kitchen", "in-unit laundry", "private balcony", "gated community", "assigned parking" all map to fields above.
+- Extract propertyType, yearBuilt, flooring, appliances, interiorFeatures, outdoor, communityAmenities, petsAllowed, and safetyFeatures even if they are only mentioned in prose.
+- For multi-select array fields (flooring, appliances, interiorFeatures, outdoor, exteriorFeatures, communityAmenities, utilitiesIncluded, safetyFeatures): use the EXACT option strings listed above. Do not invent new labels.
+
+PROPERTY NOTE BULLETS:
+Extract 5-15 short, factual bullet points summarizing the listing description in the user's own words. Each bullet should be a single concise fact (e.g. "Recently renovated kitchen with quartz countertops", "Walking distance to subway", "Pet friendly — small dogs under 30 lbs", "Rooftop deck with city views"). Skip generic marketing fluff ("don't miss this opportunity!"). Skip facts already captured in propertyDetails above. These bullets will become the property's main note in the CRM.
+
+Return ONLY the JSON object. No explanation, no markdown wrapper, no code fences.`;
 
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), OLLAMA_TIMEOUT_MS);

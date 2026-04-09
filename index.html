@@ -4672,12 +4672,11 @@ async function handleExtensionListing(data) {
     state: geo.state || '',
     zip: geo.zip || '',
   };
-  // Canonical "Street, City ST ZIP" for the .property field
-  const canonical = (function(){
-    const s = addrParts.street || '';
-    const csz = [addrParts.city, addrParts.state].filter(Boolean).join(' ') + (addrParts.zip ? ' ' + addrParts.zip : '');
-    return [s, csz.trim()].filter(Boolean).join(', ') || geo.formattedAddress || data.address || data.title || 'New Property';
-  })();
+  // Canonical "Street Unit X, City ST ZIP" for the .property field.
+  // formatAddressOneLine is the CRM's canonical address formatter — it
+  // handles the unit suffix correctly, so contact/status cards and list
+  // views all show "1875 Carter Ave Unit 1s, Bronx NY 10457".
+  const canonical = formatAddressOneLine(addrParts) || geo.formattedAddress || data.address || data.title || 'New Property';
 
   if (!r) {
     // Enforce tier/property-count limits just like the manual add flow
@@ -4752,17 +4751,32 @@ async function handleExtensionListing(data) {
     }
   }
 
-  // Description → activity log note (only if we got one)
-  if (data.description && data.description.length > 20) {
-    if (!Array.isArray(r.notes)) r.notes = [];
-    r.notes.push({
-      id: (typeof uid === 'function' ? uid() : ('n_' + Date.now())),
-      type: 'note',
-      date: new Date().toISOString(),
-      text: 'Imported from ' + (data.source || 'listing') + ':\n\n' + data.description,
-      html: '<p><em>Imported from ' + (data.source || 'listing') + ':</em></p><p>' +
-        data.description.replace(/\n+/g, '</p><p>') + '</p>',
-    });
+  // Listing description → Property Note (singular), NOT the Activity Log.
+  // We prefer AI-extracted bullet points (data.propertyNoteBullets). If the
+  // AI didn't run or didn't return bullets, fall back to the raw description
+  // rendered as a single paragraph. We only overwrite the Property Note if
+  // it's currently empty — never clobber a note the user has already written.
+  const hasExistingNote = r.propertyNote && (r.propertyNote.text || r.propertyNote.html);
+  if (!hasExistingNote) {
+    let noteHtml = null;
+    let noteText = null;
+    if (Array.isArray(data.propertyNoteBullets) && data.propertyNoteBullets.length) {
+      const bullets = data.propertyNoteBullets;
+      noteHtml = '<ul>' + bullets.map((b) => '<li>' + esc(b) + '</li>').join('') + '</ul>';
+      noteText = bullets.map((b) => '• ' + b).join('\n');
+    } else if (data.description && data.description.length > 20) {
+      const paragraphs = data.description.split(/\n\s*\n|\r\n\r\n/).filter((p) => p.trim());
+      noteHtml = paragraphs.map((p) => '<p>' + esc(p.trim()).replace(/\n/g, '<br>') + '</p>').join('');
+      noteText = data.description;
+    }
+    if (noteHtml) {
+      r.propertyNote = {
+        text: noteText,
+        html: noteHtml,
+        date: new Date().toISOString(),
+        source: 'Auto-Import (' + (data.source || 'listing') + ')',
+      };
+    }
   }
 
   if (typeof saveData === 'function') saveData();

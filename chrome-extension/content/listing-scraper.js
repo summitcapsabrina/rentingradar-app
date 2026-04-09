@@ -617,6 +617,10 @@
       log('availability: ' + avail);
     }
 
+    // Sanity-guard beds/baths (same rules as Apartments)
+    if (out.bedrooms != null && (out.bedrooms < 0 || out.bedrooms > 20)) out.bedrooms = null;
+    if (out.bathrooms != null && (out.bathrooms <= 0 || out.bathrooms > 15)) out.bathrooms = null;
+
     out.title = document.title;
     log('final', {
       hasAddress: !!out.address,
@@ -672,9 +676,11 @@
       if (!out.description && block.description) {
         out.description = String(block.description).slice(0, 2000);
       }
-      // Beds/baths/sqft
+      // Beds/baths/sqft — IMPORTANT: do NOT fall back to numberOfRooms.
+      // In schema.org, numberOfRooms is total rooms (living + kitchen + beds),
+      // not bedroom count. Using it as a bedroom fallback caused 1-bed units
+      // to be reported as "3 beds".
       if (out.bedrooms == null && block.numberOfBedrooms != null) out.bedrooms = num(block.numberOfBedrooms);
-      if (out.bedrooms == null && block.numberOfRooms != null) out.bedrooms = num(block.numberOfRooms);
       if (out.bathrooms == null && (block.numberOfBathroomsTotal != null || block.numberOfFullBathrooms != null)) {
         out.bathrooms = num(block.numberOfBathroomsTotal || block.numberOfFullBathrooms);
       }
@@ -773,26 +779,57 @@
       log('after DOM containers', { beds: out.bedrooms, baths: out.bathrooms, sqft: out.sqft, price: out.price });
     }
 
-    // ---- Pass 4: body-text last resort ----
+    // ---- Pass 4: scoped hero-area compound regex ----
+    // Using whole-page body text is risky because apartments.com pages have
+    // "Nearby listings" widgets with their own beds/baths that can poison a
+    // naive first-match regex. Instead we scope the search to the header/hero
+    // area that contains THIS listing's unit stats, and only accept a
+    // well-ordered compound match "X bed … X bath … X sqft".
+    const heroNodes = document.querySelectorAll(
+      'header, [class*="hero"], [class*="Hero"], [class*="unitDetails"], ' +
+      '[class*="UnitDetails"], [data-tag="unitContainer"], [class*="summary"], ' +
+      '[class*="Summary"], [class*="priceBed"], [class*="rentInfo"], main'
+    );
+    const heroText = Array.from(heroNodes).slice(0, 5).map((n) => n.innerText || '').join(' \n ').slice(0, 6000);
     const bodyText = document.body.innerText || '';
-    if (out.bedrooms == null || out.bathrooms == null || out.sqft == null || out.price == null) {
-      // Apartments.com pages usually render "1 Bed · 1 Bath · 650 Sq Ft" as a
-      // single block somewhere in the unit details.
-      const unitLine = bodyText.match(/(\d+(?:\.\d+)?)\s*(?:bd|bed)[^\n]{0,60}?(\d+(?:\.\d+)?)\s*(?:ba|bath)[^\n]{0,60}?(\d[\d,]*)\s*(?:sq\s*ft|sqft)/i);
-      if (unitLine) {
-        if (out.bedrooms == null) out.bedrooms = num(unitLine[1]);
-        if (out.bathrooms == null) out.bathrooms = num(unitLine[2]);
-        if (out.sqft == null) out.sqft = num(unitLine[3]);
-        log('unitLine matched');
+
+    function tryCompound(text) {
+      // Bed-first ordering (most common)
+      let m = text.match(/(\d+(?:\.\d+)?)\s*(?:bd|bed(?:room)?s?)[^\n]{0,80}?(\d+(?:\.\d+)?)\s*(?:ba|bath(?:room)?s?)(?:[^\n]{0,80}?([\d,]+)\s*(?:sq\s*ft|sqft))?/i);
+      if (m) return { bed: num(m[1]), bath: num(m[2]), sqft: m[3] ? num(m[3]) : null };
+      // Bath-first ordering (less common but happens)
+      m = text.match(/(\d+(?:\.\d+)?)\s*(?:ba|bath(?:room)?s?)[^\n]{0,80}?(\d+(?:\.\d+)?)\s*(?:bd|bed(?:room)?s?)(?:[^\n]{0,80}?([\d,]+)\s*(?:sq\s*ft|sqft))?/i);
+      if (m) return { bed: num(m[2]), bath: num(m[1]), sqft: m[3] ? num(m[3]) : null };
+      return null;
+    }
+
+    if (out.bedrooms == null || out.bathrooms == null || out.sqft == null) {
+      const compound = tryCompound(heroText) || tryCompound(bodyText.slice(0, 4000));
+      if (compound) {
+        if (out.bedrooms == null && compound.bed != null && compound.bed >= 0 && compound.bed <= 20) {
+          out.bedrooms = compound.bed;
+        }
+        if (out.bathrooms == null && compound.bath != null && compound.bath > 0 && compound.bath <= 15) {
+          out.bathrooms = compound.bath;
+        }
+        if (out.sqft == null && compound.sqft != null) out.sqft = compound.sqft;
+        log('compound matched', compound);
       }
-      if (out.bedrooms == null) out.bedrooms = num(bodyText.match(/(\d+(?:\.\d+)?)\s*(?:bd|bed(?:room)?s?)\b/i)?.[1]);
-      if (out.bathrooms == null) out.bathrooms = num(bodyText.match(/(\d+(?:\.\d+)?)\s*(?:ba|bath(?:room)?s?)\b/i)?.[1]);
-      if (out.sqft == null) out.sqft = num(bodyText.match(/([\d,]+)\s*(?:sq\s*ft|sqft)/i)?.[1]);
-      if (out.price == null) {
-        // Prefer a price near the word "rent" or "/mo"
-        const nearRent = bodyText.match(/\$\s*([\d,]+)\s*(?:\/\s*mo|\/\s*month)/i);
-        out.price = num((nearRent && nearRent[1]) || bodyText.match(/\$\s*([\d,]+)/)?.[1]);
-      }
+    }
+
+    if (out.price == null) {
+      // Prefer a price tagged with /mo; fall back to any dollar amount in hero
+      const priceFrom = heroText + ' ' + bodyText.slice(0, 4000);
+      const nearRent = priceFrom.match(/\$\s*([\d,]+)\s*(?:\/\s*mo|\/\s*month)/i);
+      out.price = num((nearRent && nearRent[1]) || priceFrom.match(/\$\s*([\d,]+)/)?.[1]);
+    }
+
+    // ---- Sanity guard: reject obviously-bogus beds/baths ----
+    if (out.bedrooms != null && (out.bedrooms < 0 || out.bedrooms > 20)) {
+      log('rejected bogus bedrooms ' + out.bedrooms); out.bedrooms = null;
+    }
+    if (out.bathrooms != null && (out.bathrooms <= 0 || out.bathrooms > 15)) {
+      log('rejected bogus bathrooms ' + out.bathrooms); out.bathrooms = null;
     }
 
     // ---- Description + photo fallbacks ----
