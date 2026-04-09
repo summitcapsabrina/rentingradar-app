@@ -119,8 +119,44 @@
   // Capture a cleaned version of the page's visible text for Ollama.
   // Strips nav, footer, script, style, and header elements to focus on
   // the main listing content. Capped at ~20KB before send.
+  // Best-effort: click any "Show more" / "See all amenities" disclosure
+  // toggles in the live DOM before we clone it. Many listing sites collapse
+  // long amenity lists behind a button, which means our cloned snapshot
+  // would otherwise miss the bottom half of every list. We open them in
+  // place — synchronously, no waiting — and revert nothing because the
+  // reopen leaves the user's view unchanged when the page already loaded
+  // the content into the DOM.
+  function expandDisclosures() {
+    try {
+      const candidates = Array.from(document.querySelectorAll(
+        'button, a, [role="button"], summary, [aria-expanded]'
+      ));
+      let opened = 0;
+      for (const el of candidates) {
+        if (opened > 40) break; // safety cap
+        const t = ((el.innerText || el.textContent || '') + ' ' + (el.getAttribute('aria-label') || '')).trim();
+        if (!t || t.length > 60) continue;
+        if (!/show (more|all)|see (more|all)|view (more|all)|read more|expand|all amenities|all features/i.test(t)) continue;
+        // Don't click anything that looks like a navigation link to a new page
+        if (el.tagName === 'A' && el.href && !el.href.startsWith(location.origin + location.pathname)) continue;
+        try {
+          const wasExpanded = el.getAttribute('aria-expanded');
+          if (wasExpanded === 'true') continue;
+          el.click();
+          opened++;
+        } catch (_) {}
+      }
+      // <details> elements are toggled differently
+      document.querySelectorAll('details:not([open])').forEach((d) => { try { d.open = true; } catch (_) {} });
+    } catch (_) {}
+  }
+
   function capturePageText() {
     try {
+      // Expand any "show more" disclosures in place so the clone we capture
+      // includes the full amenity / features lists.
+      expandDisclosures();
+
       // IMPORTANT: do NOT strip <header> — on Apartments.com and Zillow the
       // beds / baths / price / unit-stats block lives inside the page header.
       // Stripping it left the AI blind to the exact numbers we need.
@@ -327,6 +363,272 @@
     return out;
   }
 
+  // ---- shared structured-data helpers ------------------------------
+  // Both Zillow and Hotpads are Zillow Group properties and share the same
+  // listing-shape schema in their state blobs (the "gdp" object — short for
+  // "Get Data Page", Zillow's internal name for it). Apartments.com is a
+  // CoStar property and uses a different shape, but its __NEXT_DATA__ blob
+  // also contains a fat object with most of the same fields under different
+  // names. We score and map both with these helpers to keep parsers DRY.
+
+  function gdpScore(v) {
+    if (!v || typeof v !== 'object' || Array.isArray(v)) return 0;
+    let score = 0;
+    if (v.bedrooms != null) score += 3;
+    if (v.bathrooms != null) score += 3;
+    if (v.livingArea != null || v.livingAreaValue != null) score += 3;
+    if (v.price != null) score += 2;
+    if (v.streetAddress) score += 2;
+    if (v.zipcode) score += 1;
+    if (v.homeType) score += 1;
+    if (v.yearBuilt != null) score += 1;
+    if (v.resoFacts && typeof v.resoFacts === 'object') score += 5;
+    if (v.atAGlanceFacts) score += 1;
+    if (v.description) score += 1;
+    if (v.hugePhotos || v.photos) score += 1;
+    return score;
+  }
+
+  // Map a "gdp" object (Zillow / Hotpads listing blob) into the supplied
+  // `out` (top-level scraped fields) and `pd` (propertyDetails). Mutates
+  // both. Returns nothing. Safe to call with a partial gdp.
+  function applyGdpToOut(gdp, out, pd) {
+    if (!gdp || typeof gdp !== 'object') return;
+
+    // Address
+    const streetAddress = gdp.streetAddress || (gdp.address && gdp.address.streetAddress);
+    const city = gdp.city || (gdp.address && gdp.address.city);
+    const state = gdp.state || (gdp.address && gdp.address.state);
+    const zipcode = gdp.zipcode || (gdp.address && gdp.address.zipcode);
+    if (!out.address && streetAddress) {
+      const cityState = [city, state].filter(Boolean).join(' ');
+      const csz = [cityState, zipcode].filter(Boolean).join(' ').trim();
+      out.address = [streetAddress, csz].filter(Boolean).join(', ');
+    }
+
+    // Price / beds / baths / sqft / description / photo
+    if (out.price == null) {
+      out.price = num(gdp.price) || num(gdp.rentZestimate) || num(gdp.zestimate)
+                || num(gdp.askingPrice) || num(gdp.monthlyRent);
+    }
+    if (out.bedrooms == null) out.bedrooms = num(gdp.bedrooms);
+    if (out.bathrooms == null) out.bathrooms = num(gdp.bathrooms);
+    if (out.sqft == null) out.sqft = num(gdp.livingArea) || num(gdp.livingAreaValue) || num(gdp.area);
+    if (!out.description && gdp.description) out.description = String(gdp.description).slice(0, 2000);
+    if (!out.photoUrl) {
+      out.photoUrl = (gdp.hugePhotos && gdp.hugePhotos[0] && gdp.hugePhotos[0].url) ||
+                     (gdp.photos && gdp.photos[0] && (gdp.photos[0].url || gdp.photos[0].href)) || null;
+    }
+
+    // Property type
+    if (gdp.homeType && !pd.propertyType) {
+      const typeMap = {
+        SINGLE_FAMILY: 'House', CONDO: 'Condo', TOWNHOUSE: 'Townhouse',
+        MULTI_FAMILY: 'Duplex', APARTMENT: 'Apartment', MANUFACTURED: 'Mobile Home',
+        LOT: 'Other',
+      };
+      setPD(pd, 'propertyType', typeMap[gdp.homeType] || 'House');
+    }
+    if (gdp.yearBuilt != null) setPD(pd, 'yearBuilt', num(gdp.yearBuilt));
+    if (gdp.lotSize || gdp.lotAreaValue) {
+      const val = gdp.lotAreaValue || gdp.lotSize;
+      const unit = gdp.lotAreaUnits || 'sqft';
+      setPD(pd, 'lotSize', val + ' ' + unit);
+    }
+    if (gdp.hoaFee || gdp.monthlyHoaFee) {
+      setPD(pd, 'hoaFee', num(gdp.hoaFee) || num(gdp.monthlyHoaFee));
+    }
+
+    // Days on market / market context (informational only — useful for
+    // STR investor analysis later but not part of the structured form)
+    if (gdp.daysOnZillow != null) setPD(pd, 'daysOnMarket', num(gdp.daysOnZillow));
+    if (gdp.timeOnZillow) setPD(pd, 'timeOnMarket', String(gdp.timeOnZillow));
+
+    // resoFacts has the rich structured amenity data
+    const rf = gdp.resoFacts || {};
+
+    if (rf.stories != null) {
+      const s = num(rf.stories);
+      if (s != null) setPD(pd, 'stories', s >= 4 ? '4+' : String(s));
+    }
+
+    if (Array.isArray(rf.appliances) && rf.appliances.length) {
+      const mapped = [];
+      rf.appliances.forEach((a) => {
+        const s = String(a);
+        if (/dishwasher/i.test(s)) mapped.push('Dishwasher');
+        if (/disposal/i.test(s)) mapped.push('Garbage Disposal');
+        if (/microwave/i.test(s)) mapped.push('Microwave');
+        if (/refrigerator|fridge/i.test(s)) mapped.push('Refrigerator');
+        if (/gas (oven|range|stove|cooktop)/i.test(s)) mapped.push('Oven/Range (Gas)');
+        else if (/electric (oven|range|stove|cooktop)/i.test(s)) mapped.push('Oven/Range (Electric)');
+        else if (/oven|range|stove/i.test(s)) mapped.push('Oven/Range (Electric)');
+        if (/ice maker/i.test(s)) mapped.push('Ice Maker');
+        if (/wine/i.test(s)) mapped.push('Wine Cooler');
+      });
+      if (mapped.length) setPD(pd, 'appliances', Array.from(new Set(mapped)));
+    }
+
+    if (Array.isArray(rf.flooring) && rf.flooring.length) {
+      const mapped = [];
+      rf.flooring.forEach((f) => {
+        const s = String(f);
+        if (/hardwood|wood/i.test(s)) mapped.push('Hardwood');
+        else if (/carpet/i.test(s)) mapped.push('Carpet');
+        else if (/tile/i.test(s)) mapped.push('Tile');
+        else if (/laminate/i.test(s)) mapped.push('Laminate');
+        else if (/vinyl/i.test(s)) mapped.push('Vinyl Plank');
+        else if (/concrete/i.test(s)) mapped.push('Concrete');
+        else if (/marble/i.test(s)) mapped.push('Marble');
+        else if (/stone/i.test(s)) mapped.push('Stone');
+      });
+      if (mapped.length) setPD(pd, 'flooring', Array.from(new Set(mapped)));
+    }
+
+    if (Array.isArray(rf.cooling) && rf.cooling.length) {
+      const s = rf.cooling.join(' ');
+      if (/central/i.test(s)) setPD(pd, 'ac', 'Central A/C');
+      else if (/window/i.test(s)) setPD(pd, 'ac', 'Window Unit');
+      else if (/mini.?split/i.test(s)) setPD(pd, 'ac', 'Mini-Split');
+      else if (/evaporative|swamp/i.test(s)) setPD(pd, 'ac', 'Evaporative/Swamp Cooler');
+      else if (/portable/i.test(s)) setPD(pd, 'ac', 'Portable');
+      else if (/none/i.test(s)) setPD(pd, 'ac', 'None');
+    }
+    if (Array.isArray(rf.heating) && rf.heating.length) {
+      const s = rf.heating.join(' ');
+      if (/gas/i.test(s) && /central|forced/i.test(s)) setPD(pd, 'heating', 'Central (Gas)');
+      else if (/central|forced/i.test(s)) setPD(pd, 'heating', 'Central (Electric)');
+      else if (/baseboard/i.test(s)) setPD(pd, 'heating', 'Baseboard');
+      else if (/radiator/i.test(s)) setPD(pd, 'heating', 'Radiator');
+      else if (/heat pump/i.test(s)) setPD(pd, 'heating', 'Heat Pump');
+      else if (/fireplace/i.test(s)) setPD(pd, 'heating', 'Fireplace');
+      else if (/none/i.test(s)) setPD(pd, 'heating', 'None');
+    }
+
+    if (Array.isArray(rf.laundryFeatures) && rf.laundryFeatures.length) {
+      const s = rf.laundryFeatures.join(' ');
+      if (/in.?unit|in the unit/i.test(s)) setPD(pd, 'laundry', 'In-Unit W/D');
+      else if (/hookup/i.test(s)) setPD(pd, 'laundry', 'W/D Hookups');
+      else if (/shared|common/i.test(s)) setPD(pd, 'laundry', 'Shared/On-Site');
+      else if (/stacked/i.test(s)) setPD(pd, 'laundry', 'Stacked W/D');
+      else if (/none/i.test(s)) setPD(pd, 'laundry', 'None');
+    }
+
+    if (Array.isArray(rf.parkingFeatures) && rf.parkingFeatures.length) {
+      const s = rf.parkingFeatures.join(' ');
+      if (/attached garage/i.test(s)) setPD(pd, 'parking', 'Attached Garage');
+      else if (/detached garage/i.test(s)) setPD(pd, 'parking', 'Detached Garage');
+      else if (/carport/i.test(s)) setPD(pd, 'parking', 'Carport');
+      else if (/covered/i.test(s)) setPD(pd, 'parking', 'Covered Parking');
+      else if (/assigned/i.test(s)) setPD(pd, 'parking', 'Assigned Spot');
+      else if (/driveway/i.test(s)) setPD(pd, 'parking', 'Driveway');
+      else if (/street/i.test(s)) setPD(pd, 'parking', 'Street Only');
+      else if (/garage/i.test(s)) setPD(pd, 'parking', 'Attached Garage');
+      else if (/none/i.test(s)) setPD(pd, 'parking', 'None');
+    }
+    if (rf.garageParkingCapacity != null || rf.parkingCapacity != null) {
+      setPD(pd, 'parkingSpaces', num(rf.garageParkingCapacity || rf.parkingCapacity));
+    }
+
+    if (Array.isArray(rf.poolFeatures) && rf.poolFeatures.length) {
+      const s = rf.poolFeatures.join(' ');
+      if (/private/i.test(s) && /heat/i.test(s)) setPD(pd, 'pool', 'Heated Private');
+      else if (/private/i.test(s)) setPD(pd, 'pool', 'Private');
+      else if (/community|shared/i.test(s) && /heat/i.test(s)) setPD(pd, 'pool', 'Heated Community');
+      else if (/community|shared/i.test(s)) setPD(pd, 'pool', 'Community/Shared');
+      else if (/none/i.test(s)) setPD(pd, 'pool', 'None');
+    } else if (gdp.hasPrivatePool) {
+      setPD(pd, 'pool', 'Private');
+    }
+
+    if (rf.petsAllowed != null) {
+      const s = Array.isArray(rf.petsAllowed) ? rf.petsAllowed.join(' ') : String(rf.petsAllowed);
+      if (/yes|allowed|all/i.test(s)) setPD(pd, 'petsAllowed', 'Yes - All Pets');
+      else if (/dog/i.test(s) && !/cat/i.test(s)) setPD(pd, 'petsAllowed', 'Dogs Only');
+      else if (/cat/i.test(s) && !/dog/i.test(s)) setPD(pd, 'petsAllowed', 'Cats Only');
+      else if (/no pets|no/i.test(s)) setPD(pd, 'petsAllowed', 'No Pets');
+    }
+
+    // Furnished status — useful STR/short-term-rental signal
+    if (rf.furnished === true || /furnished/i.test(rf.furnished || '')) {
+      setPD(pd, 'furnished', 'Furnished');
+    } else if (rf.furnished === false) {
+      setPD(pd, 'furnished', 'Unfurnished');
+    }
+
+    // View — Zillow exposes a `view` array on resoFacts
+    if (Array.isArray(rf.view) && rf.view.length) {
+      const v = rf.view.join(' ').toLowerCase();
+      const views = [];
+      if (/water|ocean|lake|river|bay/.test(v)) views.push('Water View');
+      if (/mountain/.test(v)) views.push('Mountain View');
+      if (/city|skyline/.test(v)) views.push('City View');
+      if (/park/.test(v)) views.push('Park View');
+      if (views.length) setPD(pd, 'views', views);
+    }
+
+    // HOA fee includes
+    if (rf.associationFeeIncludes && Array.isArray(rf.associationFeeIncludes)) {
+      const inc = rf.associationFeeIncludes.join(' ').toLowerCase();
+      const items = [];
+      if (/water/.test(inc)) items.push('Water');
+      if (/sewer/.test(inc)) items.push('Sewer');
+      if (/trash|garbage/.test(inc)) items.push('Trash');
+      if (/gas/.test(inc)) items.push('Gas');
+      if (/electric/.test(inc)) items.push('Electric');
+      if (/internet|cable/.test(inc)) items.push('Internet/Cable');
+      if (items.length) setPD(pd, 'hoaIncludes', items);
+    }
+
+    // Sweep the long-form feature lists with the dictionary
+    const amenityBlob = flattenToText([
+      rf.interiorFeatures, rf.exteriorFeatures, rf.communityFeatures,
+      rf.poolFeatures, rf.lotFeatures, rf.atAGlanceFacts, rf.amenities,
+      gdp.description,
+    ]).join(' ').toLowerCase();
+    const dictMatches = matchAmenities(amenityBlob);
+    for (const k in dictMatches) {
+      if (pd[k]) {
+        const merged = Array.from(new Set((Array.isArray(pd[k]) ? pd[k] : []).concat(dictMatches[k])));
+        pd[k] = merged;
+      } else {
+        pd[k] = dictMatches[k];
+      }
+    }
+  }
+
+  // Walk window-level state caches that Next.js / Apollo / Redux apps stash
+  // listing data in. Returns an array of root objects to feed deepFindBest.
+  function collectStateBlobs() {
+    const roots = [];
+    const nd = findJsonFromScript('__NEXT_DATA__');
+    if (nd) roots.push(nd);
+    const apolloEl = document.getElementById('hdpApolloPreloadedData');
+    if (apolloEl) {
+      try {
+        const raw = apolloEl.textContent.trim().replace(/^<!--/, '').replace(/-->$/, '').trim();
+        roots.push(JSON.parse(raw));
+      } catch (_) {}
+    }
+    // Hotpads / some apartments pages stash state in inline scripts that
+    // assign to window.__INITIAL_STATE__ or window.__data
+    document.querySelectorAll('script:not([src])').forEach((s) => {
+      const txt = s.textContent || '';
+      if (txt.length < 200 || txt.length > 2000000) return;
+      // Match patterns like  window.__INITIAL_STATE__ = {...};
+      const m = txt.match(/window\.__(?:INITIAL_STATE|PRELOADED_STATE|APP_STATE|data)__\s*=\s*(\{[\s\S]+?\})\s*;?\s*<?\/?script>?/);
+      if (m) {
+        try { roots.push(JSON.parse(m[1])); } catch (_) {}
+      }
+      // Hotpads in particular often does:  HotPads.serverState = {...}
+      const m2 = txt.match(/HotPads\.(?:serverState|preloadedState)\s*=\s*(\{[\s\S]+?\})\s*;/);
+      if (m2) {
+        try { roots.push(JSON.parse(m2[1])); } catch (_) {}
+      }
+    });
+    return roots;
+  }
+
   // ---- Zillow ------------------------------------------------------
   // Zillow embeds a massive state blob in #__NEXT_DATA__. The `property`
   // object (sometimes under `gdp`, sometimes under `property`) contains:
@@ -342,227 +644,21 @@
 
     // Zillow stores its listing state in several places — try them all and
     // pick the object with the richest set of listing-shaped fields.
-    const candidates = [];
-    const nd = findJsonFromScript('__NEXT_DATA__');
-    if (nd) { candidates.push(nd); log('found __NEXT_DATA__'); } else { log('__NEXT_DATA__ missing'); }
-    // Some Zillow pages stash data in window.__APOLLO_STATE__ or #hdpApolloPreloadedData
-    const apolloEl = document.getElementById('hdpApolloPreloadedData');
-    if (apolloEl) {
-      try {
-        const raw = apolloEl.textContent.trim();
-        // This script sometimes contains "!--" wrappers or double-stringified JSON
-        const clean = raw.replace(/^<!--/, '').replace(/-->$/, '').trim();
-        const parsed = JSON.parse(clean);
-        candidates.push(parsed);
-        log('found hdpApolloPreloadedData');
-      } catch (_) { log('hdpApolloPreloadedData parse failed'); }
-    }
-
-    // Score objects by how many listing-ish keys they expose. The fattest
-    // match wins — this handles Zillow variants where bedrooms is top-level
-    // vs. inside resoFacts vs. inside hdpModel.
-    function scoreListing(v) {
-      if (!v || typeof v !== 'object' || Array.isArray(v)) return 0;
-      let score = 0;
-      if (v.bedrooms != null) score += 3;
-      if (v.bathrooms != null) score += 3;
-      if (v.livingArea != null || v.livingAreaValue != null) score += 3;
-      if (v.price != null) score += 2;
-      if (v.streetAddress) score += 2;
-      if (v.zipcode) score += 1;
-      if (v.homeType) score += 1;
-      if (v.yearBuilt != null) score += 1;
-      if (v.resoFacts && typeof v.resoFacts === 'object') score += 5;
-      if (v.atAGlanceFacts) score += 1;
-      if (v.description) score += 1;
-      if (v.hugePhotos || v.photos) score += 1;
-      return score;
-    }
+    const candidates = collectStateBlobs();
+    log('state blobs found', candidates.length);
     let gdp = null;
     for (const root of candidates) {
-      const hit = deepFindBest(root, scoreListing);
-      if (hit && scoreListing(hit) > scoreListing(gdp)) gdp = hit;
+      const hit = deepFindBest(root, gdpScore);
+      if (hit && gdpScore(hit) > gdpScore(gdp)) gdp = hit;
     }
     if (gdp) {
-      log('gdp found', { score: scoreListing(gdp), keys: Object.keys(gdp).slice(0, 20) });
+      log('gdp found', { score: gdpScore(gdp), keys: Object.keys(gdp).slice(0, 20) });
     } else {
       log('gdp NOT found');
     }
 
     if (gdp) {
-      // Normalize address fields (some blobs nest them under `address`)
-      const streetAddress = gdp.streetAddress || (gdp.address && gdp.address.streetAddress);
-      const city = gdp.city || (gdp.address && gdp.address.city);
-      const state = gdp.state || (gdp.address && gdp.address.state);
-      const zipcode = gdp.zipcode || (gdp.address && gdp.address.zipcode);
-
-      if (streetAddress) {
-        const cityState = [city, state].filter(Boolean).join(' ');
-        const csz = [cityState, zipcode].filter(Boolean).join(' ').trim();
-        out.address = [streetAddress, csz].filter(Boolean).join(', ');
-      }
-
-      out.price = num(gdp.price) || num(gdp.monthlyHoaFee ? null : gdp.price);
-      // For rentals, rentZestimate or zestimate may be more accurate
-      if (!out.price) out.price = num(gdp.rentZestimate) || num(gdp.zestimate);
-      out.bedrooms = num(gdp.bedrooms);
-      out.bathrooms = num(gdp.bathrooms);
-      out.sqft = num(gdp.livingArea) || num(gdp.livingAreaValue);
-      out.description = (gdp.description || '').slice(0, 2000) || null;
-      out.photoUrl = (gdp.hugePhotos && gdp.hugePhotos[0] && gdp.hugePhotos[0].url) ||
-                     (gdp.photos && gdp.photos[0] && gdp.photos[0].url) || null;
-
-      const pd = out.propertyDetails;
-      // Property Overview
-      if (gdp.homeType) {
-        const typeMap = {
-          SINGLE_FAMILY: 'House', CONDO: 'Condo', TOWNHOUSE: 'Townhouse',
-          MULTI_FAMILY: 'Duplex', APARTMENT: 'Apartment', MANUFACTURED: 'Mobile Home',
-          LOT: 'Other',
-        };
-        setPD(pd, 'propertyType', typeMap[gdp.homeType] || 'House');
-      }
-      setPD(pd, 'yearBuilt', num(gdp.yearBuilt));
-      if (gdp.lotSize || gdp.lotAreaValue) {
-        const val = gdp.lotAreaValue || gdp.lotSize;
-        const unit = gdp.lotAreaUnits || 'sqft';
-        setPD(pd, 'lotSize', val + ' ' + unit);
-      }
-      // HOA
-      if (gdp.hoaFee || gdp.monthlyHoaFee) {
-        setPD(pd, 'hoaFee', num(gdp.hoaFee) || num(gdp.monthlyHoaFee));
-      }
-
-      // resoFacts has the richest structured amenity data
-      const rf = gdp.resoFacts || {};
-
-      // stories
-      if (rf.stories != null) {
-        const s = num(rf.stories);
-        setPD(pd, 'stories', s >= 4 ? '4+' : String(s));
-      }
-
-      // appliances (array of strings like "Dishwasher", "Refrigerator", etc.)
-      if (Array.isArray(rf.appliances) && rf.appliances.length) {
-        const mapped = [];
-        rf.appliances.forEach((a) => {
-          const s = String(a);
-          if (/dishwasher/i.test(s)) mapped.push('Dishwasher');
-          if (/disposal/i.test(s)) mapped.push('Garbage Disposal');
-          if (/microwave/i.test(s)) mapped.push('Microwave');
-          if (/refrigerator|fridge/i.test(s)) mapped.push('Refrigerator');
-          if (/gas (oven|range|stove|cooktop)/i.test(s)) mapped.push('Oven/Range (Gas)');
-          else if (/electric (oven|range|stove|cooktop)/i.test(s)) mapped.push('Oven/Range (Electric)');
-          else if (/oven|range|stove/i.test(s)) mapped.push('Oven/Range (Electric)');
-          if (/ice maker/i.test(s)) mapped.push('Ice Maker');
-          if (/wine/i.test(s)) mapped.push('Wine Cooler');
-        });
-        if (mapped.length) setPD(pd, 'appliances', Array.from(new Set(mapped)));
-      }
-
-      // flooring
-      if (Array.isArray(rf.flooring) && rf.flooring.length) {
-        const mapped = [];
-        rf.flooring.forEach((f) => {
-          const s = String(f);
-          if (/hardwood|wood/i.test(s)) mapped.push('Hardwood');
-          else if (/carpet/i.test(s)) mapped.push('Carpet');
-          else if (/tile/i.test(s)) mapped.push('Tile');
-          else if (/laminate/i.test(s)) mapped.push('Laminate');
-          else if (/vinyl/i.test(s)) mapped.push('Vinyl Plank');
-          else if (/concrete/i.test(s)) mapped.push('Concrete');
-          else if (/marble/i.test(s)) mapped.push('Marble');
-          else if (/stone/i.test(s)) mapped.push('Stone');
-        });
-        if (mapped.length) setPD(pd, 'flooring', Array.from(new Set(mapped)));
-      }
-
-      // A/C + heating (from heating[] / cooling[] arrays)
-      if (Array.isArray(rf.cooling) && rf.cooling.length) {
-        const s = rf.cooling.join(' ');
-        if (/central/i.test(s)) setPD(pd, 'ac', 'Central A/C');
-        else if (/window/i.test(s)) setPD(pd, 'ac', 'Window Unit');
-        else if (/mini.?split/i.test(s)) setPD(pd, 'ac', 'Mini-Split');
-        else if (/evaporative|swamp/i.test(s)) setPD(pd, 'ac', 'Evaporative/Swamp Cooler');
-        else if (/portable/i.test(s)) setPD(pd, 'ac', 'Portable');
-        else if (/none/i.test(s)) setPD(pd, 'ac', 'None');
-      }
-      if (Array.isArray(rf.heating) && rf.heating.length) {
-        const s = rf.heating.join(' ');
-        if (/gas/i.test(s) && /central|forced/i.test(s)) setPD(pd, 'heating', 'Central (Gas)');
-        else if (/central|forced/i.test(s)) setPD(pd, 'heating', 'Central (Electric)');
-        else if (/baseboard/i.test(s)) setPD(pd, 'heating', 'Baseboard');
-        else if (/radiator/i.test(s)) setPD(pd, 'heating', 'Radiator');
-        else if (/heat pump/i.test(s)) setPD(pd, 'heating', 'Heat Pump');
-        else if (/fireplace/i.test(s)) setPD(pd, 'heating', 'Fireplace');
-        else if (/none/i.test(s)) setPD(pd, 'heating', 'None');
-      }
-
-      // laundry
-      if (Array.isArray(rf.laundryFeatures) && rf.laundryFeatures.length) {
-        const s = rf.laundryFeatures.join(' ');
-        if (/in.?unit|in the unit/i.test(s)) setPD(pd, 'laundry', 'In-Unit W/D');
-        else if (/hookup/i.test(s)) setPD(pd, 'laundry', 'W/D Hookups');
-        else if (/shared|common/i.test(s)) setPD(pd, 'laundry', 'Shared/On-Site');
-        else if (/stacked/i.test(s)) setPD(pd, 'laundry', 'Stacked W/D');
-        else if (/none/i.test(s)) setPD(pd, 'laundry', 'None');
-      }
-
-      // parking
-      if (Array.isArray(rf.parkingFeatures) && rf.parkingFeatures.length) {
-        const s = rf.parkingFeatures.join(' ');
-        if (/attached garage/i.test(s)) setPD(pd, 'parking', 'Attached Garage');
-        else if (/detached garage/i.test(s)) setPD(pd, 'parking', 'Detached Garage');
-        else if (/carport/i.test(s)) setPD(pd, 'parking', 'Carport');
-        else if (/covered/i.test(s)) setPD(pd, 'parking', 'Covered Parking');
-        else if (/assigned/i.test(s)) setPD(pd, 'parking', 'Assigned Spot');
-        else if (/driveway/i.test(s)) setPD(pd, 'parking', 'Driveway');
-        else if (/street/i.test(s)) setPD(pd, 'parking', 'Street Only');
-        else if (/garage/i.test(s)) setPD(pd, 'parking', 'Attached Garage');
-        else if (/none/i.test(s)) setPD(pd, 'parking', 'None');
-      }
-      if (rf.garageParkingCapacity != null || rf.parkingCapacity != null) {
-        setPD(pd, 'parkingSpaces', num(rf.garageParkingCapacity || rf.parkingCapacity));
-      }
-
-      // pool
-      if (Array.isArray(rf.poolFeatures) && rf.poolFeatures.length) {
-        const s = rf.poolFeatures.join(' ');
-        if (/private/i.test(s) && /heat/i.test(s)) setPD(pd, 'pool', 'Heated Private');
-        else if (/private/i.test(s)) setPD(pd, 'pool', 'Private');
-        else if (/community|shared/i.test(s) && /heat/i.test(s)) setPD(pd, 'pool', 'Heated Community');
-        else if (/community|shared/i.test(s)) setPD(pd, 'pool', 'Community/Shared');
-        else if (/none/i.test(s)) setPD(pd, 'pool', 'None');
-      } else if (gdp.hasPrivatePool) {
-        setPD(pd, 'pool', 'Private');
-      }
-
-      // pets
-      if (rf.petsAllowed != null) {
-        const s = Array.isArray(rf.petsAllowed) ? rf.petsAllowed.join(' ') : String(rf.petsAllowed);
-        if (/yes|allowed|all/i.test(s)) setPD(pd, 'petsAllowed', 'Yes - All Pets');
-        else if (/dog/i.test(s) && !/cat/i.test(s)) setPD(pd, 'petsAllowed', 'Dogs Only');
-        else if (/cat/i.test(s) && !/dog/i.test(s)) setPD(pd, 'petsAllowed', 'Cats Only');
-        else if (/no pets|no/i.test(s)) setPD(pd, 'petsAllowed', 'No Pets');
-      }
-
-      // Build an amenity-blob search over resoFacts for the dictionary patterns
-      const amenityBlob = flattenToText([
-        rf.interiorFeatures, rf.exteriorFeatures, rf.communityFeatures,
-        rf.poolFeatures, rf.lotFeatures, rf.atAGlanceFacts, rf.amenities,
-        gdp.description,
-      ]).join(' ').toLowerCase();
-
-      const dictMatches = matchAmenities(amenityBlob);
-      for (const k in dictMatches) {
-        if (pd[k]) {
-          // Union with existing if already populated
-          const merged = Array.from(new Set((Array.isArray(pd[k]) ? pd[k] : []).concat(dictMatches[k])));
-          pd[k] = merged;
-        } else {
-          pd[k] = dictMatches[k];
-        }
-      }
+      applyGdpToOut(gdp, out, out.propertyDetails);
     }
 
     // ---- Fallback 1: meta tags (og:title is "Address · 3 bd · 2 ba · 1,500 sqft · Zillow")
@@ -677,6 +773,29 @@
     out._debug = { source: 'apartments', url: location.href, steps: [] };
     const log = (m, x) => out._debug.steps.push(x ? (m + ': ' + JSON.stringify(x).slice(0, 220)) : m);
     const pd = out.propertyDetails;
+
+    // ---- Pass 0: __NEXT_DATA__ / state blobs ----
+    // Apartments.com is a CoStar product (not Next.js across the board), but
+    // newer property pages do ship a Next.js bundle that includes a state
+    // blob with the listing under various keys. We try the same scoring
+    // function we use for Zillow/Hotpads — if a fat listing object is in
+    // there, this is the highest-fidelity source. If not, we fall through
+    // to the JSON-LD pass below, which has been the workhorse to date.
+    try {
+      const blobs = collectStateBlobs();
+      if (blobs.length) {
+        log('state blobs', blobs.length);
+        let gdp = null;
+        for (const root of blobs) {
+          const hit = deepFindBest(root, gdpScore);
+          if (hit && gdpScore(hit) > gdpScore(gdp)) gdp = hit;
+        }
+        if (gdp) {
+          log('apartments gdp', { score: gdpScore(gdp), keys: Object.keys(gdp).slice(0, 20) });
+          applyGdpToOut(gdp, out, pd);
+        }
+      }
+    } catch (e) { log('state-blob pass error: ' + e.message); }
 
     // ---- Pass 1: JSON-LD (most reliable when it's present) ----
     const jsonLd = findAllJsonLd();
@@ -905,11 +1024,38 @@
   }
 
   // ---- Hotpads -----------------------------------------------------
+  // Hotpads is a Zillow Group property and serves a Next.js app whose
+  // listing object lives in __NEXT_DATA__ (and sometimes in window.HotPads
+  // .serverState). The structured object exposes essentially the same
+  // shape as Zillow's gdp blob — bedrooms, bathrooms, price, sqft, address,
+  // and a resoFacts sub-object — so we can use the same scoring + mapping
+  // helpers we use for Zillow. The previous implementation only ran body-
+  // text regexes, which missed every structured field and was the weakest
+  // of all the parsers; this brings it up to parity with Zillow.
   function parseHotpads() {
     const out = base('hotpads');
+    out._debug = { source: 'hotpads', url: location.href, steps: [] };
+    const log = (msg, extra) => out._debug.steps.push(extra ? (msg + ': ' + JSON.stringify(extra).slice(0, 200)) : msg);
+
     out.title = document.querySelector('h1')?.textContent?.trim() || document.title;
 
+    // ---- Pass 1: state-blob extraction (richest source) ----
+    const candidates = collectStateBlobs();
+    log('state blobs', candidates.length);
+    let gdp = null;
+    for (const root of candidates) {
+      const hit = deepFindBest(root, gdpScore);
+      if (hit && gdpScore(hit) > gdpScore(gdp)) gdp = hit;
+    }
+    if (gdp) {
+      log('gdp found', { score: gdpScore(gdp), keys: Object.keys(gdp).slice(0, 20) });
+      applyGdpToOut(gdp, out, out.propertyDetails);
+    } else {
+      log('no gdp');
+    }
+
     // Address strategy (in priority order):
+    //   0) state-blob gdp (already applied above)
     //   1) JSON-LD PostalAddress — most accurate when present
     //   2) DOM selectors for street + city/state/zip blocks, concatenated
     //   3) og:title / og:description
@@ -918,10 +1064,10 @@
     // Google Places Text Search, which fills in anything we missed — but
     // it NEEDS at minimum a street + city to disambiguate, so we do our
     // best to hand it a full address string before it gets there.
-    let addr = null;
+    let addr = out.address || null;
 
     // 1) JSON-LD PostalAddress
-    try {
+    if (!addr) try {
       const blocks = findAllJsonLd();
       for (const block of blocks) {
         const postal = deepFind(block, (o) =>
@@ -985,17 +1131,55 @@
 
     out.address = addr || null;
 
-    const priceTxt = document.querySelector('[class*="price"]')?.textContent;
-    out.price = num(priceTxt);
-    const bodyText = document.body.innerText;
-    out.bedrooms = num(bodyText.match(/(\d+(?:\.\d+)?)\s*bed/i)?.[1]);
-    out.bathrooms = num(bodyText.match(/(\d+(?:\.\d+)?)\s*bath/i)?.[1]);
-    out.sqft = num(bodyText.match(/([\d,]+)\s*sq\s*ft/i)?.[1]);
-    out.photoUrl = document.querySelector('img[class*="photo"], img[class*="Photo"]')?.src || null;
+    // ---- Pass 2: scoped DOM fallbacks for any field the state blob missed ----
+    // Note: we no longer hit body-text regex for beds/baths because Hotpads
+    // pages render "similar listings" carousels that pollute the numbers.
+    // Ollama extracts beds/baths from the cleaned page text downstream.
+    if (out.price == null) {
+      const priceTxt = document.querySelector('[class*="price"], [data-test*="price"]')?.textContent;
+      out.price = num(priceTxt);
+    }
+    if (out.sqft == null || out.price == null) {
+      const body = document.body.innerText || '';
+      if (out.sqft == null) out.sqft = num(body.match(/([\d,]+)\s*sq\s*ft/i)?.[1]);
+      if (out.price == null) {
+        const pm = body.match(/\$\s*([\d,]+)(?:\s*\/\s*mo)?/i);
+        if (pm) out.price = num(pm[1]);
+      }
+    }
+    if (!out.photoUrl) {
+      out.photoUrl = document.querySelector('img[class*="photo"], img[class*="Photo"]')?.src
+                  || document.querySelector('meta[property="og:image"]')?.content
+                  || null;
+    }
 
-    // Amenity dictionary on body text
-    const dictMatches = matchAmenities(bodyText.toLowerCase());
-    for (const k in dictMatches) out.propertyDetails[k] = dictMatches[k];
+    // Sanity-guard beds/baths
+    if (out.bedrooms != null && (out.bedrooms < 0 || out.bedrooms > 20)) out.bedrooms = null;
+    if (out.bathrooms != null && (out.bathrooms <= 0 || out.bathrooms > 15)) out.bathrooms = null;
+
+    // Amenity dictionary on body text — this is belt-and-suspenders:
+    // applyGdpToOut() already swept the structured feature lists, but the
+    // long-form description on the page often mentions amenities the
+    // structured fields missed. We union with anything already populated
+    // rather than overwriting.
+    const bodyTextLower = (document.body.innerText || '').toLowerCase();
+    const dictMatches = matchAmenities(bodyTextLower);
+    for (const k in dictMatches) {
+      if (out.propertyDetails[k]) {
+        const merged = Array.from(new Set(
+          (Array.isArray(out.propertyDetails[k]) ? out.propertyDetails[k] : []).concat(dictMatches[k])
+        ));
+        out.propertyDetails[k] = merged;
+      } else {
+        out.propertyDetails[k] = dictMatches[k];
+      }
+    }
+
+    log('final', {
+      hasAddress: !!out.address,
+      beds: out.bedrooms, baths: out.bathrooms, sqft: out.sqft, price: out.price,
+      pdKeys: Object.keys(out.propertyDetails).length,
+    });
     return out;
   }
 

@@ -20,7 +20,17 @@ const SCRAPE_TIMEOUT_MS = 45000;
 // have pulled the llama3.2 model. The extension never calls any hosted LLM
 // API — all inference is local, free, and private.
 const OLLAMA_HOST = 'http://127.0.0.1:11434';
-const OLLAMA_MODEL = 'llama3.2';
+// qwen3:8b — newest-generation Qwen text model. ~5.2GB on disk, runs on
+// 8GB RAM machines, strict upgrade over qwen2.5:7b at the same RAM tier.
+// We pick this over qwen3.5 (which is multimodal) because we never feed
+// images and the multimodal overhead would just slow inference. We pick
+// the 8B size over 14B/32B so the model runs reliably on 8GB consumer
+// hardware without thrashing the user's swap.
+// IMPORTANT: Qwen3 ships with a "thinking mode" that prepends
+// <think>...</think> blocks to responses. We disable it via the /no_think
+// directive in the system prompts so the JSON parser doesn't choke.
+// Install: `ollama pull qwen3:8b`
+const OLLAMA_MODEL = 'qwen3:8b';
 // Generous: cold model loads + long prose prompts can push past 60s on
 // the 3B model. 120s gives us real headroom before we fail.
 const OLLAMA_TIMEOUT_MS = 120000;
@@ -261,10 +271,19 @@ async function scrapeAny(url, hint) {
           // Bullet-point summary of the listing — the CRM will drop these
           // into the Property Note field.
           if (Array.isArray(enriched.propertyNoteBullets) && enriched.propertyNoteBullets.length) {
+            const _bulletSeen = new Set();
             data.propertyNoteBullets = enriched.propertyNoteBullets
               .map((s) => String(s || '').trim())
               // Strip any trailing punctuation and redundant prefixes
               .map((s) => s.replace(/^[-•*]\s*/, '').replace(/[.;,]+$/, ''))
+              // Final dedupe pass at the boundary — fingerprint is the
+              // bullet text lowercased with all non-alphanum collapsed.
+              .filter((s) => {
+                const fp = s.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+                if (!fp || _bulletSeen.has(fp)) return false;
+                _bulletSeen.add(fp);
+                return true;
+              })
               // Hard cap at 120 chars. Earlier we capped at 70 which made the
               // bullets feel too terse (user feedback: "It was nicely detailed,
               // but the sentences were just too long"). 120 gives room for one
@@ -304,7 +323,10 @@ async function scrapeAny(url, hint) {
 
 // ------------------------------------------------------------------
 // Ollama health check — reports whether the daemon is running
-// and whether the llama3.2 model is pulled.
+// and whether the configured model is pulled. The matcher accepts
+// the exact tag (e.g. "qwen2.5:7b") OR any tag in the same family
+// (e.g. "qwen2.5:latest", "qwen2.5:7b-instruct") so users have some
+// flexibility in how they pulled the model.
 // ------------------------------------------------------------------
 async function checkOllamaHealth() {
   const result = { running: false, modelInstalled: false, model: OLLAMA_MODEL, error: null, installedModels: [] };
@@ -320,9 +342,14 @@ async function checkOllamaHealth() {
     const json = await resp.json();
     const models = (json && json.models) || [];
     result.installedModels = models.map((m) => (m && m.name) || '').filter(Boolean);
+    // Family name = part before the first colon. e.g. OLLAMA_MODEL = "qwen2.5:7b"
+    // → family = "qwen2.5". Accept any tag in that family.
+    const family = OLLAMA_MODEL.split(':')[0];
     result.modelInstalled = result.installedModels.some((name) => {
-      // Match "llama3.2", "llama3.2:latest", "llama3.2:3b", "llama3.2:1b", etc.
-      return name === OLLAMA_MODEL || name.startsWith(OLLAMA_MODEL + ':');
+      if (name === OLLAMA_MODEL) return true;
+      if (name.startsWith(OLLAMA_MODEL + ':')) return true;
+      const otherFamily = name.split(':')[0];
+      return otherFamily === family;
     });
   } catch (e) {
     result.error = (e && e.message) || String(e);
@@ -511,13 +538,41 @@ const ALLOWED_BULLET_PATTERNS = [
   /\b(rooftop|terrace|balcony view|deck view)\b/i,
 ];
 
+// Build a normalized fingerprint for a bullet so we can detect duplicates
+// even when the model varies whitespace, punctuation, or trailing words.
+// Examples that should collapse to the same fingerprint:
+//   "Steps from Prospect Park"
+//   "Steps from Prospect Park."
+//   "  steps  from prospect park  "
+function bulletFingerprint(bullet) {
+  return String(bullet || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// Detect "containment duplicates" — one bullet whose fingerprint is a
+// substring of another. The longer (more detailed) bullet wins. Example:
+//   "Close to Brooklyn College"
+//   "Close to Brooklyn College and Prospect Park"
+// → keep only the second.
+function isContainedDuplicate(fp, allFps) {
+  for (const other of allFps) {
+    if (other === fp) continue;
+    if (other.length > fp.length && other.includes(fp)) return true;
+  }
+  return false;
+}
+
 function filterDuplicativeBullets(bullets) {
   if (!Array.isArray(bullets) || !bullets.length) return bullets || [];
   const out = [];
+  const seen = new Set();
   for (const raw of bullets) {
     const b = String(raw || '').trim();
     if (!b) continue;
-    // Drop if it matches any forbidden topic
+    // Drop if it matches any forbidden topic (already in Property Details)
     let dup = false;
     for (const re of DUPLICATIVE_BULLET_PATTERNS) {
       if (re.test(b)) { dup = true; break; }
@@ -535,9 +590,28 @@ function filterDuplicativeBullets(bullets) {
       console.log('[RR ext] dropped off-topic bullet:', b);
       continue;
     }
-    out.push(b);
+    // Exact-fingerprint dedup — case/whitespace/punctuation insensitive
+    const fp = bulletFingerprint(b);
+    if (!fp) continue;
+    if (seen.has(fp)) {
+      console.log('[RR ext] dropped duplicate bullet:', b);
+      continue;
+    }
+    seen.add(fp);
+    out.push({ bullet: b, fp });
   }
-  return out;
+  // Second pass: drop any bullet whose fingerprint is fully contained in
+  // another bullet's fingerprint (the longer one is more informative).
+  const allFps = out.map((o) => o.fp);
+  const final = [];
+  for (const o of out) {
+    if (isContainedDuplicate(o.fp, allFps)) {
+      console.log('[RR ext] dropped contained duplicate bullet:', o.bullet);
+      continue;
+    }
+    final.push(o.bullet);
+  }
+  return final;
 }
 
 // Source-grounding for amenity enum values. Each allowed value (e.g.
@@ -998,6 +1072,9 @@ async function enrichWithOllama(scraped) {
   };
 
   const systemPromptA =
+    // /no_think disables Qwen3's thinking-mode preamble so the response is
+    // pure JSON. (No effect on non-Qwen3 models.)
+    "/no_think\n" +
     "You extract structured rental-listing data from raw page text. " +
     "Return ONLY a JSON object. No prose, no markdown, no code fences. " +
     "The page text starts with a TITLE / OG_TITLE / OG_DESCRIPTION hero block — " +
@@ -1053,6 +1130,10 @@ AVAILABILITY: look for phrases like "Available Now", "Available [date]", "Move-i
 
 BULLETS — STRICT RULES (the user is an Airbnb/VRBO investor, NOT a renter):
 The CRM already has dedicated fields for rent, beds, baths, sqft, laundry, A/C, heat, parking, pool, pets, utilities, appliances, interior features, exterior features, community amenities, and furnished status. Bullets must NEVER restate any of those — that's duplicate noise. Bullets exist only to capture VALUE THE STRUCTURED FIELDS CANNOT.
+
+WHERE TO LOOK FIRST: scan the description for a structured list — sections labeled "Features:", "Highlights:", "About this property:", "What you'll love:", "Property highlights:", "Neighborhood:", "Location:", "Nearby:". These sections almost always contain the highest-quality material for Property Notes. Walk through them line by line and pull every entry that matches the allowed topics below. Each unique entry becomes AT MOST one bullet — never repeat the same fact.
+
+DEDUPLICATION: each bullet must describe a UNIQUE fact. Do not output two bullets that mean the same thing or that share the same key noun phrase (e.g., do NOT output both "Close to Brooklyn College" and "Walking distance to Brooklyn College"). If you find yourself repeating a phrase, stop and pick the single most descriptive version.
 
 Allowed topics (only when the listing literally mentions them):
 - Nearby landmarks, attractions, things to do/see — parks, beaches, museums, downtown, restaurants, shopping, universities, sports venues, tourist destinations.
@@ -1132,9 +1213,12 @@ Return ONLY the JSON.`;
       const json = await resp.json();
       const content = json && json.message && json.message.content;
       if (!content) throw new Error('Empty response from Ollama');
-      try { return JSON.parse(content); }
+      // Qwen3 reasoning models can emit a <think>...</think> block before
+      // the JSON even when /no_think is set. Strip it before parsing.
+      const cleaned = String(content).replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+      try { return JSON.parse(cleaned); }
       catch (_) {
-        const m = content.match(/\{[\s\S]*\}/);
+        const m = cleaned.match(/\{[\s\S]*\}/);
         if (!m) throw new Error('Ollama did not return JSON');
         return JSON.parse(m[0]);
       }
@@ -1164,6 +1248,7 @@ Return ONLY the JSON.`;
     try {
       const heroSlice = fullPageText.slice(0, 2500);
       const coreSys =
+        "/no_think\n" +
         "You extract four numbers from rental-listing text. Return ONLY JSON. " +
         "Never invent values. If a value is truly not present, omit the field.";
       const coreUser =
@@ -1195,6 +1280,7 @@ Return ONLY:
   let passB = null;
   try {
     const systemPromptB =
+      "/no_think\n" +
       "You tag rental-listing amenities from raw page text. Return ONLY a JSON object.\n" +
       "\n" +
       "ABSOLUTE ANTI-HALLUCINATION RULE: Every value you output MUST correspond to text that literally appears in the page text. If the word or phrase is not in the text, you CANNOT output the value. When in doubt, OMIT. It is far better to leave a field empty than to invent a value.\n" +
@@ -1338,6 +1424,81 @@ If the listing has a building pool, pool = "Community/Shared" AND communityAmeni
   // Run grounding ONCE MORE after contradiction resolution, in case the
   // resolver inferred a value that itself isn't in the source.
   groundPropertyDetails(out.propertyDetails, fullPageText);
+
+  // ---------- Pass C (completion + verification) ----------
+  // Final focused pass: identify which fields are STILL empty after all
+  // the structured-data + dictionary + LLM pass A/B work, and ask the
+  // model one more time, very narrowly, "is there evidence in the source
+  // text for any of these specific empty fields?". This catches values
+  // the listing genuinely mentions but pass B missed because it was
+  // overwhelmed by the full enum surface area. We also use this as a
+  // verification pass: any field the model returns must be supported by
+  // the source text (groundPropertyDetails enforces this), so a model
+  // hallucination here is harmless — it just gets dropped.
+  try {
+    const emptyFields = Object.keys(OLLAMA_FIELD_OPTIONS).filter((k) => {
+      if (k === 'utilitiesIncluded' || k === 'petsAllowed') return false;
+      const v = out.propertyDetails[k];
+      if (v == null) return true;
+      if (Array.isArray(v) && v.length === 0) return true;
+      if (v === '') return true;
+      return false;
+    });
+    if (emptyFields.length) {
+      const completionLines = emptyFields
+        .map((k) => {
+          const tag = OLLAMA_SINGLE_SELECT_FIELDS.has(k) ? '(SINGLE)' : '(MULTI)';
+          const opts = OLLAMA_FIELD_OPTIONS[k].map((s) => '"' + s + '"').join(', ');
+          return '  "' + k + '": ' + tag + ' choose from [' + opts + ']';
+        })
+        .join('\n');
+      const completionSys =
+        "/no_think\n" +
+        "You verify rental-listing facts. The user has already extracted everything obvious " +
+        "from the page text. You ONLY return a value for a field if the listing's text contains " +
+        "a direct, explicit phrase that proves it. Otherwise omit the field. Return ONLY JSON.";
+      const completionUser =
+`These property fields are STILL empty after our first extraction pass. For each one, scan the page text and ONLY return a value if the listing literally mentions it.
+
+Page text:
+"""
+${pageText}
+"""
+
+Empty fields to verify:
+${completionLines}
+
+Rules:
+- SINGLE fields are strings (one value). MULTI fields are arrays.
+- If the listing does NOT explicitly mention a field, OMIT that field. Do NOT guess.
+- Output a JSON object with ONLY the fields you can confirm. Empty fields are fine — they will stay empty.
+`;
+      const completion = await callOllama(completionSys, completionUser, Math.floor(OLLAMA_TIMEOUT_MS * 0.5));
+      if (completion && typeof completion === 'object') {
+        const llmC = {};
+        for (const k of emptyFields) {
+          const allowed = OLLAMA_FIELD_OPTIONS[k];
+          const v = completion[k];
+          const isSingle = OLLAMA_SINGLE_SELECT_FIELDS.has(k);
+          if (Array.isArray(v)) {
+            const clean = v.filter((x) => typeof x === 'string' && allowed.includes(x));
+            if (!clean.length) continue;
+            llmC[k] = isSingle ? pickBestSingleValue(k, clean, fullPageText) : clean;
+          } else if (typeof v === 'string' && allowed.includes(v)) {
+            llmC[k] = v;
+          }
+        }
+        if (Object.keys(llmC).length) {
+          mergeLlmIntoDictionary(out.propertyDetails, llmC, lowerFullText);
+          // Re-ground anything pass C added — still must be in the source.
+          groundPropertyDetails(out.propertyDetails, fullPageText);
+          console.log('[RR ext] Pass C completion added:', Object.keys(llmC));
+        }
+      }
+    }
+  } catch (e) {
+    console.log('[RR ext] Pass C completion skipped:', (e && e.message) || e);
+  }
 
   // Validate core numbers
   const core = out.core;

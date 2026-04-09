@@ -4956,7 +4956,7 @@ async function handleExtensionListing(data) {
     if (data._aiError) {
       const err = String(data._aiError);
       if (/not running/i.test(err)) why = 'Ollama not running — start Ollama and try again';
-      else if (/not installed/i.test(err)) why = 'Ollama model missing — run "ollama pull llama3.2"';
+      else if (/not installed/i.test(err)) why = 'Ollama model missing — run "ollama pull qwen3:8b"';
       else if (/aborted|timed? out/i.test(err)) why = 'AI timed out — try once more';
       else if (/HTTP 403/i.test(err)) why = 'Ollama blocked the request (set OLLAMA_ORIGINS=chrome-extension://*)';
       else why = 'AI error: ' + err.slice(0, 80);
@@ -8029,7 +8029,7 @@ function renderOllamaSetup(){
       <div class="setup-steps">
         <div class="setup-step"><div class="setup-step-content">Go to <a href="https://ollama.com/download" target="_blank" style="color:var(--primary)">ollama.com/download</a> and download the AI engine for your operating system.</div></div>
         <div class="setup-step"><div class="setup-step-content">Run the installer. On Mac, drag to Applications. On Windows, run the .exe. It starts automatically in the background.</div></div>
-        <div class="setup-step"><div class="setup-step-content">Open <strong>Terminal</strong> (Mac) or <strong>Command Prompt</strong> (Windows) and run the command shown below. This downloads the AI model (~2GB, one-time only):<br><code>ollama pull llama3.2</code></div></div>
+        <div class="setup-step"><div class="setup-step-content">Open <strong>Terminal</strong> (Mac) or <strong>Command Prompt</strong> (Windows) and run the command shown below. This downloads the AI model (~5.2GB, one-time only):<br><code>ollama pull qwen3:8b</code></div></div>
         <div class="setup-step"><div class="setup-step-content">That's it! The AI engine runs in the background automatically. The extension detects it and uses AI for all future imports.</div></div>
       </div>
       <div style="margin-top:12px;padding:10px 14px;border-radius:var(--radius);font-size:.82rem;${hasModel?'background:var(--success-light);color:var(--success)':hasOllama?'background:var(--warning-light);color:var(--warning)':'background:var(--input-bg);color:var(--text3)'}">
@@ -8231,7 +8231,7 @@ function rrDismissInstallBanner(){
 // Without Ollama, paste-a-link still works but data is likely incomplete.
 const RR_OLLAMA_DOWNLOAD_URL = 'https://ollama.com/download';
 const RR_OLLAMA_DISMISS_KEY = 'rrOllamaDismissedUntil';
-const RR_OLLAMA_REQUIRED_MODEL = 'llama3.2';
+const RR_OLLAMA_REQUIRED_MODEL = 'qwen3:8b';
 
 function rrShowOllamaBanner(){
   if(!window.chrome || !chrome.runtime){ return; }
@@ -8248,7 +8248,7 @@ function rrShowOllamaBanner(){
     ? 'Install <strong>Ollama</strong> (free, runs locally) so RentingRadar can AI‑enrich pasted listings. After install, open Terminal and run <code id="rrOllamaPullCmd" style="background:rgba(255,255,255,.2);padding:1px 6px;border-radius:4px">' + pullCmd + '</code> to download the model.'
     : 'Ollama is running but the <code style="background:rgba(255,255,255,.2);padding:1px 6px;border-radius:4px">' + RR_OLLAMA_REQUIRED_MODEL + '</code> model isn\'t installed. Open Terminal and run <code id="rrOllamaPullCmd" style="background:rgba(255,255,255,.2);padding:1px 6px;border-radius:4px">' + pullCmd + '</code>, then click Retry.';
   const actionLabel = notRunning ? 'Download Ollama' : 'Ollama docs';
-  const actionHref = notRunning ? RR_OLLAMA_DOWNLOAD_URL : 'https://ollama.com/library/' + RR_OLLAMA_REQUIRED_MODEL;
+  const actionHref = notRunning ? RR_OLLAMA_DOWNLOAD_URL : 'https://ollama.com/library/' + RR_OLLAMA_REQUIRED_MODEL.split(':')[0];
 
   const bar = document.createElement('div');
   bar.id = 'rrOllamaBanner';
@@ -8386,7 +8386,7 @@ function rrRenderOllamaSetupSteps(){
 
   const step2Body = step2Done
     ? 'The <code style="background:var(--bg2,#252940);padding:1px 5px;border-radius:3px">' + RR_OLLAMA_REQUIRED_MODEL + '</code> model is installed. ✓'
-    : 'Open Terminal and paste this command. It downloads the ~2&nbsp;GB model (one-time):' +
+    : 'Open Terminal and paste this command. It downloads the ~5.2&nbsp;GB model (one-time):' +
       '<div style="margin-top:6px;display:flex;gap:6px;align-items:center;background:var(--bg2,#252940);border:1px solid var(--border,#2a2e42);border-radius:6px;padding:6px 10px">' +
       '<code style="flex:1;font-size:.78rem;color:#fff;font-family:ui-monospace,Menlo,monospace">ollama pull ' + RR_OLLAMA_REQUIRED_MODEL + '</code>' +
       '<button type="button" onclick="rrCopyOllamaPullCmd(this)" style="background:#4f6ef7;border:none;color:#fff;font-weight:600;padding:5px 10px;border-radius:4px;font-size:.72rem;cursor:pointer;white-space:nowrap">Copy</button>' +
@@ -8400,7 +8400,7 @@ function rrRenderOllamaSetupSteps(){
 
   host.innerHTML =
     stepRow(1, step1Done, 'Install Ollama', step1Body) +
-    stepRow(2, step2Done, 'Download the llama3.2 model', step2Body) +
+    stepRow(2, step2Done, 'Download the qwen3:8b model', step2Body) +
     stepRow(3, step3Done, 'Verify', step3Body);
 
   const finishBtn = document.getElementById('rrOllamaSetupFinish');
