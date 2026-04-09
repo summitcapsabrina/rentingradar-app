@@ -1235,6 +1235,9 @@ h1 .hero-edit-input{font-size:1.35rem}
 .rr-toast.warning{background:#f59e0b;color:#1a1d2e}
 .rr-toast.error{background:#ef4444}
 .rr-toast.info{background:#4f6ef7}
+.rr-toast.loading{background:#8b5cf6}
+.rr-toast.loading .rr-toast-msg::before{content:"";display:inline-block;width:.85em;height:.85em;margin-right:.55em;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;vertical-align:-2px;animation:rrToastSpin .8s linear infinite}
+@keyframes rrToastSpin{to{transform:rotate(360deg)}}
 /* Comp Note Popup (centered) */
 .comp-note-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:250;display:none;align-items:center;justify-content:center}
 .comp-note-overlay.open{display:flex}
@@ -4833,6 +4836,7 @@ function importListingFromPaste(recId) {
 
   window._rrPendingListingRecordId = recId;
   if (input) { input.disabled = true; input.placeholder = 'Importing listing…'; }
+  showToast('Importing listing…', 'loading', 120000);
 
   rrScrapeViaExtension(url, 'listing').then((res) => {
     if (input) { input.disabled = false; input.placeholder = 'Paste a listing link (Zillow, Apartments.com, Hotpads, FB Marketplace, Craigslist)'; input.value = ''; }
@@ -4842,12 +4846,14 @@ function importListingFromPaste(recId) {
       } else {
         showAppAlert('Could not import listing: ' + ((res && res.error) || 'Unknown error'), {title: 'Import failed', icon: '⚠️'});
       }
+      showToast('Import failed.', 'error');
       return;
     }
     handleExtensionListing(res.data || {});
   }).catch((e) => {
     if (input) { input.disabled = false; input.placeholder = 'Paste a listing link (Zillow, Apartments.com, Hotpads, FB Marketplace, Craigslist)'; }
     showAppAlert('Import error: ' + (e.message || e), {title: 'Import failed', icon: '⚠️'});
+    showToast('Import failed.', 'error');
   });
 }
 
@@ -4868,6 +4874,7 @@ function importAddModalFromPaste(){
     return;
   }
   if(input){ input.disabled = true; }
+  showToast('Importing listing…', 'loading', 120000);
   rrScrapeViaExtension(url, 'listing').then((res) => {
     if(input){ input.disabled = false; }
     if(!res || !res.ok){
@@ -4876,6 +4883,7 @@ function importAddModalFromPaste(){
       } else {
         showAppAlert('Could not import: ' + ((res && res.error) || 'Unknown error'), {title: 'Import failed', icon: '⚠️'});
       }
+      showToast('Import failed.', 'error');
       return;
     }
     const d = res.data || {};
@@ -4982,6 +4990,7 @@ function importFromChoicePaste(){
   }
   if(input) input.disabled = true;
   if(statusEl){ statusEl.style.color = 'var(--text2)'; statusEl.textContent = 'Importing listing…'; }
+  showToast('Importing listing…', 'loading', 120000);
 
   // Make sure handleExtensionListing creates a new record (not fills an existing one)
   window._rrPendingListingRecordId = null;

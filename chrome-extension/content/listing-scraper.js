@@ -783,9 +783,11 @@
       log('after DOM containers', { sqft: out.sqft, price: out.price });
     }
 
+    // Grab a cleaned page-text blob for the amenity sweep, availability
+    // detection, and the last-resort price fallback below.
+    const bodyText = (document.querySelector('main') || document.body).innerText || '';
+
     if (out.price == null) {
-      // Last-resort: look for "$1,234/mo" anywhere in main page text.
-      const bodyText = (document.querySelector('main') || document.body).innerText || '';
       const nearRent = bodyText.match(/\$\s*([\d,]+)\s*(?:\/\s*mo|\/\s*month)/i);
       if (nearRent) out.price = num(nearRent[1]);
     }
