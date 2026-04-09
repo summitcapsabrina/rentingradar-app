@@ -21,7 +21,9 @@ const SCRAPE_TIMEOUT_MS = 45000;
 // API — all inference is local, free, and private.
 const OLLAMA_HOST = 'http://127.0.0.1:11434';
 const OLLAMA_MODEL = 'llama3.2';
-const OLLAMA_TIMEOUT_MS = 45000;
+// Generous: cold model loads + long prose prompts can push past 60s on
+// the 3B model. 120s gives us real headroom before we fail.
+const OLLAMA_TIMEOUT_MS = 120000;
 
 // ------------------------------------------------------------------
 // Internal message router (popup + content scripts)
@@ -193,19 +195,21 @@ async function scrapeAny(url, hint) {
 // and whether the llama3.2 model is pulled.
 // ------------------------------------------------------------------
 async function checkOllamaHealth() {
-  const result = { running: false, modelInstalled: false, model: OLLAMA_MODEL, error: null };
+  const result = { running: false, modelInstalled: false, model: OLLAMA_MODEL, error: null, installedModels: [] };
   try {
     const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 2500);
+    // 8s — on a cold laptop Ollama's first response can take a few seconds
+    // because it's just started up or just woke from sleep.
+    const t = setTimeout(() => ctrl.abort(), 8000);
     const resp = await fetch(OLLAMA_HOST + '/api/tags', { signal: ctrl.signal });
     clearTimeout(t);
     if (!resp.ok) { result.error = 'HTTP ' + resp.status; return result; }
     result.running = true;
     const json = await resp.json();
     const models = (json && json.models) || [];
-    result.modelInstalled = models.some((m) => {
-      const name = (m && m.name) || '';
-      // Match "llama3.2", "llama3.2:latest", "llama3.2:3b" etc.
+    result.installedModels = models.map((m) => (m && m.name) || '').filter(Boolean);
+    result.modelInstalled = result.installedModels.some((name) => {
+      // Match "llama3.2", "llama3.2:latest", "llama3.2:3b", "llama3.2:1b", etc.
       return name === OLLAMA_MODEL || name.startsWith(OLLAMA_MODEL + ':');
     });
   } catch (e) {
@@ -243,78 +247,75 @@ const OLLAMA_FIELD_OPTIONS = {
 
 async function enrichWithOllama(scraped) {
   const health = await checkOllamaHealth();
-  if (!health.running) throw new Error('Ollama not running');
-  if (!health.modelInstalled) throw new Error('Model ' + OLLAMA_MODEL + ' not installed');
+  if (!health.running) {
+    throw new Error('Ollama not running (' + (health.error || 'no response from 127.0.0.1:11434') + ')');
+  }
+  if (!health.modelInstalled) {
+    throw new Error('Model ' + OLLAMA_MODEL + ' not installed. Installed: ' + (health.installedModels.join(', ') || 'none'));
+  }
 
-  // Build a compact schema description — one line per field — so llama3.2
-  // (3B params) doesn't drown in schema text. Shorter prompts dramatically
-  // improve small-model JSON quality.
-  const fieldLines = Object.keys(OLLAMA_FIELD_OPTIONS).map((k) => {
-    const opts = OLLAMA_FIELD_OPTIONS[k];
-    return '- ' + k + ': ' + opts.join(' | ');
-  }).join('\n');
+  // ---------- Build the prompt ----------
+  //
+  // Two-pass design:
+  //   Pass A: cheap/small — core numbers + availability + utilities + bullets.
+  //           This is the ONLY pass we actually depend on; if it succeeds the
+  //           import is "successful".
+  //   Pass B: OPTIONAL — amenity/feature enum filling. Runs best-effort and
+  //           silently drops if it fails. The scraper's dictionary matcher
+  //           already fills these fields deterministically, so this is gravy.
+  //
+  // The previous single-pass prompt embedded the ENTIRE 15-field enum schema
+  // (~200 option strings) in one request to a 3B model. Small models drown
+  // in that much schema and either time out or produce malformed JSON. The
+  // split fixes both problems.
 
-  // Keep the prompt short. 8KB of page text is plenty for most listings.
-  const pageText = (scraped._pageText || '').slice(0, 8000);
+  const fullPageText = scraped._pageText || '';
+  // 6KB is plenty — listings rarely have more than that in the useful area.
+  const pageText = fullPageText.slice(0, 6000);
   const scraperHints = {
-    source: scraped.source,
-    address: scraped.address,
-    scraperBeds: scraped.bedrooms,
-    scraperBaths: scraped.bathrooms,
-    scraperSqft: scraped.sqft,
-    scraperPrice: scraped.price,
+    source: scraped.source || '',
+    address: scraped.address || '',
+    beds: scraped.bedrooms,
+    baths: scraped.bathrooms,
+    sqft: scraped.sqft,
+    price: scraped.price,
   };
 
-  const systemPrompt =
-    "You are a precise rental-listing data extractor. You receive the full text of a rental listing page and return a single JSON object describing the property. " +
-    "RULES: " +
-    "(1) Return ONLY valid JSON — no prose, no markdown, no code fences. " +
-    "(2) Omit any field you cannot confirm from the listing text. Do not guess. Do not output null. " +
-    "(3) For enum/array fields use ONLY the exact option strings provided. Do not invent labels. " +
-    "(4) Read the description prose carefully — most amenities are mentioned there, not in labeled tables. " +
-    "(5) Bedroom/bathroom/sqft/rent numbers should come from the primary listing, NOT from nearby-listings widgets or similar-homes sections.";
+  const systemPromptA =
+    "You extract structured rental-listing data from raw page text. " +
+    "Return ONLY a JSON object. No prose, no markdown, no code fences. " +
+    "Never guess. If a value is not stated in the page text, omit the field.";
 
-  const userPrompt =
-`LISTING SOURCE: ${scraperHints.source}
-SCRAPER HINTS (may be wrong — verify against the page text):
-${JSON.stringify(scraperHints, null, 2)}
+  // NOTE: small models handle FLAT schemas much better than nested ones,
+  // and they handle short prompts much better than long ones. Keep this tight.
+  const userPromptA =
+`Source: ${scraperHints.source}
+Scraper guesses (verify against the page; they may be wrong):
+${JSON.stringify(scraperHints)}
 
-LISTING PAGE TEXT:
+Page text:
 """
 ${pageText}
 """
 
-Return a JSON object with this shape. Omit any field you can't confirm.
+Return this JSON object (omit any field you can't confirm):
 
 {
-  "core": {
-    "bedrooms": <integer 0-20>,
-    "bathrooms": <number, can be .5>,
-    "sqft": <integer>,
-    "price": <integer monthly rent in dollars>,
-    "availableDate": "Now" | "YYYY-MM-DD" | "Month Day" (e.g. "May 1")
-  },
-  "details": {
-${fieldLines.split('\n').map((l) => '    ' + l.replace(/^- /, '"').replace(/:/, '":')).join(',\n')}
-    ,"yearBuilt": <integer>,
-    "stories": "1" | "2" | "3" | "4+",
-    "lotSize": "<string>",
-    "parkingSpaces": <integer>,
-    "hoaFee": <integer>,
-    "petWeightLimit": <integer>
-  },
-  "bullets": [
-    "<5-15 short factual bullet points summarizing THIS listing for a short-term-rental arbitrage operator>"
-  ]
+  "bedrooms": <int 0-20>,
+  "bathrooms": <number, .5 allowed>,
+  "sqft": <int>,
+  "price": <int monthly rent in USD>,
+  "availableDate": "Now" or "YYYY-MM-DD" or a phrase like "May 1",
+  "utilitiesIncluded": [ any of: "Water","Hot Water","Gas","Electric","Trash","Sewer","Recycling","Internet/WiFi","Cable TV","Landscaping/Grounds","Pest Control" ],
+  "petsAllowed": one of "Yes - All Pets","Dogs Only","Cats Only","Small Pets Only","Case by Case","Service Animals Only","No Pets",
+  "bullets": [ 5 to 12 short factual bullet points (<= 120 chars each) summarizing this listing for a short-term-rental arbitrage investor ]
 }
 
-BULLET GUIDANCE: bullets should call out facts a rental arbitrage investor would care about: neighborhood quality, walk/transit score, parking situation, HOA/STR policy, recent renovations, standout features, unit layout quirks, pet policy specifics, utilities included, proximity to attractions, furnished vs unfurnished, lease flexibility. Skip marketing fluff ("charming", "must see", "won't last"). Each bullet ≤ 120 chars. Facts already in the 'core' or 'details' objects may still appear in bullets if they matter for rental arbitrage (e.g. "Water included in rent").
+Bullet guidance: call out neighborhood / walk / transit scores, parking, HOA or STR policy, recent renovations, unit quirks, pet policy specifics, utilities included, furnished status, lease flexibility, proximity to attractions. No marketing fluff ("charming", "must see"). Numbers and specifics only.
 
-Return ONLY the JSON object.`;
+Return ONLY the JSON.`;
 
-  // Make the Ollama call with a retry path: if the first call times out or
-  // returns invalid JSON, retry once with a shorter prompt.
-  async function callOllama(promptText, timeoutMs) {
+  async function callOllama(sysPrompt, userPrompt, timeoutMs) {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), timeoutMs);
     try {
@@ -326,14 +327,21 @@ Return ONLY the JSON object.`;
           model: OLLAMA_MODEL,
           stream: false,
           format: 'json',
-          options: { temperature: 0.1, num_ctx: 8192 },
+          // num_ctx 4096 is enough for a 6KB prompt + response and does NOT
+          // force llama3.2 to reload the model (default ctx is 2048 but most
+          // installs already have 4096 loaded from prior runs; either way
+          // 4096 is a much lower re-init cost than 8192 was).
+          options: { temperature: 0.1, num_ctx: 4096 },
           messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: promptText },
+            { role: 'system', content: sysPrompt },
+            { role: 'user', content: userPrompt },
           ],
         }),
       });
-      if (!resp.ok) throw new Error('Ollama HTTP ' + resp.status);
+      if (!resp.ok) {
+        const body = await resp.text().catch(() => '');
+        throw new Error('Ollama HTTP ' + resp.status + (body ? ': ' + body.slice(0, 200) : ''));
+      }
       const json = await resp.json();
       const content = json && json.message && json.message.content;
       if (!content) throw new Error('Empty response from Ollama');
@@ -346,35 +354,83 @@ Return ONLY the JSON object.`;
     } finally { clearTimeout(t); }
   }
 
-  let parsed;
+  // ---------- Pass A (required) ----------
+  let passA;
   try {
-    parsed = await callOllama(userPrompt, OLLAMA_TIMEOUT_MS);
+    passA = await callOllama(systemPromptA, userPromptA, OLLAMA_TIMEOUT_MS);
   } catch (e) {
-    // Retry once with a shorter page text slice (4KB) — this almost always
-    // succeeds when the first call timed out on a long listing description.
-    const shortPageText = (scraped._pageText || '').slice(0, 4000);
-    const shortPrompt = userPrompt.replace(pageText, shortPageText);
-    console.log('[RR ext] Ollama first attempt failed (' + (e && e.message) + '), retrying with shorter prompt');
-    parsed = await callOllama(shortPrompt, Math.floor(OLLAMA_TIMEOUT_MS * 0.7));
+    // Retry once with a shorter page text slice — catches cold-model timeouts
+    // and "context too small" failures on long listings.
+    console.log('[RR ext] Ollama pass A failed (' + (e && e.message) + '), retrying with 3KB page text');
+    const shortText = fullPageText.slice(0, 3000);
+    const shortPrompt = userPromptA.replace(pageText, shortText);
+    passA = await callOllama(systemPromptA, shortPrompt, OLLAMA_TIMEOUT_MS);
   }
 
-  // Normalize the response into the shape the CRM expects.
+  // ---------- Pass B (optional — amenity enums) ----------
+  // Only attempt this if pass A succeeded. If it fails we just move on.
+  let passB = null;
+  try {
+    const systemPromptB =
+      "You tag rental-listing amenities from raw page text. Return ONLY a JSON object. " +
+      "Each field is an array. Include only values that appear in the allowed list below. " +
+      "If you can't confirm any value for a field, omit the field entirely.";
+    const enumLines = Object.keys(OLLAMA_FIELD_OPTIONS)
+      .filter((k) => !['utilitiesIncluded', 'petsAllowed'].includes(k)) // already done in pass A
+      .map((k) => '  "' + k + '": [' + OLLAMA_FIELD_OPTIONS[k].map((s) => '"' + s + '"').join(', ') + ']')
+      .join(',\n');
+    const userPromptB =
+`Page text:
+"""
+${pageText}
+"""
+
+Return this JSON (omit fields with no confirmable values):
+
+{
+${enumLines}
+}
+
+Only use values from the lists above. No invented labels.`;
+    passB = await callOllama(systemPromptB, userPromptB, Math.floor(OLLAMA_TIMEOUT_MS * 0.8));
+  } catch (e) {
+    console.log('[RR ext] Ollama pass B (amenities) skipped:', (e && e.message) || e);
+  }
+
+  // ---------- Assemble result ----------
   const out = {
-    propertyDetails: (parsed && parsed.details) || {},
-    propertyNoteBullets: Array.isArray(parsed && parsed.bullets) ? parsed.bullets : [],
-    core: (parsed && parsed.core) || {},
+    propertyDetails: {},
+    propertyNoteBullets: Array.isArray(passA && passA.bullets) ? passA.bullets : [],
+    core: {
+      bedrooms: passA && passA.bedrooms,
+      bathrooms: passA && passA.bathrooms,
+      sqft: passA && passA.sqft,
+      price: passA && passA.price,
+      availableDate: passA && passA.availableDate,
+    },
   };
 
-  // Sanity-clean the details object: drop any array values that contain
-  // labels not in our allowed options (llama sometimes invents near-misses).
-  for (const k of Object.keys(OLLAMA_FIELD_OPTIONS)) {
-    const allowed = OLLAMA_FIELD_OPTIONS[k];
-    const v = out.propertyDetails[k];
-    if (Array.isArray(v)) {
-      out.propertyDetails[k] = v.filter((x) => allowed.includes(x));
-      if (out.propertyDetails[k].length === 0) delete out.propertyDetails[k];
-    } else if (typeof v === 'string') {
-      if (!allowed.includes(v)) delete out.propertyDetails[k];
+  // Utilities + pets from pass A
+  if (passA && Array.isArray(passA.utilitiesIncluded) && passA.utilitiesIncluded.length) {
+    out.propertyDetails.utilitiesIncluded = passA.utilitiesIncluded
+      .filter((s) => OLLAMA_FIELD_OPTIONS.utilitiesIncluded.includes(s));
+  }
+  if (passA && typeof passA.petsAllowed === 'string' && OLLAMA_FIELD_OPTIONS.petsAllowed.includes(passA.petsAllowed)) {
+    out.propertyDetails.petsAllowed = passA.petsAllowed;
+  }
+
+  // Pass B: merge amenity arrays/strings, filtering invented labels
+  if (passB && typeof passB === 'object') {
+    for (const k of Object.keys(OLLAMA_FIELD_OPTIONS)) {
+      if (k === 'utilitiesIncluded' || k === 'petsAllowed') continue;
+      const allowed = OLLAMA_FIELD_OPTIONS[k];
+      const v = passB[k];
+      if (Array.isArray(v)) {
+        const clean = v.filter((x) => allowed.includes(x));
+        if (clean.length) out.propertyDetails[k] = clean;
+      } else if (typeof v === 'string' && allowed.includes(v)) {
+        out.propertyDetails[k] = v;
+      }
     }
   }
 
