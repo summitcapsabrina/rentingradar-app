@@ -177,14 +177,16 @@ async function scrapeAny(url, hint) {
               .map((s) => String(s || '').trim())
               // Strip any trailing punctuation and redundant prefixes
               .map((s) => s.replace(/^[-•*]\s*/, '').replace(/[.;,]+$/, ''))
-              // Hard cap at 70 chars — if the model ignored the "telegraphic"
-              // instruction and produced full sentences, truncate cleanly
-              // at the last word boundary before 70 chars.
+              // Hard cap at 120 chars. Earlier we capped at 70 which made the
+              // bullets feel too terse (user feedback: "It was nicely detailed,
+              // but the sentences were just too long"). 120 gives room for one
+              // descriptive phrase with supporting detail while still forcing
+              // fragments — no full paragraphs.
               .map((s) => {
-                if (s.length <= 70) return s;
-                const cut = s.slice(0, 70);
+                if (s.length <= 120) return s;
+                const cut = s.slice(0, 120);
                 const lastSpace = cut.lastIndexOf(' ');
-                return (lastSpace > 20 ? cut.slice(0, lastSpace) : cut).replace(/[.;,]+$/, '');
+                return (lastSpace > 40 ? cut.slice(0, lastSpace) : cut).replace(/[.;,]+$/, '');
               })
               .filter((s) => s && s.length > 2)
               .slice(0, 14);
@@ -260,6 +262,16 @@ const OLLAMA_FIELD_OPTIONS = {
   petsAllowed: ['Yes - All Pets','Dogs Only','Cats Only','Small Pets Only','Case by Case','Service Animals Only','No Pets'],
   safetyFeatures: ['Smoke Detectors','Carbon Monoxide Detectors','Fire Extinguisher','Security System/Alarm','Gated Entry','Deadbolt Locks','Smart Locks','Security Cameras','24-Hour Security'],
 };
+
+// The CRM's Property Details section has two kinds of dropdowns:
+//   - single-select (t:'select') → one value only
+//   - multi-select (t:'multi')   → array of values
+// Ollama returns both as JSON arrays, which causes rendering glitches and
+// contradictions (e.g. "Attached Garage" AND "Covered Parking" in one cell).
+// We enforce cardinality here when assembling the merged propertyDetails.
+const OLLAMA_SINGLE_SELECT_FIELDS = new Set([
+  'propertyType','furnished','laundry','ac','heating','parking','pool','petsAllowed'
+]);
 
 // Normalize whatever the model returns for availableDate into a value the
 // CRM's date picker can consume: either lowercase 'now', or ISO YYYY-MM-DD.
@@ -340,12 +352,76 @@ function filterHallucinatedBullets(bullets, pageText) {
       const stem = t.replace(/(ing|ed|s|es)$/, '');
       if (stem.length >= 4 && text.includes(stem)) hits++;
     }
-    // Keep the bullet if the majority of its tokens are sourced.
+    // Keep the bullet if at least half of its distinguishing tokens are
+    // sourced. This is loose enough to allow paraphrase ("steel appliances"
+    // → "stainless steel kitchen") but tight enough to catch pure
+    // hallucinations where NO key token appears in the source.
     const ratio = hits / tokens.length;
-    if (ratio >= 0.6) out.push(bullet);
+    if (ratio >= 0.5) out.push(bullet);
     else console.log('[RR ext] dropped unsourced bullet:', bullet, '(hits', hits, '/', tokens.length, ')');
   }
   return out;
+}
+
+// For single-select fields, when the model hands us multiple candidates,
+// pick the one that's (a) most specific and (b) actually mentioned in the
+// source text. Falls back to the first allowed value.
+function pickBestSingleValue(field, candidates, pageText) {
+  const text = String(pageText || '').toLowerCase();
+  // Per-field priority: more specific values come first.
+  const PRIORITY = {
+    parking: ['Attached Garage','Detached Garage','Parking Garage','Carport','Assigned Spot','Driveway','Covered Parking','Street Only','None'],
+    pool:    ['Heated Private','Private','Heated Community','Community/Shared','None'],
+    laundry: ['In-Unit W/D','Stacked W/D','W/D Hookups','Shared/On-Site','None'],
+    ac:      ['Central A/C','Mini-Split','Window Unit','Portable','Evaporative/Swamp Cooler','None'],
+    heating: ['Central (Gas)','Central (Electric)','Heat Pump','Radiator','Baseboard','Fireplace','Space Heater','None'],
+  };
+  // Prefer candidates whose text actually appears in the source.
+  const sourced = candidates.filter((c) => {
+    const firstWord = c.toLowerCase().split(/[\s(/]/)[0];
+    return firstWord && text.includes(firstWord);
+  });
+  const pool = sourced.length ? sourced : candidates;
+  const ranking = PRIORITY[field];
+  if (ranking) {
+    for (const v of ranking) if (pool.includes(v)) return v;
+  }
+  return pool[0];
+}
+
+// Cross-check single-select dropdowns against multi-select amenity lists
+// and correct the obvious contradictions. This keeps the Property Details
+// UI from showing "Pool: None" next to a "Swimming Pool" chip in the
+// Community Amenities list.
+function resolvePropertyDetailsContradictions(pd) {
+  if (!pd || typeof pd !== 'object') return;
+  const comm = Array.isArray(pd.communityAmenities) ? pd.communityAmenities : [];
+  const ext  = Array.isArray(pd.exteriorFeatures) ? pd.exteriorFeatures : [];
+
+  // Pool: community has Swimming Pool → must be Community/Shared (unless already specific/private)
+  if (comm.includes('Swimming Pool')) {
+    if (!pd.pool || pd.pool === 'None') pd.pool = 'Community/Shared';
+  }
+  // Hot tub / spa
+  if (comm.includes('Community Spa/Hot Tub')) {
+    if (!pd.hotTub || pd.hotTub === 'None') pd.hotTub = 'Community/Shared';
+  }
+  // Parking: if exterior mentions gated entry + community has garage, keep single-select parking as-is.
+  // But if parking === 'None' and community has any parking-ish amenity, clear 'None'.
+  if (pd.parking === 'None') {
+    if (comm.includes('Bike Storage') || /garage|parking/i.test(comm.join(' '))) {
+      delete pd.parking; // let the user decide rather than lying
+    }
+  }
+  // Pet policy: if petsAllowed says "No Pets" but the bullets / amenities mention a dog park, something's wrong — drop the contradictory single-select.
+  if (pd.petsAllowed === 'No Pets' && comm.includes('Dog Park')) {
+    delete pd.petsAllowed;
+  }
+  // Laundry: community has "On-Site Laundry" and laundry is missing → reflect it
+  if (!pd.laundry && comm.includes('On-Site Laundry')) {
+    pd.laundry = 'Shared/On-Site';
+  }
+  // A/C "None" but interior features list mentions "Smart Thermostat" is fine — don't flag.
 }
 
 async function enrichWithOllama(scraped) {
@@ -428,21 +504,23 @@ Return this JSON object. bedrooms, bathrooms, and price are REQUIRED if they app
 
 AVAILABILITY: look for phrases like "Available Now", "Available [date]", "Move-in ready", "Ready [date]", "Available on MM/DD". "Available Now" → "Now". A specific date → "YYYY-MM-DD" or "Month Day".
 
-BULLETS (REQUIRED — always return at least 5, ideally 8-10):
-Bullets are a short fact list summarizing whatever information IS in the listing. You do not need every category — just list what the listing actually mentions. Keep each bullet short and punchy: roughly 3-10 words, under 70 characters. Use fragments, not full sentences.
+BULLETS (REQUIRED — always return 8-14 bullets when the listing has enough content):
+Bullets are a concise fact list summarizing what the listing actually says. Each bullet should be a descriptive phrase — more substantive than a tag, shorter than a sentence. Target 6-14 words, under 110 characters. Use fragments, not full sentences. Include supporting detail when the listing provides it (e.g. "Updated kitchen with stainless steel appliances and quartz counters" instead of just "Updated kitchen").
 
-Examples of good bullet style (these are examples; use whatever facts are actually in this particular listing):
-  - "Hardwood floors throughout"
-  - "In-unit washer/dryer"
-  - "Water & trash included"
-  - "Central A/C and heat"
-  - "Stainless steel appliances"
-  - "Small pets allowed"
-  - "Rooftop deck + gym"
-  - "2 blocks from subway"
-  - "Quiet residential street"
-  - "Recently renovated kitchen"
-  - "Available June 1"
+YOU MUST cover the NEIGHBORHOOD / LOCATION whenever the listing mentions it. Look for: walk score, transit score, nearby subway/bus stops, parks, schools, shopping, restaurants, landmarks, neighborhood name, distance to downtown/attractions. At least 1-3 of your bullets should be location/neighborhood bullets if the listing provides that information.
+
+Examples of good bullet style (these are STYLE examples only — do NOT copy these facts; use whatever is actually in this particular listing):
+  - "Hardwood floors throughout the main living areas"
+  - "In-unit washer/dryer and dishwasher included"
+  - "Updated kitchen with stainless steel appliances"
+  - "Central A/C and forced-air gas heat"
+  - "Private rooftop deck with city views"
+  - "Two blocks from the 2/3 subway at 125th St"
+  - "Walk Score 92 — groceries, cafes, and parks nearby"
+  - "Quiet tree-lined residential block in Park Slope"
+  - "Close to Prospect Park and Brooklyn Museum"
+  - "Building amenities include gym, doorman, and bike storage"
+  - "Water, hot water, and trash included in rent"
 
 Topics to draw bullets from (pick whichever ARE mentioned in the listing — do NOT force topics that aren't):
 - unit features (flooring, appliances, A/C, heat, laundry, layout)
@@ -554,11 +632,23 @@ Return ONLY:
   try {
     const systemPromptB =
       "You tag rental-listing amenities from raw page text. Return ONLY a JSON object. " +
-      "Each field is an array. Include only values that appear in the allowed list below. " +
-      "If you can't confirm any value for a field, omit the field entirely.";
+      "SINGLE-SELECT fields are dropdowns that take exactly ONE value (string). " +
+      "MULTI-SELECT fields are checkbox groups that take an array of values. " +
+      "Include only values that appear in the allowed list below. " +
+      "If you can't confirm any value for a field, omit the field entirely. " +
+      "CRITICAL: never contradict yourself. If communityAmenities includes 'Swimming Pool', " +
+      "pool cannot be 'None'. If communityAmenities includes 'Community Spa/Hot Tub', " +
+      "hotTub cannot be 'None'. If the listing says 'No Pets', do not list a Dog Park.";
     const enumLines = Object.keys(OLLAMA_FIELD_OPTIONS)
       .filter((k) => !['utilitiesIncluded', 'petsAllowed'].includes(k)) // already done in pass A
-      .map((k) => '  "' + k + '": [' + OLLAMA_FIELD_OPTIONS[k].map((s) => '"' + s + '"').join(', ') + ']')
+      .map((k) => {
+        const tag = OLLAMA_SINGLE_SELECT_FIELDS.has(k) ? ' (SINGLE — pick ONE)' : ' (MULTI — array)';
+        const opts = OLLAMA_FIELD_OPTIONS[k].map((s) => '"' + s + '"').join(', ');
+        if (OLLAMA_SINGLE_SELECT_FIELDS.has(k)) {
+          return '  "' + k + '": <one of ' + opts + '>' + tag;
+        }
+        return '  "' + k + '": [ subset of: ' + opts + ' ]' + tag;
+      })
       .join(',\n');
     const userPromptB =
 `Page text:
@@ -566,13 +656,17 @@ Return ONLY:
 ${pageText}
 """
 
-Return this JSON (omit fields with no confirmable values):
+Return this JSON. Omit fields you cannot confirm from the text.
+SINGLE fields are strings (one value only). MULTI fields are arrays.
+Never invent labels. Never create contradictions.
 
 {
 ${enumLines}
 }
 
-Only use values from the lists above. No invented labels.`;
+If the listing has 'Attached Garage', parking = "Attached Garage" ONLY, not an array.
+If the listing has a building pool, pool = "Community/Shared" AND communityAmenities includes "Swimming Pool".
+`;
     passB = await callOllama(systemPromptB, userPromptB, Math.floor(OLLAMA_TIMEOUT_MS * 0.8));
   } catch (e) {
     console.log('[RR ext] Ollama pass B (amenities) skipped:', (e && e.message) || e);
@@ -609,20 +703,40 @@ Only use values from the lists above. No invented labels.`;
     }
   }
 
-  // Pass B: merge amenity arrays/strings, filtering invented labels
+  // Pass B: merge amenity arrays/strings, filtering invented labels.
+  // Enforce single-select cardinality: if the model returns an array for a
+  // single-value field (parking, pool, ac, etc.) we keep only the first
+  // allowed value — never render "Attached Garage, Covered Parking" in the
+  // same dropdown cell.
   if (passB && typeof passB === 'object') {
     for (const k of Object.keys(OLLAMA_FIELD_OPTIONS)) {
       if (k === 'utilitiesIncluded' || k === 'petsAllowed') continue;
       const allowed = OLLAMA_FIELD_OPTIONS[k];
       const v = passB[k];
+      const isSingle = OLLAMA_SINGLE_SELECT_FIELDS.has(k);
       if (Array.isArray(v)) {
-        const clean = v.filter((x) => allowed.includes(x));
-        if (clean.length) out.propertyDetails[k] = clean;
+        const clean = v.filter((x) => typeof x === 'string' && allowed.includes(x));
+        if (!clean.length) continue;
+        if (isSingle) {
+          // Prefer the most specific value. For parking we prefer
+          // garage/carport over generic "Covered Parking". For pool we
+          // prefer a specific type over "None".
+          out.propertyDetails[k] = pickBestSingleValue(k, clean, fullPageText);
+        } else {
+          out.propertyDetails[k] = clean;
+        }
       } else if (typeof v === 'string' && allowed.includes(v)) {
         out.propertyDetails[k] = v;
       }
     }
   }
+
+  // Resolve contradictions between the dropdowns and the multi-select
+  // amenity lists. Example: pool="None" while communityAmenities contains
+  // "Swimming Pool". We trust the more specific evidence (the amenity list
+  // is built from bullet-by-bullet matches) and upgrade the single-select
+  // accordingly.
+  resolvePropertyDetailsContradictions(out.propertyDetails);
 
   // Validate core numbers
   const core = out.core;
