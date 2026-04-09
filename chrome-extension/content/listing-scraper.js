@@ -112,7 +112,8 @@
       description: null,
       photoUrl: null,
       propertyDetails: {},
-      _pageText: null, // Cleaned page text for Ollama enrichment
+      _pageText: null,      // Tight description-only snippet (≤4KB) for the LLM
+      _fullPageText: null,  // Broad cleaned main-content (≤20KB) for the dictionary regex pass
     };
   }
 
@@ -151,54 +152,145 @@
     } catch (_) {}
   }
 
-  function capturePageText() {
+  // v0.6.0: capture a TIGHT, description-focused snippet (≤4KB) instead of
+  // a 20KB main-content dump. Local LLM prompt-eval is ~150-300 tok/s on
+  // qwen3:4b, so every 1KB of input adds 1-2 seconds of wall time. By
+  // narrowing to the actual listing description / about / amenities blocks
+  // we cut prompt-eval from 5-13s down to 1-3s. The dictionary regex pass
+  // still operates on the FULL page text (it's sub-millisecond and benefits
+  // from seeing everything), so this only affects what the LLM sees.
+  //
+  // We keep two separate strings on the scraper output:
+  //   _pageText      — the tight LLM snippet (≤4KB, description-focused)
+  //   _fullPageText  — the broad dictionary blob (≤20KB, regex amenity search)
+  function captureFullPageText() {
     try {
-      // Expand any "show more" disclosures in place so the clone we capture
-      // includes the full amenity / features lists.
-      expandDisclosures();
-
-      // IMPORTANT: do NOT strip <header> — on Apartments.com and Zillow the
-      // beds / baths / price / unit-stats block lives inside the page header.
-      // Stripping it left the AI blind to the exact numbers we need.
       const main = document.querySelector('main, [role="main"], #main, .main, #content, .content') || document.body;
       const clone = main.cloneNode(true);
-      // NOTE: we intentionally KEEP <aside> — neighborhood / walk-score /
-      // nearby-transit / points-of-interest widgets live in asides on Zillow
-      // and Apartments.com, and the model needs that content to populate
-      // location bullets. The "similar listings" carousel asides are stripped
-      // below by class-name pattern matching.
       clone.querySelectorAll('script, style, nav, footer, noscript, iframe, svg').forEach((n) => n.remove());
-      // Remove "similar/nearby listings" widgets so they can't poison the model's
-      // bed/bath extraction with numbers from unrelated units.
       clone.querySelectorAll(
         '[class*="similar"], [class*="Similar"], [class*="nearby"], [class*="Nearby"], ' +
         '[class*="recommend"], [class*="Recommend"], [class*="carousel"], [class*="Carousel"]'
       ).forEach((n) => n.remove());
-
-      const mainText = (clone.innerText || clone.textContent || '')
+      const txt = (clone.innerText || clone.textContent || '')
         .replace(/[ \t]+/g, ' ')
         .replace(/\n{3,}/g, '\n\n')
         .trim();
-
-      // Assemble a "hero" preamble so the model sees the most important
-      // signals in the first few hundred tokens — this dramatically improves
-      // core-number extraction on small (3B) models.
-      const title = (document.querySelector('h1')?.innerText || document.title || '').trim();
-      const ogTitle = document.querySelector('meta[property="og:title"]')?.content || '';
-      const ogDesc = document.querySelector('meta[property="og:description"]')?.content || '';
-      const metaDesc = document.querySelector('meta[name="description"]')?.content || '';
-      const hero = [
-        title && 'TITLE: ' + title,
-        ogTitle && ogTitle !== title && 'OG_TITLE: ' + ogTitle,
-        ogDesc && 'OG_DESCRIPTION: ' + ogDesc,
-        metaDesc && metaDesc !== ogDesc && 'META_DESCRIPTION: ' + metaDesc,
-      ].filter(Boolean).join('\n');
-
-      const combined = (hero ? hero + '\n\n---\n\n' : '') + mainText;
-      return combined.slice(0, 20000);
+      return txt.slice(0, 20000);
     } catch (e) {
       return (document.body.innerText || '').slice(0, 20000);
     }
+  }
+
+  // Pull a tight listing-focused snippet for the LLM. Targets:
+  //   1. og:title / og:description / meta description (the "hero" — already
+  //      contains beds/baths/price on Zillow + Apartments.com)
+  //   2. h1 + h2 next to it (listing headline)
+  //   3. The first matching "description" container — common selectors:
+  //      [data-testid*="description"], [class*="description"], [class*="Description"],
+  //      [class*="overview"], [class*="Overview"], [id*="description"],
+  //      [class*="about"], [class*="About"], #description, .description.
+  //      We take the LARGEST match (longest text content) so we don't grab a
+  //      tiny "view description" link.
+  //   4. The first matching "highlights" / "features" / "amenities" block.
+  // All concatenated, deduped, capped at 4KB. If we can't find any of those
+  // selectors (uncommon site / Craigslist), we fall back to the first
+  // 4KB of meaningful main content.
+  function captureListingSnippet() {
+    try {
+      expandDisclosures();
+
+      const parts = [];
+      const seen = new Set();
+      const push = (label, text) => {
+        if (!text) return;
+        const t = String(text).replace(/\s+/g, ' ').trim();
+        if (!t || t.length < 4) return;
+        const key = t.slice(0, 200);
+        if (seen.has(key)) return;
+        seen.add(key);
+        parts.push(label ? label + ': ' + t : t);
+      };
+
+      // 1) Hero (title + meta tags)
+      const title = (document.querySelector('h1')?.innerText || document.title || '').trim();
+      push('TITLE', title);
+      push('OG_TITLE', document.querySelector('meta[property="og:title"]')?.content);
+      push('OG_DESCRIPTION', document.querySelector('meta[property="og:description"]')?.content);
+      push('META_DESCRIPTION', document.querySelector('meta[name="description"]')?.content);
+      push('TWITTER_DESCRIPTION', document.querySelector('meta[name="twitter:description"]')?.content);
+
+      // 2) Description blocks. Pick the LARGEST node that matches each
+      //    pattern — we want the actual prose, not a tiny "View description" link.
+      function biggest(selector) {
+        const nodes = document.querySelectorAll(selector);
+        let best = null;
+        let bestLen = 0;
+        for (const n of nodes) {
+          const txt = (n.innerText || n.textContent || '').trim();
+          if (txt.length > bestLen && txt.length < 8000) { // skip giant containers
+            best = txt;
+            bestLen = txt.length;
+          }
+        }
+        return best;
+      }
+
+      push('DESCRIPTION', biggest(
+        '[data-testid*="description" i], [data-test*="description" i], ' +
+        '[class*="description" i]:not([class*="similar" i]):not([class*="nearby" i]), ' +
+        '[id*="description" i], #description, .description, ' +
+        '[class*="about-this" i], [class*="aboutThis" i], [data-testid*="about" i]'
+      ));
+      push('OVERVIEW', biggest(
+        '[data-testid*="overview" i], [class*="overview" i], [class*="Overview"], #overview'
+      ));
+      push('HIGHLIGHTS', biggest(
+        '[data-testid*="highlight" i], [class*="highlight" i], [class*="Highlight"]'
+      ));
+      push('FEATURES', biggest(
+        '[data-testid*="features" i], [class*="features" i]:not([class*="similar" i]):not([class*="nearby" i]), [class*="Features"]'
+      ));
+      push('AMENITIES', biggest(
+        '[data-testid*="amenit" i], [class*="amenit" i]:not([class*="similar" i]), [class*="Amenit"]'
+      ));
+      push('NEIGHBORHOOD', biggest(
+        '[data-testid*="neighborhood" i], [class*="neighborhood" i], [class*="Neighborhood"]'
+      ));
+
+      // 3) Stats block (beds/baths/sqft on Zillow lives in a header summary)
+      push('STATS', biggest(
+        '[data-testid*="bed-bath" i], [data-testid*="facts" i], [class*="summary" i]:not([class*="similar" i]), [class*="Summary"]:not([class*="similar" i])'
+      ));
+
+      let snippet = parts.join('\n\n');
+
+      // Fallback: if we got almost nothing, fall back to the first 4KB of
+      // cleaned main content. This catches Craigslist and other unsupported
+      // sites that don't use any of the standard description selectors.
+      if (snippet.length < 400) {
+        const main = document.querySelector('main, [role="main"], #main, .main, #content, .content') || document.body;
+        const clone = main.cloneNode(true);
+        clone.querySelectorAll('script, style, nav, footer, noscript, iframe, svg, header').forEach((n) => n.remove());
+        clone.querySelectorAll(
+          '[class*="similar" i], [class*="nearby" i], [class*="recommend" i], [class*="carousel" i]'
+        ).forEach((n) => n.remove());
+        const fallback = (clone.innerText || clone.textContent || '')
+          .replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+        snippet = (snippet ? snippet + '\n\n---\n\n' : '') + fallback;
+      }
+
+      return snippet.slice(0, 4000);
+    } catch (e) {
+      return (document.body.innerText || '').slice(0, 4000);
+    }
+  }
+
+  // Backwards-compat shim. The service worker still reads scraped._pageText.
+  // We now point _pageText at the tight snippet and add _fullPageText for the
+  // dictionary regex pass.
+  function capturePageText() {
+    return captureListingSnippet();
   }
 
   // Assign a value to propertyDetails only if it's non-empty.
@@ -1294,14 +1386,20 @@
     return n;
   }
 
+  // v0.6.0: 7 attempts × 400ms = 2.8s max polling. Most pages are
+  // hydrated within 1s. Previous 12×750ms (9s) was a major contributor
+  // to the "way too long" wall time.
   function run(attempt) {
     try {
       const data = parse();
       const cfc = coreFieldCount(data);
+      // EARLY EXIT: if the per-site parser hit all 4 core fields,
+      // there's nothing more to wait for — capture and send immediately.
+      const hasAll = cfc >= 4;
       const hasEnough = cfc >= 2 || (cfc >= 1 && !!data.address);
-      // Give React/Apollo pages more time to hydrate (12 attempts × 750ms = ~9s)
-      if (hasEnough || attempt >= 12) {
-        data._pageText = capturePageText();
+      if (hasAll || hasEnough || attempt >= 7) {
+        data._pageText = captureListingSnippet();
+        data._fullPageText = captureFullPageText();
         if (data._debug) {
           data._debug.finalAttempt = attempt;
           data._debug.finalCoreFieldCount = cfc;
@@ -1310,14 +1408,14 @@
         return;
       }
     } catch (e) {
-      if (attempt >= 12) {
+      if (attempt >= 7) {
         chrome.runtime.sendMessage({ type: 'SCRAPE_RESULT', error: e.message });
         return;
       }
     }
-    setTimeout(() => run(attempt + 1), 750);
+    setTimeout(() => run(attempt + 1), 400);
   }
 
-  if (document.readyState === 'complete') setTimeout(() => run(0), 400);
-  else window.addEventListener('load', () => setTimeout(() => run(0), 400), { once: true });
+  if (document.readyState === 'complete') setTimeout(() => run(0), 200);
+  else window.addEventListener('load', () => setTimeout(() => run(0), 200), { once: true });
 })();

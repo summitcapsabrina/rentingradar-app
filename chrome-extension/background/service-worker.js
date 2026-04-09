@@ -36,7 +36,7 @@ const OLLAMA_MODEL = 'qwen3:4b';
 // 60s is plenty for ONE consolidated pass on a warm 4B model. The pre-warm
 // at service worker startup means the model is already in RAM by the time
 // the first user import hits.
-const OLLAMA_TIMEOUT_MS = 60000;
+const OLLAMA_TIMEOUT_MS = 25000;
 // keep_alive tells Ollama how long to keep the model loaded in RAM after
 // the request finishes. 60 minutes means a user importing several listings
 // in a session never pays the cold-load penalty after the first one.
@@ -1036,7 +1036,13 @@ async function enrichWithOllama(scraped) {
   // ready. The fix: gracefully degrade. If Ollama is dead, run the
   // dictionary extractor anyway and return its output with _aiError
   // set so the caller can show the right toast.
-  const fullPageText = normalizePageText(scraped._pageText || '');
+  // v0.6.0: the scraper now sends two text blobs:
+  //   _pageText      → tight ≤4KB description snippet for the LLM
+  //   _fullPageText  → broad ≤20KB main-content for the dictionary regex pass
+  // Older scrapers (or sites where the snippet capture failed) only send
+  // _pageText, so we fall back to it for the dictionary too.
+  const llmSnippet = normalizePageText(scraped._pageText || '');
+  const fullPageText = normalizePageText(scraped._fullPageText || scraped._pageText || '');
   const lowerFullText = fullPageText.toLowerCase();
   const earlyDict = () => {
     const pd = extractPropertyDetailsFromText(fullPageText);
@@ -1059,25 +1065,22 @@ async function enrichWithOllama(scraped) {
     return out;
   }
 
-  // ---------- Build the prompt ----------
+  // ---------- v0.6.0: SURGICAL LLM CALL ----------
   //
-  // Two-pass design:
-  //   Pass A: cheap/small — core numbers + availability + utilities + bullets.
-  //           This is the ONLY pass we actually depend on; if it succeeds the
-  //           import is "successful".
-  //   Pass B: OPTIONAL — amenity/feature enum filling. Runs best-effort and
-  //           silently drops if it fails. The scraper's dictionary matcher
-  //           already fills these fields deterministically, so this is gravy.
+  // The scraper's per-site parsers (parseZillow / parseApartments / etc.)
+  // already pull beds/baths/sqft/price from structured sources (__NEXT_DATA__,
+  // JSON-LD, schema.org markup) on the supported sites. The dictionary
+  // regex extractor then fills 15+ amenity fields deterministically. By the
+  // time we get here, the LLM only needs to:
+  //   (a) fill any core fields the parser missed (rare on Zillow/Apartments,
+  //       common on Craigslist / Facebook),
+  //   (b) decide utilitiesIncluded + petsAllowed when those are buried in prose,
+  //   (c) write Property Note bullets about landmarks / neighborhood / STR angles.
   //
-  // The previous single-pass prompt embedded the ENTIRE 15-field enum schema
-  // (~200 option strings) in one request to a 3B model. Small models drown
-  // in that much schema and either time out or produce malformed JSON. The
-  // split fixes both problems.
-
-  // fullPageText / lowerFullText were already computed at the top of the
-  // function so they can be shared with the early-return dictionary path.
-  // 6KB is plenty — listings rarely have more than that in the useful area.
-  const pageText = fullPageText.slice(0, 6000);
+  // The LLM is fed only a TIGHT 4KB description-focused snippet (not the
+  // 20KB full main content). Prompt is small, output is small, num_ctx is
+  // small — wall time on qwen3:4b drops from 15-25s to 4-8s.
+  const pageText = (llmSnippet || fullPageText).slice(0, 4000);
 
   // ----- DICTIONARY-FIRST EXTRACTION -----
   // Run the deterministic trigger-dictionary extractor over the full text.
@@ -1094,101 +1097,51 @@ async function enrichWithOllama(scraped) {
     price: scraped.price,
   };
 
+  // v0.6.0 SURGICAL PROMPT — short and direct. The scraper has already
+  // filled most of the structured data, the dictionary has filled
+  // amenities, and we're feeding only the 4KB description snippet. Long
+  // prompts make small models slower AND less accurate.
   const systemPromptA =
-    // /no_think disables Qwen3's thinking-mode preamble so the response is
-    // pure JSON. (No effect on non-Qwen3 models.)
     "/no_think\n" +
-    "You extract structured rental-listing data from raw page text. " +
-    "Return ONLY a JSON object. No prose, no markdown, no code fences. " +
-    "The page text starts with a TITLE / OG_TITLE / OG_DESCRIPTION hero block — " +
-    "bedrooms, bathrooms, square footage, and monthly rent are usually stated there. " +
-    "You MUST extract bedrooms, bathrooms, and price if they appear anywhere in the text. " +
-    "Common phrasings: '3 bd', '3 beds', '3 bedroom', '1 ba', '1 bath', '1.5 bathrooms', '$2,350/mo', '$2,350 per month'. " +
-    "A studio counts as bedrooms = 0. Half baths count as .5 (e.g. '1.5 baths'). " +
-    "ABSOLUTE ANTI-HALLUCINATION RULE: every fact you output — structured fields AND bullets — " +
-    "MUST correspond to text that literally appears in the provided page text. " +
-    "If the word or phrase is not in the text, you CANNOT output the value. When in doubt, OMIT. " +
-    "It is far better to leave a field empty than to invent a value. " +
-    "Do NOT infer. Do NOT assume standard apartment features. Do NOT fill in what you think a typical listing would have. " +
-    "Specifically: do NOT output petsAllowed unless the text explicitly discusses pet policy (words like 'pet', 'dog', 'cat', 'animal'). " +
-    "Do NOT output utilitiesIncluded values unless the text explicitly says that utility is INCLUDED in rent — 'water included', 'gas included', etc. " +
-    "SELF-CHECK before every value: can I point to the exact words in the page text that justify this? If no, remove it. " +
-    "The 'bullets' field is OPTIONAL. Return an empty array [] if the listing has nothing interesting beyond beds/baths/rent/amenities. " +
-    "Bullets are NOT a feature list — bullets describe things that are NOT already captured in the structured fields above. " +
-    "FORBIDDEN BULLET TOPICS (these are already captured in structured fields — do NOT mention them in bullets): " +
-    "rent amount, beds, baths, square footage, laundry type, A/C type, heating type, parking type, pool type, " +
-    "pet policy, utilities included, appliances list, flooring, interior features, exterior features, community amenities, safety features, furnished status. " +
-    "ALLOWED BULLET TOPICS (only include if the listing literally mentions them): " +
-    "1) nearby landmarks and attractions — parks, beaches, downtown, museums, restaurants, shopping, sports venues, universities, tourist destinations; " +
-    "2) neighborhood character — quiet block, vibrant area, historic district, waterfront, mountain views, walkability to dining; " +
-    "3) STR/investor angles — short-term-rental rules, HOA STR policy, lease flexibility, recent renovations, age of building, view quality, rooftop access, unique selling points relevant to a property investor considering Airbnb/VRBO. " +
-    "If the listing does not actually mention any of these topics, return bullets: [].";
+    "You extract rental-listing data from a description snippet. " +
+    "Return ONLY a JSON object — no prose, no markdown, no code fences. " +
+    "Every value you output must be supported by literal text in the snippet. " +
+    "If a field is not stated, OMIT it. Never invent. Studio = 0 bedrooms. " +
+    "Half baths = .5. Bullets are OPTIONAL — return [] if the snippet has " +
+    "nothing about nearby landmarks, neighborhood character, or STR/investor angles.";
 
-  // NOTE: small models handle FLAT schemas much better than nested ones,
-  // and they handle short prompts much better than long ones. Keep this tight.
   const userPromptA =
-`Source: ${scraperHints.source}
-Scraper guesses (verify against the page; they may be wrong):
-${JSON.stringify(scraperHints)}
+`Scraper already extracted: ${JSON.stringify(scraperHints)}
 
-Page text (the hero block at the top contains beds/baths/price — read it first):
+Listing snippet:
 """
 ${pageText}
 """
 
-Return this JSON object. bedrooms, bathrooms, and price are REQUIRED if they appear in the text. bullets is OPTIONAL — return [] if nothing applies.
+Return ONLY this JSON. Omit fields not stated in the snippet. Use the scraper values as ground truth — only override if the snippet clearly contradicts them.
 
 {
   "bedrooms": <int 0-20>,
-  "bathrooms": <number, .5 allowed>,
+  "bathrooms": <number, .5 ok>,
   "sqft": <int>,
-  "price": <int monthly rent in USD>,
-  "availableDate": "Now" or "YYYY-MM-DD" or a phrase like "May 1",
+  "price": <int monthly rent USD>,
+  "availableDate": "Now" or "YYYY-MM-DD" or "Month Day",
   "utilitiesIncluded": [ any of: "Water","Hot Water","Gas","Electric","Trash","Sewer","Recycling","Internet/WiFi","Cable TV","Landscaping/Grounds","Pest Control" ],
   "petsAllowed": one of "Yes - All Pets","Dogs Only","Cats Only","Small Pets Only","Case by Case","Service Animals Only","No Pets",
-  "bullets": [ 0-8 short fragments — see strict rules below ]
+  "bullets": [ 0-6 short fragments, 6-14 words each, ≤110 chars ]
 }
 
-AVAILABILITY: look for phrases like "Available Now", "Available [date]", "Move-in ready", "Ready [date]", "Available on MM/DD". "Available Now" → "Now". A specific date → "YYYY-MM-DD" or "Month Day".
+UTILITIES: only include a utility if the snippet says it is INCLUDED in rent (e.g. "water included").
+PETS: only include petsAllowed if the snippet explicitly mentions pet policy (pet/dog/cat/no pets).
 
-BULLETS — STRICT RULES (the user is an Airbnb/VRBO investor, NOT a renter):
-The CRM already has dedicated fields for rent, beds, baths, sqft, laundry, A/C, heat, parking, pool, pets, utilities, appliances, interior features, exterior features, community amenities, and furnished status. Bullets must NEVER restate any of those — that's duplicate noise. Bullets exist only to capture VALUE THE STRUCTURED FIELDS CANNOT.
+BULLETS — for an Airbnb/VRBO investor, NOT a renter. Allowed topics only:
+- Nearby landmarks/attractions (parks, beaches, downtown, museums, restaurants, shopping, universities, sports venues)
+- Neighborhood character (quiet, walkable, historic, waterfront, mountain views)
+- STR/investor angles (short-term-rental rules, HOA STR policy, recent renovations, year built, views, rooftop access)
 
-WHERE TO LOOK FIRST: scan the description for a structured list — sections labeled "Features:", "Highlights:", "About this property:", "What you'll love:", "Property highlights:", "Neighborhood:", "Location:", "Nearby:". These sections almost always contain the highest-quality material for Property Notes. Walk through them line by line and pull every entry that matches the allowed topics below. Each unique entry becomes AT MOST one bullet — never repeat the same fact.
+NEVER write bullets about: rent, beds, baths, sqft, laundry, A/C, heat, parking, pool, pets, utilities, appliances, flooring, interior features, exterior features, community amenities, furnished status. Those are already in structured fields.
 
-DEDUPLICATION: each bullet must describe a UNIQUE fact. Do not output two bullets that mean the same thing or that share the same key noun phrase (e.g., do NOT output both "Close to Brooklyn College" and "Walking distance to Brooklyn College"). If you find yourself repeating a phrase, stop and pick the single most descriptive version.
-
-Allowed topics (only when the listing literally mentions them):
-- Nearby landmarks, attractions, things to do/see — parks, beaches, museums, downtown, restaurants, shopping, universities, sports venues, tourist destinations.
-- Neighborhood character — quiet residential, vibrant nightlife, historic district, waterfront, mountain views, walkable to dining/cafes.
-- STR/investor angles — short-term-rental rules, HOA STR policy, lease flexibility, recent renovations, age of building, view quality, rooftop access, unique selling points for Airbnb/VRBO use.
-
-Each bullet: 6-14 words, fragment style, under 110 characters, fact-grounded in the listing text.
-
-Examples of GOOD bullets (style only — do NOT copy these facts):
-  - "Two blocks from Prospect Park's main entrance"
-  - "Quiet tree-lined residential street in historic district"
-  - "Walking distance to downtown restaurants and waterfront"
-  - "Recently renovated in 2024 with new windows and roof"
-  - "HOA permits short-term rentals with 7-night minimum"
-  - "Panoramic mountain views from west-facing balcony"
-  - "Steps from the Wynwood arts district and Miami Beach"
-
-Examples of FORBIDDEN bullets (these duplicate Property Details — do NOT output):
-  - "Rent is $2,350/month"
-  - "3 bedrooms and 2 bathrooms"
-  - "Cats and dogs allowed"
-  - "Shared laundry on site"
-  - "Hardwood floors throughout"
-  - "Stainless steel appliances"
-  - "Central A/C and gas heat"
-  - "Attached garage parking"
-  - "Building has gym and pool"
-  - "Water and trash included"
-
-If the listing has nothing to say about landmarks/neighborhood/STR angles, return bullets: []. An empty bullets array is the CORRECT answer for a sparse listing. Never invent.
-
-Avoid marketing fluff ("charming", "won't last", "must see"). Facts only.
+Each bullet must be a UNIQUE fact grounded in the snippet. No marketing fluff. If nothing fits, return bullets: [].
 
 Return ONLY the JSON.`;
 
@@ -1226,11 +1179,12 @@ Return ONLY the JSON.`;
             top_p: 1,
             repeat_penalty: 1.0,
             seed: 20260409,
-            // 8192 ctx gives us headroom for the full prompt (~3KB) +
-            // structured JSON output (~2KB) + the model's internal scratch
-            // without truncation. qwen3:4b at 8192 is still well under
-            // 4 GB resident on a typical user machine.
-            num_ctx: 8192,
+            // v0.6.0: 2048 ctx is plenty for a 4KB snippet (~1200 tokens)
+            // + ~400 token output. Smaller ctx = faster prompt eval AND
+            // lower model reload cost. We also cap generation at 350 tokens
+            // so the model can't run away — bullets are short, JSON is small.
+            num_ctx: 2048,
+            num_predict: 350,
           },
           messages: [
             { role: 'system', content: sysPrompt },
@@ -1257,81 +1211,21 @@ Return ONLY the JSON.`;
     } finally { clearTimeout(t); }
   }
 
-  // ---------- LITE-PASS (single small Ollama call) ----------
-  // v0.4.4: one slim LLM call that handles ONLY the things the dictionary
-  // can't do well: core numbers, utilities, pets, and Property Note bullets.
-  // Amenity enums (parking, pool, laundry, appliances, communityAmenities,
-  // etc.) are 100% handled by the deterministic dictionary extractor that
-  // already ran above (line ~1070, dictPropertyDetails) — that path is
-  // both faster AND more accurate than a small model trying to fill 15
-  // simultaneous enum dropdowns. The previous mega-pass crammed all 15
-  // enums into one prompt and qwen3:4b couldn't generate that much JSON
-  // inside the timeout window. Lite-pass total prompt is ~3KB, output is
-  // ~500 bytes — comfortably 5-10s on a warm 4B model.
-  //
-  // CRITICAL: this function MUST always return propertyDetails populated
-  // by the dictionary, even if the LLM call fails entirely. Earlier
-  // versions threw on Ollama timeout, which made the caller fall through
-  // to "no AI" and discard all the dictionary work too.
-  const litePrompt =
-`Source: ${scraperHints.source}
-Scraper guesses (verify against the page; they may be wrong):
-${JSON.stringify(scraperHints)}
-
-Page text (the hero block at the top contains beds/baths/price — read it first):
-"""
-${pageText}
-"""
-
-Return ONLY this JSON. Omit any field you cannot confirm from the text. bedrooms, bathrooms, and price are REQUIRED if they appear anywhere.
-
-{
-  "bedrooms": <int 0-20>,
-  "bathrooms": <number, .5 allowed>,
-  "sqft": <int>,
-  "price": <int monthly rent USD>,
-  "availableDate": "Now" or "YYYY-MM-DD" or a phrase like "May 1",
-  "utilitiesIncluded": [ any of: "Water","Hot Water","Gas","Electric","Trash","Sewer","Recycling","Internet/WiFi","Cable TV","Landscaping/Grounds","Pest Control" ],
-  "petsAllowed": one of "Yes - All Pets","Dogs Only","Cats Only","Small Pets Only","Case by Case","Service Animals Only","No Pets",
-  "bullets": [ 0-8 short fragments — see strict rules below ]
-}
-
-CORE NUMBERS: common phrasings: "3 bd", "3 beds", "1 ba", "1.5 bath", "1,250 sq ft", "$2,350/mo".
-
-AVAILABILITY: "Available Now" → "Now". A specific date → "YYYY-MM-DD" or "Month Day".
-
-UTILITIES: only list a utility if the text says it is INCLUDED in rent (e.g. "water included", "all utilities included").
-
-PETS: only output petsAllowed if the text discusses pet policy explicitly (words like "pet", "dog", "cat", "no pets").
-
-BULLETS — STRICT RULES (the user is an Airbnb/VRBO investor, NOT a renter):
-The CRM already has dedicated fields for rent, beds, baths, sqft, laundry, A/C, heat, parking, pool, pets, utilities, appliances, interior/exterior features, community amenities, and furnished status. Bullets must NEVER restate any of those.
-
-Allowed topics (only when the listing literally mentions them):
-- Nearby landmarks, attractions, things to do/see — parks, beaches, museums, downtown, restaurants, shopping, universities, sports venues, tourist destinations.
-- Neighborhood character — quiet residential, vibrant nightlife, historic district, waterfront, mountain views, walkable to dining/cafes.
-- STR/investor angles — short-term-rental rules, HOA STR policy, lease flexibility, recent renovations, age of building, view quality, rooftop access, unique selling points for Airbnb/VRBO use.
-
-Each bullet: 6-14 words, fragment style, under 110 characters, fact-grounded in the listing text.
-DEDUPLICATION: each bullet must describe a UNIQUE fact. Never output two bullets that share the same key noun phrase.
-If the listing has nothing to say about landmarks/neighborhood/STR angles, return bullets: []. Empty is the correct answer.
-
-Return ONLY the JSON.`;
-
-  // The lite call is wrapped so a timeout / error does NOT discard the
-  // dictionary work. We always return at least { propertyDetails: dict, ... }.
+  // v0.6.0: single surgical Ollama call. Wrapped so a timeout / error
+  // does NOT discard the dictionary work — we always return at least
+  // { propertyDetails: dict, ... } even if the LLM is dead.
   let lite = null;
   let liteError = null;
   try {
-    lite = await callOllama(systemPromptA, litePrompt, OLLAMA_TIMEOUT_MS);
+    lite = await callOllama(systemPromptA, userPromptA, OLLAMA_TIMEOUT_MS);
   } catch (e) {
-    console.log('[RR ext] Ollama lite-pass failed (' + ((e && e.message) || e) + '), retrying with 3KB page text');
+    console.log('[RR ext] Ollama call failed, retrying once with 2KB snippet:', (e && e.message) || e);
     try {
-      const shortText = fullPageText.slice(0, 3000);
-      const shortPrompt = litePrompt.replace(pageText, shortText);
+      const shortText = (llmSnippet || fullPageText).slice(0, 2000);
+      const shortPrompt = userPromptA.replace(pageText, shortText);
       lite = await callOllama(systemPromptA, shortPrompt, OLLAMA_TIMEOUT_MS);
     } catch (e2) {
-      console.log('[RR ext] Ollama lite-pass retry also failed:', (e2 && e2.message) || e2);
+      console.log('[RR ext] Ollama retry also failed:', (e2 && e2.message) || e2);
       liteError = (e2 && e2.message) || (e && e.message) || 'AI request failed';
       lite = null;
     }

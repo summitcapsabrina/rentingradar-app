@@ -4559,11 +4559,11 @@ function _rrRenderToast(toast, msg, type, duration, opts) {
     // the success/incomplete/failed toast comes in to replace this one.
     const bar = toast.querySelector('.rr-toast-progress');
     const startedAt = performance.now();
-    // v0.5.1: the LLM is back on the critical path. Scrape + dictionary
-    // + lite-pass typically lands in 10-15s, so we ramp the progress bar
-    // to plateau in ~14s. The success toast that replaces this will snap
-    // to 100% — the user sees the bar finish when the profile opens.
-    const targetMs = opts.progressTargetMs || 14000;
+    // v0.6.0: surgical LLM call on a tight 4KB snippet, num_ctx 2048,
+    // num_predict 350, polling cut to 2.8s. Typical end-to-end is now
+    // 4-9s, so the progress bar plateaus in ~8s. The success toast that
+    // replaces this snaps to 100% when the profile opens.
+    const targetMs = opts.progressTargetMs || 8000;
     const plateauPct = 95;
     toast._progressTimer = setInterval(() => {
       const elapsed = performance.now() - startedAt;
