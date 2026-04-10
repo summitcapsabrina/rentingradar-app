@@ -16,24 +16,22 @@ const CRM_ORIGIN = 'https://app.rentingradar.com';
 const SCRAPE_TIMEOUT_MS = 45000;
 
 // ------------------------------------------------------------------
-// v0.9.0: Gemma 3 4B via Ollama for property-detail enrichment.
-// Free, local, private. ~2.5GB on disk, ~3GB RAM resident.
-// Install: `ollama pull gemma3:4b`
+// v0.10.0: Claude API (Haiku 4.5) — primary AI engine.
+// Ollama (Gemma 3 4B) kept as free fallback if no API key is set.
 // ------------------------------------------------------------------
-const OLLAMA_HOST = 'http://127.0.0.1:11434';
-const OLLAMA_MODEL = 'gemma3:4b';
-const OLLAMA_TIMEOUT_MS = 30000;
-const OLLAMA_KEEP_ALIVE = '60m';
-
-// Claude API — optional upgrade. Only runs if an API key is configured.
-// Set via: chrome.runtime.sendMessage(extId, { type:'SET_API_KEY', key:'sk-ant-...' })
 const CLAUDE_API_URL = 'https://api.anthropic.com/v1/messages';
 const CLAUDE_MODEL = 'claude-haiku-4-5-20251001';
-const CLAUDE_TIMEOUT_MS = 30000;
+const CLAUDE_TIMEOUT_MS = 45000;
 async function getClaudeApiKey() {
   try { const obj = await chrome.storage.sync.get('rrClaudeApiKey'); return (obj && obj.rrClaudeApiKey) || null; } catch (_) { return null; }
 }
 async function setClaudeApiKey(key) { await chrome.storage.sync.set({ rrClaudeApiKey: key || '' }); }
+
+// Ollama — free local fallback when no Claude API key is configured.
+const OLLAMA_HOST = 'http://127.0.0.1:11434';
+const OLLAMA_MODEL = 'gemma3:4b';
+const OLLAMA_TIMEOUT_MS = 30000;
+const OLLAMA_KEEP_ALIVE = '60m';
 
 // ------------------------------------------------------------------
 // v0.8.0: Import cache REMOVED. Every import runs the full scraper +
@@ -226,10 +224,10 @@ async function scrapeAny(url, hint) {
     // Tag the payload with its kind so the CRM knows how to route it
     data._kind = kind;
 
-    // ----- v0.8.0: AI ENRICHMENT RESTORED -----
+    // ----- v0.10.0: AI ENRICHMENT (Claude primary, Ollama fallback) -----
     // Dictionary extractor runs deterministically over the full page text,
-    // then Ollama fills gaps (utilities, pets, bullets, core numbers the
-    // scraper missed). All values are source-grounded against page text.
+    // then Claude/Ollama fills gaps (utilities, pets, bullets, core numbers
+    // the scraper missed). All values are source-grounded against page text.
     if (kind === 'listing') {
       const enriched = await enrichWithOllama(data);
       // Merge AI-derived propertyDetails into scraper-provided ones
@@ -326,12 +324,12 @@ async function checkOllamaHealth() {
 }
 
 // ------------------------------------------------------------------
-// Ollama extraction — THE AUTHORITATIVE EXTRACTION PATH. The scraper
+// AI extraction — THE AUTHORITATIVE EXTRACTION PATH. The scraper
 // provides the raw page text and the minimum structured data it can
-// grab from JSON-LD; Ollama reads the full page and produces ALL the
-// listing fields including the core numbers (beds/baths/sqft/rent/
-// availability). If Ollama is unavailable the import is flagged as
-// incomplete and the scraper's partial data is still returned.
+// grab from JSON-LD; Claude (or Ollama fallback) reads the full page
+// and produces ALL the listing fields including the core numbers
+// (beds/baths/sqft/availability — NOT rent, which is scraper-only).
+// If no AI is available the import uses the dictionary extractor only.
 // ------------------------------------------------------------------
 const OLLAMA_FIELD_OPTIONS = {
   propertyType: ['House','Apartment','Condo','Townhouse','Duplex','Triplex','Fourplex','Studio','Loft','Mobile Home','Villa','Cottage','Other'],
@@ -1066,7 +1064,7 @@ function resolvePropertyDetailsContradictions(pd) {
 }
 
 // ------------------------------------------------------------------
-// v0.9.0: AI ENRICHMENT — Claude API primary, Ollama fallback.
+// v0.10.0: AI ENRICHMENT — Claude API primary, Ollama fallback.
 // ------------------------------------------------------------------
 // This function ALWAYS returns a result, never throws. If both Claude
 // and Ollama fail, the dictionary extractor's output is still returned.
@@ -1187,98 +1185,106 @@ async function enrichWithOllama(scraped) {
   // with num_ctx=8192, and Claude API has no practical limit.
   const pageTextFull = (llmSnippet || fullPageText).slice(0, 8000);
 
-  // ----- v0.9.0: FLEXIBLE EXTRACTION PROMPT -----
-  // The AI extracts everything it sees. For multi-select fields, it uses
-  // predefined values when they match, but can also add CUSTOM labels for
-  // anything the listing mentions that isn't in the predefined list. This
-  // eliminates lossy translation (e.g. "Heat included" → forced to "Gas").
+  // ----- v0.10.0: CLAUDE-OPTIMIZED EXTRACTION PROMPT -----
+  // Structured system prompt for accurate extraction + investor-grade notes.
+  // Claude follows instructions precisely — no hallucination guards needed
+  // in the prompt itself (post-processing still catches edge cases).
   const systemPrompt =
-    "You are a real-estate listing data extractor. " +
-    "Extract EVERY detail from the listing. Return ONLY a JSON object. " +
-    "Every value MUST come directly from the listing text. " +
-    "If something is not mentioned, OMIT that field entirely. Never invent.";
+`You are a rental property data extraction engine for a Rental Arbitrage CRM.
+Your user is NOT a renter — they are a short-term rental (STR) investor evaluating properties for Airbnb/VRBO arbitrage potential.
+
+STRICT RULES:
+1. Extract ONLY facts explicitly stated in the listing text. If a detail is not mentioned, OMIT that field entirely.
+2. Never infer, assume, or fabricate any detail. "Not mentioned" means OMIT, not guess.
+3. Return ONLY a single JSON object — no markdown, no commentary, no explanation.
+4. Every value you return must be directly traceable to specific text in the listing.`;
 
   const userPrompt =
-`Scraper already extracted: ${JSON.stringify(scraperHints)}
+`The scraper already extracted these core facts (use as context, not as source):
+${JSON.stringify(scraperHints)}
 
-Listing text:
+LISTING TEXT:
 """
 ${pageTextFull}
 """
 
-Extract ALL details into this JSON structure. Return ONLY the JSON.
+Extract all property details into this JSON structure. OMIT any field not mentioned in the listing.
 
 {
   "bedrooms": <int 0-20>,
-  "bathrooms": <number, .5 for half baths>,
+  "bathrooms": <number, use .5 for half baths>,
   "sqft": <int>,
   "availableDate": "Now" or "YYYY-MM-DD",
-  "propertyType": <string - use one of these if it fits: ${OLLAMA_FIELD_OPTIONS.propertyType.join(', ')}>,
-  "furnished": <string>,
-  "flooring": [<strings>],
-  "appliances": [<strings>],
-  "laundry": <string>,
-  "ac": <string>,
-  "heating": <string>,
-  "interiorFeatures": [<strings>],
-  "parking": <string>,
-  "pool": <string>,
-  "outdoor": [<strings>],
-  "exteriorFeatures": [<strings>],
-  "communityAmenities": [<strings>],
-  "utilitiesIncluded": [<strings - what is INCLUDED in rent>],
-  "petsAllowed": [<strings - e.g. ["Cats Allowed","Dogs Allowed"] or ["No Pets"]>],
-  "petDetails": [<strings - e.g. "Dogs", "Cats", "Small Animals">],
-  "safetyFeatures": [<strings>],
-  "depositAmount": <string - e.g. "$2,499">,
-  "bullets": [<3-8 investor insight strings>]
+  "propertyType": "<one of: ${OLLAMA_FIELD_OPTIONS.propertyType.join(', ')}>",
+  "furnished": "<one of: ${OLLAMA_FIELD_OPTIONS.furnished.join(', ')}>",
+  "flooring": ["<strings>"],
+  "appliances": ["<strings>"],
+  "laundry": "<one of: ${OLLAMA_FIELD_OPTIONS.laundry.join(', ')}>",
+  "ac": "<one of: ${OLLAMA_FIELD_OPTIONS.ac.join(', ')}>",
+  "heating": "<one of: ${OLLAMA_FIELD_OPTIONS.heating.join(', ')}>",
+  "interiorFeatures": ["<strings>"],
+  "parking": "<one of: ${OLLAMA_FIELD_OPTIONS.parking.join(', ')}>",
+  "pool": "<one of: ${OLLAMA_FIELD_OPTIONS.pool.join(', ')}>",
+  "outdoor": ["<strings>"],
+  "exteriorFeatures": ["<strings>"],
+  "communityAmenities": ["<strings>"],
+  "utilitiesIncluded": ["<strings>"],
+  "petsAllowed": ["<strings>"],
+  "safetyFeatures": ["<strings>"],
+  "depositAmount": "<string e.g. '$2,499'>",
+  "bullets": ["<3-8 strings>"]
 }
 
-RULES:
-1. For each field, use these PREFERRED values when they match:
-   - flooring: ${OLLAMA_FIELD_OPTIONS.flooring.join(', ')}
-   - appliances: ${OLLAMA_FIELD_OPTIONS.appliances.join(', ')}
-   - interiorFeatures: ${OLLAMA_FIELD_OPTIONS.interiorFeatures.join(', ')}
-   - outdoor: ${OLLAMA_FIELD_OPTIONS.outdoor.join(', ')}
-   - communityAmenities: ${OLLAMA_FIELD_OPTIONS.communityAmenities.join(', ')}
-   - safetyFeatures: ${OLLAMA_FIELD_OPTIONS.safetyFeatures.join(', ')}
-   BUT if the listing mentions something NOT in these lists, ADD IT as a custom value using the listing's own wording (e.g. "Private Outdoor Space", "On-Site Security", "Ground Floor Unit").
+FIELD RULES:
 
-2. UTILITIES: only include utilities that are INCLUDED IN RENT. Use the listing's exact wording. Examples: "Heat", "Hot Water", "Water", "Gas", "Electric", "Trash", "Internet/WiFi".
+MULTI-SELECT FIELDS — use these predefined values when they match exactly. If the listing mentions something NOT in these lists, add it as a custom value using the listing's exact wording:
+- flooring: ${OLLAMA_FIELD_OPTIONS.flooring.join(', ')}
+- appliances: ${OLLAMA_FIELD_OPTIONS.appliances.join(', ')}
+- interiorFeatures: ${OLLAMA_FIELD_OPTIONS.interiorFeatures.join(', ')}
+- outdoor: ${OLLAMA_FIELD_OPTIONS.outdoor.join(', ')}
+- exteriorFeatures: ${OLLAMA_FIELD_OPTIONS.exteriorFeatures.join(', ')}
+- communityAmenities: ${OLLAMA_FIELD_OPTIONS.communityAmenities.join(', ')}
+- safetyFeatures: ${OLLAMA_FIELD_OPTIONS.safetyFeatures.join(', ')}
 
-3. PETS: petsAllowed is a multi-select ARRAY. Return ALL that apply, e.g. ["Cats Allowed","Dogs Allowed"]. Preferred values: ${OLLAMA_FIELD_OPTIONS.petsAllowed.join(', ')}. Also populate petDetails with which types are allowed.
+UTILITIES: Only include utilities explicitly stated as INCLUDED IN RENT. Do not list utilities the tenant pays separately. Preferred values: ${OLLAMA_FIELD_OPTIONS.utilitiesIncluded.join(', ')}. If the listing uses different wording (e.g. "Heat" instead of "Gas"), use the listing's wording.
 
-4. BULLETS — write for an Airbnb/VRBO investor evaluating this property as a potential STR arbitrage deal:
-   - Location: nearby parks, transit, highways, schools, attractions, landmarks
-   - Neighborhood: walkability, character, safety, demand drivers
-   - Deal angles: no broker fee, deposit amount, ground floor access, renovation status, owner flexibility
-   - Each bullet: a specific fact from the listing, 8-20 words
-   - NEVER repeat information already captured in structured fields above
-   - NEVER include fees, deposits, broker fees, or application costs — those belong in depositAmount
-   - Keep bullets factual and specific — no fluff like "perfect for relaxation" or "provides easy access"
-   - If the listing has useful details, ALWAYS write bullets. Only return [] for truly bare listings.
+PETS: Array of all that apply. Preferred: ${OLLAMA_FIELD_OPTIONS.petsAllowed.join(', ')}. Example: ["Cats Allowed","Dogs Allowed"].
 
-Return ONLY the JSON.`;
+BULLETS — These are Property Notes for a Rental Arbitrage investor, NOT a renter. Write from an investor's analytical perspective:
+- Location intelligence: proximity to transit, highways, parks, universities, hospitals, tourist areas, downtown districts, airports
+- Neighborhood context: walkability, demand drivers, guest appeal factors, area character
+- Deal structure: no broker fee, flexible lease terms, ground floor (ADA/accessibility), recent renovation, year built
+- STR viability signals: doorman/concierge (guest check-in), package lockers, furnished status, short lease available
+- Each bullet: one specific fact from the listing, 8-20 words, written as a concise observation
+- NEVER repeat information already captured in the structured fields above (no appliances, no amenities, no utilities, no pet policy, no parking, no flooring, etc.)
+- NEVER include fees, deposits, application costs, or broker fees in bullets — those go in depositAmount only
+- NEVER use filler language: no "perfect for", "provides easy access", "ideal for investors", "great opportunity", "well-maintained"
+- If the listing is bare with no notable location/deal details, return an empty array []
 
-  // ----- TRY OLLAMA (primary), CLAUDE API (optional upgrade) -----
+Return ONLY the JSON object.`;
+
+  // ----- v0.10.0: CLAUDE API (primary), OLLAMA (free fallback) -----
   let aiResult = null;
   let aiError = null;
   let aiModel = null;
 
-  // Optional: Claude API if configured (costs ~$0.01/import)
+  // Primary: Claude API (Haiku 4.5 — fast, accurate, ~$0.005/import)
   const apiKey = await getClaudeApiKey();
   if (apiKey) {
     try {
-      console.log('[RR ext] Claude API key found — using Claude');
+      console.log('[RR ext] Using Claude API (' + CLAUDE_MODEL + ')...');
       aiResult = await callClaude(apiKey, systemPrompt, userPrompt);
       aiModel = CLAUDE_MODEL;
+      console.log('[RR ext] Claude API success');
     } catch (e) {
-      console.log('[RR ext] Claude API failed:', (e && e.message) || e);
+      console.warn('[RR ext] Claude API failed:', (e && e.message) || e);
       aiError = (e && e.message) || String(e);
     }
+  } else {
+    console.log('[RR ext] No Claude API key — falling back to Ollama');
   }
 
-  // Primary: Ollama (Gemma 3 4B — free, local)
+  // Fallback: Ollama (Gemma 3 4B — free, local, less accurate)
   if (!aiResult) {
     try {
       const health = await checkOllamaHealth();
@@ -1288,13 +1294,15 @@ Return ONLY the JSON.`;
         aiModel = OLLAMA_MODEL;
         aiError = null;
         console.log('[RR ext] Ollama success');
+      } else if (!apiKey) {
+        aiError = 'No AI configured. Add your Claude API key in Settings, or start Ollama with: ollama serve';
       } else {
-        aiError = 'Ollama not running. Start it with: ollama serve';
+        aiError = 'Claude API failed and Ollama not running';
       }
     } catch (e) {
       const msg = (e && e.message) || String(e);
       console.log('[RR ext] Ollama failed:', msg);
-      aiError = msg;
+      if (!aiError) aiError = msg;
     }
   }
 

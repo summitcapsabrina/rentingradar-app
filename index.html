@@ -1593,7 +1593,7 @@ function render(){
     case 'notifications': area.innerHTML = renderNotifications(); break;
     case 'profile': area.innerHTML = renderProfile(); break;
     case 'pricing': area.innerHTML = renderPricing(); break;
-    case 'settings': area.innerHTML = renderSettings(); break;
+    case 'settings': area.innerHTML = renderSettings(); setTimeout(checkAiEngineStatus, 100); break;
     case 'help': area.innerHTML = renderHelp(); break;
     case 'tutorial': area.innerHTML = renderTutorialView(); break;
     case 'tutorialEditor':
@@ -14241,6 +14241,64 @@ function toggleSettingsPref(key, el){
 }
 
 // ============================================================
+// AI ENGINE SETTINGS (Claude API key management)
+// ============================================================
+function saveClaudeApiKey(){
+  var input = document.getElementById('settingsClaudeKey');
+  var key = (input && input.value || '').trim();
+  if(!key){ showToast('Please enter an API key','warning'); return; }
+  if(!key.startsWith('sk-ant-')){ showToast('Invalid key format — should start with sk-ant-','warning'); return; }
+  var extId = typeof RR_EXTENSION_ID !== 'undefined' ? RR_EXTENSION_ID : null;
+  if(!extId){ showToast('Chrome extension not detected. Install the RentingRadar extension first.','warning'); return; }
+  chrome.runtime.sendMessage(extId, { type:'SET_API_KEY', key: key }, function(resp){
+    if(chrome.runtime.lastError || !resp || !resp.ok){
+      showToast('Failed to save API key — extension error','error');
+      return;
+    }
+    input.value = '';
+    input.placeholder = '••••' + key.slice(-4) + ' (saved)';
+    showToast('Claude API key saved successfully','success');
+    checkAiEngineStatus();
+  });
+}
+
+function checkAiEngineStatus(){
+  var statusEl = document.getElementById('aiEngineStatus');
+  if(!statusEl) return;
+  statusEl.textContent = 'Checking...';
+  var extId = typeof RR_EXTENSION_ID !== 'undefined' ? RR_EXTENSION_ID : null;
+  if(!extId){
+    statusEl.innerHTML = '<span style="color:var(--warning)">Extension not detected</span>';
+    return;
+  }
+  chrome.runtime.sendMessage(extId, { type:'HEALTH' }, function(resp){
+    if(chrome.runtime.lastError || !resp){
+      statusEl.innerHTML = '<span style="color:var(--danger)">Cannot reach extension</span>';
+      return;
+    }
+    var parts = [];
+    if(resp.claude && resp.claude.configured){
+      parts.push('<span style="color:var(--success)">✓ Claude API configured</span> (' + resp.claude.model + ')');
+    } else {
+      parts.push('<span style="color:var(--text3)">Claude API: not configured</span>');
+    }
+    if(resp.ollama && resp.ollama.running){
+      parts.push('<span style="color:var(--success)">✓ Ollama running</span>' + (resp.ollama.modelInstalled ? ' (' + resp.ollama.model + ')' : ' <span style="color:var(--warning)">(model not installed)</span>'));
+    } else {
+      parts.push('<span style="color:var(--text3)">Ollama: not running</span>');
+    }
+    statusEl.innerHTML = parts.join(' · ');
+  });
+  // Also load the masked key display
+  chrome.runtime.sendMessage(extId, { type:'GET_API_KEY' }, function(resp){
+    if(resp && resp.ok && resp.key){
+      var input = document.getElementById('settingsClaudeKey');
+      if(input && !input.value) input.placeholder = resp.key + ' (saved)';
+    }
+  });
+}
+
+// ============================================================
 // EMAIL PREFERENCES (synced with Firebase Cloud Functions)
 // ============================================================
 var _emailPrefs = { marketingEmails: true, productEmails: true, weeklyDigest: true };
@@ -14485,6 +14543,28 @@ function renderSettings(){
         <div class="settings-row">
           <div class="settings-row-left"><div class="sr-label">Ctrl+N — Focus Activity Log</div><div class="sr-desc">Press Ctrl+N to jump to the note editor</div></div>
           <div class="settings-row-right"><div class="settings-toggle ${settingsPrefs.shortcutNote!==false?'on':''}" onclick="toggleSettingsPref('shortcutNote',this)"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- AI ENGINE -->
+    <div class="settings-section">
+      <div class="settings-section-header"><h3>🤖 AI Engine</h3></div>
+      <div class="settings-section-body">
+        <div class="settings-row" style="flex-wrap:wrap">
+          <div class="settings-row-left"><div class="sr-label">Claude API Key</div><div class="sr-desc">Powers intelligent property analysis. Get a key at <a href="https://console.anthropic.com" target="_blank" style="color:var(--primary)">console.anthropic.com</a></div></div>
+          <div class="settings-row-right" style="display:flex;align-items:center;gap:8px">
+            <input type="password" id="settingsClaudeKey" placeholder="sk-ant-..." style="font-size:.82rem;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);color:var(--text);width:220px;font-family:monospace" />
+            <button class="btn btn-primary btn-sm" onclick="saveClaudeApiKey()">Save</button>
+          </div>
+        </div>
+        <div class="settings-row">
+          <div class="settings-row-left"><div class="sr-label">Status</div><div class="sr-desc" id="aiEngineStatus">Checking...</div></div>
+          <div class="settings-row-right"><button class="btn btn-secondary btn-sm" onclick="checkAiEngineStatus()">Test</button></div>
+        </div>
+        <div class="settings-row">
+          <div class="settings-row-left"><div class="sr-label">Model</div><div class="sr-desc">Claude Haiku 4.5 (~$0.005/import) — fast, accurate, investor-grade analysis</div></div>
+          <div class="settings-row-right"><span class="settings-value" style="font-size:.78rem">claude-haiku-4-5</span></div>
         </div>
       </div>
     </div>
