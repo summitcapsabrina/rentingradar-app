@@ -3568,14 +3568,23 @@ function openSectionEditor(recId, sectionKey){
 
   // Multi-select fields rendered as checkbox grids
   section.fields.filter(f => f.t === 'multi').forEach(f => {
-    const selected = d[f.k] || [];
+    const selected = Array.isArray(d[f.k]) ? d[f.k] : [];
+    const predefined = new Set(f.o || []);
     fieldsHtml += '<div style="margin-top:12px"><label style="display:block;font-size:.73rem;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">'+esc(f.l)+'</label>';
     fieldsHtml += '<div class="se-multi-grid" data-field="'+f.k+'">';
+    // Predefined options
     (f.o||[]).forEach(opt => {
       const checked = selected.includes(opt);
       fieldsHtml += '<label class="se-multi-opt'+(checked?' checked':'')+'"><input type="checkbox" value="'+esc(opt)+'" '+(checked?'checked':'')+' onchange="this.parentElement.classList.toggle(\'checked\',this.checked)"> '+esc(opt)+'</label>';
     });
-    fieldsHtml += '</div></div>';
+    // Custom values (user- or AI-added, not in predefined list)
+    selected.filter(v => !predefined.has(v)).forEach(opt => {
+      fieldsHtml += '<label class="se-multi-opt se-custom-opt checked" style="border-style:dashed;border-color:var(--primary,#1a73e8);background:var(--primary-light,#e8f0fe)"><input type="checkbox" value="'+esc(opt)+'" checked onchange="this.parentElement.classList.toggle(\'checked\',this.checked)"> '+esc(opt)+' <span class="se-custom-remove" onclick="event.preventDefault();event.stopPropagation();removeSeCustomOpt(this)" title="Remove custom value" style="cursor:pointer;margin-left:4px;font-size:.9rem;color:var(--text3);opacity:.7">&times;</span></label>';
+    });
+    fieldsHtml += '</div>';
+    // Custom value input
+    fieldsHtml += '<div style="margin-top:6px;display:flex;gap:6px;align-items:center"><input type="text" class="se-custom-input" data-field="'+f.k+'" placeholder="Add custom value..." style="flex:1;padding:5px 10px;border:1px solid var(--border);border-radius:6px;font-size:.82rem" onkeydown="if(event.key===\'Enter\'){event.preventDefault();addSeCustomOpt(this);}"><button class="btn btn-secondary btn-sm" onclick="addSeCustomOpt(this.previousElementSibling)" style="white-space:nowrap;padding:4px 10px;font-size:.78rem">+ Add</button></div>';
+    fieldsHtml += '</div>';
   });
 
   const overlay = document.createElement('div');
@@ -3621,6 +3630,41 @@ function saveSectionEditor(recId, sectionKey){
   saveData();
   document.getElementById('sectionEditOverlay')?.remove();
   render();
+}
+
+// v0.9.0: Add a custom checkbox to a section editor multi-select grid.
+// The input field tells us which data-field grid to target.
+function addSeCustomOpt(inputEl){
+  if(!inputEl) return;
+  const val = inputEl.value.trim();
+  if(!val){ inputEl.focus(); return; }
+  const fieldKey = inputEl.dataset.field;
+  const grid = document.querySelector('.se-multi-grid[data-field="'+fieldKey+'"]');
+  if(!grid) return;
+  // Check for duplicate (case-insensitive)
+  const existing = Array.from(grid.querySelectorAll('input[type="checkbox"]'));
+  if(existing.some(cb => cb.value.toLowerCase() === val.toLowerCase())){
+    // If it exists but unchecked, check it
+    const match = existing.find(cb => cb.value.toLowerCase() === val.toLowerCase());
+    if(match && !match.checked){ match.checked = true; match.parentElement.classList.add('checked'); }
+    inputEl.value = '';
+    inputEl.focus();
+    return;
+  }
+  // Create custom checkbox label
+  const label = document.createElement('label');
+  label.className = 'se-multi-opt se-custom-opt checked';
+  label.style.cssText = 'border-style:dashed;border-color:var(--primary,#1a73e8);background:var(--primary-light,#e8f0fe)';
+  label.innerHTML = '<input type="checkbox" value="'+val.replace(/"/g,'&quot;')+'" checked onchange="this.parentElement.classList.toggle(\'checked\',this.checked)"> '+val.replace(/</g,'&lt;')+' <span class="se-custom-remove" onclick="event.preventDefault();event.stopPropagation();removeSeCustomOpt(this)" title="Remove custom value" style="cursor:pointer;margin-left:4px;font-size:.9rem;color:var(--text3);opacity:.7">&times;</span>';
+  grid.appendChild(label);
+  inputEl.value = '';
+  inputEl.focus();
+}
+
+// v0.9.0: Remove a custom checkbox from the section editor grid
+function removeSeCustomOpt(removeBtn){
+  const label = removeBtn.closest('.se-custom-opt');
+  if(label) label.remove();
 }
 
 function toggleSection(header){
