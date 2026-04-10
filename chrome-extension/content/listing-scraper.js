@@ -779,10 +779,14 @@
 
     if (rf.petsAllowed != null) {
       const s = Array.isArray(rf.petsAllowed) ? rf.petsAllowed.join(' ') : String(rf.petsAllowed);
-      if (/yes|allowed|all/i.test(s)) setPD(pd, 'petsAllowed', 'Yes - All Pets');
-      else if (/dog/i.test(s) && !/cat/i.test(s)) setPD(pd, 'petsAllowed', 'Dogs Only');
-      else if (/cat/i.test(s) && !/dog/i.test(s)) setPD(pd, 'petsAllowed', 'Cats Only');
-      else if (/no pets|no/i.test(s)) setPD(pd, 'petsAllowed', 'No Pets');
+      if (/no pets|^no$/i.test(s)) setPD(pd, 'petsAllowed', ['No Pets']);
+      else {
+        const pets = [];
+        if (/cat/i.test(s)) pets.push('Cats Allowed');
+        if (/dog/i.test(s)) pets.push('Dogs Allowed');
+        if (!pets.length && /yes|allowed|all|ok/i.test(s)) { pets.push('Cats Allowed'); pets.push('Dogs Allowed'); }
+        if (pets.length) setPD(pd, 'petsAllowed', pets);
+      }
     }
 
     // Furnished status — useful STR/short-term-rental signal
@@ -1364,11 +1368,14 @@
         // Fees and Policies → pets
         if (/fees?\s+and\s+polic|^pet polic|^pets?$/i.test(heading)) {
           const norm = values.map(v => String(v).toLowerCase());
-          if (norm.some(v => /no pets/.test(v))) setPD(pd, 'petsAllowed', 'No Pets');
-          else if (norm.some(v => /dogs? allowed/.test(v)) && norm.some(v => /cats? allowed/.test(v))) {
-            setPD(pd, 'petsAllowed', 'Yes - All Pets');
-          } else if (norm.some(v => /dogs? allowed/.test(v))) setPD(pd, 'petsAllowed', 'Dogs Only');
-          else if (norm.some(v => /cats? allowed/.test(v))) setPD(pd, 'petsAllowed', 'Cats Only');
+          if (norm.some(v => /no pets/.test(v))) { setPD(pd, 'petsAllowed', ['No Pets']); }
+          else {
+            const pets = [];
+            if (norm.some(v => /cats? allowed/.test(v))) pets.push('Cats Allowed');
+            if (norm.some(v => /dogs? allowed/.test(v))) pets.push('Dogs Allowed');
+            if (norm.some(v => /small dogs? only/.test(v))) pets.push('Small Dogs Only');
+            if (pets.length) setPD(pd, 'petsAllowed', pets);
+          }
         }
       }
     } catch (e) { log('section routing error', String(e && e.message || e)); }
@@ -1381,11 +1388,14 @@
       else setPD(pd, 'propertyType', 'Apartment');
     }
 
-    // Pets
-    if (/no pets|pets not allowed/i.test(searchBlob)) setPD(pd, 'petsAllowed', 'No Pets');
-    else if (/dogs? allowed/i.test(searchBlob) && /cats? allowed/i.test(searchBlob)) setPD(pd, 'petsAllowed', 'Yes - All Pets');
-    else if (/dogs? allowed/i.test(searchBlob)) setPD(pd, 'petsAllowed', 'Dogs Only');
-    else if (/cats? allowed/i.test(searchBlob)) setPD(pd, 'petsAllowed', 'Cats Only');
+    // Pets (multi-select)
+    if (/no pets|pets not allowed/i.test(searchBlob)) setPD(pd, 'petsAllowed', ['No Pets']);
+    else {
+      const pets = [];
+      if (/cats? allowed/i.test(searchBlob)) pets.push('Cats Allowed');
+      if (/dogs? allowed/i.test(searchBlob)) pets.push('Dogs Allowed');
+      if (pets.length) setPD(pd, 'petsAllowed', pets);
+    }
 
     // Parking
     if (/attached garage/i.test(searchBlob)) setPD(pd, 'parking', 'Attached Garage');
@@ -1702,11 +1712,14 @@
     // furnished
     if (/\bfurnished\b/i.test(attrText)) setPD(pd, 'furnished', 'Furnished');
 
-    // cats/dogs OK
-    if (/cats are OK/i.test(attrText) && /dogs are OK/i.test(attrText)) setPD(pd, 'petsAllowed', 'Yes - All Pets');
-    else if (/dogs are OK/i.test(attrText)) setPD(pd, 'petsAllowed', 'Dogs Only');
-    else if (/cats are OK/i.test(attrText)) setPD(pd, 'petsAllowed', 'Cats Only');
-    else if (/no smoking/i.test(attrText) && /no pets/i.test(attrText)) setPD(pd, 'petsAllowed', 'No Pets');
+    // cats/dogs OK (multi-select)
+    if (/no pets/i.test(attrText)) setPD(pd, 'petsAllowed', ['No Pets']);
+    else {
+      const pets = [];
+      if (/cats are OK/i.test(attrText)) pets.push('Cats Allowed');
+      if (/dogs are OK/i.test(attrText)) pets.push('Dogs Allowed');
+      if (pets.length) setPD(pd, 'petsAllowed', pets);
+    }
 
     // Amenity dictionary on description
     const dictMatches = matchAmenities(((out.description || '') + ' ' + attrText).toLowerCase());
@@ -1748,12 +1761,10 @@
       const hasAll = cfc >= 4;
       const hasEnough = cfc >= 2 || (cfc >= 1 && !!data.address);
       if (hasAll || hasEnough || attempt >= 7) {
-        // v0.7.0: No LLM enrichment — skip page text capture entirely.
-        // The service worker no longer calls enrichWithOllama(), so the
-        // _pageText and _fullPageText fields are unused. This shaves
-        // ~200ms of DOM cloning and text cleaning off every import.
-        data._pageText = null;
-        data._fullPageText = null;
+        // v0.8.0: AI enrichment restored — capture page text for the
+        // dictionary extractor and Ollama LLM pass.
+        data._pageText = capturePageText();
+        data._fullPageText = captureFullPageText();
         if (data._debug) {
           data._debug.finalAttempt = attempt;
           data._debug.finalCoreFieldCount = cfc;

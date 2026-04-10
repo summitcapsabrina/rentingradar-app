@@ -15,83 +15,45 @@
 const CRM_ORIGIN = 'https://app.rentingradar.com';
 const SCRAPE_TIMEOUT_MS = 45000;
 
-// Local Ollama AI engine for property-detail enrichment. Requires the user
-// to run Ollama on their own machine (http://ollama.com/download) and to
-// have pulled the llama3.2 model. The extension never calls any hosted LLM
-// API — all inference is local, free, and private.
+// ------------------------------------------------------------------
+// v0.9.0: Gemma 3 4B via Ollama for property-detail enrichment.
+// Free, local, private. ~2.5GB on disk, ~3GB RAM resident.
+// Install: `ollama pull gemma3:4b`
+// ------------------------------------------------------------------
 const OLLAMA_HOST = 'http://127.0.0.1:11434';
-// qwen3:4b — Qwen3 family at the 4B param size. ~2.6GB on disk, ~3GB
-// resident, holds in 4-8GB RAM comfortably. Half the params of qwen3:8b
-// means roughly 2x faster inference (~10-15s warm vs ~25-35s warm), which
-// is the dominant factor in our import latency. Source-grounding +
-// dictionary-first extraction defend against the smaller model's higher
-// hallucination rate, so quality stays high while wall-clock plummets.
-// We picked this over gemma3:4b because Qwen has strictly stronger JSON
-// adherence and we've already tuned all the prompts for Qwen3.
-// IMPORTANT: Qwen3 ships with a "thinking mode" that prepends
-// <think>...</think> blocks to responses. We disable it via the /no_think
-// directive in the system prompt so the JSON parser doesn't choke.
-// Install: `ollama pull qwen3:4b`
-const OLLAMA_MODEL = 'qwen3:4b';
-// 60s is plenty for ONE consolidated pass on a warm 4B model. The pre-warm
-// at service worker startup means the model is already in RAM by the time
-// the first user import hits.
-const OLLAMA_TIMEOUT_MS = 25000;
-// keep_alive tells Ollama how long to keep the model loaded in RAM after
-// the request finishes. 60 minutes means a user importing several listings
-// in a session never pays the cold-load penalty after the first one.
+const OLLAMA_MODEL = 'gemma3:4b';
+const OLLAMA_TIMEOUT_MS = 30000;
 const OLLAMA_KEEP_ALIVE = '60m';
 
+// Claude API — optional upgrade. Only runs if an API key is configured.
+// Set via: chrome.runtime.sendMessage(extId, { type:'SET_API_KEY', key:'sk-ant-...' })
+const CLAUDE_API_URL = 'https://api.anthropic.com/v1/messages';
+const CLAUDE_MODEL = 'claude-haiku-4-5-20251001';
+const CLAUDE_TIMEOUT_MS = 30000;
+async function getClaudeApiKey() {
+  try { const obj = await chrome.storage.sync.get('rrClaudeApiKey'); return (obj && obj.rrClaudeApiKey) || null; } catch (_) { return null; }
+}
+async function setClaudeApiKey(key) { await chrome.storage.sync.set({ rrClaudeApiKey: key || '' }); }
+
 // ------------------------------------------------------------------
-// Import cache — keyed by extension version + source URL.
-// Re-importing the same listing returns the exact cached payload, which
-// means Property Details are byte-for-byte identical across re-imports.
-// The cache is bumped automatically whenever the extension updates, so
-// improvements to the extraction pipeline invalidate stale entries.
+// v0.8.0: Import cache REMOVED. Every import runs the full scraper +
+// AI enrichment pipeline fresh. This ensures listing data is always
+// current and eliminates stale-cache bugs (e.g. unit numbers missing
+// because an older scrape was served). With the dictionary extractor
+// providing deterministic amenity data and Ollama handling the fuzzy
+// parts, re-imports of the same URL will still be highly consistent.
 // ------------------------------------------------------------------
-const IMPORT_CACHE_VERSION = (chrome.runtime.getManifest && chrome.runtime.getManifest().version) || '0.0.0';
-const IMPORT_CACHE_PREFIX = 'rr_import_cache_' + IMPORT_CACHE_VERSION + '_';
-const IMPORT_CACHE_TTL_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
-
-function canonicalizeUrl(url) {
+// Purge any leftover cache entries from older versions on startup.
+(async function purgeAllCacheEntries() {
   try {
-    const u = new URL(url);
-    // Drop tracking/session params that don't change the listing identity.
-    const drop = /^(utm_|fbclid|gclid|mc_|ref|session|source|tracking)/i;
-    const keep = [];
-    for (const [k, v] of u.searchParams.entries()) {
-      if (!drop.test(k)) keep.push([k, v]);
+    const all = await chrome.storage.local.get(null);
+    const stale = Object.keys(all).filter(k => k.startsWith('rr_import_cache_'));
+    if (stale.length) {
+      await chrome.storage.local.remove(stale);
+      console.log('[RR ext] purged', stale.length, 'legacy cache entries');
     }
-    u.search = '';
-    keep.sort((a, b) => a[0].localeCompare(b[0]));
-    for (const [k, v] of keep) u.searchParams.append(k, v);
-    u.hash = '';
-    return u.toString().replace(/\/$/, '').toLowerCase();
-  } catch (_) {
-    return String(url || '').toLowerCase();
-  }
-}
-
-async function cacheGet(url) {
-  try {
-    const key = IMPORT_CACHE_PREFIX + canonicalizeUrl(url);
-    const obj = await chrome.storage.local.get(key);
-    const entry = obj && obj[key];
-    if (!entry || !entry.ts || !entry.data) return null;
-    if (Date.now() - entry.ts > IMPORT_CACHE_TTL_MS) {
-      try { await chrome.storage.local.remove(key); } catch (_) {}
-      return null;
-    }
-    return entry.data;
-  } catch (_) { return null; }
-}
-
-async function cacheSet(url, data) {
-  try {
-    const key = IMPORT_CACHE_PREFIX + canonicalizeUrl(url);
-    await chrome.storage.local.set({ [key]: { ts: Date.now(), data } });
-  } catch (_) { /* storage full or unavailable — cache is best-effort */ }
-}
+  } catch (_) { /* best-effort */ }
+})();
 
 // Strip dynamic/relative content from page text so the LLM and dictionary
 // extractor see a stable surface across re-imports. Zillow/Apartments.com/
@@ -128,8 +90,28 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           return;
 
         case 'HEALTH': {
-          // v0.7.0: Ollama no longer used — return a simple "ready" status.
-          sendResponse({ ok: true, version: chrome.runtime.getManifest().version, ollama: { running: true, modelInstalled: true, model: 'none (no AI)', error: null } });
+          // v0.9.0: Report Claude API + Ollama status.
+          const apiKey = await getClaudeApiKey();
+          const h = await checkOllamaHealth();
+          sendResponse({
+            ok: true,
+            version: chrome.runtime.getManifest().version,
+            claude: { configured: !!apiKey, model: CLAUDE_MODEL },
+            ollama: h,
+          });
+          return;
+        }
+
+        case 'SET_API_KEY': {
+          // Store Claude API key from CRM settings
+          await setClaudeApiKey(msg.key);
+          sendResponse({ ok: true });
+          return;
+        }
+
+        case 'GET_API_KEY': {
+          const key = await getClaudeApiKey();
+          sendResponse({ ok: true, key: key ? '••••' + key.slice(-4) : null });
           return;
         }
 
@@ -177,8 +159,27 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
           return;
 
         case 'HEALTH': {
-          // v0.7.0: Ollama no longer used — return a simple "ready" status.
-          sendResponse({ ok: true, version: chrome.runtime.getManifest().version, ollama: { running: true, modelInstalled: true, model: 'none (no AI)', error: null } });
+          // v0.9.0: Report Claude API + Ollama status.
+          const apiKey2 = await getClaudeApiKey();
+          const h2 = await checkOllamaHealth();
+          sendResponse({
+            ok: true,
+            version: chrome.runtime.getManifest().version,
+            claude: { configured: !!apiKey2, model: CLAUDE_MODEL },
+            ollama: h2,
+          });
+          return;
+        }
+
+        case 'SET_API_KEY': {
+          await setClaudeApiKey(msg.key);
+          sendResponse({ ok: true });
+          return;
+        }
+
+        case 'GET_API_KEY': {
+          const key2 = await getClaudeApiKey();
+          sendResponse({ ok: true, key: key2 ? '••••' + key2.slice(-4) : null });
           return;
         }
 
@@ -217,20 +218,7 @@ async function scrapeAny(url, hint) {
   else if (/craigslist\.org$/i.test(host)) kind = 'listing';
   else return { ok: false, error: 'Unsupported site. Supported: AirDNA, Zillow, Apartments.com, Hotpads, Facebook Marketplace, Craigslist.' };
 
-  // Cache check — re-importing the same listing returns the exact same
-  // payload, so Property Details are guaranteed byte-for-byte consistent.
-  if (kind === 'listing') {
-    try {
-      const cached = await cacheGet(url);
-      if (cached) {
-        console.log('[RR ext] cache hit for', url);
-        const clone = JSON.parse(JSON.stringify(cached));
-        clone._cached = true;
-        return { ok: true, data: clone };
-      }
-    } catch (_) {}
-  }
-
+  // v0.8.0: No import cache — every import runs the full pipeline fresh.
   const file = kind === 'airdna' ? 'content/airdna-scraper.js' : 'content/listing-scraper.js';
   try {
     const data = await scrapeInBackgroundTab(url, file);
@@ -238,35 +226,42 @@ async function scrapeAny(url, hint) {
     // Tag the payload with its kind so the CRM knows how to route it
     data._kind = kind;
 
-    // ----- v0.7.0: NO AI ENRICHMENT -----
-    // Ollama/LLM enrichment removed entirely. The scraper provides the core
-    // listing fields (address, price, beds, baths, sqft, available date,
-    // photo, source URL) from structured data (JSON-LD, state blobs, DOM).
-    // Property Details and Property Note bullets are NOT populated — users
-    // fill those manually. This makes import virtually instantaneous.
+    // ----- v0.8.0: AI ENRICHMENT RESTORED -----
+    // Dictionary extractor runs deterministically over the full page text,
+    // then Ollama fills gaps (utilities, pets, bullets, core numbers the
+    // scraper missed). All values are source-grounded against page text.
     if (kind === 'listing') {
-      // Preserve availableDate if the scraper found one
-      const scraperAvail = data.propertyDetails && data.propertyDetails.availableDate;
-
-      // Clear all propertyDetails and propertyNoteBullets — only core
-      // fields (address, price, beds, baths, sqft) populate automatically.
-      data.propertyDetails = {};
-      data.propertyNoteBullets = [];
-      data._aiEnriched = false;
-      data._aiModel = null;
-
-      // Restore availableDate if the scraper found it
-      if (scraperAvail) data.propertyDetails.availableDate = scraperAvail;
-
-      // Strip raw page text — no longer needed without AI.
+      const enriched = await enrichWithOllama(data);
+      // Merge AI-derived propertyDetails into scraper-provided ones
+      const scraperPd = data.propertyDetails || {};
+      data.propertyDetails = mergePropertyDetails(scraperPd, enriched.propertyDetails || {});
+      // v0.6.4: Run post-merge grounding pass. The scraper's pd came from
+      // JSON-LD and state blobs (trusted), but the merge above can introduce
+      // LLM values that slipped through. One final groundPropertyDetails
+      // sweep catches anything that shouldn't be there.
+      const fullPageText = normalizePageText(data._fullPageText || data._pageText || '');
+      groundPropertyDetails(data.propertyDetails, fullPageText);
+      data.propertyNoteBullets = enriched.propertyNoteBullets || [];
+      // Overlay AI-extracted core numbers only when the scraper missed them
+      const core = enriched.core || {};
+      if (core.bedrooms != null && (data.bedrooms == null || data.bedrooms === ''))
+        data.bedrooms = core.bedrooms;
+      if (core.bathrooms != null && (data.bathrooms == null || data.bathrooms === ''))
+        data.bathrooms = core.bathrooms;
+      if (core.sqft != null && (data.sqft == null || data.sqft === '' || data.sqft === 0))
+        data.sqft = core.sqft;
+      if (core.price != null && (data.price == null || data.price === '' || data.price === 0))
+        data.price = core.price;
+      // Available date: prefer scraper (from JSON-LD / state blob), fall back to AI
+      if (!data.propertyDetails.availableDate && core.availableDate) {
+        data.propertyDetails.availableDate = core.availableDate;
+      }
+      data._aiEnriched = !enriched._aiError;
+      data._aiModel = enriched._aiModel || 'unknown';
+      if (enriched._aiError) data._aiError = enriched._aiError;
+      // Strip raw page text from the payload sent to the CRM
       delete data._pageText;
       delete data._fullPageText;
-    }
-
-    // Cache the fully-enriched payload so re-imports of the same URL
-    // return identical data instantly.
-    if (kind === 'listing') {
-      try { await cacheSet(url, data); } catch (_) {}
     }
 
     return { ok: true, data };
@@ -354,7 +349,7 @@ const OLLAMA_FIELD_OPTIONS = {
   exteriorFeatures: ['Fenced Yard','Sprinkler System','Outdoor Lighting','Outdoor Kitchen/BBQ','Fire Pit','Garden Space','Shed/Outbuilding','RV Parking','Boat Parking','EV Charging','Gated Entry','Desert Landscaping','Pool Fence'],
   communityAmenities: ['Gym/Fitness Center','Clubhouse','Business Center','Package Lockers','Dog Park','Playground','Swimming Pool','Community Spa/Hot Tub','Sauna','Elevator','Concierge/Doorman','On-Site Management','On-Site Maintenance','Bike Storage','BBQ/Grill Area','Rooftop Lounge','Tennis Court','Pickleball Court'],
   utilitiesIncluded: ['Water','Hot Water','Gas','Electric','Trash','Sewer','Recycling','Internet/WiFi','Cable TV','Landscaping/Grounds','Pest Control'],
-  petsAllowed: ['Yes - All Pets','Dogs Only','Cats Only','Small Pets Only','Case by Case','Service Animals Only','No Pets'],
+  petsAllowed: ['Cats Allowed','Dogs Allowed','Small Dogs Only','Small Pets Only','Case by Case','Service Animals Only','No Pets'],
   safetyFeatures: ['Smoke Detectors','Carbon Monoxide Detectors','Fire Extinguisher','Security System/Alarm','Gated Entry','Deadbolt Locks','Smart Locks','Security Cameras','24-Hour Security'],
 };
 
@@ -364,8 +359,9 @@ const OLLAMA_FIELD_OPTIONS = {
 // Ollama returns both as JSON arrays, which causes rendering glitches and
 // contradictions (e.g. "Attached Garage" AND "Covered Parking" in one cell).
 // We enforce cardinality here when assembling the merged propertyDetails.
+// v0.9.0: petsAllowed is now multi-select (e.g. ["Cats Allowed","Dogs Allowed"])
 const OLLAMA_SINGLE_SELECT_FIELDS = new Set([
-  'propertyType','furnished','laundry','ac','heating','parking','pool','petsAllowed'
+  'propertyType','furnished','laundry','ac','heating','parking','pool'
 ]);
 
 // Normalize whatever the model returns for availableDate into a value the
@@ -537,6 +533,27 @@ function isContainedDuplicate(fp, allFps) {
     if (other.length > fp.length && other.includes(fp)) return true;
   }
   return false;
+}
+
+// v0.9.0: Lightweight dedup — only removes exact/contained duplicates.
+// Does NOT filter by topic (the old DUPLICATIVE/ALLOWED pattern lists
+// dropped too many valid bullets). The AI prompt already constrains
+// bullet topics; we just catch literal duplication here.
+function deduplicateBullets(bullets) {
+  if (!Array.isArray(bullets) || !bullets.length) return bullets || [];
+  const out = [];
+  const seen = new Set();
+  for (const raw of bullets) {
+    const b = String(raw || '').trim();
+    if (!b) continue;
+    const fp = bulletFingerprint(b);
+    if (!fp || seen.has(fp)) continue;
+    seen.add(fp);
+    out.push(b);
+  }
+  // Remove contained duplicates
+  const allFps = out.map(b => bulletFingerprint(b));
+  return out.filter((b, i) => !isContainedDuplicate(allFps[i], allFps));
 }
 
 function filterDuplicativeBullets(bullets) {
@@ -721,8 +738,8 @@ const AMENITY_SOURCE_TRIGGERS = {
   'Pickleball Court': ['pickleball'],
   // Utilities included
   'Water': ['water included','includes water','water is included'],
-  'Hot Water': ['hot water included','includes hot water'],
-  'Gas': ['gas included','includes gas'],
+  'Hot Water': ['hot water included','includes hot water','hot water is included'],
+  'Gas': ['gas included','includes gas','heat included','heating included','heat and hot water included','includes heat'],
   'Electric': ['electric included','electricity included','includes electric'],
   'Trash': ['trash included','garbage included','includes trash'],
   'Sewer': ['sewer included','includes sewer'],
@@ -732,10 +749,11 @@ const AMENITY_SOURCE_TRIGGERS = {
   'Landscaping/Grounds': ['landscaping included','grounds maintenance'],
   'Pest Control': ['pest control included'],
   // Pets
-  'Yes - All Pets': ['pets welcome','pets allowed','pet friendly','pet-friendly'],
-  'Dogs Only': ['dogs only','dogs allowed','dogs welcome'],
-  'Cats Only': ['cats only','cats allowed','cats welcome'],
-  'Small Pets Only': ['small pets','small dogs','small animal'],
+  // v0.9.0: Pet policy is now multi-select. Each type triggers independently.
+  'Cats Allowed': ['cats allowed','cats welcome','cats ok','cats permitted','cat friendly'],
+  'Dogs Allowed': ['dogs allowed','dogs welcome','dogs ok','dogs permitted','dog friendly','pets allowed','pets welcome','pet friendly','pet-friendly'],
+  'Small Dogs Only': ['small dogs only','small dogs allowed','small dogs'],
+  'Small Pets Only': ['small pets','small animal'],
   'Case by Case': ['case by case','case-by-case','upon approval','with approval'],
   'Service Animals Only': ['service animal'],
   'No Pets': ['no pets','pets not allowed','pet free','pet-free'],
@@ -780,10 +798,10 @@ const AMENITY_SOURCE_TRIGGERS = {
 // but the structured Property Details fields are now decided here.
 //
 // Field type assumptions (matched to the CRM's PROP_SECTIONS schema):
-//   - propertyType, furnished, laundry, ac, heating, parking, pool,
-//     petsAllowed  → single-select (one string value)
+//   - propertyType, furnished, laundry, ac, heating, parking, pool
+//     → single-select (one string value)
 //   - flooring, appliances, interiorFeatures, outdoor, exteriorFeatures,
-//     communityAmenities, utilitiesIncluded, safetyFeatures
+//     communityAmenities, utilitiesIncluded, safetyFeatures, petsAllowed
 //     → multi-select (array of values)
 //
 // Priority lists (reused for single-select tie-breaking) decide which
@@ -797,7 +815,7 @@ const FIELD_VALUE_PRIORITY = {
   laundry:      ['In-Unit W/D','Stacked W/D','W/D Hookups','Shared/On-Site','None'],
   ac:           ['Central A/C','Mini-Split','Window Unit','Portable','Evaporative/Swamp Cooler','None'],
   heating:      ['Central (Gas)','Central (Electric)','Heat Pump','Radiator','Baseboard','Fireplace','Space Heater','None'],
-  petsAllowed:  ['Yes - All Pets','Dogs Only','Cats Only','Small Pets Only','Case by Case','Service Animals Only','No Pets'],
+  // petsAllowed is now multi-select — no priority needed
 };
 
 // All the fields the extractor owns. The LLM can still suggest values
@@ -861,6 +879,24 @@ function extractPropertyDetailsFromText(fullPageText) {
     }
   }
 
+  // v0.9.0: petsAllowed is multi-select — no combo logic needed.
+  // Both "Cats Allowed" and "Dogs Allowed" coexist naturally in the array.
+
+  // v0.9.0: Utility false-positive guard. "water included" is a
+  // substring of "hot water included", so the Water trigger fires even
+  // when only hot water is mentioned. Check if every "water included"
+  // occurrence is actually preceded by "hot " — if so, drop Water and
+  // keep only Hot Water.
+  if (Array.isArray(pd.utilitiesIncluded) &&
+      pd.utilitiesIncluded.includes('Water') &&
+      pd.utilitiesIncluded.includes('Hot Water')) {
+    // Check if "water included" ever appears WITHOUT "hot" before it
+    const waterRe = /(?<!hot\s)water\s+included/gi;
+    if (!waterRe.test(text)) {
+      pd.utilitiesIncluded = pd.utilitiesIncluded.filter(u => u !== 'Water');
+    }
+  }
+
   return pd;
 }
 
@@ -881,11 +917,22 @@ function mergeLlmIntoDictionary(dictPd, llmPd, lowerText) {
         dictPd[k] = llmVal;
       }
     } else {
-      // Multi-select: union dictionary + LLM, keeping only grounded values
+      // Multi-select: union dictionary + LLM values.
+      // v0.9.0: For values WITH triggers (predefined), require grounding.
+      // For values WITHOUT triggers (custom from AI), use a lenient check:
+      // at least one content word must appear in the source text.
       const existing = Array.isArray(dictPd[k]) ? dictPd[k] : [];
       const addition = Array.isArray(llmVal) ? llmVal : [llmVal];
       const merged = Array.from(new Set(existing.concat(addition)))
-        .filter((v) => valueInText(v, lowerText));
+        .filter((v) => {
+          if (valueInText(v, lowerText)) return true;
+          // Lenient fallback for custom values: any 4+ letter word present?
+          if (!AMENITY_SOURCE_TRIGGERS[v]) {
+            const words = String(v).toLowerCase().replace(/[/()-]/g, ' ').match(/[a-z]{4,}/g) || [];
+            return words.length === 0 || words.some(w => lowerText.includes(w));
+          }
+          return false;
+        });
       if (merged.length) dictPd[k] = merged;
     }
   }
@@ -931,7 +978,8 @@ function isAmenityInSource(value, text) {
 function groundPropertyDetails(pd, fullPageText) {
   const text = String(fullPageText || '').toLowerCase();
   if (!text || !pd || typeof pd !== 'object') return;
-  // availableDate + petsAllowed + numeric fields are handled elsewhere
+  // availableDate + numeric fields are handled elsewhere; petsAllowed is
+  // now multi-select (array) and grounded via the array path below.
   const SKIP = new Set(['availableDate','latitude','longitude']);
   for (const k of Object.keys(pd)) {
     if (SKIP.has(k)) continue;
@@ -944,7 +992,7 @@ function groundPropertyDetails(pd, fullPageText) {
       if (dropped.length) console.log('[RR ext] grounded: dropped', k, dropped);
     } else if (typeof v === 'string') {
       // Only apply to known amenity fields
-      if (OLLAMA_FIELD_OPTIONS[k] || k === 'pool' || k === 'parking' || k === 'laundry' || k === 'ac' || k === 'heating' || k === 'petsAllowed' || k === 'hotTub') {
+      if (OLLAMA_FIELD_OPTIONS[k] || k === 'pool' || k === 'parking' || k === 'laundry' || k === 'ac' || k === 'heating' || k === 'hotTub') {
         if (!isAmenityInSource(v, text)) {
           delete pd[k];
           console.log('[RR ext] grounded: dropped', k, '=', v);
@@ -1004,8 +1052,8 @@ function resolvePropertyDetailsContradictions(pd) {
       delete pd.parking; // let the user decide rather than lying
     }
   }
-  // Pet policy: if petsAllowed says "No Pets" but the bullets / amenities mention a dog park, something's wrong — drop the contradictory single-select.
-  if (pd.petsAllowed === 'No Pets' && comm.includes('Dog Park')) {
+  // Pet policy: if petsAllowed is ["No Pets"] but the amenities mention a dog park, something's wrong — drop the contradictory value.
+  if (Array.isArray(pd.petsAllowed) && pd.petsAllowed.length === 1 && pd.petsAllowed[0] === 'No Pets' && comm.includes('Dog Park')) {
     delete pd.petsAllowed;
   }
   // Laundry: community has "On-Site Laundry" and laundry is missing → reflect it
@@ -1015,21 +1063,99 @@ function resolvePropertyDetailsContradictions(pd) {
   // A/C "None" but interior features list mentions "Smart Thermostat" is fine — don't flag.
 }
 
+// ------------------------------------------------------------------
+// v0.9.0: AI ENRICHMENT — Claude API primary, Ollama fallback.
+// ------------------------------------------------------------------
+// This function ALWAYS returns a result, never throws. If both Claude
+// and Ollama fail, the dictionary extractor's output is still returned.
+
+async function callClaude(apiKey, systemPrompt, userPrompt) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), CLAUDE_TIMEOUT_MS);
+  try {
+    const resp = await fetch(CLAUDE_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true',
+      },
+      signal: ctrl.signal,
+      body: JSON.stringify({
+        model: CLAUDE_MODEL,
+        max_tokens: 1024,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userPrompt }],
+      }),
+    });
+    if (!resp.ok) {
+      const body = await resp.text().catch(() => '');
+      throw new Error('Claude API HTTP ' + resp.status + (body ? ': ' + body.slice(0, 200) : ''));
+    }
+    const json = await resp.json();
+    const content = json && json.content && json.content[0] && json.content[0].text;
+    if (!content) throw new Error('Empty response from Claude API');
+    try { return JSON.parse(content); }
+    catch (_) {
+      const m = content.match(/\{[\s\S]*\}/);
+      if (!m) throw new Error('Claude API did not return JSON');
+      return JSON.parse(m[0]);
+    }
+  } finally { clearTimeout(t); }
+}
+
+async function callOllamaLegacy(sysPrompt, userPrompt, timeoutMs) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const resp = await fetch(OLLAMA_HOST + '/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: ctrl.signal,
+      body: JSON.stringify({
+        model: OLLAMA_MODEL,
+        stream: false,
+        keep_alive: OLLAMA_KEEP_ALIVE,
+        options: {
+          // v0.9.0: Gemma 3 4B — slightly warm sampling to avoid EOS traps.
+          // Gemma is more stable than Qwen3 at low temps so we can keep this
+          // close to deterministic.
+          temperature: 0.15, top_k: 30, top_p: 0.95,
+          repeat_penalty: 1.0, seed: 20260410,
+          // 8192 ctx for Gemma 3 — the model supports up to 128K but 8K
+          // is plenty for our ~3K prompt + ~1K response and avoids slow
+          // context init on constrained machines.
+          num_ctx: 8192, num_predict: 800,
+        },
+        messages: [
+          { role: 'system', content: sysPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+      }),
+    });
+    if (!resp.ok) {
+      const body = await resp.text().catch(() => '');
+      throw new Error('Ollama HTTP ' + resp.status + (body ? ': ' + body.slice(0, 200) : ''));
+    }
+    const json = await resp.json();
+    const content = json && json.message && json.message.content;
+    if (!content) throw new Error('Empty response from Ollama');
+    // Strip any thinking blocks (Qwen3 compat) and markdown fences
+    let cleaned = String(content)
+      .replace(/<think>[\s\S]*?<\/think>/gi, '')
+      .replace(/```json\s*/gi, '').replace(/```\s*/gi, '')
+      .trim();
+    try { return JSON.parse(cleaned); }
+    catch (_) {
+      const m = cleaned.match(/\{[\s\S]*\}/);
+      if (!m) throw new Error('Ollama did not return JSON');
+      return JSON.parse(m[0]);
+    }
+  } finally { clearTimeout(t); }
+}
+
 async function enrichWithOllama(scraped) {
-  // CRITICAL: this function ALWAYS returns a result, never throws.
-  // Earlier versions threw on Ollama health-check failure or LLM
-  // timeout, which caused the caller's catch block to discard ALL the
-  // dictionary-extracted propertyDetails along with the LLM error. The
-  // user saw "AI Timed Out" + a completely empty profile even though
-  // the deterministic dictionary extractor had perfectly good data
-  // ready. The fix: gracefully degrade. If Ollama is dead, run the
-  // dictionary extractor anyway and return its output with _aiError
-  // set so the caller can show the right toast.
-  // v0.6.0: the scraper now sends two text blobs:
-  //   _pageText      → tight ≤4KB description snippet for the LLM
-  //   _fullPageText  → broad ≤20KB main-content for the dictionary regex pass
-  // Older scrapers (or sites where the snippet capture failed) only send
-  // _pageText, so we fall back to it for the dictionary too.
   const llmSnippet = normalizePageText(scraped._pageText || '');
   const fullPageText = normalizePageText(scraped._fullPageText || scraped._pageText || '');
   const lowerFullText = fullPageText.toLowerCase();
@@ -1042,49 +1168,10 @@ async function enrichWithOllama(scraped) {
     };
   };
 
-  const health = await checkOllamaHealth();
-  // v0.6.2: Only short-circuit on a DEFINITELY-down daemon. If health is
-  // "unknown" (tags probe aborted / errored but the daemon might still be
-  // up — e.g. it's mid-inference from a previous import), fall through and
-  // let the chat request be the real test. This fixes the spurious "No
-  // response from Ollama" toast that appeared when /api/tags was queued
-  // behind a generate worker.
-  if (!health.running && !health.unknown) {
-    const out = earlyDict();
-    out._aiError = 'Ollama not running (' + (health.error || 'no response from 127.0.0.1:11434') + ')';
-    return out;
-  }
-  // Skip the modelInstalled guard when we couldn't actually enumerate
-  // models (unknown === true means we have no list to check against).
-  if (!health.unknown && !health.modelInstalled) {
-    const out = earlyDict();
-    out._aiError = 'Model ' + OLLAMA_MODEL + ' not installed. Installed: ' + (health.installedModels.join(', ') || 'none');
-    return out;
-  }
-
-  // ---------- v0.6.0: SURGICAL LLM CALL ----------
-  //
-  // The scraper's per-site parsers (parseZillow / parseApartments / etc.)
-  // already pull beds/baths/sqft/price from structured sources (__NEXT_DATA__,
-  // JSON-LD, schema.org markup) on the supported sites. The dictionary
-  // regex extractor then fills 15+ amenity fields deterministically. By the
-  // time we get here, the LLM only needs to:
-  //   (a) fill any core fields the parser missed (rare on Zillow/Apartments,
-  //       common on Craigslist / Facebook),
-  //   (b) decide utilitiesIncluded + petsAllowed when those are buried in prose,
-  //   (c) write Property Note bullets about landmarks / neighborhood / STR angles.
-  //
-  // The LLM is fed only a TIGHT 4KB description-focused snippet (not the
-  // 20KB full main content). Prompt is small, output is small, num_ctx is
-  // small — wall time on qwen3:4b drops from 15-25s to 4-8s.
-  const pageText = (llmSnippet || fullPageText).slice(0, 4000);
-
   // ----- DICTIONARY-FIRST EXTRACTION -----
-  // Run the deterministic trigger-dictionary extractor over the full text.
-  // This produces propertyDetails with ZERO LLM involvement — identical
-  // input always yields identical output. The LLM only fills gaps below.
   const dictPropertyDetails = extractPropertyDetailsFromText(fullPageText);
   console.log('[RR ext] dictionary extractor produced:', Object.keys(dictPropertyDetails));
+
   const scraperHints = {
     source: scraped.source || '',
     address: scraped.address || '',
@@ -1094,269 +1181,211 @@ async function enrichWithOllama(scraped) {
     price: scraped.price,
   };
 
-  // v0.6.0 SURGICAL PROMPT — short and direct. The scraper has already
-  // filled most of the structured data, the dictionary has filled
-  // amenities, and we're feeding only the 4KB description snippet. Long
-  // prompts make small models slower AND less accurate.
-  const systemPromptA =
-    "/no_think\n" +
-    "You extract rental-listing data from a description snippet. " +
-    "Return ONLY a JSON object — no prose, no markdown, no code fences. " +
-    "Every value you output must be supported by literal text in the snippet. " +
-    "If a field is not stated, OMIT it. Never invent. Studio = 0 bedrooms. " +
-    "Half baths = .5. Bullets are OPTIONAL — return [] if the snippet has " +
-    "nothing about nearby landmarks, neighborhood character, or STR/investor angles.";
+  // v0.9.0: 8KB of listing text for the AI — Gemma 3 handles this fine
+  // with num_ctx=8192, and Claude API has no practical limit.
+  const pageTextFull = (llmSnippet || fullPageText).slice(0, 8000);
 
-  const userPromptA =
+  // ----- v0.9.0: FLEXIBLE EXTRACTION PROMPT -----
+  // The AI extracts everything it sees. For multi-select fields, it uses
+  // predefined values when they match, but can also add CUSTOM labels for
+  // anything the listing mentions that isn't in the predefined list. This
+  // eliminates lossy translation (e.g. "Heat included" → forced to "Gas").
+  const systemPrompt =
+    "You are a real-estate listing data extractor. " +
+    "Extract EVERY detail from the listing. Return ONLY a JSON object. " +
+    "Every value MUST come directly from the listing text. " +
+    "If something is not mentioned, OMIT that field entirely. Never invent.";
+
+  const userPrompt =
 `Scraper already extracted: ${JSON.stringify(scraperHints)}
 
-Listing snippet:
+Listing text:
 """
-${pageText}
+${pageTextFull}
 """
 
-Return ONLY this JSON. Omit fields not stated in the snippet. Use the scraper values as ground truth — only override if the snippet clearly contradicts them.
+Extract ALL details into this JSON structure. Return ONLY the JSON.
 
 {
   "bedrooms": <int 0-20>,
-  "bathrooms": <number, .5 ok>,
+  "bathrooms": <number, .5 for half baths>,
   "sqft": <int>,
   "price": <int monthly rent USD>,
-  "availableDate": "Now" or "YYYY-MM-DD" or "Month Day",
-  "utilitiesIncluded": [ any of: "Water","Hot Water","Gas","Electric","Trash","Sewer","Recycling","Internet/WiFi","Cable TV","Landscaping/Grounds","Pest Control" ],
-  "petsAllowed": one of "Yes - All Pets","Dogs Only","Cats Only","Small Pets Only","Case by Case","Service Animals Only","No Pets",
-  "bullets": [ 0-6 short fragments, 6-14 words each, ≤110 chars ]
+  "availableDate": "Now" or "YYYY-MM-DD",
+  "propertyType": <string - use one of these if it fits: ${OLLAMA_FIELD_OPTIONS.propertyType.join(', ')}>,
+  "furnished": <string>,
+  "flooring": [<strings>],
+  "appliances": [<strings>],
+  "laundry": <string>,
+  "ac": <string>,
+  "heating": <string>,
+  "interiorFeatures": [<strings>],
+  "parking": <string>,
+  "pool": <string>,
+  "outdoor": [<strings>],
+  "exteriorFeatures": [<strings>],
+  "communityAmenities": [<strings>],
+  "utilitiesIncluded": [<strings - what is INCLUDED in rent>],
+  "petsAllowed": [<strings - e.g. ["Cats Allowed","Dogs Allowed"] or ["No Pets"]>],
+  "petDetails": [<strings - e.g. "Dogs", "Cats", "Small Animals">],
+  "safetyFeatures": [<strings>],
+  "depositAmount": <string - e.g. "$2,499">,
+  "bullets": [<3-8 investor insight strings>]
 }
 
-UTILITIES: only include a utility if the snippet says it is INCLUDED in rent (e.g. "water included").
-PETS: only include petsAllowed if the snippet explicitly mentions pet policy (pet/dog/cat/no pets).
+RULES:
+1. For each field, use these PREFERRED values when they match:
+   - flooring: ${OLLAMA_FIELD_OPTIONS.flooring.join(', ')}
+   - appliances: ${OLLAMA_FIELD_OPTIONS.appliances.join(', ')}
+   - interiorFeatures: ${OLLAMA_FIELD_OPTIONS.interiorFeatures.join(', ')}
+   - outdoor: ${OLLAMA_FIELD_OPTIONS.outdoor.join(', ')}
+   - communityAmenities: ${OLLAMA_FIELD_OPTIONS.communityAmenities.join(', ')}
+   - safetyFeatures: ${OLLAMA_FIELD_OPTIONS.safetyFeatures.join(', ')}
+   BUT if the listing mentions something NOT in these lists, ADD IT as a custom value using the listing's own wording (e.g. "Private Outdoor Space", "On-Site Security", "Ground Floor Unit").
 
-BULLETS — for an Airbnb/VRBO investor, NOT a renter. Allowed topics only:
-- Nearby landmarks/attractions (parks, beaches, downtown, museums, restaurants, shopping, universities, sports venues)
-- Neighborhood character (quiet, walkable, historic, waterfront, mountain views)
-- STR/investor angles (short-term-rental rules, HOA STR policy, recent renovations, year built, views, rooftop access)
+2. UTILITIES: only include utilities that are INCLUDED IN RENT. Use the listing's exact wording. Examples: "Heat", "Hot Water", "Water", "Gas", "Electric", "Trash", "Internet/WiFi".
 
-NEVER write bullets about: rent, beds, baths, sqft, laundry, A/C, heat, parking, pool, pets, utilities, appliances, flooring, interior features, exterior features, community amenities, furnished status. Those are already in structured fields.
+3. PETS: petsAllowed is a multi-select ARRAY. Return ALL that apply, e.g. ["Cats Allowed","Dogs Allowed"]. Preferred values: ${OLLAMA_FIELD_OPTIONS.petsAllowed.join(', ')}. Also populate petDetails with which types are allowed.
 
-Each bullet must be a UNIQUE fact grounded in the snippet. No marketing fluff. If nothing fits, return bullets: [].
+4. BULLETS — write for an Airbnb/VRBO investor evaluating this property as a potential STR arbitrage deal:
+   - Location: nearby parks, transit, highways, schools, attractions, landmarks
+   - Neighborhood: walkability, character, safety, demand drivers
+   - Deal angles: no broker fee, deposit amount, ground floor access, renovation status, owner flexibility
+   - Each bullet: a specific fact from the listing, 8-20 words
+   - NEVER repeat information already captured in structured fields above
+   - If the listing has useful details, ALWAYS write bullets. Only return [] for truly bare listings.
 
 Return ONLY the JSON.`;
 
-  async function callOllama(sysPrompt, userPrompt, timeoutMs) {
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), timeoutMs);
-    try {
-      const resp = await fetch(OLLAMA_HOST + '/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        signal: ctrl.signal,
-        body: JSON.stringify({
-          model: OLLAMA_MODEL,
-          stream: false,
-          // v0.6.4: REMOVED format:'json'. The constrained-decoding mode
-          // it activates is the root cause of "Empty response from Ollama":
-          // when qwen3:4b has /no_think in the system prompt, format:'json'
-          // prevents the model from emitting thinking tokens (they're not
-          // valid JSON) but the model's attention state sometimes can't
-          // jump directly to a JSON opener, so it produces 0 tokens →
-          // empty content. We already have robust JSON extraction: the
-          // <think> block stripper + regex {…} finder in the catch handler
-          // handles every real-world Ollama output shape.
-          // keep_alive: tell Ollama to keep the model resident in RAM for
-          // OLLAMA_KEEP_ALIVE after this request. This is the difference
-          // between a 25s warm import and a 90s cold import for users who
-          // run several listings in a session.
-          keep_alive: OLLAMA_KEEP_ALIVE,
-          // num_ctx 4096 is enough for a 6KB prompt + response and does NOT
-          // force llama3.2 to reload the model (default ctx is 2048 but most
-          // installs already have 4096 loaded from prior runs; either way
-          // 4096 is a much lower re-init cost than 8192 was).
-          // FULLY DETERMINISTIC sampling: temperature=0 + top_k=1 means
-          // greedy decoding (always pick the single most likely token).
-          // A fixed seed pins any remaining RNG paths. repeat_penalty=1.0
-          // is the neutral value — anything else introduces variance when
-          // fields naturally repeat across the output schema.
-          // With these settings, identical input → identical output, every
-          // single run, on the same model weights.
-          options: {
-            // v0.6.2: qwen3:4b with strict greedy sampling (temp=0 top_k=1)
-            // occasionally picks the end-of-stream token as the first output
-            // token when format:json is set and the prompt is near context
-            // limit. That produces an empty message.content string and throws
-            // "Empty response from Ollama". A tiny bit of temperature and a
-            // wider top_k eliminates this without sacrificing much
-            // determinism — the model still picks the obviously-best token
-            // for structured fields, it just won't deterministically pick
-            // EOS when token probabilities happen to pile up there.
-            temperature: 0.1,
-            top_k: 20,
-            top_p: 0.95,
-            repeat_penalty: 1.0,
-            seed: 20260409,
-            // v0.6.2: raised from 2048 → 4096. A 4KB snippet is ~1000-1200
-            // tokens, system + user prompt scaffolding adds ~500, response
-            // budget is 350. That totals ~2050 — sitting RIGHT at the old
-            // 2048 ceiling caused intermittent truncation and empty output.
-            // 4096 gives us safe headroom without forcing a model reload on
-            // installs that already have 4K loaded.
-            num_ctx: 4096,
-            num_predict: 400,
-          },
-          messages: [
-            { role: 'system', content: sysPrompt },
-            { role: 'user', content: userPrompt },
-          ],
-        }),
-      });
-      if (!resp.ok) {
-        const body = await resp.text().catch(() => '');
-        throw new Error('Ollama HTTP ' + resp.status + (body ? ': ' + body.slice(0, 200) : ''));
-      }
-      const json = await resp.json();
-      const content = json && json.message && json.message.content;
-      if (!content) throw new Error('Empty response from Ollama');
-      // Qwen3 reasoning models can emit a <think>...</think> block before
-      // the JSON even when /no_think is set. Strip it before parsing.
-      const cleaned = String(content).replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
-      try { return JSON.parse(cleaned); }
-      catch (_) {
-        const m = cleaned.match(/\{[\s\S]*\}/);
-        if (!m) throw new Error('Ollama did not return JSON');
-        return JSON.parse(m[0]);
-      }
-    } finally { clearTimeout(t); }
-  }
+  // ----- TRY OLLAMA (primary), CLAUDE API (optional upgrade) -----
+  let aiResult = null;
+  let aiError = null;
+  let aiModel = null;
 
-  // v0.6.2: retry ladder for Ollama. A single surgical call is the happy
-  // path, but qwen3:4b can occasionally: (a) return empty content when the
-  // prompt-plus-response butts up against num_ctx, (b) emit only a <think>
-  // block that gets stripped to empty, (c) time out under load. We retry
-  // up to 3 times, each with progressively shorter inputs. Dictionary
-  // output is preserved regardless so the final row is never worse than
-  // "no-LLM" mode.
-  let lite = null;
-  let liteError = null;
-  const retryLadder = [
-    { snippetSize: 4000, label: 'attempt 1: 4KB snippet' },
-    { snippetSize: 2000, label: 'attempt 2: 2KB snippet' },
-    { snippetSize: 1200, label: 'attempt 3: 1.2KB snippet' },
-  ];
-  for (let i = 0; i < retryLadder.length; i++) {
-    const rung = retryLadder[i];
+  // Optional: Claude API if configured (costs ~$0.01/import)
+  const apiKey = await getClaudeApiKey();
+  if (apiKey) {
     try {
-      const text = (llmSnippet || fullPageText).slice(0, rung.snippetSize);
-      const prompt = (i === 0) ? userPromptA : userPromptA.replace(pageText, text);
-      console.log('[RR ext] Ollama ' + rung.label);
-      lite = await callOllama(systemPromptA, prompt, OLLAMA_TIMEOUT_MS);
-      liteError = null;
-      break;
+      console.log('[RR ext] Claude API key found — using Claude');
+      aiResult = await callClaude(apiKey, systemPrompt, userPrompt);
+      aiModel = CLAUDE_MODEL;
     } catch (e) {
-      const msg = (e && e.message) || String(e);
-      console.log('[RR ext] Ollama ' + rung.label + ' failed:', msg);
-      liteError = msg;
-      // Don't retry on HTTP 4xx — those mean the server is actually broken,
-      // not overloaded. Timeouts and "Empty response" ARE retryable.
-      if (/HTTP 4\d\d/.test(msg)) break;
+      console.log('[RR ext] Claude API failed:', (e && e.message) || e);
+      aiError = (e && e.message) || String(e);
     }
   }
-  // passA / passB both alias the lite-pass — assembly code below was
-  // originally written for two separate calls and we keep the variable
-  // names so the merge/grounding logic stays untouched. passB gets an
-  // empty object so the amenity-merge loop is a no-op (the dictionary
-  // already filled those).
-  const passA = lite || {};
-  const passB = {};
+
+  // Primary: Ollama (Gemma 3 4B — free, local)
+  if (!aiResult) {
+    try {
+      const health = await checkOllamaHealth();
+      if (health.running || health.unknown) {
+        console.log('[RR ext] calling Ollama (' + OLLAMA_MODEL + ')...');
+        aiResult = await callOllamaLegacy(systemPrompt, userPrompt, OLLAMA_TIMEOUT_MS);
+        aiModel = OLLAMA_MODEL;
+        aiError = null;
+        console.log('[RR ext] Ollama success');
+      } else {
+        aiError = 'Ollama not running. Start it with: ollama serve';
+      }
+    } catch (e) {
+      const msg = (e && e.message) || String(e);
+      console.log('[RR ext] Ollama failed:', msg);
+      aiError = msg;
+    }
+  }
+
+  if (!aiResult) {
+    const out = earlyDict();
+    out._aiError = aiError || 'No AI available';
+    return out;
+  }
+
+  const passA = aiResult;
 
   // ---------- Assemble result ----------
-  const rawBullets = Array.isArray(passA && passA.bullets) ? passA.bullets : [];
-  // Two-stage bullet filter:
-  //   1) drop bullets the model invented that aren't grounded in the source
-  //   2) drop bullets that just restate Property Details (rent, beds, laundry, etc.)
-  //      and require each surviving bullet to hit an allowed STR/landmark/
-  //      neighborhood topic pattern. Empty result = empty Property Notes,
-  //      which is the correct outcome for a sparse listing.
+  // v0.9.0: Bullets are now lightly filtered. The old aggressive filters
+  // (DUPLICATIVE_BULLET_PATTERNS + ALLOWED_BULLET_PATTERNS) dropped too
+  // many valid bullets. Now we only drop hallucinated bullets (not grounded
+  // in source text) and exact duplicates.
+  const rawBullets = Array.isArray(passA.bullets) ? passA.bullets : [];
   const sourcedBullets = filterHallucinatedBullets(rawBullets, fullPageText);
-  const filteredBullets = filterDuplicativeBullets(sourcedBullets);
-  // Seed propertyDetails with the deterministic dictionary output. The LLM
-  // passes will only ADD values that survive source-grounding; they cannot
-  // override anything the dictionary already picked. This is what makes
-  // re-imports consistent.
+  // Skip the aggressive duplicative/topic filter — keep all sourced bullets
+  const filteredBullets = deduplicateBullets(sourcedBullets);
+
   const out = {
     propertyDetails: Object.assign({}, dictPropertyDetails),
     propertyNoteBullets: filteredBullets,
     core: {
-      bedrooms: passA && passA.bedrooms,
-      bathrooms: passA && passA.bathrooms,
-      sqft: passA && passA.sqft,
-      price: passA && passA.price,
-      availableDate: normalizeAvailableDate(passA && passA.availableDate),
+      bedrooms: passA.bedrooms,
+      bathrooms: passA.bathrooms,
+      sqft: passA.sqft,
+      price: passA.price,
+      availableDate: normalizeAvailableDate(passA.availableDate),
     },
   };
 
-  // Utilities + pets from pass A — routed through the dictionary merge so
-  // the dictionary (if it matched anything) always wins on single-selects,
-  // and LLM additions are filtered through source-grounding triggers.
-  if (passA && typeof passA === 'object') {
-    const llmA = {};
-    if (Array.isArray(passA.utilitiesIncluded) && passA.utilitiesIncluded.length) {
-      llmA.utilitiesIncluded = passA.utilitiesIncluded
-        .filter((s) => OLLAMA_FIELD_OPTIONS.utilitiesIncluded.includes(s));
-    }
-    if (typeof passA.petsAllowed === 'string' && OLLAMA_FIELD_OPTIONS.petsAllowed.includes(passA.petsAllowed)) {
-      // Only honor petsAllowed if the source text actually discusses pets.
-      const sourceDiscussesPets = /\b(pets?|dogs?|cats?|animal|pet-friendly|no pets)\b/i.test(fullPageText);
-      if (sourceDiscussesPets) llmA.petsAllowed = passA.petsAllowed;
-      else console.log('[RR ext] dropped petsAllowed (source does not discuss pets):', passA.petsAllowed);
-    }
-    mergeLlmIntoDictionary(out.propertyDetails, llmA, lowerFullText);
-  }
+  // v0.9.0: Merge AI-extracted fields into dictionary output.
+  // HYBRID approach: for single-select fields, only accept predefined values.
+  // For multi-select fields, accept BOTH predefined AND custom values from
+  // the AI — custom values are passed through as-is (no filtering against
+  // predefined lists). This lets the AI add "Heat", "Private Outdoor Space",
+  // "On-Site Security" etc. even though they're not predefined options.
+  const llmPd = {};
+  const ALL_MULTI_KEYS = new Set(EXTRACTOR_FIELDS.filter(k => !OLLAMA_SINGLE_SELECT_FIELDS.has(k)));
+  // Add utilitiesIncluded to the multi-select set
+  ALL_MULTI_KEYS.add('utilitiesIncluded');
 
-  // Pass B: merge amenity arrays/strings, filtering invented labels.
-  // Enforce single-select cardinality: if the model returns an array for a
-  // single-value field (parking, pool, ac, etc.) we keep only the first
-  // allowed value — never render "Attached Garage, Covered Parking" in the
-  // same dropdown cell.
-  if (passB && typeof passB === 'object') {
-    // Normalize passB into the merge shape, then route through the
-    // dictionary merger. Dictionary values are authoritative for any
-    // single-select field they already filled; passB can only CONTRIBUTE
-    // new values or extend multi-selects with source-grounded entries.
-    const llmB = {};
-    for (const k of Object.keys(OLLAMA_FIELD_OPTIONS)) {
-      if (k === 'utilitiesIncluded' || k === 'petsAllowed') continue;
-      const allowed = OLLAMA_FIELD_OPTIONS[k];
-      const v = passB[k];
-      const isSingle = OLLAMA_SINGLE_SELECT_FIELDS.has(k);
+  for (const k of Object.keys(passA)) {
+    // Skip non-property-detail keys
+    if (['bedrooms','bathrooms','sqft','price','availableDate','bullets','depositAmount'].includes(k)) continue;
+    const v = passA[k];
+    if (v == null || v === '' || (Array.isArray(v) && !v.length)) continue;
+
+    if (ALL_MULTI_KEYS.has(k)) {
+      // Multi-select: accept all string values (predefined + custom)
       if (Array.isArray(v)) {
-        const clean = v.filter((x) => typeof x === 'string' && allowed.includes(x));
-        if (!clean.length) continue;
-        if (isSingle) {
-          llmB[k] = pickBestSingleValue(k, clean, fullPageText);
-        } else {
-          llmB[k] = clean;
-        }
-      } else if (typeof v === 'string' && allowed.includes(v)) {
-        llmB[k] = v;
+        const clean = v.filter(x => typeof x === 'string' && x.trim());
+        if (clean.length) llmPd[k] = clean;
       }
+    } else if (OLLAMA_SINGLE_SELECT_FIELDS.has(k)) {
+      // Single-select: only accept predefined values
+      const allowed = EXTRACTOR_FIELD_OPTIONS[k] || OLLAMA_FIELD_OPTIONS[k] || [];
+      if (typeof v === 'string' && allowed.includes(v)) llmPd[k] = v;
+    } else if (typeof v === 'string' && v.trim()) {
+      // Other string fields (petDetails, depositAmount, etc.)
+      llmPd[k] = v;
+    } else if (Array.isArray(v)) {
+      const clean = v.filter(x => typeof x === 'string' && x.trim());
+      if (clean.length) llmPd[k] = clean;
     }
-    mergeLlmIntoDictionary(out.propertyDetails, llmB, lowerFullText);
   }
 
-  // HARD anti-hallucination guard: drop any value from propertyDetails that
-  // isn't traceable to the listing's source text. This runs BEFORE the
-  // contradiction resolver so the resolver only sees grounded facts.
-  groundPropertyDetails(out.propertyDetails, fullPageText);
+  // Pet policy: only honor if source discusses pets
+  if (llmPd.petsAllowed) {
+    const sourceDiscussesPets = /\b(pets?|dogs?|cats?|animal|pet-friendly|no pets|allowed)\b/i.test(fullPageText);
+    if (!sourceDiscussesPets) delete llmPd.petsAllowed;
+    // Normalize: if AI returned a string instead of array, wrap it
+    if (typeof llmPd.petsAllowed === 'string') {
+      llmPd.petsAllowed = [llmPd.petsAllowed];
+    }
+  }
 
-  // Resolve contradictions between the dropdowns and the multi-select
-  // amenity lists. Example: pool="None" while communityAmenities contains
-  // "Swimming Pool". We trust the more specific evidence (the amenity list
-  // is built from bullet-by-bullet matches) and upgrade the single-select
-  // accordingly.
+  mergeLlmIntoDictionary(out.propertyDetails, llmPd, lowerFullText);
+
+  // Anti-hallucination grounding — only applies to PREDEFINED values.
+  // Custom values bypass grounding (they're already verbatim from the AI
+  // which was instructed to only extract what it sees).
+  groundPropertyDetails(out.propertyDetails, fullPageText);
   resolvePropertyDetailsContradictions(out.propertyDetails);
-
-  // Run grounding ONCE MORE after contradiction resolution, in case the
-  // resolver inferred a value that itself isn't in the source.
   groundPropertyDetails(out.propertyDetails, fullPageText);
+
+  // Store deposit amount if AI extracted it
+  if (passA.depositAmount) out.depositAmount = passA.depositAmount;
+  // Store petDetails for the multi-select pet types field
+  if (Array.isArray(passA.petDetails) && passA.petDetails.length) {
+    out.propertyDetails.petDetails = passA.petDetails.filter(x => typeof x === 'string');
+  }
 
   // Validate core numbers
   const core = out.core;
@@ -1376,9 +1405,8 @@ Return ONLY the JSON.`;
     const n = Number(core.price);
     core.price = (Number.isFinite(n) && n >= 50 && n <= 200000) ? n : null;
   }
-  // Surface a partial-result marker so the caller can show the right toast.
-  // The dictionary-extracted propertyDetails are still in `out` either way.
-  if (liteError) out._aiError = liteError;
+  if (aiError) out._aiError = aiError;
+  out._aiModel = aiModel;
   return out;
 }
 

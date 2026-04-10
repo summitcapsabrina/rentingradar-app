@@ -3105,11 +3105,12 @@ const PROP_SECTIONS = [
     { k:'utilitiesIncluded', l:'Included in Rent', t:'multi', o:['Water','Hot Water','Gas','Electric','Trash','Sewer','Recycling','Internet/WiFi','Cable TV','Landscaping/Grounds','Pest Control'] },
   ]},
   { key:'pets', label:'Pet Policy', icon:'🐾', fields:[
-    { k:'petsAllowed', l:'Pets', t:'select', o:['','Yes - All Pets','Dogs Only','Cats Only','Small Pets Only','Case by Case','Service Animals Only','No Pets'] },
+    { k:'petsAllowed', l:'Pet Policy', t:'multi', o:['Cats Allowed','Dogs Allowed','Small Dogs Only','Small Pets Only','Case by Case','Service Animals Only','No Pets'] },
     { k:'petDetails', l:'Allowed Types', t:'multi', o:['Dogs','Cats','Birds','Fish','Reptiles','Small Animals (hamster, etc.)'] },
     { k:'petWeightLimit', l:'Weight Limit (lbs)', t:'number' },
     { k:'maxPets', l:'Max Pets Allowed', t:'number' },
     { k:'breedRestrictions', l:'Breed Restrictions', t:'text' },
+    { k:'petDeposit', l:'Pet Deposit / Fee', t:'text' },
   ]},
   { key:'safety', label:'Safety & Security', icon:'🔒', fields:[
     { k:'safetyFeatures', l:'Safety', t:'multi', o:['Smoke Detectors','Carbon Monoxide Detectors','Fire Extinguisher','Fire Sprinklers','Security System/Alarm','Gated Entry','Deadbolt Locks','Smart Locks','Peephole','Security Cameras','Motion Sensor Lights','Intercom','24-Hour Security','Emergency Lighting'] },
@@ -3483,9 +3484,13 @@ function renderSectionFields(recId, d, section){
     html += `<div class="multi-field-row" style="margin-top:${selectFields.length?'12':'0'}px" onclick="openMultiEditor('${recId}','${f.k}')" title="Click to edit">`;
     html += `<label style="display:block;font-size:.73rem;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:5px">${f.l} <svg class="multi-edit-icon" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></label>`;
     if(hasSelections){
+      const predefSet = new Set(f.o || []);
       html += '<div class="multi-display-chips">';
       selected.forEach(opt => {
-        html += `<span class="multi-chip">${opt}</span>`;
+        const isCustom = !predefSet.has(opt);
+        html += isCustom
+          ? `<span class="multi-chip" style="background:var(--primary-light,#e8f0fe);color:var(--primary,#1a73e8);border:1px solid var(--primary,#1a73e8);border-style:dashed">${esc(opt)}</span>`
+          : `<span class="multi-chip">${esc(opt)}</span>`;
       });
       html += '</div>';
     } else {
@@ -3521,8 +3526,14 @@ function renderSectionReadonly(d, section){
   multiFields.forEach(f => {
     const selected = d[f.k] || [];
     if(selected.length > 0){
+      const predefSet = new Set(f.o || []);
       html += '<div class="section-ro-multi"><div class="ro-label">'+esc(f.l)+'</div><div class="section-ro-chips">';
-      selected.forEach(opt => { html += '<span class="ro-chip">'+esc(opt)+'</span>'; });
+      selected.forEach(opt => {
+        const isCustom = !predefSet.has(opt);
+        html += isCustom
+          ? '<span class="ro-chip" style="background:var(--primary-light,#e8f0fe);color:var(--primary,#1a73e8);border:1px dashed var(--primary,#1a73e8)">'+esc(opt)+'</span>'
+          : '<span class="ro-chip">'+esc(opt)+'</span>';
+      });
       html += '</div></div>';
     }
   });
@@ -3683,6 +3694,11 @@ function openMultiEditor(recId, fieldKey){
   // Build a working copy
   const working = [...current];
 
+  // v0.9.0: Identify custom tags — values in current selection that
+  // aren't in the predefined options list.
+  const predefined = fieldDef.o || [];
+  const customTags = working.filter(v => !predefined.includes(v));
+
   const overlay = document.createElement('div');
   overlay.className = 'multi-editor-overlay';
   overlay.id = 'multiEditorOverlay';
@@ -3693,21 +3709,30 @@ function openMultiEditor(recId, fieldKey){
     </div>
     <div class="multi-editor-body">
       <div class="prop-check-grid" id="multiEditorGrid">
-        ${(fieldDef.o||[]).map(opt => {
+        ${predefined.map(opt => {
           const checked = working.includes(opt);
           return `<label class="prop-check ${checked?'checked':''}" data-opt="${opt.replace(/"/g,'&quot;')}" onclick="toggleMultiEditorOpt(this)"><input type="checkbox" ${checked?'checked':''}>${opt}</label>`;
         }).join('')}
       </div>
+      ${customTags.length ? `<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border)">
+        <div style="font-size:.73rem;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">From Listing (AI-detected)</div>
+        <div id="multiEditorCustomTags" style="display:flex;flex-wrap:wrap;gap:5px">
+          ${customTags.map(tag => `<span class="custom-tag-chip" data-tag="${tag.replace(/"/g,'&quot;')}" style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:var(--primary-light,#e8f0fe);color:var(--primary,#1a73e8);border-radius:20px;font-size:.82rem;font-weight:500;cursor:default">${esc(tag)}<button onclick="this.parentElement.remove()" style="background:none;border:none;cursor:pointer;color:var(--primary,#1a73e8);font-size:1.1em;line-height:1;padding:0 0 0 2px;opacity:.7">&times;</button></span>`).join('')}
+        </div>
+      </div>` : ''}
+      <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border);display:flex;gap:6px;align-items:center">
+        <input type="text" id="multiEditorCustomInput" placeholder="Add custom value..." style="flex:1;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:.85rem" onkeydown="if(event.key==='Enter'){event.preventDefault();addMultiEditorCustomTag();}">
+        <button class="btn btn-secondary btn-sm" onclick="addMultiEditorCustomTag()" style="white-space:nowrap">+ Add</button>
+      </div>
     </div>
     <div class="multi-editor-actions">
-      <div class="me-hint">Click options to select/deselect</div>
+      <div class="me-hint">Click options to select/deselect · type to add custom values</div>
       <button class="btn btn-secondary btn-sm" onclick="document.getElementById('multiEditorOverlay').remove()">Cancel</button>
       <button class="btn btn-primary btn-sm" onclick="saveMultiEditor('${recId}','${fieldKey}')">Save</button>
     </div>
   </div>`;
   document.body.appendChild(overlay);
 
-  // Escape to cancel, Shift+Enter to save
   overlay.addEventListener('keydown', function(e){
     if(e.key === 'Escape') overlay.remove();
     if(e.shiftKey && e.key === 'Enter'){ e.preventDefault(); saveMultiEditor(recId, fieldKey); }
@@ -3721,16 +3746,61 @@ function toggleMultiEditorOpt(label){
   if(cb) cb.checked = label.classList.contains('checked');
 }
 
+// v0.9.0: Add a custom tag chip to the multi-editor
+function addMultiEditorCustomTag(){
+  const input = document.getElementById('multiEditorCustomInput');
+  if(!input) return;
+  const val = input.value.trim();
+  if(!val) return;
+  input.value = '';
+  // Create or find the custom tags container
+  let container = document.getElementById('multiEditorCustomTags');
+  if(!container){
+    // Insert the custom tags section before the add-custom row
+    const addRow = input.closest('div');
+    const wrapper = document.createElement('div');
+    wrapper.style.cssText = 'margin-top:12px;padding-top:10px;border-top:1px solid var(--border)';
+    wrapper.innerHTML = '<div style="font-size:.73rem;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Custom Values</div><div id="multiEditorCustomTags" style="display:flex;flex-wrap:wrap;gap:5px"></div>';
+    addRow.parentElement.insertBefore(wrapper, addRow);
+    container = document.getElementById('multiEditorCustomTags');
+  }
+  // Check for duplicate
+  const existing = container.querySelectorAll('.custom-tag-chip');
+  for(const chip of existing){ if(chip.dataset.tag === val) return; }
+  // Also check predefined checkboxes
+  const grid = document.getElementById('multiEditorGrid');
+  if(grid){
+    const match = grid.querySelector(`.prop-check[data-opt="${CSS.escape(val)}"]`);
+    if(match && !match.classList.contains('checked')){ match.click(); return; }
+    if(match) return; // already checked
+  }
+  const chip = document.createElement('span');
+  chip.className = 'custom-tag-chip';
+  chip.dataset.tag = val;
+  chip.style.cssText = 'display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:var(--primary-light,#e8f0fe);color:var(--primary,#1a73e8);border-radius:20px;font-size:.82rem;font-weight:500;cursor:default';
+  chip.innerHTML = esc(val) + '<button onclick="this.parentElement.remove()" style="background:none;border:none;cursor:pointer;color:var(--primary,#1a73e8);font-size:1.1em;line-height:1;padding:0 0 0 2px;opacity:.7">&times;</button>';
+  container.appendChild(chip);
+}
+
 function saveMultiEditor(recId, fieldKey){
   const r = records.find(x => x.id === recId);
   if(!r) return;
   if(!r.propertyDetails) r.propertyDetails = {};
   const grid = document.getElementById('multiEditorGrid');
   if(!grid) return;
+  // Collect predefined checkbox selections
   const selected = [];
   grid.querySelectorAll('.prop-check.checked').forEach(label => {
     selected.push(label.dataset.opt);
   });
+  // v0.9.0: Also collect custom tag chips
+  const customContainer = document.getElementById('multiEditorCustomTags');
+  if(customContainer){
+    customContainer.querySelectorAll('.custom-tag-chip').forEach(chip => {
+      const tag = chip.dataset.tag;
+      if(tag && !selected.includes(tag)) selected.push(tag);
+    });
+  }
   r.propertyDetails[fieldKey] = selected;
   saveData();
   document.getElementById('multiEditorOverlay')?.remove();
@@ -3971,13 +4041,16 @@ function parseListingHtml(html, url){
     if(result.parking) fieldsFound++;
   }
 
-  // Pets
+  // Pets (multi-select)
   if(!result.petsAllowed){
-    if(/no pets/i.test(text)) result.petsAllowed = 'No Pets';
-    else if(/(?:cats? and dogs?|pets? (?:allowed|welcome|ok|friendly))/i.test(text)) result.petsAllowed = 'Yes - All Pets';
-    else if(/dogs? (?:allowed|welcome|ok)/i.test(text)) result.petsAllowed = 'Dogs Only';
-    else if(/cats? (?:allowed|welcome|ok)/i.test(text)) result.petsAllowed = 'Cats Only';
-    if(result.petsAllowed) fieldsFound++;
+    if(/no pets/i.test(text)) { result.petsAllowed = ['No Pets']; fieldsFound++; }
+    else {
+      const pets = [];
+      if(/cats? (?:allowed|welcome|ok)/i.test(text)) pets.push('Cats Allowed');
+      if(/dogs? (?:allowed|welcome|ok)/i.test(text)) pets.push('Dogs Allowed');
+      if(!pets.length && /pets? (?:allowed|welcome|ok|friendly)/i.test(text)) { pets.push('Cats Allowed'); pets.push('Dogs Allowed'); }
+      if(pets.length){ result.petsAllowed = pets; fieldsFound++; }
+    }
   }
 
   // Pool
@@ -4568,12 +4641,9 @@ function _rrRenderToast(toast, msg, type, duration, opts) {
     // Always moving forward, never stalling, never overshooting.
     const bar = toast.querySelector('.rr-toast-progress');
     const startedAt = performance.now();
-    // v0.7.0: With no AI enrichment, imports complete in 2-4 seconds
-    // (just scraper polling + background tab load). tau=2500 gives:
-    //   t=1s → 33%, t=2s → 55%, t=3s → 70%, t=4s → 80%, t=6s → 91%
-    // Fast and responsive — the bar visibly races forward and snaps to
-    // 100 when the profile opens.
-    const tau = opts.progressTau || 2500;
+    // v0.9.0: Claude API imports take 3-8s. Ollama fallback 8-20s.
+    // tau=5000 gives: t=3s → 45%, t=5s → 63%, t=8s → 80%, t=12s → 91%
+    const tau = opts.progressTau || 5000;
     toast._progressTimer = setInterval(() => {
       const elapsed = performance.now() - startedAt;
       // Cap just below 100 so the real completion snap is always visible.
@@ -4968,16 +5038,22 @@ async function handleExtensionListing(data) {
   });
 
   let toastMsg, toastTone;
-  // v0.7.0: No AI enrichment — success is based purely on core field count.
-  // No more Ollama error messages, "AI skipped", or "incomplete" warnings.
+  // v0.8.0: AI enrichment restored — toast reflects AI status.
+  const aiOk = data._aiEnriched === true;
+  const aiErr = data._aiError || '';
   if (coreCount === 0) {
     toastMsg = 'Import failed — nothing could be read from this listing.';
     toastTone = 'error';
-  } else if (coreCount >= 2) {
+  } else if (coreCount >= 2 && aiOk) {
     toastMsg = createdNew ? 'Import successful.' : 'Property updated from listing.';
     toastTone = 'success';
+  } else if (coreCount >= 2 && !aiOk) {
+    toastMsg = (createdNew ? 'Import successful' : 'Property updated') + ' — AI details may be incomplete.';
+    if (aiErr) toastMsg += ' (' + aiErr.slice(0, 80) + ')';
+    toastTone = 'warning';
   } else {
     toastMsg = 'Import partial — some details may need manual entry.';
+    if (aiErr) toastMsg += ' (' + aiErr.slice(0, 80) + ')';
     toastTone = 'warning';
   }
 
@@ -5080,8 +5156,7 @@ function handleListingEnrichment(patch) {
   if (typeof saveData === 'function') saveData();
   if (typeof render === 'function') render();
 
-  // v0.7.0: No AI enrichment — this handler may still be called by
-  // stale cached responses but won't show AI-related toasts.
+  // v0.8.0: AI enrichment restored — enrichment patches are applied inline.
 }
 
 /**
@@ -5327,10 +5402,16 @@ function updateAddServerStatus(health){
   if(!el) return;
   if(health && health.extension){
     extensionReady = true;
-    const hasOllama = health.ollama && health.model;
+    // v0.9.0: Show AI engine status
+    const hasClaude = health.claude && health.claude.configured;
+    const hasOllama = health.ollama && health.ollama.running;
+    let aiLabel = '';
+    if (hasClaude) aiLabel = 'Claude AI';
+    else if (hasOllama) aiLabel = 'Gemma AI (local)';
+    else aiLabel = 'AI not running';
     el.style.background = 'var(--success-light)';
     el.style.color = 'var(--success)';
-    el.innerHTML = '✓ Extension active — ready for instant import';
+    el.innerHTML = '✓ Extension v' + (health.version || '?') + ' — ' + aiLabel;
     updateAddImportUI();
   } else {
     extensionReady = false;
@@ -8538,9 +8619,20 @@ function rrUpdateTopBanners(extId){
     return;
   }
   rrHideInstallBanner();
-  // v0.7.0: No AI required — always hide Ollama banner/setup modal.
-  rrHideOllamaBanner();
-  rrMarkOllamaSetupCompleted();
+  // v0.9.0: Claude API is primary — if configured, no Ollama needed.
+  chrome.runtime.sendMessage(extId, { type: 'HEALTH' }, (resp) => {
+    if (chrome.runtime.lastError || !resp || !resp.ok) return;
+    const hasClaude = resp.claude && resp.claude.configured;
+    const o = resp.ollama || {};
+    if (hasClaude || (o.running && o.modelInstalled)) {
+      rrHideOllamaBanner();
+      rrMarkOllamaSetupCompleted();
+    } else if (o.unknown) {
+      rrHideOllamaBanner();
+    } else {
+      rrShowOllamaBanner();
+    }
+  });
 }
 
 // Probe for the extension shortly after load so the UI can reflect install state
