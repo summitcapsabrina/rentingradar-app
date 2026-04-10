@@ -308,8 +308,22 @@ async function scrapeAny(url, hint) {
             .slice(0, 14);
         }
       }
+      // v0.6.4: Run groundPropertyDetails on the MERGED output. Previously
+      // it only ran on the AI-side pd inside enrichWithOllama(); scraper pd
+      // values (the `base` in mergePropertyDetails) bypassed grounding
+      // entirely. This means false positives from the scraper's dictionary
+      // sweep (e.g. "Elevator" matching incidental nav-menu text, or
+      // "Swimming Pool" matching "pool" in a "carpool" mention) were never
+      // caught. Now the final merged pd gets one last grounding pass against
+      // the full page text before it reaches the CRM.
+      const fullText = data._fullPageText || data._pageText || '';
+      if (fullText && data.propertyDetails) {
+        groundPropertyDetails(data.propertyDetails, fullText);
+      }
+
       // Strip the raw page text before returning — it's huge and no longer needed.
       delete data._pageText;
+      delete data._fullPageText;
     }
 
     // Cache the fully-enriched payload so re-imports of the same URL
@@ -952,12 +966,27 @@ function isAmenityInSource(value, text) {
     for (const t of triggers) if (text.includes(t)) return true;
     return false;
   }
-  // Fallback: take the first two "content words" of the value and require
-  // at least one in the source. "None" always passes (it's an absence).
+  // v0.6.4: TIGHTENED fallback. Previously required only ONE 4-letter word
+  // from the value label to appear in the source, which let through false
+  // positives like "Elevator" matching "elevator pitch" in a description,
+  // or "Swimming Pool" matching "pool" in a "carpool" mention. Now:
+  //   - "None" always passes (it's an absence assertion)
+  //   - Values with 1 content word: that word must appear as a whole word
+  //     (bounded by non-alpha) in the source, not just as a substring
+  //   - Values with 2+ content words: at least 2 must appear in the source
+  // This dramatically reduces false positives from incidental word matches
+  // in navigation, footer, and "similar listings" text.
   if (value === 'None') return true;
-  const words = value.toLowerCase().replace(/[/()-]/g, ' ').match(/[a-z]{4,}/g) || [];
+  const words = value.toLowerCase().replace(/[/()-]/g, ' ').match(/[a-z]{3,}/g) || [];
   if (!words.length) return true;
-  return words.some((w) => text.includes(w));
+  if (words.length === 1) {
+    // Single-word value: require whole-word match to avoid substring false positives
+    const re = new RegExp('\\b' + words[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b');
+    return re.test(text);
+  }
+  // Multi-word value: require at least 2 words present
+  const hits = words.filter((w) => text.includes(w));
+  return hits.length >= 2;
 }
 
 // Strip any values from the merged propertyDetails that aren't traceable
@@ -1187,7 +1216,15 @@ Return ONLY the JSON.`;
         body: JSON.stringify({
           model: OLLAMA_MODEL,
           stream: false,
-          format: 'json',
+          // v0.6.4: REMOVED format:'json'. The constrained-decoding mode
+          // it activates is the root cause of "Empty response from Ollama":
+          // when qwen3:4b has /no_think in the system prompt, format:'json'
+          // prevents the model from emitting thinking tokens (they're not
+          // valid JSON) but the model's attention state sometimes can't
+          // jump directly to a JSON opener, so it produces 0 tokens →
+          // empty content. We already have robust JSON extraction: the
+          // <think> block stripper + regex {…} finder in the catch handler
+          // handles every real-world Ollama output shape.
           // keep_alive: tell Ollama to keep the model resident in RAM for
           // OLLAMA_KEEP_ALIVE after this request. This is the difference
           // between a 25s warm import and a 90s cold import for users who

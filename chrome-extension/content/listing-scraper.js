@@ -1208,43 +1208,23 @@
     );
     const amenityBlob = Array.from(amenityNodes).map((n) => n.textContent).join(' ').toLowerCase();
 
-    // v0.6.3: Mega DOM sweep — pull EVERY labeled section on the page, not
-    // just "Utilities Included". Apartments.com (and most listing sites)
-    // render features as heading-plus-list blocks with BARE values:
-    //   "Apartment Features" → [Air Conditioning, Dishwasher, Hardwood]
-    //   "Community Amenities" → [Controlled Access, Fitness Center]
-    //   "Fees and Policies" → [Dogs Allowed, Cats Allowed]
-    //   "Utilities Included" → [Water, Hot Water]
-    //   "Details" / "Property Information" → [Pet Friendly, Furnished]
-    // None of those bare values match the /X included/i-style free-text
-    // regexes in AMENITY_PATTERNS. By concatenating ALL labeled values into
-    // the searchBlob with synthetic "included"/"allowed" verbs, AND routing
-    // a few sections directly to their pd field, we catch the long tail.
-    let labeledBlob = '';
+    // v0.6.4: The searchBlob no longer includes labeled-section values.
+    // v0.6.3 added ALL labeled values (with synthetic verbs) to searchBlob,
+    // which caused false positives: navigation menus, footer links, and
+    // "similar listings" carousels contain words like "parking", "pool",
+    // "elevator" that fired dictionary regexes even when the LISTING didn't
+    // have those features. Now: dictionary sweep runs ONLY on amenityNodes
+    // + bodyText (scoped to the listing's actual content), and labeled-
+    // section values are routed EXCLUSIVELY through section-aware
+    // normalizers below. This eliminates false positives while still
+    // capturing bare-value lists like "Water" under "Utilities Included".
     let labeledSections = {};
     try {
       labeledSections = extractAllLabeledSections();
-      const labelVerbMap = [
-        { re: /utilities? included/i, verb: ' included' },
-        { re: /pet|fees? and polic/i, verb: ' allowed' },
-      ];
-      const parts = [];
-      for (const heading in labeledSections) {
-        const values = labeledSections[heading];
-        let verb = '';
-        for (const { re, verb: v } of labelVerbMap) {
-          if (re.test(heading)) { verb = v; break; }
-        }
-        for (const v of values) {
-          parts.push(v.toLowerCase() + verb);
-          if (verb) parts.push(v.toLowerCase()); // also keep bare form
-        }
-      }
-      labeledBlob = ' ' + parts.join(' ') + ' ';
       log('labeled sections', Object.keys(labeledSections));
     } catch (e) { log('labeled section sweep error', String(e && e.message || e)); }
 
-    const searchBlob = (amenityBlob + ' ' + labeledBlob + ' ' + bodyText).toLowerCase();
+    const searchBlob = (amenityBlob + ' ' + bodyText).toLowerCase();
     const dictMatches = matchAmenities(searchBlob);
     for (const k in dictMatches) pd[k] = dictMatches[k];
     log('dict match keys', Object.keys(dictMatches));
@@ -1556,20 +1536,48 @@
     out.address = addr || null;
 
     // ---- Pass 2: scoped DOM fallbacks for any field the state blob missed ----
-    // Note: we no longer hit body-text regex for beds/baths because Hotpads
-    // pages render "similar listings" carousels that pollute the numbers.
-    // Ollama extracts beds/baths from the cleaned page text downstream.
+    // v0.6.4: Hotpads no longer serves __NEXT_DATA__ or window.HotPads on
+    // many listing pages, so the state-blob path often finds nothing. The
+    // beds/baths/sqft/price are rendered in the listing header as stacked
+    // elements: "1\nBed\n1\nBath\n750\nSqft" right next to the address
+    // and price. We use the HERO BLOCK text (first ~500 chars around the
+    // h1) to avoid pollution from "similar listings" carousels further
+    // down. If no h1 region works, fall back to the first 600 chars of
+    // body text which always contains the hero.
+    const h1El = document.querySelector('h1');
+    let heroText = '';
+    if (h1El) {
+      // Walk up to a reasonable container (3 levels) to capture siblings
+      let heroContainer = h1El.parentElement;
+      for (let i = 0; i < 3 && heroContainer; i++) {
+        const t = (heroContainer.innerText || heroContainer.textContent || '');
+        if (t.length > 200) { heroText = t.slice(0, 800); break; }
+        heroContainer = heroContainer.parentElement;
+      }
+    }
+    if (!heroText) heroText = (document.body.innerText || '').slice(0, 600);
+    log('heroText length', heroText.length);
+
+    if (out.bedrooms == null) {
+      // Match "1\nBed" or "1 Bed" or "1 bed" or "1 BR" — scoped to hero
+      const bedM = heroText.match(/(\d+)\s*(?:\n\s*)?(?:bed|br|bedroom)/i);
+      if (bedM) { out.bedrooms = num(bedM[1]); log('beds from hero', out.bedrooms); }
+    }
+    if (out.bathrooms == null) {
+      const bathM = heroText.match(/(\d+\.?\d*)\s*(?:\n\s*)?(?:bath|ba|bathroom)/i);
+      if (bathM) { out.bathrooms = num(bathM[1]); log('baths from hero', out.bathrooms); }
+    }
+    if (out.sqft == null) {
+      const sqftM = heroText.match(/([\d,]+)\s*(?:\n\s*)?(?:sq\s*ft|sqft)/i);
+      if (sqftM) { out.sqft = num(sqftM[1]); log('sqft from hero', out.sqft); }
+    }
     if (out.price == null) {
       const priceTxt = document.querySelector('[class*="price"], [data-test*="price"]')?.textContent;
       out.price = num(priceTxt);
     }
-    if (out.sqft == null || out.price == null) {
-      const body = document.body.innerText || '';
-      if (out.sqft == null) out.sqft = num(body.match(/([\d,]+)\s*sq\s*ft/i)?.[1]);
-      if (out.price == null) {
-        const pm = body.match(/\$\s*([\d,]+)(?:\s*\/\s*mo)?/i);
-        if (pm) out.price = num(pm[1]);
-      }
+    if (out.price == null) {
+      const pm = heroText.match(/\$\s*([\d,]+)(?:\s*\/\s*mo)?/i);
+      if (pm) out.price = num(pm[1]);
     }
     if (!out.photoUrl) {
       out.photoUrl = document.querySelector('img[class*="photo"], img[class*="Photo"]')?.src
