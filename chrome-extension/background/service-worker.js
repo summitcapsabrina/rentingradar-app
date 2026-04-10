@@ -923,7 +923,10 @@ function mergeLlmIntoDictionary(dictPd, llmPd, lowerText) {
       // at least one content word must appear in the source text.
       const existing = Array.isArray(dictPd[k]) ? dictPd[k] : [];
       const addition = Array.isArray(llmVal) ? llmVal : [llmVal];
-      const merged = Array.from(new Set(existing.concat(addition)))
+      // Case-insensitive dedup: prefer the existing (predefined) casing
+      const existingLower = new Set(existing.map(v => String(v).toLowerCase()));
+      const deduped = existing.concat(addition.filter(v => !existingLower.has(String(v).toLowerCase())));
+      const merged = deduped
         .filter((v) => {
           if (valueInText(v, lowerText)) return true;
           // Lenient fallback for custom values: any 4+ letter word present?
@@ -1253,6 +1256,8 @@ RULES:
    - Deal angles: no broker fee, deposit amount, ground floor access, renovation status, owner flexibility
    - Each bullet: a specific fact from the listing, 8-20 words
    - NEVER repeat information already captured in structured fields above
+   - NEVER include fees, deposits, broker fees, or application costs — those belong in depositAmount
+   - Keep bullets factual and specific — no fluff like "perfect for relaxation" or "provides easy access"
    - If the listing has useful details, ALWAYS write bullets. Only return [] for truly bare listings.
 
 Return ONLY the JSON.`;
@@ -1311,7 +1316,26 @@ Return ONLY the JSON.`;
   const rawBullets = Array.isArray(passA.bullets) ? passA.bullets : [];
   const sourcedBullets = filterHallucinatedBullets(rawBullets, fullPageText);
   // Skip the aggressive duplicative/topic filter — keep all sourced bullets
-  const filteredBullets = deduplicateBullets(sourcedBullets);
+  const dedupedBullets = deduplicateBullets(sourcedBullets);
+
+  // v0.9.0: Strip bullets about fees/deposits (captured in structured fields)
+  // and remove fluff phrases that add no factual value.
+  const BULLET_BLOCK_RE = /\b(deposit|broker fee|application fee|security deposit|pet fee|pet deposit|move-?in cost|first month|last month)\b/i;
+  const FLUFF_PHRASES = [
+    /,?\s*(?:provides?|offering|ensuring|making it)\s+(?:a\s+)?(?:safe|convenient|easy|perfect|ideal|excellent|great|well-maintained|comfortable|tranquil|peaceful)\s+[\w\s]*(?:access|environment|living|lifestyle|experience|opportunity|investment|rental|choice|option)/gi,
+    /,?\s*(?:perfect|ideal|great|excellent)\s+for\s+[\w\s]*(?:relaxation|entertaining|investment|rental|living)/gi,
+    /,?\s*(?:provides?|offers?|ensures?)\s+(?:peace of mind|convenience|comfort|easy access|a\s+\w+\s+living)/gi,
+    /\s*—\s*(?:a\s+)?(?:great|excellent|ideal|perfect|key|major)\s+[\w\s]*(?:for investors?|for renters?|selling point|draw|advantage|benefit)/gi,
+    /,?\s*(?:providing|ensuring|offering)\s+(?:a\s+)?(?:safe and well-maintained|convenient and accessible|comfortable and modern)\s+[\w\s]*/gi,
+  ];
+  const filteredBullets = dedupedBullets
+    .filter(b => !BULLET_BLOCK_RE.test(b))
+    .map(b => {
+      let cleaned = b;
+      for (const re of FLUFF_PHRASES) cleaned = cleaned.replace(re, '');
+      return cleaned.replace(/[,\s]+$/, '').trim();
+    })
+    .filter(b => b.length >= 10); // drop anything that became too short
 
   const out = {
     propertyDetails: Object.assign({}, dictPropertyDetails),
@@ -1421,7 +1445,9 @@ function mergePropertyDetails(base, ai) {
     if (v == null || v === '' || (Array.isArray(v) && v.length === 0)) continue;
     if (Array.isArray(v)) {
       const existing = Array.isArray(out[k]) ? out[k] : [];
-      out[k] = Array.from(new Set(existing.concat(v)));
+      // Case-insensitive dedup: prefer existing (predefined) casing
+      const lc = new Set(existing.map(x => String(x).toLowerCase()));
+      out[k] = existing.concat(v.filter(x => !lc.has(String(x).toLowerCase())));
     } else if (out[k] == null || out[k] === '' || out[k] === 0) {
       out[k] = v;
     }

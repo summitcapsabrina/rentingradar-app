@@ -192,8 +192,20 @@
       clone.querySelectorAll('script, style, nav, footer, noscript, iframe, svg').forEach((n) => n.remove());
       clone.querySelectorAll(
         '[class*="similar"], [class*="Similar"], [class*="nearby"], [class*="Nearby"], ' +
-        '[class*="recommend"], [class*="Recommend"], [class*="carousel"], [class*="Carousel"]'
+        '[class*="recommend"], [class*="Recommend"], [class*="carousel"], [class*="Carousel"], ' +
+        // Hotpads SEO footer: "Apartments for rent in...", "Townhomes for rent in..."
+        // Wrapped in <article> not <footer>, so the nav/footer strip above misses it.
+        '[class*="SeoFooter"], [class*="seoFooter"], [class*="seo-footer"]'
       ).forEach((n) => n.remove());
+      // Strip "Pricing comparison" and "Nearby schools" sections — they
+      // contain market-rate prices (e.g. "$1,499") and other noise that
+      // confuses both the AI and the dictionary extractor.
+      clone.querySelectorAll('article, section, div').forEach((el) => {
+        const h = el.querySelector('h1, h2, h3, h4');
+        if (h && /pricing comparison|nearby schools|find similar/i.test(h.textContent)) {
+          el.remove();
+        }
+      });
       const txt = (clone.innerText || clone.textContent || '')
         .replace(/[ \t]+/g, ' ')
         .replace(/\n{3,}/g, '\n\n')
@@ -1040,13 +1052,23 @@
     // ---- Pass 1: JSON-LD (most reliable when it's present) ----
     const jsonLd = findAllJsonLd();
     log('jsonLd blocks', jsonLd.length);
-    // Flatten any @graph arrays so we can iterate uniformly
+    // Flatten any @graph arrays AND unwrap nested `about` objects so we
+    // can iterate uniformly. Hotpads wraps listings as
+    //   { @type: "ItemPage", about: { @type: "Product", offers: {…} } }
+    // — without unwrapping, the price in `about.offers` is missed.
     const ldBlocks = [];
     jsonLd.forEach((b) => {
       if (!b || typeof b !== 'object') return;
       if (Array.isArray(b['@graph'])) ldBlocks.push(...b['@graph']);
       else ldBlocks.push(b);
     });
+    // Second pass: unwrap `about` and `mainEntity` nested objects
+    const extras = [];
+    ldBlocks.forEach((b) => {
+      if (b.about && typeof b.about === 'object') extras.push(b.about);
+      if (b.mainEntity && typeof b.mainEntity === 'object') extras.push(b.mainEntity);
+    });
+    ldBlocks.push(...extras);
     ldBlocks.forEach((block) => {
       if (!block || typeof block !== 'object') return;
       const t = Array.isArray(block['@type']) ? block['@type'].join(' ') : String(block['@type'] || '');
@@ -1171,6 +1193,33 @@
         if (out.sqft == null) out.sqft = num(t.match(/([\d,]+)\s*(?:sq\s*ft|sqft)/i)?.[1]);
       });
       log('after DOM containers', { sqft: out.sqft, price: out.price });
+    }
+
+    // Hotpads hero price: the h1 heading and price live near each other
+    // in the hero section. Walk siblings of the h1 to find $X,XXX.
+    // This is more reliable than body-text regex which can pick up
+    // the "Pricing comparison" market rate ($1,499) instead of the rent.
+    if (out.price == null) {
+      const h1 = document.querySelector('h1');
+      if (h1) {
+        const heroParent = h1.parentElement;
+        if (heroParent) {
+          for (const child of heroParent.children) {
+            const t = (child.textContent || '').trim();
+            const m = t.match(/^\$\s*([\d,]+)$/);
+            if (m) { out.price = num(m[1]); break; }
+          }
+        }
+        // Also check siblings of the h1's parent (one level up)
+        if (out.price == null && heroParent.parentElement) {
+          for (const child of heroParent.parentElement.children) {
+            const t = (child.textContent || '').trim();
+            const m = t.match(/^\$\s*([\d,]+)$/);
+            if (m) { out.price = num(m[1]); break; }
+          }
+        }
+      }
+      if (out.price) log('price from hero h1 sibling', out.price);
     }
 
     // Grab a cleaned page-text blob for the amenity sweep, availability
