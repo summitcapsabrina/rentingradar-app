@@ -695,8 +695,11 @@ const AMENITY_SOURCE_TRIGGERS = {
   'W/D Hookups': ['hookup','w/d hookup','washer hookup','dryer hookup'],
   'Shared/On-Site': ['shared laundry','on-site laundry','on site laundry','laundry room','laundry on site','community laundry'],
   'Stacked W/D': ['stacked washer','stacked w/d'],
-  // A/C (single)
-  'Central A/C': ['central a/c','central ac','central air'],
+  // A/C (single). v0.6.3: "air conditioning" and bare "a/c" now trigger
+  // Central A/C as a safe default when no more-specific type is stated.
+  // The section-routing in parseApartments takes precedence when the
+  // listing's Apartment Features DOM section names the type explicitly.
+  'Central A/C': ['central a/c','central ac','central air','air conditioning','air conditioner','air-conditioning','air-conditioned','air conditioned','a/c'],
   'Window Unit': ['window unit','window a/c','window ac'],
   'Mini-Split': ['mini-split','mini split','ductless'],
   'Evaporative/Swamp Cooler': ['swamp cooler','evaporative cooler'],
@@ -1202,17 +1205,28 @@ Return ONLY the JSON.`;
           // With these settings, identical input → identical output, every
           // single run, on the same model weights.
           options: {
-            temperature: 0,
-            top_k: 1,
-            top_p: 1,
+            // v0.6.2: qwen3:4b with strict greedy sampling (temp=0 top_k=1)
+            // occasionally picks the end-of-stream token as the first output
+            // token when format:json is set and the prompt is near context
+            // limit. That produces an empty message.content string and throws
+            // "Empty response from Ollama". A tiny bit of temperature and a
+            // wider top_k eliminates this without sacrificing much
+            // determinism — the model still picks the obviously-best token
+            // for structured fields, it just won't deterministically pick
+            // EOS when token probabilities happen to pile up there.
+            temperature: 0.1,
+            top_k: 20,
+            top_p: 0.95,
             repeat_penalty: 1.0,
             seed: 20260409,
-            // v0.6.0: 2048 ctx is plenty for a 4KB snippet (~1200 tokens)
-            // + ~400 token output. Smaller ctx = faster prompt eval AND
-            // lower model reload cost. We also cap generation at 350 tokens
-            // so the model can't run away — bullets are short, JSON is small.
-            num_ctx: 2048,
-            num_predict: 350,
+            // v0.6.2: raised from 2048 → 4096. A 4KB snippet is ~1000-1200
+            // tokens, system + user prompt scaffolding adds ~500, response
+            // budget is 350. That totals ~2050 — sitting RIGHT at the old
+            // 2048 ceiling caused intermittent truncation and empty output.
+            // 4096 gives us safe headroom without forcing a model reload on
+            // installs that already have 4K loaded.
+            num_ctx: 4096,
+            num_predict: 400,
           },
           messages: [
             { role: 'system', content: sysPrompt },
@@ -1239,23 +1253,36 @@ Return ONLY the JSON.`;
     } finally { clearTimeout(t); }
   }
 
-  // v0.6.0: single surgical Ollama call. Wrapped so a timeout / error
-  // does NOT discard the dictionary work — we always return at least
-  // { propertyDetails: dict, ... } even if the LLM is dead.
+  // v0.6.2: retry ladder for Ollama. A single surgical call is the happy
+  // path, but qwen3:4b can occasionally: (a) return empty content when the
+  // prompt-plus-response butts up against num_ctx, (b) emit only a <think>
+  // block that gets stripped to empty, (c) time out under load. We retry
+  // up to 3 times, each with progressively shorter inputs. Dictionary
+  // output is preserved regardless so the final row is never worse than
+  // "no-LLM" mode.
   let lite = null;
   let liteError = null;
-  try {
-    lite = await callOllama(systemPromptA, userPromptA, OLLAMA_TIMEOUT_MS);
-  } catch (e) {
-    console.log('[RR ext] Ollama call failed, retrying once with 2KB snippet:', (e && e.message) || e);
+  const retryLadder = [
+    { snippetSize: 4000, label: 'attempt 1: 4KB snippet' },
+    { snippetSize: 2000, label: 'attempt 2: 2KB snippet' },
+    { snippetSize: 1200, label: 'attempt 3: 1.2KB snippet' },
+  ];
+  for (let i = 0; i < retryLadder.length; i++) {
+    const rung = retryLadder[i];
     try {
-      const shortText = (llmSnippet || fullPageText).slice(0, 2000);
-      const shortPrompt = userPromptA.replace(pageText, shortText);
-      lite = await callOllama(systemPromptA, shortPrompt, OLLAMA_TIMEOUT_MS);
-    } catch (e2) {
-      console.log('[RR ext] Ollama retry also failed:', (e2 && e2.message) || e2);
-      liteError = (e2 && e2.message) || (e && e.message) || 'AI request failed';
-      lite = null;
+      const text = (llmSnippet || fullPageText).slice(0, rung.snippetSize);
+      const prompt = (i === 0) ? userPromptA : userPromptA.replace(pageText, text);
+      console.log('[RR ext] Ollama ' + rung.label);
+      lite = await callOllama(systemPromptA, prompt, OLLAMA_TIMEOUT_MS);
+      liteError = null;
+      break;
+    } catch (e) {
+      const msg = (e && e.message) || String(e);
+      console.log('[RR ext] Ollama ' + rung.label + ' failed:', msg);
+      liteError = msg;
+      // Don't retry on HTTP 4xx — those mean the server is actually broken,
+      // not overloaded. Timeouts and "Empty response" ARE retryable.
+      if (/HTTP 4\d\d/.test(msg)) break;
     }
   }
   // passA / passB both alias the lite-pass — assembly code below was

@@ -520,6 +520,47 @@
     return items;
   }
 
+  // v0.6.3: Extract ALL labeled sections on the page. Returns an object
+  // keyed by heading text, with each value a deduped array of cell values
+  // under that heading. This is the comprehensive version of
+  // extractLabeledList — instead of looking for one label, it grabs every
+  // heading-with-list block on the page in a single pass. parseApartments
+  // then routes each section's values to the correct pd field AND appends
+  // them to the searchBlob so the existing dictionary regexes fire against
+  // bare-value DOM content.
+  function extractAllLabeledSections() {
+    const sections = {};
+    const headingSel =
+      'h1, h2, h3, h4, h5, h6, ' +
+      '[class*="header-column"], [class*="HeaderColumn"]';
+    const headings = document.querySelectorAll(headingSel);
+    for (const h of headings) {
+      const t = ((h.innerText || h.textContent || '') + '').replace(/\s+/g, ' ').trim();
+      if (!t || t.length > 60) continue;
+      let container = h.parentElement;
+      for (let depth = 0; depth < 5 && container; depth++) {
+        const cells = container.querySelectorAll(
+          'li, [class*="column"]:not([class*="header"]):not([class*="Header"])'
+        );
+        const found = [];
+        for (const c of cells) {
+          if (c.contains(h)) continue;
+          const v = ((c.innerText || c.textContent || '') + '').replace(/\s+/g, ' ').trim();
+          if (!v || v.length > 100) continue;
+          if (v.toLowerCase() === t.toLowerCase()) continue;
+          if (found.includes(v)) continue;
+          found.push(v);
+        }
+        if (found.length) {
+          sections[t] = (sections[t] || []).concat(found);
+          break;
+        }
+        container = container.parentElement;
+      }
+    }
+    return sections;
+  }
+
   // v0.6.2: Normalize a raw utility label ("Water", "hot water", "electric",
   // "garbage", etc.) to the canonical value the CRM expects. Returns null if
   // the input doesn't match any known utility.
@@ -1166,32 +1207,191 @@
       '[class*="feature"], [class*="Feature"]'
     );
     const amenityBlob = Array.from(amenityNodes).map((n) => n.textContent).join(' ').toLowerCase();
-    const searchBlob = (amenityBlob + ' ' + bodyText).toLowerCase();
+
+    // v0.6.3: Mega DOM sweep — pull EVERY labeled section on the page, not
+    // just "Utilities Included". Apartments.com (and most listing sites)
+    // render features as heading-plus-list blocks with BARE values:
+    //   "Apartment Features" → [Air Conditioning, Dishwasher, Hardwood]
+    //   "Community Amenities" → [Controlled Access, Fitness Center]
+    //   "Fees and Policies" → [Dogs Allowed, Cats Allowed]
+    //   "Utilities Included" → [Water, Hot Water]
+    //   "Details" / "Property Information" → [Pet Friendly, Furnished]
+    // None of those bare values match the /X included/i-style free-text
+    // regexes in AMENITY_PATTERNS. By concatenating ALL labeled values into
+    // the searchBlob with synthetic "included"/"allowed" verbs, AND routing
+    // a few sections directly to their pd field, we catch the long tail.
+    let labeledBlob = '';
+    let labeledSections = {};
+    try {
+      labeledSections = extractAllLabeledSections();
+      const labelVerbMap = [
+        { re: /utilities? included/i, verb: ' included' },
+        { re: /pet|fees? and polic/i, verb: ' allowed' },
+      ];
+      const parts = [];
+      for (const heading in labeledSections) {
+        const values = labeledSections[heading];
+        let verb = '';
+        for (const { re, verb: v } of labelVerbMap) {
+          if (re.test(heading)) { verb = v; break; }
+        }
+        for (const v of values) {
+          parts.push(v.toLowerCase() + verb);
+          if (verb) parts.push(v.toLowerCase()); // also keep bare form
+        }
+      }
+      labeledBlob = ' ' + parts.join(' ') + ' ';
+      log('labeled sections', Object.keys(labeledSections));
+    } catch (e) { log('labeled section sweep error', String(e && e.message || e)); }
+
+    const searchBlob = (amenityBlob + ' ' + labeledBlob + ' ' + bodyText).toLowerCase();
     const dictMatches = matchAmenities(searchBlob);
     for (const k in dictMatches) pd[k] = dictMatches[k];
     log('dict match keys', Object.keys(dictMatches));
 
-    // v0.6.2: Apartments.com renders "Utilities Included" (and several other
-    // labeled sections) as a heading + ul/li list with BARE values — "Water"
-    // under a heading, not "water included" anywhere in the text. The dict
-    // sweep misses these because the regex expects the "included" verb to
-    // sit beside the utility name. Pull them straight from the DOM.
+    // v0.6.3: Section-specific routing. For headings we can identify with
+    // high confidence, route values DIRECTLY to the right pd array,
+    // bypassing the free-text dictionary entirely. This guarantees bare
+    // "Water" under "Utilities Included" lands in pd.utilitiesIncluded
+    // and bare "Pool" under "Community Amenities" lands in
+    // pd.communityAmenities, regardless of what AMENITY_PATTERNS says.
     try {
-      const utilItems = extractLabeledList(/^utilities\s+included$/i);
-      if (utilItems.length) {
-        const mapped = [];
-        for (const raw of utilItems) {
-          const canon = normalizeUtility(raw);
-          if (canon && !mapped.includes(canon)) mapped.push(canon);
+      const addValues = (field, values) => {
+        if (!values || !values.length) return;
+        const existing = Array.isArray(pd[field]) ? pd[field].slice() : [];
+        for (const v of values) if (v && !existing.includes(v)) existing.push(v);
+        if (existing.length) pd[field] = existing;
+      };
+
+      for (const heading in labeledSections) {
+        const values = labeledSections[heading];
+        if (!values || !values.length) continue;
+
+        // Utilities Included
+        if (/^utilities?\s+included$/i.test(heading) || /^utilities?$/i.test(heading)) {
+          addValues('utilitiesIncluded', values.map(normalizeUtility).filter(Boolean));
         }
-        if (mapped.length) {
-          const existing = Array.isArray(pd.utilitiesIncluded) ? pd.utilitiesIncluded.slice() : [];
-          for (const m of mapped) if (!existing.includes(m)) existing.push(m);
-          pd.utilitiesIncluded = existing;
-          log('labeled utilities', mapped);
+
+        // Apartment / Unit features → ac, laundry, appliances, interior
+        if (/apartment features|unit features|interior features|^features$/i.test(heading)) {
+          const norm = values.map(v => String(v).toLowerCase());
+          // A/C
+          if (norm.some(v => /\bair.?condition/.test(v))) setPD(pd, 'ac', pd.ac || 'Central A/C');
+          if (norm.some(v => /\bwindow unit/.test(v))) setPD(pd, 'ac', 'Window Unit');
+          if (norm.some(v => /\bmini.?split/.test(v))) setPD(pd, 'ac', 'Mini-Split');
+          if (norm.some(v => /\bcentral air|central a\/c/.test(v))) setPD(pd, 'ac', 'Central A/C');
+          // Laundry
+          if (norm.some(v => /washer.*dryer.*(unit|in-?unit)|w\/d in unit/.test(v))) setPD(pd, 'laundry', 'In-Unit W/D');
+          if (norm.some(v => /w\/d hookup|washer.*dryer hookup/.test(v))) setPD(pd, 'laundry', pd.laundry || 'W/D Hookups');
+          // Heating
+          if (norm.some(v => /\bheat(ing)?\b/.test(v))) setPD(pd, 'heating', pd.heating || 'Central (Gas)');
+          // Flooring
+          if (norm.some(v => /\bhardwood\b/.test(v))) setPD(pd, 'flooring', 'Hardwood');
+          else if (norm.some(v => /\btile\b/.test(v))) setPD(pd, 'flooring', 'Tile');
+          else if (norm.some(v => /\bcarpet\b/.test(v))) setPD(pd, 'flooring', 'Carpet');
+          else if (norm.some(v => /\bvinyl\b/.test(v))) setPD(pd, 'flooring', 'Vinyl Plank');
+          else if (norm.some(v => /\blaminate\b/.test(v))) setPD(pd, 'flooring', 'Laminate');
+          // Appliances (multi-select)
+          const appMap = [
+            [/dishwasher/, 'Dishwasher'],
+            [/microwave/, 'Microwave'],
+            [/refrigerator|fridge/, 'Refrigerator'],
+            [/garbage disposal|disposal/, 'Garbage Disposal'],
+            [/oven|range|stove/, 'Oven/Range (Electric)'],
+            [/ice maker/, 'Ice Maker'],
+          ];
+          const apps = [];
+          for (const v of norm) {
+            for (const [re, label] of appMap) {
+              if (re.test(v) && !apps.includes(label)) apps.push(label);
+            }
+          }
+          addValues('appliances', apps);
+          // Interior features (multi-select)
+          const intMap = [
+            [/ceiling fan/, 'Ceiling Fans'],
+            [/walk-?in closet/, 'Walk-In Closets'],
+            [/high ceiling/, 'High Ceilings'],
+            [/vaulted ceiling/, 'Vaulted Ceilings'],
+            [/fireplace/, 'Fireplace'],
+            [/granite|quartz countertop/, 'Stainless Steel Appliances'],
+            [/stainless/, 'Stainless Steel Appliances'],
+            [/kitchen island/, 'Kitchen Island'],
+            [/pantry/, 'Pantry'],
+            [/smart thermostat|nest thermostat/, 'Smart Thermostat'],
+            [/recessed lighting/, 'Recessed Lighting'],
+            [/crown molding/, 'Crown Molding'],
+            [/breakfast bar/, 'Breakfast Bar'],
+            [/blinds/, 'Window Blinds'],
+          ];
+          const ints = [];
+          for (const v of norm) {
+            for (const [re, label] of intMap) {
+              if (re.test(v) && !ints.includes(label)) ints.push(label);
+            }
+          }
+          addValues('interiorFeatures', ints);
+          // Outdoor
+          const outMap = [
+            [/\bbalcony\b/, 'Balcony'],
+            [/\bpatio\b/, 'Patio'],
+            [/\bdeck\b/, 'Deck'],
+            [/\bporch\b/, 'Porch'],
+            [/\bsunroom\b/, 'Sunroom'],
+          ];
+          const outs = [];
+          for (const v of norm) {
+            for (const [re, label] of outMap) {
+              if (re.test(v) && !outs.includes(label)) outs.push(label);
+            }
+          }
+          addValues('outdoor', outs);
+        }
+
+        // Community amenities / building amenities
+        if (/community (amenit|feature)|building (amenit|feature)|complex (amenit|feature)/i.test(heading)) {
+          const norm = values.map(v => String(v).toLowerCase());
+          const caMap = [
+            [/fitness|gym/, 'Gym/Fitness Center'],
+            [/clubhouse|community room/, 'Clubhouse'],
+            [/business center/, 'Business Center'],
+            [/package/, 'Package Lockers'],
+            [/dog park|pet park/, 'Dog Park'],
+            [/playground/, 'Playground'],
+            [/swimming pool|\bpool\b/, 'Swimming Pool'],
+            [/hot tub|spa/, 'Community Spa/Hot Tub'],
+            [/sauna/, 'Sauna'],
+            [/elevator/, 'Elevator'],
+            [/concierge|doorman/, 'Concierge/Doorman'],
+            [/on-?site management/, 'On-Site Management'],
+            [/on-?site maintenance/, 'On-Site Maintenance'],
+            [/bike storage/, 'Bike Storage'],
+            [/bbq|grill/, 'BBQ/Grill Area'],
+            [/rooftop/, 'Rooftop Lounge'],
+            [/tennis/, 'Tennis Court'],
+            [/pickleball/, 'Pickleball Court'],
+            [/controlled access|gated/, 'Controlled Access/Gated'],
+          ];
+          const cas = [];
+          for (const v of norm) {
+            for (const [re, label] of caMap) {
+              if (re.test(v) && !cas.includes(label)) cas.push(label);
+            }
+          }
+          addValues('communityAmenities', cas);
+        }
+
+        // Fees and Policies → pets
+        if (/fees?\s+and\s+polic|^pet polic|^pets?$/i.test(heading)) {
+          const norm = values.map(v => String(v).toLowerCase());
+          if (norm.some(v => /no pets/.test(v))) setPD(pd, 'petsAllowed', 'No Pets');
+          else if (norm.some(v => /dogs? allowed/.test(v)) && norm.some(v => /cats? allowed/.test(v))) {
+            setPD(pd, 'petsAllowed', 'Yes - All Pets');
+          } else if (norm.some(v => /dogs? allowed/.test(v))) setPD(pd, 'petsAllowed', 'Dogs Only');
+          else if (norm.some(v => /cats? allowed/.test(v))) setPD(pd, 'petsAllowed', 'Cats Only');
         }
       }
-    } catch (e) { log('labeled utilities error', String(e && e.message || e)); }
+    } catch (e) { log('section routing error', String(e && e.message || e)); }
 
     // Property type heuristic
     if (!pd.propertyType) {
@@ -1221,10 +1421,17 @@
     else if (/w\/d hookup|washer.*dryer hookup/i.test(searchBlob)) setPD(pd, 'laundry', 'W/D Hookups');
     else if (/laundry room|on-?site laundry/i.test(searchBlob)) setPD(pd, 'laundry', 'Shared/On-Site');
 
-    // A/C
-    if (/central (a\/c|air)/i.test(searchBlob)) setPD(pd, 'ac', 'Central A/C');
-    else if (/window unit/i.test(searchBlob)) setPD(pd, 'ac', 'Window Unit');
-    else if (/mini.?split/i.test(searchBlob)) setPD(pd, 'ac', 'Mini-Split');
+    // A/C — v0.6.3: also match bare "air conditioning" / "a/c" so the
+    // Apartments.com "Apartment Features > Air Conditioning" list row
+    // sets the field even when no "central"/"window"/"mini-split" qualifier
+    // is present anywhere on the page.
+    if (!pd.ac) {
+      if (/central (a\/c|air)/i.test(searchBlob)) setPD(pd, 'ac', 'Central A/C');
+      else if (/window unit/i.test(searchBlob)) setPD(pd, 'ac', 'Window Unit');
+      else if (/mini.?split/i.test(searchBlob)) setPD(pd, 'ac', 'Mini-Split');
+      else if (/\bair.?condition(ing|er|ed)?\b/i.test(searchBlob)) setPD(pd, 'ac', 'Central A/C');
+      else if (/\ba\/c\b/i.test(searchBlob)) setPD(pd, 'ac', 'Central A/C');
+    }
 
     // Availability
     const avail = bodyText.match(/Available\s+(Now|Immediately|on\s+([A-Z][a-z]+\s+\d{1,2}(?:,\s*\d{4})?)|(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?))/i);

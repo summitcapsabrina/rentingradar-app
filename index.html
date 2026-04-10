@@ -4568,7 +4568,12 @@ function _rrRenderToast(toast, msg, type, duration, opts) {
     // Always moving forward, never stalling, never overshooting.
     const bar = toast.querySelector('.rr-toast-progress');
     const startedAt = performance.now();
-    const tau = opts.progressTau || 6500;
+    // v0.6.3: raised from 6500 → 10000. With the retry ladder and 4096
+    // context, typical imports run 12-20s. tau=10000 keeps the bar at a
+    // perceptually honest position: 10s→63%, 15s→78%, 20s→86%, 25s→92%.
+    // The bar is always visibly moving but never reaches the end until
+    // the snap-to-100 fires on real completion.
+    const tau = opts.progressTau || 10000;
     toast._progressTimer = setInterval(() => {
       const elapsed = performance.now() - startedAt;
       // Cap just below 100 so the real completion snap is always visible.
