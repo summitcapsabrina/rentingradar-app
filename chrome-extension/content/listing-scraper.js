@@ -867,15 +867,29 @@
     document.querySelectorAll('script:not([src])').forEach((s) => {
       const txt = s.textContent || '';
       if (txt.length < 200 || txt.length > 2000000) return;
-      // Match patterns like  window.__INITIAL_STATE__ = {...};
-      const m = txt.match(/window\.__(?:INITIAL_STATE|PRELOADED_STATE|APP_STATE|data)__\s*=\s*(\{[\s\S]+?\})\s*;?\s*<?\/?script>?/);
-      if (m) {
-        try { roots.push(JSON.parse(m[1])); } catch (_) {}
+      // Find the assignment, then extract the JSON from "= {" to the end.
+      // The old regex-based approach (\{[\s\S]+?\}) was broken for large
+      // JSON blobs — the lazy quantifier stopped at the first "}" that
+      // matched the optional trailing pattern, truncating the JSON.
+      const stateVarMatch = txt.match(/window\.__(?:INITIAL_STATE|PRELOADED_STATE|APP_STATE|data)__\s*=\s*\{/);
+      if (stateVarMatch) {
+        const braceIdx = txt.indexOf('{', stateVarMatch.index);
+        if (braceIdx >= 0) {
+          let jsonStr = txt.substring(braceIdx).trim();
+          // Strip trailing semicolons and whitespace
+          jsonStr = jsonStr.replace(/\s*;?\s*$/, '');
+          try { roots.push(JSON.parse(jsonStr)); } catch (_) {}
+        }
       }
       // Hotpads in particular often does:  HotPads.serverState = {...}
-      const m2 = txt.match(/HotPads\.(?:serverState|preloadedState)\s*=\s*(\{[\s\S]+?\})\s*;/);
-      if (m2) {
-        try { roots.push(JSON.parse(m2[1])); } catch (_) {}
+      const hpMatch = txt.match(/HotPads\.(?:serverState|preloadedState)\s*=\s*\{/);
+      if (hpMatch) {
+        const braceIdx = txt.indexOf('{', hpMatch.index);
+        if (braceIdx >= 0) {
+          let jsonStr = txt.substring(braceIdx).trim();
+          jsonStr = jsonStr.replace(/\s*;?\s*$/, '');
+          try { roots.push(JSON.parse(jsonStr)); } catch (_) {}
+        }
       }
     });
     return roots;
@@ -1037,6 +1051,39 @@
       const blobs = collectStateBlobs();
       if (blobs.length) {
         log('state blobs', blobs.length);
+
+        // ---- Hotpads-specific: extract directly from known state paths ----
+        // Hotpads __PRELOADED_STATE__ has a well-defined structure. Extract
+        // price, beds, baths, sqft, address from known paths FIRST before
+        // falling back to the generic gdpScore scorer (which often picks
+        // the wrong object like the search filter).
+        for (const root of blobs) {
+          const cl = root.currentListingDetails?.currentListing;
+          if (cl) {
+            log('hotpads currentListing found');
+            // Price — ALWAYS from modelsAndPricing, never from comparison
+            if (out.price == null && cl.modelsAndPricing && cl.modelsAndPricing.length) {
+              out.price = num(cl.modelsAndPricing[0].lowPrice) || num(cl.modelsAndPricing[0].highPrice);
+              if (out.price) log('price from hotpads state', out.price);
+            }
+            if (out.bedrooms == null) out.bedrooms = num(cl.beds);
+            if (out.bathrooms == null) out.bathrooms = num(cl.baths);
+            if (out.sqft == null) out.sqft = num(cl.sqft);
+            if (!out.title && cl.displayAddress) out.title = String(cl.displayAddress).slice(0, 300);
+            if (!out.description && cl.description) out.description = String(cl.description).slice(0, 2000);
+            // Address
+            if (!out.address) {
+              const addr = cl.address;
+              if (addr && typeof addr === 'object') {
+                const parts = [addr.streetAddress, addr.city, addr.state, addr.zipcode].filter(Boolean);
+                if (parts.length >= 2) out.address = parts.join(', ');
+              }
+            }
+            break; // found the listing, stop
+          }
+        }
+
+        // Generic gdpScore fallback for non-Hotpads sites
         let gdp = null;
         for (const root of blobs) {
           const hit = deepFindBest(root, gdpScore);
@@ -1241,10 +1288,11 @@
     // detection, and the last-resort price fallback below.
     const bodyText = (document.querySelector('main') || document.body).innerText || '';
 
-    if (out.price == null) {
-      const nearRent = bodyText.match(/\$\s*([\d,]+)\s*(?:\/\s*mo|\/\s*month)/i);
-      if (nearRent) out.price = num(nearRent[1]);
-    }
+    // Body-text price fallback REMOVED — too dangerous. Body text includes
+    // "Pricing comparison" sections, market rates, deposit amounts, and
+    // other dollar figures that are NOT the rent. Price must come from
+    // structured data (state blob, JSON-LD, DOM hero block) or not at all.
+    // if (out.price == null) { ... }
 
     // ---- Sanity guard: reject obviously-bogus beds/baths ----
     if (out.bedrooms != null && (out.bedrooms < 0 || out.bedrooms > 20)) {
@@ -1520,6 +1568,28 @@
     // ---- Pass 1: state-blob extraction (richest source) ----
     const candidates = collectStateBlobs();
     log('state blobs', candidates.length);
+
+    // Hotpads-specific: extract directly from known __PRELOADED_STATE__
+    // paths FIRST. The generic gdpScore picker is broken for Hotpads
+    // because it selects the search-filter object instead of the listing.
+    for (const root of candidates) {
+      const cl = root.currentListingDetails?.currentListing;
+      if (cl) {
+        log('hotpads currentListing found');
+        // Price — ALWAYS from modelsAndPricing, never from comparison data
+        if (out.price == null && cl.modelsAndPricing && cl.modelsAndPricing.length) {
+          out.price = num(cl.modelsAndPricing[0].lowPrice) || num(cl.modelsAndPricing[0].highPrice);
+          if (out.price) log('price from hotpads state', out.price);
+        }
+        if (out.bedrooms == null) out.bedrooms = num(cl.beds);
+        if (out.bathrooms == null) out.bathrooms = num(cl.baths);
+        if (out.sqft == null) out.sqft = num(cl.sqft);
+        if (!out.description && cl.description) out.description = String(cl.description).slice(0, 2000);
+        break;
+      }
+    }
+
+    // Generic gdpScore fallback
     let gdp = null;
     for (const root of candidates) {
       const hit = deepFindBest(root, gdpScore);
@@ -1672,13 +1742,45 @@
       const sqftM = heroText.match(/([\d,]+)\s*(?:\n\s*)?(?:sq\s*ft|sqft)/i);
       if (sqftM) { out.sqft = num(sqftM[1]); log('sqft from hero', out.sqft); }
     }
+    // Price fallback: use ONLY the hero container (.Hdp-listing-container)
+    // which contains the actual rent next to beds/baths/sqft. NEVER use
+    // generic [class*="price"] selectors — they match the "Pricing
+    // comparison" section which shows the MARKET RATE, not the rent.
+    // NEVER use heroText regex — it includes text from sections below
+    // the listing header that contain the wrong price.
     if (out.price == null) {
-      const priceTxt = document.querySelector('[class*="price"], [data-test*="price"]')?.textContent;
-      out.price = num(priceTxt);
+      const hdpContainer = document.querySelector('.Hdp-listing-container');
+      if (hdpContainer) {
+        const leaves = hdpContainer.querySelectorAll('div, span, p');
+        for (const el of leaves) {
+          const t = (el.textContent || '').trim();
+          if (/^\$\s*[\d,]+$/.test(t) && el.children.length === 0) {
+            out.price = num(t.replace(/[^0-9]/g, ''));
+            if (out.price) { log('price from Hdp hero', out.price); break; }
+          }
+        }
+      }
     }
+    // JSON-LD fallback (AggregateOffer.lowPrice)
     if (out.price == null) {
-      const pm = heroText.match(/\$\s*([\d,]+)(?:\s*\/\s*mo)?/i);
-      if (pm) out.price = num(pm[1]);
+      try {
+        const blocks = findAllJsonLd();
+        for (const b of blocks) {
+          const graph = b['@graph'] || [b];
+          for (const node of graph) {
+            const product = node.about || node.mainEntity || node;
+            if (product && product.offers) {
+              const offers = Array.isArray(product.offers) ? product.offers : [product.offers];
+              for (const o of offers) {
+                const p = num(o.price) || num(o.lowPrice);
+                if (p) { out.price = p; log('price from JSON-LD', p); break; }
+              }
+              if (out.price) break;
+            }
+          }
+          if (out.price) break;
+        }
+      } catch (_) {}
     }
     if (!out.photoUrl) {
       out.photoUrl = document.querySelector('img[class*="photo"], img[class*="Photo"]')?.src
