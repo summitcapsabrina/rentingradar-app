@@ -250,8 +250,7 @@ async function scrapeAny(url, hint) {
         data.bathrooms = core.bathrooms;
       if (core.sqft != null && (data.sqft == null || data.sqft === '' || data.sqft === 0))
         data.sqft = core.sqft;
-      if (core.price != null && (data.price == null || data.price === '' || data.price === 0))
-        data.price = core.price;
+      // price is NEVER overlaid from AI — scraper price is authoritative
       // Available date: prefer scraper (from JSON-LD / state blob), fall back to AI
       if (!data.propertyDetails.availableDate && core.availableDate) {
         data.propertyDetails.availableDate = core.availableDate;
@@ -1213,7 +1212,6 @@ Extract ALL details into this JSON structure. Return ONLY the JSON.
   "bedrooms": <int 0-20>,
   "bathrooms": <number, .5 for half baths>,
   "sqft": <int>,
-  "price": <int monthly rent USD>,
   "availableDate": "Now" or "YYYY-MM-DD",
   "propertyType": <string - use one of these if it fits: ${OLLAMA_FIELD_OPTIONS.propertyType.join(', ')}>,
   "furnished": <string>,
@@ -1344,7 +1342,7 @@ Return ONLY the JSON.`;
       bedrooms: passA.bedrooms,
       bathrooms: passA.bathrooms,
       sqft: passA.sqft,
-      price: passA.price,
+      // price is NEVER from AI — scraper-only to prevent wrong rent
       availableDate: normalizeAvailableDate(passA.availableDate),
     },
   };
@@ -1425,10 +1423,7 @@ Return ONLY the JSON.`;
     const n = Number(core.sqft);
     core.sqft = (Number.isFinite(n) && n >= 50 && n <= 50000) ? n : null;
   }
-  if (core.price != null) {
-    const n = Number(core.price);
-    core.price = (Number.isFinite(n) && n >= 50 && n <= 200000) ? n : null;
-  }
+  // price intentionally omitted — scraper-only, never from AI
   if (aiError) out._aiError = aiError;
   out._aiModel = aiModel;
   return out;

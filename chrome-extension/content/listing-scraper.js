@@ -1195,31 +1195,46 @@
       log('after DOM containers', { sqft: out.sqft, price: out.price });
     }
 
-    // Hotpads hero price: the h1 heading and price live near each other
-    // in the hero section. Walk siblings of the h1 to find $X,XXX.
-    // This is more reliable than body-text regex which can pick up
-    // the "Pricing comparison" market rate ($1,499) instead of the rent.
+    // ---- Hotpads / Zillow hero price extraction ----
+    // Hotpads structure: .Hdp-listing-container has the h1 (address) and
+    // a sibling div containing "$2,499" + "1Bed 1Bath 750Sqft". The price
+    // element is a leaf div whose ONLY text is "$X,XXX". We walk all
+    // descendants of the hero container to find it.
+    // This runs BEFORE the body-text fallback so we never accidentally
+    // pick up the "Pricing comparison" market rate.
     if (out.price == null) {
-      const h1 = document.querySelector('h1');
-      if (h1) {
-        const heroParent = h1.parentElement;
-        if (heroParent) {
-          for (const child of heroParent.children) {
-            const t = (child.textContent || '').trim();
-            const m = t.match(/^\$\s*([\d,]+)$/);
-            if (m) { out.price = num(m[1]); break; }
-          }
-        }
-        // Also check siblings of the h1's parent (one level up)
-        if (out.price == null && heroParent.parentElement) {
-          for (const child of heroParent.parentElement.children) {
-            const t = (child.textContent || '').trim();
-            const m = t.match(/^\$\s*([\d,]+)$/);
-            if (m) { out.price = num(m[1]); break; }
+      const heroContainer = document.querySelector('.Hdp-listing-container')
+        || document.querySelector('[class*="ListingHero"], [class*="listing-hero"]');
+      if (heroContainer) {
+        // Walk all leaf-ish elements looking for a price-only text node
+        const candidates = heroContainer.querySelectorAll('div, span, p');
+        for (const el of candidates) {
+          const t = (el.textContent || '').trim();
+          if (/^\$\s*[\d,]+$/.test(t) && el.children.length === 0) {
+            out.price = num(t.replace(/[^0-9]/g, ''));
+            if (out.price) { log('price from hero container', out.price); break; }
           }
         }
       }
-      if (out.price) log('price from hero h1 sibling', out.price);
+      // Generic fallback: walk h1 ancestor tree looking for a nearby price
+      if (out.price == null) {
+        const h1 = document.querySelector('h1');
+        if (h1) {
+          let ancestor = h1.parentElement;
+          for (let depth = 0; depth < 3 && ancestor && !out.price; depth++) {
+            ancestor = ancestor.parentElement;
+            if (!ancestor) break;
+            const leaves = ancestor.querySelectorAll('div, span, p');
+            for (const el of leaves) {
+              const t = (el.textContent || '').trim();
+              if (/^\$\s*[\d,]+$/.test(t) && el.children.length === 0) {
+                out.price = num(t.replace(/[^0-9]/g, ''));
+                if (out.price) { log('price from h1 ancestor walk', out.price); break; }
+              }
+            }
+          }
+        }
+      }
     }
 
     // Grab a cleaned page-text blob for the amenity sweep, availability
