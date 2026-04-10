@@ -4728,8 +4728,19 @@ async function rrGeocodeAddress(rawAddress) {
     }
     // For "#" prefix the convention is "#4B" (no space); everything else is
     // "<Prefix> <Number>" — matches the manual-entry format builder.
-    const unit = subpremise
-      ? (unitPrefix === '#' ? ('#' + subpremise) : (unitPrefix + ' ' + subpremise))
+    // v0.7.0: If Google Places didn't return a subpremise (common for
+    // smaller buildings), extract the unit token directly from the raw
+    // address. The listing clearly stated "#A" or "Apt 4B" — we
+    // shouldn't lose it just because Google's geocoder didn't echo it.
+    let unitToken = subpremise;
+    if (!unitToken && typeof rawAddress === 'string') {
+      const unitRe = /(?:#|\b(?:Unit|Ste\.?|Suite|Apt\.?|Apartment|Bldg\.?|Building)\b)\s*([A-Za-z0-9][\w-]*)/gi;
+      let um, lastUnit = null;
+      while ((um = unitRe.exec(rawAddress)) !== null) lastUnit = um[1];
+      if (lastUnit) unitToken = lastUnit;
+    }
+    const unit = unitToken
+      ? (unitPrefix === '#' ? ('#' + unitToken) : (unitPrefix + ' ' + unitToken))
       : '';
     const city = get('locality') || get('sublocality_level_1') || get('administrative_area_level_2') || '';
     const state = getShort('administrative_area_level_1') || '';
