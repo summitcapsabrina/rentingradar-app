@@ -3853,7 +3853,7 @@ async function autoImport(recId){
     if(data.warning) r.propertyNotes.push({ id:uid(), text:'Note: '+data.warning, date:new Date().toISOString(), source:'System' });
     saveData();
 
-    container.innerHTML = '<div style="padding:12px;background:var(--success-light);border-radius:var(--radius);color:var(--success);font-size:.85rem;font-weight:500">✓ Import complete! '+data.fieldsFound+' fields extracted'+(data.parser==='ollama'?' using AI':' (basic)')+'. Check details sections below.</div>';
+    container.innerHTML = '<div style="padding:12px;background:var(--success-light);border-radius:var(--radius);color:var(--success);font-size:.85rem;font-weight:500">✓ Import complete! '+data.fieldsFound+' fields extracted. Check details sections below.</div>';
     setTimeout(() => { render() }, 2000);
     return;
 
@@ -4568,12 +4568,12 @@ function _rrRenderToast(toast, msg, type, duration, opts) {
     // Always moving forward, never stalling, never overshooting.
     const bar = toast.querySelector('.rr-toast-progress');
     const startedAt = performance.now();
-    // v0.6.3: raised from 6500 → 10000. With the retry ladder and 4096
-    // context, typical imports run 12-20s. tau=10000 keeps the bar at a
-    // perceptually honest position: 10s→63%, 15s→78%, 20s→86%, 25s→92%.
-    // The bar is always visibly moving but never reaches the end until
-    // the snap-to-100 fires on real completion.
-    const tau = opts.progressTau || 10000;
+    // v0.7.0: With no AI enrichment, imports complete in 2-4 seconds
+    // (just scraper polling + background tab load). tau=2500 gives:
+    //   t=1s → 33%, t=2s → 55%, t=3s → 70%, t=4s → 80%, t=6s → 91%
+    // Fast and responsive — the bar visibly races forward and snaps to
+    // 100 when the profile opens.
+    const tau = opts.progressTau || 2500;
     toast._progressTimer = setInterval(() => {
       const elapsed = performance.now() - startedAt;
       // Cap just below 100 so the real completion snap is always visible.
@@ -4957,27 +4957,16 @@ async function handleExtensionListing(data) {
   });
 
   let toastMsg, toastTone;
-  if (coreCount === 0 && !hasAnyDetails) {
+  // v0.7.0: No AI enrichment — success is based purely on core field count.
+  // No more Ollama error messages, "AI skipped", or "incomplete" warnings.
+  if (coreCount === 0) {
     toastMsg = 'Import failed — nothing could be read from this listing.';
     toastTone = 'error';
-  } else if (coreCount >= 3 && data._aiEnriched) {
+  } else if (coreCount >= 2) {
     toastMsg = createdNew ? 'Import successful.' : 'Property updated from listing.';
     toastTone = 'success';
   } else {
-    // Build a more specific "why" so the user can act on it.
-    let why;
-    if (data._aiError) {
-      const err = String(data._aiError);
-      if (/not running/i.test(err)) why = 'Ollama not running — start Ollama and try again';
-      else if (/not installed/i.test(err)) why = 'Ollama model missing — run "ollama pull qwen3:4b"';
-      else if (/aborted|timed? out/i.test(err)) why = 'AI timed out — try once more';
-      else if (/HTTP 403/i.test(err)) why = 'Ollama blocked the request (set OLLAMA_ORIGINS=chrome-extension://*)';
-      else why = 'AI error: ' + err.slice(0, 80);
-    }
-    else if (!data._aiEnriched) why = 'AI skipped';
-    else if (coreCount < 3) why = 'missing core details';
-    else why = 'partial data';
-    toastMsg = 'Import incomplete — ' + why + '.';
+    toastMsg = 'Import partial — some details may need manual entry.';
     toastTone = 'warning';
   }
 
@@ -5080,19 +5069,8 @@ function handleListingEnrichment(patch) {
   if (typeof saveData === 'function') saveData();
   if (typeof render === 'function') render();
 
-  // Subtle confirmation toast — only if the AI actually added something
-  // useful. If the AI errored out, mention it briefly so the user knows.
-  if (patch._aiError) {
-    const err = String(patch._aiError);
-    let why;
-    if (/not running/i.test(err)) why = 'Ollama not running';
-    else if (/not installed/i.test(err)) why = 'Ollama model missing';
-    else if (/aborted|timed? out/i.test(err)) why = 'AI timed out';
-    else why = 'AI error';
-    showToast('AI enrichment skipped (' + why + ') — dictionary fields are filled.', 'info', 4000);
-  } else if (patch.propertyNoteBullets && patch.propertyNoteBullets.length) {
-    showToast('AI enrichment complete. Property notes added.', 'success', 2500);
-  }
+  // v0.7.0: No AI enrichment — this handler may still be called by
+  // stale cached responses but won't show AI-related toasts.
 }
 
 /**
@@ -5341,9 +5319,7 @@ function updateAddServerStatus(health){
     const hasOllama = health.ollama && health.model;
     el.style.background = 'var(--success-light)';
     el.style.color = 'var(--success)';
-    el.innerHTML = hasOllama
-      ? '✓ Extension active — AI engine ready for enhanced extraction'
-      : '✓ Extension active — using built-in parser' + (health.ollama ? '. Run the AI setup in your Plan page to enable enhanced extraction.' : ' · <a href="https://ollama.com/download" target="_blank" style="color:var(--success)">Add AI engine</a> for enhanced results');
+    el.innerHTML = '✓ Extension active — ready for instant import';
     updateAddImportUI();
   } else {
     extensionReady = false;
@@ -8551,23 +8527,9 @@ function rrUpdateTopBanners(extId){
     return;
   }
   rrHideInstallBanner();
-  const health = window.RR_OLLAMA_HEALTH;
-  const aiReady = health && health.running && health.modelInstalled;
-  if(!aiReady){
-    // Extension is installed but AI isn't ready. First-run users see the
-    // full setup wizard; returning users (who already dismissed/finished)
-    // get the lighter banner nudge.
-    if(!rrOllamaSetupCompleted()){
-      rrHideOllamaBanner();
-      rrShowOllamaSetupModal();
-    } else {
-      rrShowOllamaBanner();
-    }
-  } else {
-    rrHideOllamaBanner();
-    // If AI is now ready, mark setup completed so the modal never reappears.
-    rrMarkOllamaSetupCompleted();
-  }
+  // v0.7.0: No AI required — always hide Ollama banner/setup modal.
+  rrHideOllamaBanner();
+  rrMarkOllamaSetupCompleted();
 }
 
 // Probe for the extension shortly after load so the UI can reflect install state

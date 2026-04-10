@@ -128,9 +128,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           return;
 
         case 'HEALTH': {
-          // Returns extension version + Ollama install/model status
-          const ollama = await checkOllamaHealth();
-          sendResponse({ ok: true, version: chrome.runtime.getManifest().version, ollama });
+          // v0.7.0: Ollama no longer used — return a simple "ready" status.
+          sendResponse({ ok: true, version: chrome.runtime.getManifest().version, ollama: { running: true, modelInstalled: true, model: 'none (no AI)', error: null } });
           return;
         }
 
@@ -178,8 +177,8 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
           return;
 
         case 'HEALTH': {
-          const ollama = await checkOllamaHealth();
-          sendResponse({ ok: true, version: chrome.runtime.getManifest().version, ollama });
+          // v0.7.0: Ollama no longer used — return a simple "ready" status.
+          sendResponse({ ok: true, version: chrome.runtime.getManifest().version, ollama: { running: true, modelInstalled: true, model: 'none (no AI)', error: null } });
           return;
         }
 
@@ -239,89 +238,27 @@ async function scrapeAny(url, hint) {
     // Tag the payload with its kind so the CRM knows how to route it
     data._kind = kind;
 
-    // ----- SYNCHRONOUS AI ENRICHMENT (v0.5.1) -----
-    // The LLM is back on the critical path with a 10-15s budget. The
-    // dictionary extractor handles ~80% of propertyDetails deterministically,
-    // the LLM contributes core numbers (beds/baths/sqft/price/availDate),
-    // utilities, pets, and Property Note bullets. enrichWithOllama is now
-    // resilient — it never throws, so even if Ollama is down or times out
-    // we still get the dictionary output through and the profile opens
-    // with the dictionary fields populated.
+    // ----- v0.7.0: NO AI ENRICHMENT -----
+    // Ollama/LLM enrichment removed entirely. The scraper provides the core
+    // listing fields (address, price, beds, baths, sqft, available date,
+    // photo, source URL) from structured data (JSON-LD, state blobs, DOM).
+    // Property Details and Property Note bullets are NOT populated — users
+    // fill those manually. This makes import virtually instantaneous.
     if (kind === 'listing') {
-      const enriched = await enrichWithOllama(data);
-      if (enriched) {
-        // Merge dictionary-extracted propertyDetails ALWAYS, even if the
-        // LLM call failed inside enrichWithOllama. The dictionary path is
-        // deterministic and runs first; we never want to discard it just
-        // because the optional LLM step timed out.
-        data.propertyDetails = mergePropertyDetails(data.propertyDetails || {}, enriched.propertyDetails || {});
-        if (enriched._aiError) {
-          data._aiEnriched = false;
-          data._aiError = enriched._aiError;
-        } else {
-          data._aiEnriched = true;
-        }
-        data._aiModel = OLLAMA_MODEL;
-        // The LLM is AUTHORITATIVE on the core listing numbers. The
-        // scrapers' JSON-LD/state-blob extraction handles many listings
-        // but Hotpads/Craigslist/FB Marketplace often don't expose those
-        // numbers in structured data — we depend on the LLM to read the
-        // hero block and pull beds/baths/sqft/rent out. Fill in anything
-        // the scraper couldn't lock down.
-        if (enriched.core) {
-          const c = enriched.core;
-          if (c.bedrooms != null && data.bedrooms == null) data.bedrooms = c.bedrooms;
-          if (c.bathrooms != null && data.bathrooms == null) data.bathrooms = c.bathrooms;
-          if (c.sqft != null && data.sqft == null) data.sqft = c.sqft;
-          if (c.price != null && data.price == null) {
-            data.price = c.price;
-            if (data.monthlyRent == null) data.monthlyRent = c.price;
-          }
-          if (c.availableDate) {
-            data.propertyDetails = data.propertyDetails || {};
-            const existing = data.propertyDetails.availableDate;
-            const existingValid = existing === 'now' || /^\d{4}-\d{2}-\d{2}$/.test(existing || '');
-            if (!existingValid) {
-              data.propertyDetails.availableDate = c.availableDate;
-            }
-          }
-        }
-        // Property Note bullets — sanitized list ready for the CRM.
-        if (Array.isArray(enriched.propertyNoteBullets) && enriched.propertyNoteBullets.length) {
-          const _bulletSeen = new Set();
-          data.propertyNoteBullets = enriched.propertyNoteBullets
-            .map((s) => String(s || '').trim())
-            .map((s) => s.replace(/^[-•*]\s*/, '').replace(/[.;,]+$/, ''))
-            .filter((s) => {
-              const fp = s.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
-              if (!fp || _bulletSeen.has(fp)) return false;
-              _bulletSeen.add(fp);
-              return true;
-            })
-            .map((s) => {
-              if (s.length <= 120) return s;
-              const cut = s.slice(0, 120);
-              const lastSpace = cut.lastIndexOf(' ');
-              return (lastSpace > 40 ? cut.slice(0, lastSpace) : cut).replace(/[.;,]+$/, '');
-            })
-            .filter((s) => s && s.length > 2)
-            .slice(0, 14);
-        }
-      }
-      // v0.6.4: Run groundPropertyDetails on the MERGED output. Previously
-      // it only ran on the AI-side pd inside enrichWithOllama(); scraper pd
-      // values (the `base` in mergePropertyDetails) bypassed grounding
-      // entirely. This means false positives from the scraper's dictionary
-      // sweep (e.g. "Elevator" matching incidental nav-menu text, or
-      // "Swimming Pool" matching "pool" in a "carpool" mention) were never
-      // caught. Now the final merged pd gets one last grounding pass against
-      // the full page text before it reaches the CRM.
-      const fullText = data._fullPageText || data._pageText || '';
-      if (fullText && data.propertyDetails) {
-        groundPropertyDetails(data.propertyDetails, fullText);
-      }
+      // Preserve availableDate if the scraper found one
+      const scraperAvail = data.propertyDetails && data.propertyDetails.availableDate;
 
-      // Strip the raw page text before returning — it's huge and no longer needed.
+      // Clear all propertyDetails and propertyNoteBullets — only core
+      // fields (address, price, beds, baths, sqft) populate automatically.
+      data.propertyDetails = {};
+      data.propertyNoteBullets = [];
+      data._aiEnriched = false;
+      data._aiModel = null;
+
+      // Restore availableDate if the scraper found it
+      if (scraperAvail) data.propertyDetails.availableDate = scraperAvail;
+
+      // Strip raw page text — no longer needed without AI.
       delete data._pageText;
       delete data._fullPageText;
     }

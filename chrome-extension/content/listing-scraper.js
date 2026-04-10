@@ -1721,17 +1721,12 @@
       const hasAll = cfc >= 4;
       const hasEnough = cfc >= 2 || (cfc >= 1 && !!data.address);
       if (hasAll || hasEnough || attempt >= 7) {
-        // v0.6.1: prepend the parser-extracted description (from JSON-LD,
-        // __NEXT_DATA__, etc.) to the LLM snippet. On Apartments.com and
-        // other sites, the rich description prose lives only in JSON-LD
-        // and is NOT in the DOM, so captureListingSnippet() alone misses
-        // the best source material for Property Note bullets.
-        const snippet = captureListingSnippet();
-        const prelude = data.description
-          ? 'LISTING_DESCRIPTION: ' + String(data.description).replace(/\s+/g, ' ').trim() + '\n\n---\n\n'
-          : '';
-        data._pageText = (prelude + snippet).slice(0, 5000);
-        data._fullPageText = captureFullPageText();
+        // v0.7.0: No LLM enrichment — skip page text capture entirely.
+        // The service worker no longer calls enrichWithOllama(), so the
+        // _pageText and _fullPageText fields are unused. This shaves
+        // ~200ms of DOM cloning and text cleaning off every import.
+        data._pageText = null;
+        data._fullPageText = null;
         if (data._debug) {
           data._debug.finalAttempt = attempt;
           data._debug.finalCoreFieldCount = cfc;

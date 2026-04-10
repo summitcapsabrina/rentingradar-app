@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "RentingRadar",
-  "version": "0.6.4",
+  "version": "0.7.0",
   "description": "Paste a listing link (AirDNA, Zillow, Apartments.com, Hotpads, Facebook Marketplace, Craigslist) and RentingRadar auto-fills the property or competitor details in your CRM.",
   "author": "Summit Capital LLC",
   "homepage_url": "https://rentingradar.com",
