@@ -1533,6 +1533,33 @@
       if (/,\s*[A-Z]{2}/.test(t)) addr = t;
     }
 
+    // v0.7.0: Unit-number rescue. The JSON-LD PostalAddress often omits the
+    // unit (streetAddress: "70-25 Park Dr E" with no "#A"), but the h1 and
+    // document.title DO include it ("70-25 Park Dr E #A", "...Apt A...").
+    // If the address we extracted doesn't contain a unit pattern but the h1
+    // or title does, splice it in before the first comma.
+    if (addr) {
+      const hasUnit = /(#|\b(?:Unit|Ste|Suite|Apt|Apartment|Bldg|Building)\b)\s*[A-Za-z0-9]/i.test(addr);
+      if (!hasUnit) {
+        const h1Text = document.querySelector('h1')?.textContent?.trim() || '';
+        const titleText = (document.title || '').split('|')[0].trim();
+        // Try h1 first (has "#A"), then document.title (has "Apt A")
+        for (const src of [h1Text, titleText]) {
+          const unitMatch = src.match(/(#\s*[A-Za-z0-9][\w-]*|\b(?:Unit|Ste|Suite|Apt|Apartment)\s+[A-Za-z0-9][\w-]*)/i);
+          if (unitMatch) {
+            const commaIdx = addr.indexOf(',');
+            if (commaIdx > 0) {
+              addr = addr.slice(0, commaIdx) + ' ' + unitMatch[1].trim() + addr.slice(commaIdx);
+            } else {
+              addr = addr + ' ' + unitMatch[1].trim();
+            }
+            log('unit rescued from ' + (src === h1Text ? 'h1' : 'title'), unitMatch[1]);
+            break;
+          }
+        }
+      }
+    }
+
     out.address = addr || null;
 
     // ---- Pass 2: scoped DOM fallbacks for any field the state blob missed ----
