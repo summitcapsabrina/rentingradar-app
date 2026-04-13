@@ -278,8 +278,11 @@ async function scrapeAny(url, hint) {
       // JSON-LD and state blobs (trusted), but the merge above can introduce
       // LLM values that slipped through. One final groundPropertyDetails
       // sweep catches anything that shouldn't be there.
-      const fullPageText = normalizePageText(data._fullPageText || data._pageText || '');
-      groundPropertyDetails(data.propertyDetails, fullPageText);
+      // v0.11.0: Use _rawPageText (unfiltered) for grounding so utilities,
+      // fees, and policies that were stripped from _fullPageText aren't
+      // falsely rejected.
+      const groundingText = normalizePageText(data._rawPageText || data._fullPageText || data._pageText || '');
+      groundPropertyDetails(data.propertyDetails, groundingText);
       data.propertyNoteBullets = enriched.propertyNoteBullets || [];
       // Overlay AI-extracted core numbers only when the scraper missed them
       const core = enriched.core || {};
@@ -300,6 +303,7 @@ async function scrapeAny(url, hint) {
       // Strip raw page text from the payload sent to the CRM
       delete data._pageText;
       delete data._fullPageText;
+      delete data._rawPageText;
     }
 
     return { ok: true, data };
@@ -774,18 +778,20 @@ const AMENITY_SOURCE_TRIGGERS = {
   'Rooftop Lounge': ['rooftop lounge','rooftop deck','sky lounge','rooftop terrace'],
   'Tennis Court': ['tennis court','tennis'],
   'Pickleball Court': ['pickleball'],
-  // Utilities included
-  'Water': ['water included','includes water','water is included'],
-  'Hot Water': ['hot water included','includes hot water','hot water is included'],
-  'Gas': ['gas included','includes gas','heat included','heating included','heat and hot water included','includes heat'],
-  'Electric': ['electric included','electricity included','includes electric'],
-  'Trash': ['trash included','garbage included','includes trash'],
-  'Sewer': ['sewer included','includes sewer'],
-  'Recycling': ['recycling included'],
-  'Internet/WiFi': ['internet included','wifi included','wi-fi included','includes wifi'],
-  'Cable TV': ['cable included','cable tv included'],
-  'Landscaping/Grounds': ['landscaping included','grounds maintenance'],
-  'Pest Control': ['pest control included'],
+  // Utilities included — triggers include bare words because listings often
+  // list utilities under a "Utilities Included" heading without repeating
+  // "included" next to each one (e.g. just "Water", "Trash", "Sewer").
+  'Water': ['water included','includes water','water is included','utilities included','water'],
+  'Hot Water': ['hot water included','includes hot water','hot water is included','hot water'],
+  'Gas': ['gas included','includes gas','heat included','heating included','heat and hot water included','includes heat','gas','heat'],
+  'Electric': ['electric included','electricity included','includes electric','electric','electricity'],
+  'Trash': ['trash included','garbage included','includes trash','trash removal','trash'],
+  'Sewer': ['sewer included','includes sewer','sewer'],
+  'Recycling': ['recycling included','recycling'],
+  'Internet/WiFi': ['internet included','wifi included','wi-fi included','includes wifi','internet','wifi','wi-fi'],
+  'Cable TV': ['cable included','cable tv included','cable tv','cable'],
+  'Landscaping/Grounds': ['landscaping included','grounds maintenance','landscaping'],
+  'Pest Control': ['pest control included','pest control'],
   // Pets
   // v0.9.0: Pet policy is now multi-select. Each type triggers independently.
   'Cats Allowed': ['cats allowed','cats welcome','cats ok','cats permitted','cat friendly'],
