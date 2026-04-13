@@ -113,6 +113,28 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           return;
         }
 
+        case 'TEST_AI_PROXY': {
+          // Test the server-side AI proxy from the extension (bypasses CORS).
+          // Sends an empty body — expects 400 (= function is live).
+          try {
+            const token = await getCrmAuthToken();
+            if (!token) { sendResponse({ ok: false, error: 'not signed in' }); return; }
+            const ctrl = new AbortController();
+            const tmr = setTimeout(() => ctrl.abort(), 10000);
+            const resp = await fetch(FUNCTIONS_BASE + '/aiEnrich', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+              signal: ctrl.signal,
+              body: JSON.stringify({}),
+            });
+            clearTimeout(tmr);
+            sendResponse({ ok: resp.ok || resp.status === 400, status: resp.status });
+          } catch (e) {
+            sendResponse({ ok: false, error: (e && e.message) || String(e) });
+          }
+          return;
+        }
+
         case 'SCRAPE_URL': {
           // From the popup: scrape + forward to CRM tab
           const result = await scrapeAny(msg.url, msg.kind);
@@ -178,6 +200,26 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
         case 'GET_API_KEY': {
           const key2 = await getClaudeApiKey();
           sendResponse({ ok: true, key: key2 ? '••••' + key2.slice(-4) : null });
+          return;
+        }
+
+        case 'TEST_AI_PROXY': {
+          try {
+            const token2 = await getCrmAuthToken();
+            if (!token2) { sendResponse({ ok: false, error: 'not signed in' }); return; }
+            const ctrl2 = new AbortController();
+            const tmr2 = setTimeout(() => ctrl2.abort(), 10000);
+            const resp2 = await fetch(FUNCTIONS_BASE + '/aiEnrich', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token2 },
+              signal: ctrl2.signal,
+              body: JSON.stringify({}),
+            });
+            clearTimeout(tmr2);
+            sendResponse({ ok: resp2.ok || resp2.status === 400, status: resp2.status });
+          } catch (e2) {
+            sendResponse({ ok: false, error: (e2 && e2.message) || String(e2) });
+          }
           return;
         }
 
@@ -1070,9 +1112,12 @@ function resolvePropertyDetailsContradictions(pd) {
 // This function ALWAYS returns a result, never throws. If all AI
 // paths fail, the dictionary extractor's output is still returned.
 
-// Server-side proxy: calls our Firebase Cloud Function which holds
-// the API key securely. Requires an authenticated CRM tab to provide
-// the Firebase ID token.
+// Server-side proxy: calls our Firebase Cloud Function directly at its
+// cloudfunctions.net URL. The CRM is hosted on GitHub Pages (not Firebase
+// Hosting), so /api/* rewrites don't work — we hit the function URL directly.
+// The extension service worker bypasses CORS, so cross-origin fetch is fine.
+const FUNCTIONS_BASE = 'https://us-central1-rentingradar.cloudfunctions.net';
+
 async function callClaudeProxy(systemPrompt, userPrompt) {
   // Get the Firebase ID token from an open CRM tab
   const token = await getCrmAuthToken();
@@ -1081,7 +1126,7 @@ async function callClaudeProxy(systemPrompt, userPrompt) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), CLAUDE_TIMEOUT_MS);
   try {
-    const resp = await fetch(CRM_ORIGIN + '/api/aiEnrich', {
+    const resp = await fetch(FUNCTIONS_BASE + '/aiEnrich', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
