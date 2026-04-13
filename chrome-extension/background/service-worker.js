@@ -778,19 +778,19 @@ const AMENITY_SOURCE_TRIGGERS = {
   'Rooftop Lounge': ['rooftop lounge','rooftop deck','sky lounge','rooftop terrace'],
   'Tennis Court': ['tennis court','tennis'],
   'Pickleball Court': ['pickleball'],
-  // Utilities included — triggers include bare words because listings often
-  // list utilities under a "Utilities Included" heading without repeating
-  // "included" next to each one (e.g. just "Water", "Trash", "Sewer").
-  'Water': ['water included','includes water','water is included','utilities included','water'],
+  // Utilities included — triggers include contextual phrases. Bare words
+  // like "water" are too loose (match "water heater", "waterfront", other
+  // listings' utilities). Use "utilities included" as a section-level trigger.
+  'Water': ['water included','includes water','water is included','utilities included'],
   'Hot Water': ['hot water included','includes hot water','hot water is included','hot water'],
-  'Gas': ['gas included','includes gas','heat included','heating included','heat and hot water included','includes heat','gas','heat'],
-  'Electric': ['electric included','electricity included','includes electric','electric','electricity'],
-  'Trash': ['trash included','garbage included','includes trash','trash removal','trash'],
-  'Sewer': ['sewer included','includes sewer','sewer'],
-  'Recycling': ['recycling included','recycling'],
-  'Internet/WiFi': ['internet included','wifi included','wi-fi included','includes wifi','internet','wifi','wi-fi'],
-  'Cable TV': ['cable included','cable tv included','cable tv','cable'],
-  'Landscaping/Grounds': ['landscaping included','grounds maintenance','landscaping'],
+  'Gas': ['gas included','includes gas','heat included','heating included','heat and hot water included','includes heat'],
+  'Electric': ['electric included','electricity included','includes electric'],
+  'Trash': ['trash included','garbage included','includes trash','trash removal'],
+  'Sewer': ['sewer included','includes sewer'],
+  'Recycling': ['recycling included'],
+  'Internet/WiFi': ['internet included','wifi included','wi-fi included','includes wifi'],
+  'Cable TV': ['cable included','cable tv included'],
+  'Landscaping/Grounds': ['landscaping included','grounds maintenance'],
   'Pest Control': ['pest control included','pest control'],
   // Pets
   // v0.9.0: Pet policy is now multi-select. Each type triggers independently.
@@ -1028,8 +1028,14 @@ function groundPropertyDetails(pd, fullPageText) {
   // availableDate + numeric fields are handled elsewhere; petsAllowed is
   // now multi-select (array) and grounded via the array path below.
   const SKIP = new Set(['availableDate','latitude','longitude']);
+  // v0.11.0: If the page has a "utilities included" section, trust utility
+  // values from the AI without requiring each one to pass individual
+  // grounding — the section heading is sufficient context.
+  const hasUtilitiesSection = /utilities?\s*included/i.test(text);
   for (const k of Object.keys(pd)) {
     if (SKIP.has(k)) continue;
+    // Trust utilities if the page has a "utilities included" section
+    if (k === 'utilitiesIncluded' && hasUtilitiesSection) continue;
     const v = pd[k];
     if (Array.isArray(v)) {
       const kept = v.filter((x) => isAmenityInSource(x, text));
@@ -1273,11 +1279,13 @@ Your user is NOT a renter — they are a short-term rental (STR) investor evalua
 
 STRICT RULES:
 1. Read the ENTIRE listing text from start to finish before extracting. Details like utilities, amenities, and fees often appear in different sections — do not stop reading early.
-2. Extract ONLY facts explicitly stated in the listing text. If a detail is not mentioned, OMIT that field entirely.
-3. Never infer, assume, or fabricate any detail. "Not mentioned" means OMIT, not guess.
-4. Return ONLY a single JSON object — no markdown, no commentary, no explanation.
-5. Every value you return must be directly traceable to specific text in the listing.
-6. Be EXHAUSTIVE — capture every single detail mentioned anywhere in the listing. Missing a stated fact is as bad as fabricating one.`;
+2. Extract ONLY facts about THIS SPECIFIC PROPERTY. The page text may contain fragments from "Similar Listings", "Nearby Apartments", "Recommended" sections, or other properties — IGNORE ALL OF THOSE. Only extract data that clearly belongs to the primary listing being described.
+3. Extract ONLY facts explicitly stated in the listing text. If a detail is not mentioned, OMIT that field entirely.
+4. Never infer, assume, or fabricate any detail. "Not mentioned" means OMIT, not guess.
+5. Return ONLY a single JSON object — no markdown, no commentary, no explanation.
+6. Every value you return must be directly traceable to specific text in the PRIMARY listing — not from nearby/similar/recommended properties.
+7. Be EXHAUSTIVE for the primary listing — capture every single detail mentioned. Missing a stated fact is as bad as fabricating one.
+8. PAY SPECIAL ATTENTION to pet policy — only include pets allowed/not allowed if the PRIMARY listing explicitly states it. Do not confuse pet policies from other listings on the page.`;
 
   const userPrompt =
 `The scraper already extracted these core facts (use as context, not as source):

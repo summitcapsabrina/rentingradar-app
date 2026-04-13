@@ -1932,12 +1932,30 @@
         // dictionary extractor and Ollama LLM pass.
         data._pageText = capturePageText();
         data._fullPageText = captureFullPageText();
-        // v0.11.0: Capture the raw, unfiltered page text so the AI sees
-        // EVERYTHING — utilities, fees, policies, etc. that filtered
-        // captures may miss. Strips only scripts/styles, keeps all content.
+        // v0.11.0: Capture comprehensive page text for AI — keeps utilities,
+        // fees, policies, amenities, but strips similar/nearby/recommended
+        // listings that would contaminate the AI with OTHER properties' data.
         try {
-          const rawClone = document.body.cloneNode(true);
-          rawClone.querySelectorAll('script, style, noscript, iframe, svg').forEach(n => n.remove());
+          const rawClone = (document.querySelector('main, [role="main"], #main, .main, #content, .content') || document.body).cloneNode(true);
+          // Remove non-content elements
+          rawClone.querySelectorAll('script, style, noscript, iframe, svg, nav').forEach(n => n.remove());
+          // Remove similar/nearby/recommended listings — these are OTHER
+          // properties whose data (pets, amenities, prices) would confuse the AI
+          rawClone.querySelectorAll(
+            '[class*="similar" i], [class*="nearby" i], [class*="recommend" i], ' +
+            '[class*="carousel" i], [class*="SeoFooter"], [class*="seoFooter"], ' +
+            '[class*="seo-footer"], [class*="also-viewed" i], [class*="alsoViewed" i], ' +
+            '[class*="other-listing" i], [class*="moreListings" i], [class*="related" i]'
+          ).forEach(n => n.remove());
+          // Remove sections with headings about other listings
+          rawClone.querySelectorAll('article, section, div').forEach(el => {
+            const h = el.querySelector('h1, h2, h3, h4');
+            if (h && /similar|nearby|recommended|you may also|other apartments|more apartments|find similar|explore nearby|pricing comparison|nearby schools/i.test(h.textContent)) {
+              el.remove();
+            }
+          });
+          // Remove footer (often contains links to other listings by area)
+          rawClone.querySelectorAll('footer, [class*="footer" i]').forEach(n => n.remove());
           data._rawPageText = (rawClone.innerText || '')
             .replace(/[ \t]+/g, ' ')
             .replace(/\n{3,}/g, '\n\n')
