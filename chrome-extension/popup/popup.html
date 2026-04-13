@@ -16,13 +16,19 @@
 
   <main class="rr-main">
     <section class="rr-state">
+      <!-- AI / Extension status bar -->
+      <div class="rr-ai-status" id="rrAiStatus">
+        <span class="rr-ai-status-text" id="rrAiStatusText">Checking status…</span>
+        <button class="rr-btn rr-btn-sm rr-btn-ghost" id="rrAiTestBtn">Test</button>
+      </div>
+
       <label class="rr-label" for="rrUrlInput">Paste a property listing link</label>
       <div class="rr-input-row">
         <input
           type="url"
           id="rrUrlInput"
           class="rr-input"
-          placeholder="Zillow, Apartments.com, Hotpads, FB Marketplace, Craigslist"
+          placeholder="Paste listing link here..."
           autocomplete="off"
           spellcheck="false"
         />

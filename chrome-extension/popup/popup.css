@@ -149,6 +149,33 @@ body{
 .rr-footer a:hover{color:var(--accent)}
 .rr-sep{margin:0 6px;color:var(--text3)}
 
+/* AI Status Bar */
+.rr-ai-status{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  padding:8px 10px;
+  margin-bottom:12px;
+  background:var(--bg1);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  font-size:11px;
+  line-height:1.4;
+}
+.rr-ai-status-text{flex:1;color:var(--text2)}
+.rr-btn-sm{font-size:10px;padding:4px 10px;border-radius:6px}
+.rr-btn-ghost{
+  background:var(--bg3);
+  color:var(--text2);
+  border:1px solid var(--border);
+  cursor:pointer;
+  font-weight:600;
+  font-family:inherit;
+  transition:background .15s;
+}
+.rr-btn-ghost:hover{background:var(--accent-soft);color:var(--accent)}
+
 /* Spinner */
 .rr-spin{
   display:inline-block;

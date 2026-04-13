@@ -1,4 +1,4 @@
-// RentingRadar popup — paste-a-link flow
+// RentingRadar popup — paste-a-link flow + AI status
 //
 // The popup never authenticates. It simply forwards the URL to the
 // service worker, which opens a background tab, scrapes the page, and
@@ -9,10 +9,50 @@ const importBtn = document.getElementById('rrBtnImport');
 const statusEl = document.getElementById('rrStatus');
 const recentWrap = document.getElementById('rrRecent');
 const recentList = document.getElementById('rrRecentList');
+const aiStatusText = document.getElementById('rrAiStatusText');
+const aiTestBtn = document.getElementById('rrAiTestBtn');
 
 const RECENT_KEY = 'rrRecentImports';
 const MAX_RECENT = 5;
 
+// ------------------------------------------------------------------
+// AI / Extension status
+// ------------------------------------------------------------------
+function checkAiStatus() {
+  if (aiStatusText) aiStatusText.innerHTML = 'Checking status…';
+
+  chrome.runtime.sendMessage({ type: 'HEALTH' }, (resp) => {
+    if (chrome.runtime.lastError || !resp || !resp.ok) {
+      if (aiStatusText) {
+        aiStatusText.innerHTML = '<span style="color:var(--danger)">✗ Extension error</span>';
+      }
+      return;
+    }
+    const parts = [];
+    parts.push('<span style="color:var(--success)">✓ Extension v' + (resp.version || '?') + '</span>');
+    if (resp.claude && resp.claude.configured) {
+      parts.push('<span style="color:var(--text3)">Custom key: active</span>');
+    }
+
+    // Test AI server proxy — asks service worker to relay through a CRM tab
+    chrome.runtime.sendMessage({ type: 'TEST_AI_PROXY' }, (proxyResp) => {
+      if (chrome.runtime.lastError) proxyResp = null;
+      if (proxyResp && proxyResp.ok) {
+        parts.unshift('<span style="color:var(--success)">✓ AI Server</span>');
+      } else {
+        const reason = (proxyResp && proxyResp.error) || 'unavailable';
+        parts.unshift('<span style="color:var(--warning)">AI: ' + reason + '</span>');
+      }
+      if (aiStatusText) aiStatusText.innerHTML = parts.join(' <span style="color:var(--text3)">·</span> ');
+    });
+  });
+}
+
+if (aiTestBtn) aiTestBtn.addEventListener('click', checkAiStatus);
+
+// ------------------------------------------------------------------
+// Import status helpers
+// ------------------------------------------------------------------
 function setStatus(msg, kind) {
   statusEl.hidden = false;
   statusEl.className = 'rr-status' + (kind ? ' ' + kind : '');
@@ -30,6 +70,9 @@ function setBusy(busy) {
   importBtn.textContent = busy ? 'Importing…' : 'Import';
 }
 
+// ------------------------------------------------------------------
+// Recent imports
+// ------------------------------------------------------------------
 function loadRecent() {
   chrome.storage.local.get([RECENT_KEY], (res) => {
     const list = Array.isArray(res[RECENT_KEY]) ? res[RECENT_KEY] : [];
@@ -59,6 +102,9 @@ function pushRecent(entry) {
   });
 }
 
+// ------------------------------------------------------------------
+// Import flow
+// ------------------------------------------------------------------
 function detectKind(url) {
   try {
     const h = new URL(url).hostname.replace(/^www\./, '').toLowerCase();
@@ -120,4 +166,6 @@ chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
   }
 });
 
+// Init
 loadRecent();
+checkAiStatus();
