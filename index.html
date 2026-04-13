@@ -8419,6 +8419,17 @@ window.addEventListener('message', (event) => {
       // import landed. Patches the open record in place with bullets +
       // any LLM-only fields.
       handleListingEnrichment(m.patch);
+    } else if(m.type === 'GET_AUTH_TOKEN' && m.reqId){
+      // The extension's content bridge needs a Firebase ID token so
+      // the service worker can call the server-side AI proxy.
+      (async function(){
+        var token = null;
+        try {
+          var user = firebase.auth().currentUser;
+          if(user) token = await user.getIdToken();
+        } catch(_){}
+        window.postMessage({ rrAuthResponse: m.reqId, token: token }, location.origin);
+      })();
     }
   } catch(e){ console.error('RR extension message handler error:', e); }
 });
@@ -14266,36 +14277,55 @@ function checkAiEngineStatus(){
   var statusEl = document.getElementById('aiEngineStatus');
   if(!statusEl) return;
   statusEl.textContent = 'Checking...';
+
+  // Check server-side proxy availability
+  var user = firebase.auth().currentUser;
+  var proxyOk = false;
+  var proxyPromise = (user ? user.getIdToken() : Promise.resolve(null)).then(function(token){
+    if(!token) return false;
+    return fetch('/api/aiEnrich', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ systemPrompt: 'test', userPrompt: 'Return exactly: {"test":true}' })
+    }).then(function(r){ return r.ok; }).catch(function(){ return false; });
+  }).catch(function(){ return false; });
+
+  // Check extension status
   var extId = typeof RR_EXTENSION_ID !== 'undefined' ? RR_EXTENSION_ID : null;
-  if(!extId){
-    statusEl.innerHTML = '<span style="color:var(--warning)">Extension not detected</span>';
-    return;
-  }
-  chrome.runtime.sendMessage(extId, { type:'HEALTH' }, function(resp){
-    if(chrome.runtime.lastError || !resp){
-      statusEl.innerHTML = '<span style="color:var(--danger)">Cannot reach extension</span>';
+  proxyPromise.then(function(pOk){
+    proxyOk = pOk;
+    var parts = [];
+    if(proxyOk){
+      parts.push('<span style="color:var(--success)">✓ AI Server connected</span> (Claude Haiku 4.5)');
+    } else {
+      parts.push('<span style="color:var(--warning)">AI Server: unavailable</span>');
+    }
+    if(!extId){
+      parts.push('<span style="color:var(--warning)">Extension: not detected</span>');
+      statusEl.innerHTML = parts.join(' · ');
       return;
     }
-    var parts = [];
-    if(resp.claude && resp.claude.configured){
-      parts.push('<span style="color:var(--success)">✓ Claude API configured</span> (' + resp.claude.model + ')');
-    } else {
-      parts.push('<span style="color:var(--text3)">Claude API: not configured</span>');
-    }
-    if(resp.ollama && resp.ollama.running){
-      parts.push('<span style="color:var(--success)">✓ Ollama running</span>' + (resp.ollama.modelInstalled ? ' (' + resp.ollama.model + ')' : ' <span style="color:var(--warning)">(model not installed)</span>'));
-    } else {
-      parts.push('<span style="color:var(--text3)">Ollama: not running</span>');
-    }
-    statusEl.innerHTML = parts.join(' · ');
+    chrome.runtime.sendMessage(extId, { type:'HEALTH' }, function(resp){
+      if(chrome.runtime.lastError || !resp){
+        parts.push('<span style="color:var(--danger)">Extension: cannot reach</span>');
+      } else {
+        parts.push('<span style="color:var(--success)">✓ Extension v' + (resp.version || '?') + '</span>');
+        if(resp.claude && resp.claude.configured){
+          parts.push('<span style="color:var(--text3)">Custom key: active</span>');
+        }
+      }
+      statusEl.innerHTML = parts.join(' · ');
+    });
   });
-  // Also load the masked key display
-  chrome.runtime.sendMessage(extId, { type:'GET_API_KEY' }, function(resp){
-    if(resp && resp.ok && resp.key){
-      var input = document.getElementById('settingsClaudeKey');
-      if(input && !input.value) input.placeholder = resp.key + ' (saved)';
-    }
-  });
+  // Load the masked key display
+  if(extId){
+    chrome.runtime.sendMessage(extId, { type:'GET_API_KEY' }, function(resp){
+      if(resp && resp.ok && resp.key){
+        var input = document.getElementById('settingsClaudeKey');
+        if(input && !input.value) input.placeholder = resp.key + ' (saved)';
+      }
+    });
+  }
 }
 
 // ============================================================
@@ -14551,20 +14581,20 @@ function renderSettings(){
     <div class="settings-section">
       <div class="settings-section-header"><h3>🤖 AI Engine</h3></div>
       <div class="settings-section-body">
-        <div class="settings-row" style="flex-wrap:wrap">
-          <div class="settings-row-left"><div class="sr-label">Claude API Key</div><div class="sr-desc">Powers intelligent property analysis. Get a key at <a href="https://console.anthropic.com" target="_blank" style="color:var(--primary)">console.anthropic.com</a></div></div>
-          <div class="settings-row-right" style="display:flex;align-items:center;gap:8px">
-            <input type="password" id="settingsClaudeKey" placeholder="sk-ant-..." style="font-size:.82rem;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);color:var(--text);width:220px;font-family:monospace" />
-            <button class="btn btn-primary btn-sm" onclick="saveClaudeApiKey()">Save</button>
-          </div>
-        </div>
         <div class="settings-row">
           <div class="settings-row-left"><div class="sr-label">Status</div><div class="sr-desc" id="aiEngineStatus">Checking...</div></div>
           <div class="settings-row-right"><button class="btn btn-secondary btn-sm" onclick="checkAiEngineStatus()">Test</button></div>
         </div>
         <div class="settings-row">
-          <div class="settings-row-left"><div class="sr-label">Model</div><div class="sr-desc">Claude Haiku 4.5 (~$0.005/import) — fast, accurate, investor-grade analysis</div></div>
+          <div class="settings-row-left"><div class="sr-label">Model</div><div class="sr-desc">Claude Haiku 4.5 — fast, accurate, investor-grade property analysis</div></div>
           <div class="settings-row-right"><span class="settings-value" style="font-size:.78rem">claude-haiku-4-5</span></div>
+        </div>
+        <div class="settings-row" style="flex-wrap:wrap">
+          <div class="settings-row-left"><div class="sr-label">Custom API Key <span style="font-size:.7rem;color:var(--text3);font-weight:400">(optional override)</span></div><div class="sr-desc">AI runs automatically via RentingRadar servers. Only use this if you want to use your own Anthropic API key instead.</div></div>
+          <div class="settings-row-right" style="display:flex;align-items:center;gap:8px">
+            <input type="password" id="settingsClaudeKey" placeholder="sk-ant-..." style="font-size:.82rem;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);color:var(--text);width:200px;font-family:monospace" />
+            <button class="btn btn-secondary btn-sm" onclick="saveClaudeApiKey()">Save</button>
+          </div>
         </div>
       </div>
     </div>

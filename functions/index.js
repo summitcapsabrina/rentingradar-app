@@ -1238,40 +1238,128 @@ exports.syncSubscription = functions.https.onRequest((req, res) => {
   });
 });
 
+// NOTE: The former mintExtensionToken Cloud Function has been removed.
+// The Chrome extension no longer authenticates to Firebase directly —
+// instead it scrapes listing data and forwards the result to an already
+// authenticated CRM tab which writes to Firestore on the user's behalf.
+// This sidesteps Google's IAM restrictions on new Cloud Functions and
+// makes the extension simpler (no auth state to manage).
+
 // ============================================================
-// CHROME EXTENSION AUTH BRIDGE
+// AI ENRICHMENT PROXY — Claude API (Haiku 4.5)
 // ============================================================
-// Called by the CRM's extension-link page after the user is signed in.
-// This is a Firebase *callable* function — the client calls it via
-// firebase.functions().httpsCallable('mintExtensionToken'), which
-// automatically includes the caller's Firebase ID token in an
-// auth-context object. No public IAM is needed because Firebase
-// handles the auth layer server-side.
-exports.mintExtensionToken = functions.https.onCall(async (data, context) => {
-  if (!context.auth) {
-    throw new functions.https.HttpsError(
-      "unauthenticated",
-      "You must be signed in to link the Chrome extension."
-    );
-  }
-  try {
-    // Stamp a claim so the extension session is identifiable if we ever
-    // need to audit it. The custom token inherits the same uid, so the
-    // extension signs in as the exact same user with the same Firestore
-    // security rules applied.
-    const customToken = await admin.auth().createCustomToken(context.auth.uid, {
-      source: "chrome_extension",
+// The extension sends listing text to this endpoint; we call Claude
+// with our server-side API key and return the structured JSON result.
+// This keeps the API key private and lets all users share one key.
+// The user must be authenticated (Firebase ID token) to use this.
+//
+// Environment variable required: CLAUDE_API_KEY
+// Set via: firebase functions:secrets:set CLAUDE_API_KEY
+// ============================================================
+const CLAUDE_API_URL = "https://api.anthropic.com/v1/messages";
+const CLAUDE_MODEL = "claude-haiku-4-5-20251001";
+const CLAUDE_MAX_TOKENS = 1024;
+
+exports.aiEnrich = functions
+  .runWith({ timeoutSeconds: 60, memory: "256MB" })
+  .https.onRequest((req, res) => {
+    cors(req, res, async () => {
+      // Only POST allowed
+      if (req.method !== "POST") {
+        return sendError(res, 405, "Method not allowed");
+      }
+
+      // Authenticate the user
+      const user = await verifyAuth(req);
+      if (!user) {
+        return sendError(res, 401, "Authentication required");
+      }
+
+      // Validate request body
+      const { systemPrompt, userPrompt } = req.body || {};
+      if (!systemPrompt || !userPrompt) {
+        return sendError(res, 400, "Missing systemPrompt or userPrompt");
+      }
+
+      // Rate limit: simple per-user throttle via Firestore
+      // (prevents runaway costs if a user spams imports)
+      const uid = user.uid;
+      const todayKey = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+      const usageRef = db.collection("aiUsage").doc(`${uid}_${todayKey}`);
+      try {
+        const usageSnap = await usageRef.get();
+        const currentCount = usageSnap.exists ? (usageSnap.data().count || 0) : 0;
+        const DAILY_LIMIT = 200; // generous — 200 imports/day
+        if (currentCount >= DAILY_LIMIT) {
+          return sendError(res, 429, `Daily AI enrichment limit reached (${DAILY_LIMIT}/day). Resets at midnight UTC.`);
+        }
+        // Increment counter
+        await usageRef.set({ count: currentCount + 1, uid, date: todayKey }, { merge: true });
+      } catch (usageErr) {
+        console.warn("AI usage tracking error (non-fatal):", usageErr.message);
+        // Continue even if usage tracking fails
+      }
+
+      // Get API key from environment
+      const apiKey = process.env.CLAUDE_API_KEY;
+      if (!apiKey) {
+        console.error("CLAUDE_API_KEY not set in environment");
+        return sendError(res, 500, "AI service not configured. Contact support.");
+      }
+
+      // Call Claude API
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 50000);
+
+        const claudeResp = await fetch(CLAUDE_API_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": apiKey,
+            "anthropic-version": "2023-06-01",
+          },
+          signal: controller.signal,
+          body: JSON.stringify({
+            model: CLAUDE_MODEL,
+            max_tokens: CLAUDE_MAX_TOKENS,
+            system: systemPrompt,
+            messages: [{ role: "user", content: userPrompt }],
+          }),
+        });
+        clearTimeout(timeout);
+
+        if (!claudeResp.ok) {
+          const errBody = await claudeResp.text().catch(() => "");
+          console.error("Claude API error:", claudeResp.status, errBody.slice(0, 300));
+          return sendError(res, 502, "AI service error (HTTP " + claudeResp.status + ")");
+        }
+
+        const claudeJson = await claudeResp.json();
+        const content = claudeJson && claudeJson.content && claudeJson.content[0] && claudeJson.content[0].text;
+        if (!content) {
+          return sendError(res, 502, "Empty response from AI service");
+        }
+
+        // Parse the JSON from Claude's response
+        let parsed;
+        try {
+          parsed = JSON.parse(content);
+        } catch (_) {
+          const m = content.match(/\{[\s\S]*\}/);
+          if (!m) {
+            return sendError(res, 502, "AI service did not return valid JSON");
+          }
+          parsed = JSON.parse(m[0]);
+        }
+
+        sendSuccess(res, { result: parsed, model: CLAUDE_MODEL });
+      } catch (err) {
+        console.error("aiEnrich error:", err.message || err);
+        if (err.name === "AbortError") {
+          return sendError(res, 504, "AI service timed out");
+        }
+        return sendError(res, 500, "AI enrichment failed: " + (err.message || "Unknown error"));
+      }
     });
-    return {
-      token: customToken,
-      uid: context.auth.uid,
-      email: context.auth.token.email || null,
-    };
-  } catch (err) {
-    console.error("mintExtensionToken error:", err);
-    throw new functions.https.HttpsError(
-      "internal",
-      err.message || "Could not mint extension token."
-    );
-  }
-});
+  });

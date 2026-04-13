@@ -88,7 +88,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           return;
 
         case 'HEALTH': {
-          // v0.9.0: Report Claude API + Ollama status.
+          // v0.10.0: Report AI engine status.
           const apiKey = await getClaudeApiKey();
           const h = await checkOllamaHealth();
           sendResponse({
@@ -157,7 +157,7 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
           return;
 
         case 'HEALTH': {
-          // v0.9.0: Report Claude API + Ollama status.
+          // v0.10.0: Report AI engine status.
           const apiKey2 = await getClaudeApiKey();
           const h2 = await checkOllamaHealth();
           sendResponse({
@@ -1064,11 +1064,61 @@ function resolvePropertyDetailsContradictions(pd) {
 }
 
 // ------------------------------------------------------------------
-// v0.10.0: AI ENRICHMENT — Claude API primary, Ollama fallback.
+// v0.10.0: AI ENRICHMENT — server proxy primary, direct API fallback,
+// Ollama last resort.
 // ------------------------------------------------------------------
-// This function ALWAYS returns a result, never throws. If both Claude
-// and Ollama fail, the dictionary extractor's output is still returned.
+// This function ALWAYS returns a result, never throws. If all AI
+// paths fail, the dictionary extractor's output is still returned.
 
+// Server-side proxy: calls our Firebase Cloud Function which holds
+// the API key securely. Requires an authenticated CRM tab to provide
+// the Firebase ID token.
+async function callClaudeProxy(systemPrompt, userPrompt) {
+  // Get the Firebase ID token from an open CRM tab
+  const token = await getCrmAuthToken();
+  if (!token) throw new Error('No authenticated CRM tab — cannot call AI proxy');
+
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), CLAUDE_TIMEOUT_MS);
+  try {
+    const resp = await fetch(CRM_ORIGIN + '/api/aiEnrich', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + token,
+      },
+      signal: ctrl.signal,
+      body: JSON.stringify({ systemPrompt, userPrompt }),
+    });
+    if (!resp.ok) {
+      const body = await resp.text().catch(() => '');
+      throw new Error('AI proxy HTTP ' + resp.status + (body ? ': ' + body.slice(0, 200) : ''));
+    }
+    const json = await resp.json();
+    // The proxy returns { result: { data: { result: <parsed>, model: <string> } } }
+    const data = json && json.result && json.result.data;
+    if (!data || !data.result) throw new Error('AI proxy returned empty result');
+    return data.result;
+  } finally { clearTimeout(t); }
+}
+
+// Get a Firebase ID token from the CRM tab's content script
+async function getCrmAuthToken() {
+  try {
+    const tabs = await chrome.tabs.query({ url: CRM_ORIGIN + '/*' });
+    if (!tabs.length) return null;
+    // Ask the CRM content script for the user's ID token
+    for (const tab of tabs) {
+      try {
+        const resp = await chrome.tabs.sendMessage(tab.id, { type: 'GET_AUTH_TOKEN' });
+        if (resp && resp.token) return resp.token;
+      } catch (_) { /* tab might not have content script */ }
+    }
+    return null;
+  } catch (_) { return null; }
+}
+
+// Direct Claude API call — fallback when user has their own API key
 async function callClaude(apiKey, systemPrompt, userPrompt) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), CLAUDE_TIMEOUT_MS);
@@ -1263,41 +1313,51 @@ BULLETS — These are Property Notes for a Rental Arbitrage investor, NOT a rent
 
 Return ONLY the JSON object.`;
 
-  // ----- v0.10.0: CLAUDE API (primary), OLLAMA (free fallback) -----
+  // ----- v0.10.0: SERVER PROXY → DIRECT API → OLLAMA -----
   let aiResult = null;
   let aiError = null;
   let aiModel = null;
 
-  // Primary: Claude API (Haiku 4.5 — fast, accurate, ~$0.005/import)
-  const apiKey = await getClaudeApiKey();
-  if (apiKey) {
-    try {
-      console.log('[RR ext] Using Claude API (' + CLAUDE_MODEL + ')...');
-      aiResult = await callClaude(apiKey, systemPrompt, userPrompt);
-      aiModel = CLAUDE_MODEL;
-      console.log('[RR ext] Claude API success');
-    } catch (e) {
-      console.warn('[RR ext] Claude API failed:', (e && e.message) || e);
-      aiError = (e && e.message) || String(e);
-    }
-  } else {
-    console.log('[RR ext] No Claude API key — falling back to Ollama');
+  // 1. Primary: Server-side proxy (shared API key, no user config needed)
+  try {
+    console.log('[RR ext] Trying server-side AI proxy...');
+    aiResult = await callClaudeProxy(systemPrompt, userPrompt);
+    aiModel = CLAUDE_MODEL + ' (proxy)';
+    console.log('[RR ext] Server proxy success');
+  } catch (e) {
+    console.log('[RR ext] Server proxy unavailable:', (e && e.message) || e);
+    aiError = (e && e.message) || String(e);
   }
 
-  // Fallback: Ollama (Gemma 3 4B — free, local, less accurate)
+  // 2. Fallback: Direct Claude API (user's own key from Settings)
+  if (!aiResult) {
+    const apiKey = await getClaudeApiKey();
+    if (apiKey) {
+      try {
+        console.log('[RR ext] Trying direct Claude API...');
+        aiResult = await callClaude(apiKey, systemPrompt, userPrompt);
+        aiModel = CLAUDE_MODEL;
+        aiError = null;
+        console.log('[RR ext] Direct Claude API success');
+      } catch (e) {
+        console.warn('[RR ext] Direct Claude API failed:', (e && e.message) || e);
+        aiError = (e && e.message) || String(e);
+      }
+    }
+  }
+
+  // 3. Last resort: Ollama (Gemma 3 4B — free, local, less accurate)
   if (!aiResult) {
     try {
       const health = await checkOllamaHealth();
       if (health.running || health.unknown) {
-        console.log('[RR ext] calling Ollama (' + OLLAMA_MODEL + ')...');
+        console.log('[RR ext] Falling back to Ollama (' + OLLAMA_MODEL + ')...');
         aiResult = await callOllamaLegacy(systemPrompt, userPrompt, OLLAMA_TIMEOUT_MS);
         aiModel = OLLAMA_MODEL;
         aiError = null;
         console.log('[RR ext] Ollama success');
-      } else if (!apiKey) {
-        aiError = 'No AI configured. Add your Claude API key in Settings, or start Ollama with: ollama serve';
       } else {
-        aiError = 'Claude API failed and Ollama not running';
+        aiError = (aiError || '') + ' | Ollama not running';
       }
     } catch (e) {
       const msg = (e && e.message) || String(e);
