@@ -40,8 +40,7 @@
     "https://app.rentingradar.com/*",
     "http://localhost:11434/*",
     "http://127.0.0.1:11434/*",
-    "https://api.anthropic.com/*",
-    "https://us-central1-rentingradar.cloudfunctions.net/*"
+    "https://api.anthropic.com/*"
   ],
   "externally_connectable": {
     "matches": [

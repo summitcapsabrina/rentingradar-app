@@ -121,7 +121,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             if (!token) { sendResponse({ ok: false, error: 'not signed in' }); return; }
             const ctrl = new AbortController();
             const tmr = setTimeout(() => ctrl.abort(), 10000);
-            const resp = await fetch(FUNCTIONS_BASE + '/aiEnrich', {
+            const resp = await fetch(CRM_ORIGIN + '/api/aiEnrich', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
               signal: ctrl.signal,
@@ -209,7 +209,7 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
             if (!token2) { sendResponse({ ok: false, error: 'not signed in' }); return; }
             const ctrl2 = new AbortController();
             const tmr2 = setTimeout(() => ctrl2.abort(), 10000);
-            const resp2 = await fetch(FUNCTIONS_BASE + '/aiEnrich', {
+            const resp2 = await fetch(CRM_ORIGIN + '/api/aiEnrich', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token2 },
               signal: ctrl2.signal,
@@ -1112,11 +1112,10 @@ function resolvePropertyDetailsContradictions(pd) {
 // This function ALWAYS returns a result, never throws. If all AI
 // paths fail, the dictionary extractor's output is still returned.
 
-// Server-side proxy: calls our Firebase Cloud Function directly at its
-// cloudfunctions.net URL. The CRM is hosted on GitHub Pages (not Firebase
-// Hosting), so /api/* rewrites don't work — we hit the function URL directly.
-// The extension service worker bypasses CORS, so cross-origin fetch is fine.
-const FUNCTIONS_BASE = 'https://us-central1-rentingradar.cloudfunctions.net';
+// Server-side proxy: calls our Firebase Cloud Function via the CRM's
+// /api/aiEnrich rewrite (firebase.json routes this to the aiEnrich function).
+// This works because the CRM is hosted on Firebase Hosting, which natively
+// proxies /api/* paths to Cloud Functions — same origin, no CORS issues.
 
 async function callClaudeProxy(systemPrompt, userPrompt) {
   // Get the Firebase ID token from an open CRM tab
@@ -1126,7 +1125,7 @@ async function callClaudeProxy(systemPrompt, userPrompt) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), CLAUDE_TIMEOUT_MS);
   try {
-    const resp = await fetch(FUNCTIONS_BASE + '/aiEnrich', {
+    const resp = await fetch(CRM_ORIGIN + '/api/aiEnrich', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
