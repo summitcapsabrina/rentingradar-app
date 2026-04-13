@@ -8420,13 +8420,23 @@ window.addEventListener('message', (event) => {
       // any LLM-only fields.
       handleListingEnrichment(m.patch);
     } else if(m.type === 'CALL_AI_ENRICH' && m.reqId){
-      // The extension wants us to call the aiEnrich Cloud Function via
-      // firebase.functions().httpsCallable — this bypasses IAM restrictions.
+      // Call aiEnrich via Firebase Hosting rewrite (/api/aiEnrich)
+      // with a Bearer token for auth — avoids IAM issues with onCall.
       (async function(){
         try {
-          var fn = firebase.functions().httpsCallable('aiEnrich');
-          var result = await fn(m.data || {});
-          var d = result && result.data;
+          var currentUser = firebase.auth().currentUser;
+          if(!currentUser) throw new Error('Not signed in');
+          var token = await currentUser.getIdToken();
+          var resp = await fetch('/api/aiEnrich', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+            body: JSON.stringify({ data: m.data || {} })
+          });
+          var json = await resp.json();
+          if(!resp.ok){
+            throw new Error((json.error && json.error.message) || ('HTTP ' + resp.status));
+          }
+          var d = json.result && json.result.data;
           if(d && d.result){
             window.postMessage({ rrAiResponse: m.reqId, payload: { ok: true, result: d.result, model: d.model } }, location.origin);
           } else {
@@ -8439,23 +8449,31 @@ window.addEventListener('message', (event) => {
         }
       })();
     } else if(m.type === 'TEST_AI_ENRICH' && m.reqId){
-      // Quick test: call aiEnrich with empty data — should get "invalid-argument" error
+      // Quick test: call aiEnrich with empty data — should get 400 error
       // which proves the function is live and reachable.
       (async function(){
         try {
-          var fn = firebase.functions().httpsCallable('aiEnrich');
-          await fn({});
-          // Shouldn't reach here (empty data = error), but if it does, function is live
-          window.postMessage({ rrAiResponse: m.reqId, payload: { ok: true } }, location.origin);
-        } catch(e){
-          var code = e && e.code;
-          // "invalid-argument" means function is live but rejected empty data — that's success
-          // "unauthenticated" means function is live but user not signed in
-          if(code === 'functions/invalid-argument' || code === 'functions/unauthenticated'){
+          var currentUser = firebase.auth().currentUser;
+          var headers = { 'Content-Type': 'application/json' };
+          if(currentUser){
+            var token = await currentUser.getIdToken();
+            headers['Authorization'] = 'Bearer ' + token;
+          }
+          var resp = await fetch('/api/aiEnrich', {
+            method: 'POST',
+            headers: headers,
+            body: JSON.stringify({ data: {} })
+          });
+          var json = await resp.json();
+          // 400 (missing prompts) or 401 (not signed in) means function IS live
+          if(resp.status === 400 || resp.status === 401 || resp.ok){
             window.postMessage({ rrAiResponse: m.reqId, payload: { ok: true } }, location.origin);
           } else {
-            window.postMessage({ rrAiResponse: m.reqId, payload: { ok: false, error: (e && e.message) || String(e) } }, location.origin);
+            var errMsg = (json.error && json.error.message) || ('HTTP ' + resp.status);
+            window.postMessage({ rrAiResponse: m.reqId, payload: { ok: false, error: errMsg } }, location.origin);
           }
+        } catch(e){
+          window.postMessage({ rrAiResponse: m.reqId, payload: { ok: false, error: (e && e.message) || String(e) } }, location.origin);
         }
       })();
     }
