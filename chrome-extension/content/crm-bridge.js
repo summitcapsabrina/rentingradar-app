@@ -35,25 +35,30 @@
       return true;
     }
 
-    // GET_AUTH_TOKEN — the service worker needs a Firebase ID token to
-    // call the server-side AI enrichment proxy. We ask the CRM page
-    // (which has firebase.auth()) for a fresh token via postMessage.
-    if (msg.type === 'GET_AUTH_TOKEN') {
-      // Use a postMessage round-trip to the page (which has firebase)
-      const reqId = 'rr_auth_' + Date.now() + '_' + Math.random();
+    // CALL_AI_ENRICH — the service worker asks the CRM page to call the
+    // aiEnrich Cloud Function via firebase.functions().httpsCallable().
+    // This uses the onCall protocol which handles auth automatically and
+    // bypasses IAM invoker restrictions entirely.
+    if (msg.type === 'CALL_AI_ENRICH' || msg.type === 'TEST_AI_ENRICH') {
+      const reqId = 'rr_ai_' + Date.now() + '_' + Math.random();
       const handler = function (event) {
-        if (event.data && event.data.rrAuthResponse === reqId) {
+        if (event.data && event.data.rrAiResponse === reqId) {
           window.removeEventListener('message', handler);
-          sendResponse({ token: event.data.token || null });
+          sendResponse(event.data.payload || { ok: false, error: 'empty response' });
         }
       };
       window.addEventListener('message', handler);
-      // Timeout after 3s
+      // Timeout after 55s (function has 60s timeout)
       setTimeout(() => {
         window.removeEventListener('message', handler);
-        sendResponse({ token: null });
-      }, 3000);
-      window.postMessage({ rrExtension: true, type: 'GET_AUTH_TOKEN', reqId }, location.origin);
+        sendResponse({ ok: false, error: 'timeout' });
+      }, 55000);
+      window.postMessage({
+        rrExtension: true,
+        type: msg.type,
+        reqId,
+        data: msg.data || {},
+      }, location.origin);
       return true; // async sendResponse
     }
 

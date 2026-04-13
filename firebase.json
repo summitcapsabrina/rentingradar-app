@@ -11,7 +11,6 @@
       { "source": "/api/unsubscribe", "function": "unsubscribe" },
       { "source": "/api/testEmail", "function": "testEmail" },
       { "source": "/api/sendWelcomeEmail", "function": "sendWelcomeEmail" },
-      { "source": "/api/aiEnrich", "function": "aiEnrich" },
       { "source": "/auth-action", "destination": "/auth-action.html" },
       { "source": "**", "destination": "/index.html" }
     ]

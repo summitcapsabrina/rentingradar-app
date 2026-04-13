@@ -8419,16 +8419,44 @@ window.addEventListener('message', (event) => {
       // import landed. Patches the open record in place with bullets +
       // any LLM-only fields.
       handleListingEnrichment(m.patch);
-    } else if(m.type === 'GET_AUTH_TOKEN' && m.reqId){
-      // The extension's content bridge needs a Firebase ID token so
-      // the service worker can call the server-side AI proxy.
+    } else if(m.type === 'CALL_AI_ENRICH' && m.reqId){
+      // The extension wants us to call the aiEnrich Cloud Function via
+      // firebase.functions().httpsCallable — this bypasses IAM restrictions.
       (async function(){
-        var token = null;
         try {
-          var user = firebase.auth().currentUser;
-          if(user) token = await user.getIdToken();
-        } catch(_){}
-        window.postMessage({ rrAuthResponse: m.reqId, token: token }, location.origin);
+          var fn = firebase.functions().httpsCallable('aiEnrich');
+          var result = await fn(m.data || {});
+          var d = result && result.data;
+          if(d && d.result){
+            window.postMessage({ rrAiResponse: m.reqId, payload: { ok: true, result: d.result, model: d.model } }, location.origin);
+          } else {
+            window.postMessage({ rrAiResponse: m.reqId, payload: { ok: false, error: 'Empty result from AI' } }, location.origin);
+          }
+        } catch(e){
+          var errMsg = (e && e.message) || String(e);
+          console.error('[RR crm] aiEnrich error:', errMsg);
+          window.postMessage({ rrAiResponse: m.reqId, payload: { ok: false, error: errMsg } }, location.origin);
+        }
+      })();
+    } else if(m.type === 'TEST_AI_ENRICH' && m.reqId){
+      // Quick test: call aiEnrich with empty data — should get "invalid-argument" error
+      // which proves the function is live and reachable.
+      (async function(){
+        try {
+          var fn = firebase.functions().httpsCallable('aiEnrich');
+          await fn({});
+          // Shouldn't reach here (empty data = error), but if it does, function is live
+          window.postMessage({ rrAiResponse: m.reqId, payload: { ok: true } }, location.origin);
+        } catch(e){
+          var code = e && e.code;
+          // "invalid-argument" means function is live but rejected empty data — that's success
+          // "unauthenticated" means function is live but user not signed in
+          if(code === 'functions/invalid-argument' || code === 'functions/unauthenticated'){
+            window.postMessage({ rrAiResponse: m.reqId, payload: { ok: true } }, location.origin);
+          } else {
+            window.postMessage({ rrAiResponse: m.reqId, payload: { ok: false, error: (e && e.message) || String(e) } }, location.origin);
+          }
+        }
       })();
     }
   } catch(e){ console.error('RR extension message handler error:', e); }

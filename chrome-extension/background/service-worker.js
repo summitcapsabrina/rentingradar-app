@@ -114,21 +114,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
 
         case 'TEST_AI_PROXY': {
-          // Test the server-side AI proxy from the extension (bypasses CORS).
-          // Sends an empty body — expects 400 (= function is live).
+          // Test the AI proxy by asking the CRM to call the callable function
           try {
-            const token = await getCrmAuthToken();
-            if (!token) { sendResponse({ ok: false, error: 'not signed in' }); return; }
-            const ctrl = new AbortController();
-            const tmr = setTimeout(() => ctrl.abort(), 10000);
-            const resp = await fetch(CRM_ORIGIN + '/api/aiEnrich', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-              signal: ctrl.signal,
-              body: JSON.stringify({}),
-            });
-            clearTimeout(tmr);
-            sendResponse({ ok: resp.ok || resp.status === 400, status: resp.status });
+            const tabs = await chrome.tabs.query({ url: CRM_ORIGIN + '/*' });
+            if (!tabs.length) { sendResponse({ ok: false, error: 'no CRM tab' }); return; }
+            let tested = false;
+            for (const tab of tabs) {
+              try {
+                const resp = await chrome.tabs.sendMessage(tab.id, { type: 'TEST_AI_ENRICH' });
+                sendResponse({ ok: !!(resp && resp.ok), error: resp && resp.error });
+                tested = true;
+                break;
+              } catch (_) {}
+            }
+            if (!tested) sendResponse({ ok: false, error: 'CRM not responding' });
           } catch (e) {
             sendResponse({ ok: false, error: (e && e.message) || String(e) });
           }
@@ -205,18 +204,18 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
 
         case 'TEST_AI_PROXY': {
           try {
-            const token2 = await getCrmAuthToken();
-            if (!token2) { sendResponse({ ok: false, error: 'not signed in' }); return; }
-            const ctrl2 = new AbortController();
-            const tmr2 = setTimeout(() => ctrl2.abort(), 10000);
-            const resp2 = await fetch(CRM_ORIGIN + '/api/aiEnrich', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token2 },
-              signal: ctrl2.signal,
-              body: JSON.stringify({}),
-            });
-            clearTimeout(tmr2);
-            sendResponse({ ok: resp2.ok || resp2.status === 400, status: resp2.status });
+            const tabs2 = await chrome.tabs.query({ url: CRM_ORIGIN + '/*' });
+            if (!tabs2.length) { sendResponse({ ok: false, error: 'no CRM tab' }); return; }
+            let tested2 = false;
+            for (const tab2 of tabs2) {
+              try {
+                const resp2 = await chrome.tabs.sendMessage(tab2.id, { type: 'TEST_AI_ENRICH' });
+                sendResponse({ ok: !!(resp2 && resp2.ok), error: resp2 && resp2.error });
+                tested2 = true;
+                break;
+              } catch (_) {}
+            }
+            if (!tested2) sendResponse({ ok: false, error: 'CRM not responding' });
           } catch (e2) {
             sendResponse({ ok: false, error: (e2 && e2.message) || String(e2) });
           }
@@ -1112,54 +1111,31 @@ function resolvePropertyDetailsContradictions(pd) {
 // This function ALWAYS returns a result, never throws. If all AI
 // paths fail, the dictionary extractor's output is still returned.
 
-// Server-side proxy: calls our Firebase Cloud Function via the CRM's
-// /api/aiEnrich rewrite (firebase.json routes this to the aiEnrich function).
-// This works because the CRM is hosted on Firebase Hosting, which natively
-// proxies /api/* paths to Cloud Functions — same origin, no CORS issues.
+// Server-side proxy: calls the aiEnrich Cloud Function via the CRM page's
+// Firebase SDK (httpsCallable). This uses Firebase's onCall protocol which
+// handles auth automatically and bypasses IAM invoker restrictions.
+// The extension sends a message to the CRM content bridge, which relays
+// it to the page, which calls firebase.functions().httpsCallable('aiEnrich').
 
 async function callClaudeProxy(systemPrompt, userPrompt) {
-  // Get the Firebase ID token from an open CRM tab
-  const token = await getCrmAuthToken();
-  if (!token) throw new Error('No authenticated CRM tab — cannot call AI proxy');
+  const tabs = await chrome.tabs.query({ url: CRM_ORIGIN + '/*' });
+  if (!tabs.length) throw new Error('No CRM tab open — cannot call AI proxy');
 
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), CLAUDE_TIMEOUT_MS);
-  try {
-    const resp = await fetch(CRM_ORIGIN + '/api/aiEnrich', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + token,
-      },
-      signal: ctrl.signal,
-      body: JSON.stringify({ systemPrompt, userPrompt }),
-    });
-    if (!resp.ok) {
-      const body = await resp.text().catch(() => '');
-      throw new Error('AI proxy HTTP ' + resp.status + (body ? ': ' + body.slice(0, 200) : ''));
+  // Ask the CRM page to call the Cloud Function via Firebase SDK
+  for (const tab of tabs) {
+    try {
+      const resp = await chrome.tabs.sendMessage(tab.id, {
+        type: 'CALL_AI_ENRICH',
+        data: { systemPrompt, userPrompt },
+      });
+      if (resp && resp.ok && resp.result) return resp.result;
+      if (resp && resp.error) throw new Error('AI proxy: ' + resp.error);
+    } catch (e) {
+      if (e.message && e.message.includes('AI proxy')) throw e;
+      // Tab might not have content script, try next
     }
-    const json = await resp.json();
-    // The proxy returns { result: { data: { result: <parsed>, model: <string> } } }
-    const data = json && json.result && json.result.data;
-    if (!data || !data.result) throw new Error('AI proxy returned empty result');
-    return data.result;
-  } finally { clearTimeout(t); }
-}
-
-// Get a Firebase ID token from the CRM tab's content script
-async function getCrmAuthToken() {
-  try {
-    const tabs = await chrome.tabs.query({ url: CRM_ORIGIN + '/*' });
-    if (!tabs.length) return null;
-    // Ask the CRM content script for the user's ID token
-    for (const tab of tabs) {
-      try {
-        const resp = await chrome.tabs.sendMessage(tab.id, { type: 'GET_AUTH_TOKEN' });
-        if (resp && resp.token) return resp.token;
-      } catch (_) { /* tab might not have content script */ }
-    }
-    return null;
-  } catch (_) { return null; }
+  }
+  throw new Error('No authenticated CRM tab responded');
 }
 
 // Direct Claude API call — fallback when user has their own API key
