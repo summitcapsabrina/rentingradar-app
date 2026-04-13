@@ -1258,7 +1258,7 @@ exports.syncSubscription = functions.https.onRequest((req, res) => {
 // ============================================================
 const CLAUDE_API_URL = "https://api.anthropic.com/v1/messages";
 const CLAUDE_MODEL = "claude-haiku-4-5-20251001";
-const CLAUDE_MAX_TOKENS = 1024;
+const CLAUDE_MAX_TOKENS = 2048;
 
 exports.aiEnrich = functions
   .runWith({ timeoutSeconds: 60, memory: "256MB" })

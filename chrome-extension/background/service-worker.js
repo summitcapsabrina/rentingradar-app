@@ -1154,7 +1154,7 @@ async function callClaude(apiKey, systemPrompt, userPrompt) {
       signal: ctrl.signal,
       body: JSON.stringify({
         model: CLAUDE_MODEL,
-        max_tokens: 1024,
+        max_tokens: 2048,
         system: systemPrompt,
         messages: [{ role: 'user', content: userPrompt }],
       }),
@@ -1251,9 +1251,11 @@ async function enrichWithOllama(scraped) {
     price: scraped.price,
   };
 
-  // v0.9.0: 8KB of listing text for the AI — Gemma 3 handles this fine
-  // with num_ctx=8192, and Claude API has no practical limit.
-  const pageTextFull = (llmSnippet || fullPageText).slice(0, 8000);
+  // v0.11.0: Use the raw unfiltered page text so the AI sees EVERYTHING on
+  // the listing — utilities, fees, policies, amenities — just like a human
+  // reading the page. Falls back to filtered text if raw isn't available.
+  const rawPageText = normalizePageText(scraped._rawPageText || '');
+  const pageTextFull = (rawPageText || fullPageText || llmSnippet).slice(0, 30000);
 
   // ----- v0.10.0: CLAUDE-OPTIMIZED EXTRACTION PROMPT -----
   // Structured system prompt for accurate extraction + investor-grade notes.
@@ -1264,10 +1266,12 @@ async function enrichWithOllama(scraped) {
 Your user is NOT a renter — they are a short-term rental (STR) investor evaluating properties for Airbnb/VRBO arbitrage potential.
 
 STRICT RULES:
-1. Extract ONLY facts explicitly stated in the listing text. If a detail is not mentioned, OMIT that field entirely.
-2. Never infer, assume, or fabricate any detail. "Not mentioned" means OMIT, not guess.
-3. Return ONLY a single JSON object — no markdown, no commentary, no explanation.
-4. Every value you return must be directly traceable to specific text in the listing.`;
+1. Read the ENTIRE listing text from start to finish before extracting. Details like utilities, amenities, and fees often appear in different sections — do not stop reading early.
+2. Extract ONLY facts explicitly stated in the listing text. If a detail is not mentioned, OMIT that field entirely.
+3. Never infer, assume, or fabricate any detail. "Not mentioned" means OMIT, not guess.
+4. Return ONLY a single JSON object — no markdown, no commentary, no explanation.
+5. Every value you return must be directly traceable to specific text in the listing.
+6. Be EXHAUSTIVE — capture every single detail mentioned anywhere in the listing. Missing a stated fact is as bad as fabricating one.`;
 
   const userPrompt =
 `The scraper already extracted these core facts (use as context, not as source):
@@ -1316,7 +1320,7 @@ MULTI-SELECT FIELDS — use these predefined values when they match exactly. If 
 - communityAmenities: ${OLLAMA_FIELD_OPTIONS.communityAmenities.join(', ')}
 - safetyFeatures: ${OLLAMA_FIELD_OPTIONS.safetyFeatures.join(', ')}
 
-UTILITIES: Only include utilities explicitly stated as INCLUDED IN RENT. Do not list utilities the tenant pays separately. Preferred values: ${OLLAMA_FIELD_OPTIONS.utilitiesIncluded.join(', ')}. If the listing uses different wording (e.g. "Heat" instead of "Gas"), use the listing's wording.
+UTILITIES: Scan the ENTIRE listing carefully for any mention of included utilities — they often appear in amenity lists, fee sections, "What's Included" sections, or bullet points far down the page. Include utilities explicitly stated as INCLUDED IN RENT (e.g. "heat included", "water included", "utilities included", "gas & electric included"). Do not list utilities the tenant pays separately. Preferred values: ${OLLAMA_FIELD_OPTIONS.utilitiesIncluded.join(', ')}. If the listing uses different wording (e.g. "Heat" instead of "Gas"), use the listing's wording. Common included utilities to watch for: Water, Sewer, Trash, Heat, Gas, Electric, Hot Water, Internet, Cable.
 
 PETS: Array of all that apply. Preferred: ${OLLAMA_FIELD_OPTIONS.petsAllowed.join(', ')}. Example: ["Cats Allowed","Dogs Allowed"].
 

@@ -136,6 +136,7 @@
       propertyDetails: {},
       _pageText: null,      // Tight description-only snippet (≤4KB) for the LLM
       _fullPageText: null,  // Broad cleaned main-content (≤20KB) for the dictionary regex pass
+      _rawPageText: null,   // v0.11.0: Unfiltered document.body.innerText for AI — captures EVERYTHING
     };
   }
 
@@ -1931,6 +1932,20 @@
         // dictionary extractor and Ollama LLM pass.
         data._pageText = capturePageText();
         data._fullPageText = captureFullPageText();
+        // v0.11.0: Capture the raw, unfiltered page text so the AI sees
+        // EVERYTHING — utilities, fees, policies, etc. that filtered
+        // captures may miss. Strips only scripts/styles, keeps all content.
+        try {
+          const rawClone = document.body.cloneNode(true);
+          rawClone.querySelectorAll('script, style, noscript, iframe, svg').forEach(n => n.remove());
+          data._rawPageText = (rawClone.innerText || '')
+            .replace(/[ \t]+/g, ' ')
+            .replace(/\n{3,}/g, '\n\n')
+            .trim()
+            .slice(0, 30000);
+        } catch (_) {
+          data._rawPageText = (document.body.innerText || '').slice(0, 30000);
+        }
         if (data._debug) {
           data._debug.finalAttempt = attempt;
           data._debug.finalCoreFieldCount = cfc;
