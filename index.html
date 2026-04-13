@@ -5312,7 +5312,6 @@ function openAddModal(){
   const panel = document.getElementById('detailPanel');
   panel.innerHTML = `
     <div class="modal-header"><h2>Add New Property</h2><button class="modal-close" onclick="closeAddModal()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>
-    <div id="addModalAiStatus" style="padding:0 20px;margin-bottom:0"></div>
     <div class="modal-body" id="addModalBody">
       <div id="addStep1"></div>
       <div id="addStep2" style="display:none"></div>
@@ -5339,6 +5338,7 @@ function showAddChoice(){
         <button type="button" class="btn btn-primary btn-sm" style="white-space:nowrap" onclick="importFromChoicePaste()">Import</button>
       </div>
       <div id="add_choice_status" style="font-size:.72rem;color:var(--text3);margin-top:6px;min-height:1em"></div>
+      <div id="addModalAiStatus" style="margin-top:8px"></div>
     </div>
 
     <div style="display:flex;align-items:center;gap:10px;margin:14px 2px;color:var(--text3);font-size:.72rem">

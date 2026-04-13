@@ -7,13 +7,8 @@
 const urlInput = document.getElementById('rrUrlInput');
 const importBtn = document.getElementById('rrBtnImport');
 const statusEl = document.getElementById('rrStatus');
-const recentWrap = document.getElementById('rrRecent');
-const recentList = document.getElementById('rrRecentList');
 const aiStatusText = document.getElementById('rrAiStatusText');
 const aiTestBtn = document.getElementById('rrAiTestBtn');
-
-const RECENT_KEY = 'rrRecentImports';
-const MAX_RECENT = 5;
 
 // ------------------------------------------------------------------
 // AI / Extension status
@@ -71,38 +66,6 @@ function setBusy(busy) {
 }
 
 // ------------------------------------------------------------------
-// Recent imports
-// ------------------------------------------------------------------
-function loadRecent() {
-  chrome.storage.local.get([RECENT_KEY], (res) => {
-    const list = Array.isArray(res[RECENT_KEY]) ? res[RECENT_KEY] : [];
-    if (!list.length) { recentWrap.hidden = true; return; }
-    recentWrap.hidden = false;
-    recentList.innerHTML = '';
-    list.slice(0, MAX_RECENT).forEach((item) => {
-      const li = document.createElement('li');
-      const title = document.createElement('span');
-      title.className = 'rr-recent-title';
-      title.textContent = item.title || item.url || '(untitled)';
-      const time = document.createElement('span');
-      time.className = 'rr-recent-time';
-      time.textContent = item.kind || '';
-      li.appendChild(title);
-      li.appendChild(time);
-      recentList.appendChild(li);
-    });
-  });
-}
-
-function pushRecent(entry) {
-  chrome.storage.local.get([RECENT_KEY], (res) => {
-    const list = Array.isArray(res[RECENT_KEY]) ? res[RECENT_KEY] : [];
-    list.unshift(entry);
-    chrome.storage.local.set({ [RECENT_KEY]: list.slice(0, MAX_RECENT) }, loadRecent);
-  });
-}
-
-// ------------------------------------------------------------------
 // Import flow
 // ------------------------------------------------------------------
 function detectKind(url) {
@@ -149,7 +112,6 @@ async function doImport() {
     const data = response.data || {};
     const title = data.title || data.address || data.host || 'Imported listing';
     setStatus('Property details sent to your CRM. Switch to the CRM tab to see them.', 'success');
-    pushRecent({ url, title, kind, ts: Date.now() });
     urlInput.value = '';
   });
 }
@@ -167,5 +129,4 @@ chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
 });
 
 // Init
-loadRecent();
 checkAiStatus();

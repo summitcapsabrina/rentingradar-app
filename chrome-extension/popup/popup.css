@@ -114,29 +114,6 @@ body{
 .rr-status.success{background:rgba(46,194,126,.12);border-color:rgba(46,194,126,.3)}
 .rr-status.error{background:rgba(239,68,68,.1);border-color:rgba(239,68,68,.3);color:#fca5a5}
 
-.rr-recent{margin-top:18px}
-.rr-recent-header{
-  font-size:11px;
-  font-weight:600;
-  color:var(--text2);
-  text-transform:uppercase;
-  letter-spacing:.4px;
-  margin-bottom:8px;
-}
-.rr-recent-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
-.rr-recent-list li{
-  padding:8px 10px;
-  background:var(--bg1);
-  border:1px solid var(--border);
-  border-radius:var(--radius);
-  font-size:12px;
-  display:flex;
-  align-items:center;
-  gap:8px;
-}
-.rr-recent-list .rr-recent-title{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.rr-recent-list .rr-recent-time{font-size:10px;color:var(--text3)}
-
 .rr-footer{
   padding:10px 14px;
   border-top:1px solid var(--border);
@@ -156,7 +133,7 @@ body{
   justify-content:space-between;
   gap:8px;
   padding:8px 10px;
-  margin-bottom:12px;
+  margin-top:12px;
   background:var(--bg1);
   border:1px solid var(--border);
   border-radius:var(--radius);
