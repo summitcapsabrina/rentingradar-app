@@ -14284,74 +14284,48 @@ function checkAiEngineStatus(){
     : (typeof _rrProbeExtension === 'function' ? _rrProbeExtension() : Promise.resolve(null));
 
   probePromise.then(function(extId){
-    // Check server-side proxy: send a minimal request and accept either
-    // success OR a 400 "missing fields" error — both prove the function is live.
-    var user = firebase.auth().currentUser;
-    var proxyPromise = (user ? user.getIdToken() : Promise.resolve(null)).then(function(token){
-      if(!token) return 'no-auth';
-      return fetch('/api/aiEnrich', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-        body: JSON.stringify({})
-      }).then(function(r){
-        console.log('[RR settings] AI proxy status:', r.status, r.statusText);
-        // 400 = function is live but rejected empty body (expected)
-        // 200 = function responded (unexpected but fine)
-        if(r.ok || r.status === 400) return 'ok';
-        // Try to read the error message
-        return r.text().then(function(body){
-          console.log('[RR settings] AI proxy error body:', body.slice(0, 300));
-          try {
-            var j = JSON.parse(body);
-            return 'HTTP ' + r.status + ': ' + (j.error && j.error.message || j.error || 'unknown');
-          } catch(_){
-            // Response wasn't JSON — likely function not deployed (HTML 404 page)
-            if(body.indexOf('<!DOCTYPE') >= 0 || body.indexOf('<html') >= 0) return 'function not deployed';
-            return 'HTTP ' + r.status;
-          }
-        }).catch(function(){ return 'HTTP ' + r.status; });
-      }).catch(function(e){ console.error('[RR settings] AI proxy fetch error:', e); return 'unreachable: ' + (e.message || e); });
-    }).catch(function(e){ return 'no-auth: ' + (e.message || e); });
+    var parts = [];
 
-    proxyPromise.then(function(proxyStatus){
-      var parts = [];
-      if(proxyStatus === 'ok'){
-        parts.push('<span style="color:var(--success)">✓ AI Server connected</span> (Claude Haiku 4.5)');
-      } else if(proxyStatus.indexOf('no-auth') === 0){
-        parts.push('<span style="color:var(--warning)">AI Server: sign in to test</span>');
-      } else if(proxyStatus === 'function not deployed'){
-        parts.push('<span style="color:var(--warning)">AI Server: function not deployed — run <code>firebase deploy --only functions</code></span>');
-      } else {
-        parts.push('<span style="color:var(--warning)">AI Server: ' + proxyStatus + '</span>');
-      }
+    if(!extId){
+      parts.push('<span style="color:var(--warning)">Extension: not detected</span>');
+      parts.push('<span style="color:var(--text3)">AI Server: install extension to test</span>');
+      statusEl.innerHTML = parts.join(' · ');
+      return;
+    }
 
-      if(!extId){
-        parts.push('<span style="color:var(--warning)">Extension: not detected</span>');
+    // Ask the extension for HEALTH status — it knows about the proxy,
+    // direct API key, and Ollama. We also ask it to test the proxy.
+    chrome.runtime.sendMessage(extId, { type:'HEALTH' }, function(resp){
+      if(chrome.runtime.lastError || !resp){
+        parts.push('<span style="color:var(--danger)">Extension: cannot reach</span>');
         statusEl.innerHTML = parts.join(' · ');
         return;
       }
-      chrome.runtime.sendMessage(extId, { type:'HEALTH' }, function(resp){
-        if(chrome.runtime.lastError || !resp){
-          parts.push('<span style="color:var(--danger)">Extension: cannot reach</span>');
+      parts.push('<span style="color:var(--success)">✓ Extension v' + (resp.version || '?') + '</span>');
+      if(resp.claude && resp.claude.configured){
+        parts.push('<span style="color:var(--text3)">Custom key: active</span>');
+      }
+
+      // Test the server proxy via the extension (bypasses CORS)
+      chrome.runtime.sendMessage(extId, { type:'TEST_AI_PROXY' }, function(proxyResp){
+        if(chrome.runtime.lastError){ proxyResp = null; }
+        if(proxyResp && proxyResp.ok){
+          parts.unshift('<span style="color:var(--success)">✓ AI Server connected</span> (Claude Haiku 4.5)');
         } else {
-          parts.push('<span style="color:var(--success)">✓ Extension v' + (resp.version || '?') + '</span>');
-          if(resp.claude && resp.claude.configured){
-            parts.push('<span style="color:var(--text3)">Custom key: active</span>');
-          }
+          var reason = (proxyResp && proxyResp.error) || 'unavailable';
+          parts.unshift('<span style="color:var(--warning)">AI Server: ' + reason + '</span>');
         }
         statusEl.innerHTML = parts.join(' · ');
       });
     });
 
     // Load the masked key display
-    if(extId){
-      chrome.runtime.sendMessage(extId, { type:'GET_API_KEY' }, function(resp){
-        if(resp && resp.ok && resp.key){
-          var input = document.getElementById('settingsClaudeKey');
-          if(input && !input.value) input.placeholder = resp.key + ' (saved)';
-        }
-      });
-    }
+    chrome.runtime.sendMessage(extId, { type:'GET_API_KEY' }, function(resp){
+      if(resp && resp.ok && resp.key){
+        var input = document.getElementById('settingsClaudeKey');
+        if(input && !input.value) input.placeholder = resp.key + ' (saved)';
+      }
+    });
   });
 }
 
