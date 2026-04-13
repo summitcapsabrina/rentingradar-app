@@ -14259,7 +14259,7 @@ function saveClaudeApiKey(){
   var key = (input && input.value || '').trim();
   if(!key){ showToast('Please enter an API key','warning'); return; }
   if(!key.startsWith('sk-ant-')){ showToast('Invalid key format — should start with sk-ant-','warning'); return; }
-  var extId = typeof RR_EXTENSION_ID !== 'undefined' ? RR_EXTENSION_ID : null;
+  var extId = window.RR_EXTENSION_INSTALLED || null;
   if(!extId){ showToast('Chrome extension not detected. Install the RentingRadar extension first.','warning'); return; }
   chrome.runtime.sendMessage(extId, { type:'SET_API_KEY', key: key }, function(resp){
     if(chrome.runtime.lastError || !resp || !resp.ok){
@@ -14278,54 +14278,68 @@ function checkAiEngineStatus(){
   if(!statusEl) return;
   statusEl.textContent = 'Checking...';
 
-  // Check server-side proxy availability
-  var user = firebase.auth().currentUser;
-  var proxyOk = false;
-  var proxyPromise = (user ? user.getIdToken() : Promise.resolve(null)).then(function(token){
-    if(!token) return false;
-    return fetch('/api/aiEnrich', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-      body: JSON.stringify({ systemPrompt: 'test', userPrompt: 'Return exactly: {"test":true}' })
-    }).then(function(r){ return r.ok; }).catch(function(){ return false; });
-  }).catch(function(){ return false; });
+  // Probe extension first if not already detected
+  var probePromise = window.RR_EXTENSION_INSTALLED
+    ? Promise.resolve(window.RR_EXTENSION_INSTALLED)
+    : (typeof _rrProbeExtension === 'function' ? _rrProbeExtension() : Promise.resolve(null));
 
-  // Check extension status
-  var extId = typeof RR_EXTENSION_ID !== 'undefined' ? RR_EXTENSION_ID : null;
-  proxyPromise.then(function(pOk){
-    proxyOk = pOk;
-    var parts = [];
-    if(proxyOk){
-      parts.push('<span style="color:var(--success)">✓ AI Server connected</span> (Claude Haiku 4.5)');
-    } else {
-      parts.push('<span style="color:var(--warning)">AI Server: unavailable</span>');
-    }
-    if(!extId){
-      parts.push('<span style="color:var(--warning)">Extension: not detected</span>');
-      statusEl.innerHTML = parts.join(' · ');
-      return;
-    }
-    chrome.runtime.sendMessage(extId, { type:'HEALTH' }, function(resp){
-      if(chrome.runtime.lastError || !resp){
-        parts.push('<span style="color:var(--danger)">Extension: cannot reach</span>');
+  probePromise.then(function(extId){
+    // Check server-side proxy: send a minimal request and accept either
+    // success OR a 400 "missing fields" error — both prove the function is live.
+    var user = firebase.auth().currentUser;
+    var proxyPromise = (user ? user.getIdToken() : Promise.resolve(null)).then(function(token){
+      if(!token) return 'no-auth';
+      return fetch('/api/aiEnrich', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+        body: JSON.stringify({})
+      }).then(function(r){
+        // 400 = function is live but rejected empty body (expected)
+        // 200 = function responded (unexpected but fine)
+        // 5xx = function error (API key not set, etc.)
+        if(r.ok || r.status === 400) return 'ok';
+        return r.json().then(function(j){ return j.error && j.error.message || 'error'; }).catch(function(){ return 'error'; });
+      }).catch(function(){ return 'unreachable'; });
+    }).catch(function(){ return 'no-auth'; });
+
+    proxyPromise.then(function(proxyStatus){
+      var parts = [];
+      if(proxyStatus === 'ok'){
+        parts.push('<span style="color:var(--success)">✓ AI Server connected</span> (Claude Haiku 4.5)');
+      } else if(proxyStatus === 'no-auth'){
+        parts.push('<span style="color:var(--warning)">AI Server: sign in to test</span>');
       } else {
-        parts.push('<span style="color:var(--success)">✓ Extension v' + (resp.version || '?') + '</span>');
-        if(resp.claude && resp.claude.configured){
-          parts.push('<span style="color:var(--text3)">Custom key: active</span>');
+        parts.push('<span style="color:var(--warning)">AI Server: ' + proxyStatus + '</span>');
+      }
+
+      if(!extId){
+        parts.push('<span style="color:var(--warning)">Extension: not detected</span>');
+        statusEl.innerHTML = parts.join(' · ');
+        return;
+      }
+      chrome.runtime.sendMessage(extId, { type:'HEALTH' }, function(resp){
+        if(chrome.runtime.lastError || !resp){
+          parts.push('<span style="color:var(--danger)">Extension: cannot reach</span>');
+        } else {
+          parts.push('<span style="color:var(--success)">✓ Extension v' + (resp.version || '?') + '</span>');
+          if(resp.claude && resp.claude.configured){
+            parts.push('<span style="color:var(--text3)">Custom key: active</span>');
+          }
         }
-      }
-      statusEl.innerHTML = parts.join(' · ');
+        statusEl.innerHTML = parts.join(' · ');
+      });
     });
+
+    // Load the masked key display
+    if(extId){
+      chrome.runtime.sendMessage(extId, { type:'GET_API_KEY' }, function(resp){
+        if(resp && resp.ok && resp.key){
+          var input = document.getElementById('settingsClaudeKey');
+          if(input && !input.value) input.placeholder = resp.key + ' (saved)';
+        }
+      });
+    }
   });
-  // Load the masked key display
-  if(extId){
-    chrome.runtime.sendMessage(extId, { type:'GET_API_KEY' }, function(resp){
-      if(resp && resp.ok && resp.key){
-        var input = document.getElementById('settingsClaudeKey');
-        if(input && !input.value) input.placeholder = resp.key + ' (saved)';
-      }
-    });
-  }
 }
 
 // ============================================================
