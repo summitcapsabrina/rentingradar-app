@@ -155,7 +155,7 @@
         data.nightlyRate = money(value);
       }
       else if (/^Occupancy$/i.test(label) && data.occupancy == null) {
-        data.occupancy = pct(value);
+        data.occupancy = num(value);
       }
       else if (/^Days?\s*Available$/i.test(label) && data.daysAvailable == null) {
         data.daysAvailable = num(value);
