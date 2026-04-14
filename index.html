@@ -11723,7 +11723,7 @@ function addComp(recId, category){
 
   // Only AirDNA links are accepted for competitor analysis. If the
   // user pastes anything else, tell them.
-  const isAirdna = /^https?:\/\/(?:www\.)?airdna\.co\//i.test(link);
+  const isAirdna = /^https?:\/\/(?:[a-z0-9-]+\.)?airdna\.co\//i.test(link);
   if(!isAirdna){
     showAppAlert('Competitor Analysis accepts AirDNA links only. Please paste a URL from airdna.co.', {title: 'AirDNA link required', icon: '⚠️'});
     return;
