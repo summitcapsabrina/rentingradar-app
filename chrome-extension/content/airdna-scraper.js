@@ -75,6 +75,37 @@
     } catch (_) { return url; }
   }
 
+  // Detect if AirDNA is showing a login wall or paywall instead of
+  // listing data. Returns a descriptive string or null if OK.
+  function detectLoginWall() {
+    const url = location.href.toLowerCase();
+    const body = (document.body.innerText || '').toLowerCase();
+    const title = (document.title || '').toLowerCase();
+
+    // URL-based detection: redirected to login/signup/auth pages
+    if (/\/(login|signin|sign-in|signup|sign-up|auth|register)\b/i.test(url)) {
+      return 'login-redirect';
+    }
+
+    // Common login page signals in the page text
+    if (/sign in to (your account|airdna|continue)/i.test(body)) return 'login-page';
+    if (/log\s*in to (your account|airdna|continue)/i.test(body)) return 'login-page';
+    if (/create (a free |an )?account/i.test(body) && !/already have an account/i.test(body) === false) {
+      // Only flag if the page looks like a registration form, not a listing
+      if (!/revenue|occupancy|nightly/i.test(body)) return 'signup-page';
+    }
+
+    // Paywall / upgrade gate
+    if (/upgrade (your plan|to |now)/i.test(body) && !/revenue|occupancy/i.test(body)) return 'paywall';
+    if (/subscribe to (view|access|unlock)/i.test(body)) return 'paywall';
+    if (/start your free trial/i.test(body) && !/revenue|occupancy/i.test(body)) return 'paywall';
+
+    // Title-based detection
+    if (/log\s*in|sign\s*in|sign\s*up/i.test(title) && !/listing|property|rental/i.test(title)) return 'login-page';
+
+    return null;
+  }
+
   function extract() {
     const data = {
       title: text('h1') || document.title || null,
@@ -94,7 +125,15 @@
       rating: null,
       notes: null,
       raw: {},
+      _loginRequired: null,
     };
+
+    // Check for login/paywall before scraping
+    const loginCheck = detectLoginWall();
+    if (loginCheck) {
+      data._loginRequired = loginCheck;
+      return data;
+    }
 
     // Try to find the Airbnb link
     const abnb = findAirbnbLink();
@@ -153,6 +192,11 @@
   function run(attempt) {
     try {
       const data = extract();
+      // If login/paywall detected, return immediately — no point retrying
+      if (data._loginRequired) {
+        chrome.runtime.sendMessage({ type: 'SCRAPE_RESULT', payload: data });
+        return;
+      }
       const hasContent =
         data.link || data.title || data.annualRevenue != null ||
         data.nightlyRate != null || data.occupancy != null ||

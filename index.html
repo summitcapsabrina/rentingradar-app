@@ -11742,6 +11742,10 @@ function addComp(recId, category){
       if(!res || !res.ok){
         if(res && res.error === 'extension-not-installed'){
           showAppAlert('Install the RentingRadar Chrome extension to import from AirDNA. Open the banner above and click Install.', {title: 'Extension required', icon: '🧩'});
+        } else if(res && res.error === 'airdna-login-required'){
+          showAppAlert(res.detail || 'Please log into AirDNA in your browser first, then try importing again.', {title: 'AirDNA Login Required', icon: '🔒'});
+        } else if(res && res.error === 'airdna-paywall'){
+          showAppAlert(res.detail || 'This AirDNA listing requires a paid subscription.', {title: 'AirDNA Subscription Required', icon: '🔒'});
         } else {
           showAppAlert('Could not import from AirDNA: ' + ((res && res.error) || 'Unknown error'), {title: 'Import failed', icon: '⚠️'});
         }

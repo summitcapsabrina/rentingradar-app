@@ -262,8 +262,48 @@ async function scrapeAny(url, hint) {
   try {
     const data = await scrapeInBackgroundTab(url, file);
     if (!data) return { ok: false, error: 'Could not read details from the page. Make sure you are signed in where required.' };
+
+    // Detect AirDNA login/paywall gate
+    if (kind === 'airdna' && data._loginRequired) {
+      const reason = data._loginRequired;
+      if (reason === 'paywall') {
+        return { ok: false, error: 'airdna-paywall', detail: 'This AirDNA listing requires a paid subscription. Please upgrade your AirDNA plan or use a listing you have access to.' };
+      }
+      return { ok: false, error: 'airdna-login-required', detail: 'Please log into AirDNA in your browser first, then try importing again.' };
+    }
+
     // Tag the payload with its kind so the CRM knows how to route it
     data._kind = kind;
+
+    // ----- v0.12.0: AUTO-SCRAPE AIRBNB LISTING FOR COMPETITOR DATA -----
+    // When importing an AirDNA competitor, if the AirDNA page contains a
+    // link to the underlying Airbnb listing, open it in a background tab
+    // and scrape guests, bedrooms, beds, bathrooms, and host name.
+    // Airbnb is the source of truth for these fields; AirDNA provides
+    // revenue, occupancy, nightly rate, and days available.
+    if (kind === 'airdna' && data.link && /airbnb/i.test(data.link)) {
+      try {
+        console.log('[RR ext] Auto-scraping Airbnb listing:', data.link);
+        const airbnbData = await scrapeInBackgroundTab(data.link, 'content/airbnb-scraper.js');
+        if (airbnbData) {
+          // Airbnb is primary source for these fields
+          if (airbnbData.guests != null) data.guests = airbnbData.guests;
+          if (airbnbData.bedrooms != null) data.bedrooms = airbnbData.bedrooms;
+          if (airbnbData.beds != null) data.beds = airbnbData.beds;
+          if (airbnbData.bathrooms != null) data.bathrooms = airbnbData.bathrooms;
+          if (airbnbData.host) data.host = airbnbData.host;
+          data._airbnbEnriched = true;
+          console.log('[RR ext] Airbnb data merged:', {
+            guests: airbnbData.guests, bedrooms: airbnbData.bedrooms,
+            beds: airbnbData.beds, bathrooms: airbnbData.bathrooms,
+            host: airbnbData.host
+          });
+        }
+      } catch (e) {
+        console.warn('[RR ext] Airbnb auto-scrape failed (using AirDNA data as fallback):', e.message);
+        data._airbnbEnriched = false;
+      }
+    }
 
     // ----- v0.10.0: AI ENRICHMENT (Claude primary, Ollama fallback) -----
     // Dictionary extractor runs deterministically over the full page text,
@@ -794,8 +834,8 @@ const AMENITY_SOURCE_TRIGGERS = {
   'Pest Control': ['pest control included','pest control'],
   // Pets
   // v0.9.0: Pet policy is now multi-select. Each type triggers independently.
-  'Cats Allowed': ['cats allowed','cats welcome','cats ok','cats permitted','cat friendly'],
-  'Dogs Allowed': ['dogs allowed','dogs welcome','dogs ok','dogs permitted','dog friendly','pets allowed','pets welcome','pet friendly','pet-friendly'],
+  'Cats Allowed': ['cats allowed','cats welcome','cats ok','cats permitted','cat friendly','cats, dogs ok','cats, dogs allowed','cats and dogs','cats & dogs'],
+  'Dogs Allowed': ['dogs allowed','dogs welcome','dogs ok','dogs permitted','dog friendly','cats, dogs ok','cats, dogs allowed','cats and dogs','cats & dogs','dogs, cats ok','dogs, cats allowed'],
   'Small Dogs Only': ['small dogs only','small dogs allowed','small dogs'],
   'Small Pets Only': ['small pets','small animal'],
   'Case by Case': ['case by case','case-by-case','upon approval','with approval'],
@@ -1105,10 +1145,9 @@ function resolvePropertyDetailsContradictions(pd) {
       delete pd.parking; // let the user decide rather than lying
     }
   }
-  // Pet policy: if petsAllowed is ["No Pets"] but the amenities mention a dog park, something's wrong — drop the contradictory value.
-  if (Array.isArray(pd.petsAllowed) && pd.petsAllowed.length === 1 && pd.petsAllowed[0] === 'No Pets' && comm.includes('Dog Park')) {
-    delete pd.petsAllowed;
-  }
+  // v0.11.0: If "No Pets" is set, trust it — a building can have a community
+  // dog park while individual units still prohibit pets. Don't second-guess
+  // an explicit "No Pets" policy from the listing.
   // Laundry: community has "On-Site Laundry" and laundry is missing → reflect it
   if (!pd.laundry && comm.includes('On-Site Laundry')) {
     pd.laundry = 'Shared/On-Site';
@@ -1546,6 +1585,18 @@ function mergePropertyDetails(base, ai) {
     if (v == null || v === '' || (Array.isArray(v) && v.length === 0)) continue;
     if (Array.isArray(v)) {
       const existing = Array.isArray(out[k]) ? out[k] : [];
+      // v0.11.0: petsAllowed — "No Pets" is authoritative and overrides
+      // any "allowed" values. If EITHER source says "No Pets", use that
+      // exclusively. This prevents contradictory states like
+      // ["Dogs Allowed", "No Pets"] from dictionary + AI disagreeing.
+      if (k === 'petsAllowed') {
+        const combined = existing.concat(v);
+        const hasNoPets = combined.some(x => /no pets/i.test(x));
+        if (hasNoPets) {
+          out[k] = ['No Pets'];
+          continue;
+        }
+      }
       // Case-insensitive dedup: prefer existing (predefined) casing
       const lc = new Set(existing.map(x => String(x).toLowerCase()));
       out[k] = existing.concat(v.filter(x => !lc.has(String(x).toLowerCase())));
