@@ -11,12 +11,17 @@
     return el ? el.textContent.trim() : null;
   }
 
+  // Parse a number, handling K/M suffixes (e.g. "$206.1K" → 206100)
   function num(str) {
     if (str == null) return null;
-    const m = String(str).replace(/[, ]/g, '').match(/-?\d+(?:\.\d+)?/);
+    const s = String(str).replace(/[,$\s€£]/g, '');
+    const m = s.match(/(-?\d+(?:\.\d+)?)\s*([kKmM])?/);
     if (!m) return null;
-    const n = parseFloat(m[0]);
-    return isNaN(n) ? null : n;
+    let n = parseFloat(m[1]);
+    if (isNaN(n)) return null;
+    if (m[2] && /k/i.test(m[2])) n *= 1000;
+    if (m[2] && /m/i.test(m[2])) n *= 1000000;
+    return n;
   }
 
   function money(str) {
@@ -30,37 +35,32 @@
     return n > 1 ? n / 100 : n;
   }
 
-  // Find a metric value by scanning for a label anywhere on the page.
-  function findMetric(labelRegex) {
-    const nodes = document.querySelectorAll('div,span,p,dt,dd,li,section');
-    for (const n of nodes) {
-      const t = (n.textContent || '').trim();
-      if (!t || t.length > 80) continue;
-      if (!labelRegex.test(t)) continue;
-      // Look at sibling / parent for the value
-      const candidates = [
-        n.nextElementSibling,
-        n.previousElementSibling,
-        n.parentElement && n.parentElement.querySelector('[class*="value"],[class*="amount"],strong,b,dd'),
-      ].filter(Boolean);
-      for (const c of candidates) {
-        const v = (c.textContent || '').trim();
-        if (v && /\d/.test(v) && v.length < 40) return v;
+  // Look for a link to the underlying Airbnb listing.
+  function findAirbnbLink() {
+    // If the URL contains a listing_id, use it to find the exact Airbnb link
+    const urlParams = new URLSearchParams(location.search);
+    const listingId = urlParams.get('listing_id');
+    if (listingId) {
+      // listing_id format: "abnb_1035961933887794067" → airbnb room ID is the numeric part
+      const roomId = listingId.replace(/^abnb_/, '');
+      if (/^\d+$/.test(roomId)) {
+        // Look for an anchor with this specific room ID first
+        const anchors = document.querySelectorAll('a[href*="airbnb"]');
+        for (const a of anchors) {
+          if (a.href.includes(roomId)) return a.href;
+        }
+        // Construct the link if not found in DOM
+        return 'https://www.airbnb.com/rooms/' + roomId;
       }
     }
-    return null;
-  }
 
-  // Look for a link to the underlying Airbnb listing. AirDNA usually
-  // renders a "View on Airbnb" button / anchor.
-  function findAirbnbLink() {
+    // Fallback: scan all anchors
     const anchors = document.querySelectorAll('a[href]');
     for (const a of anchors) {
       const href = a.getAttribute('href') || '';
       if (/airbnb\.com\/rooms\//i.test(href)) return href;
       if (/airbnb\.[a-z.]+\/rooms\//i.test(href)) return href;
     }
-    // Sometimes AirDNA uses an outbound redirect; grab anything mentioning airbnb
     for (const a of anchors) {
       const href = a.getAttribute('href') || '';
       if (/airbnb/i.test(href) && /\/rooms?\//i.test(href)) return href;
@@ -75,35 +75,94 @@
     } catch (_) { return url; }
   }
 
-  // Detect if AirDNA is showing a login wall or paywall instead of
-  // listing data. Returns a descriptive string or null if OK.
+  // Detect if AirDNA is showing a login wall or paywall.
   function detectLoginWall() {
     const url = location.href.toLowerCase();
     const body = (document.body.innerText || '').toLowerCase();
     const title = (document.title || '').toLowerCase();
 
-    // URL-based detection: redirected to login/signup/auth pages
-    if (/\/(login|signin|sign-in|signup|sign-up|auth|register)\b/i.test(url)) {
+    // URL-based: redirected to auth/login/signup pages
+    if (/auth\.airdna/i.test(url) && /\/(login|signin|sign-in|signup|sign-up|oauth2|register)\b/i.test(url)) {
       return 'login-redirect';
     }
 
-    // Common login page signals in the page text
-    if (/sign in to (your account|airdna|continue)/i.test(body)) return 'login-page';
-    if (/log\s*in to (your account|airdna|continue)/i.test(body)) return 'login-page';
-    if (/create (a free |an )?account/i.test(body) && !/already have an account/i.test(body) === false) {
-      // Only flag if the page looks like a registration form, not a listing
-      if (!/revenue|occupancy|nightly/i.test(body)) return 'signup-page';
+    // Page text signals — but only if listing data is NOT also present
+    // (AirDNA sometimes shows a login modal over listing data)
+    const hasData = /annual revenue|daily rate|occupancy/i.test(body);
+    if (!hasData) {
+      if (/sign in to (your account|airdna|continue)/i.test(body)) return 'login-page';
+      if (/log\s*in to (your account|airdna|continue)/i.test(body)) return 'login-page';
+      if (/create your free account/i.test(body)) return 'signup-page';
+      if (/subscribe to (view|access|unlock)/i.test(body)) return 'paywall';
+      if (/start your free trial/i.test(body)) return 'paywall';
     }
 
-    // Paywall / upgrade gate
-    if (/upgrade (your plan|to |now)/i.test(body) && !/revenue|occupancy/i.test(body)) return 'paywall';
-    if (/subscribe to (view|access|unlock)/i.test(body)) return 'paywall';
-    if (/start your free trial/i.test(body) && !/revenue|occupancy/i.test(body)) return 'paywall';
-
-    // Title-based detection
-    if (/log\s*in|sign\s*in|sign\s*up/i.test(title) && !/listing|property|rental/i.test(title)) return 'login-page';
+    // Title-based
+    if (/log\s*in|sign\s*in|sign\s*up/i.test(title) && !/listing|property|rental|airdna/i.test(title)) return 'login-page';
 
     return null;
+  }
+
+  // ── Primary extraction: body text scoped to the selected listing ──
+  // The AirDNA listing detail page shows "Short-term Rental Listing Overview"
+  // followed by the listing title, metadata, and metrics in a predictable
+  // value→label line pattern. We scope extraction to the text after this
+  // header to avoid picking up metrics from other listings on the page.
+  function extractFromScopedText(data) {
+    const body = document.body.innerText || '';
+    const overviewIdx = body.indexOf('Short-term Rental Listing Overview');
+    if (overviewIdx < 0) return false;
+
+    // Grab a chunk of text containing the selected listing's detail
+    // (600 chars is enough for header + all 5 metric pairs)
+    const chunk = body.substring(overviewIdx, overviewIdx + 800);
+    const lines = chunk.split(/\n/).map(l => l.trim()).filter(Boolean);
+
+    // Extract header info: beds, baths, guests, rating
+    // Lines after "Short-term Rental Listing Overview" are: beds, baths, guests, "rating (reviews)"
+    // e.g. ["Short-term...", "2", "2", "6", "4.7 (122)", "Chelsea Beautiful..."]
+    if (lines.length >= 5) {
+      const n1 = parseInt(lines[1], 10);
+      const n2 = parseInt(lines[2], 10);
+      const n3 = parseInt(lines[3], 10);
+      const ratingMatch = lines[4].match(/^(\d+(?:\.\d+)?)\s*\(\d+\)/);
+      if (!isNaN(n1)) data.bedrooms = n1;
+      if (!isNaN(n2)) data.bathrooms = n2;
+      if (!isNaN(n3)) data.guests = n3;
+      if (ratingMatch) data.rating = parseFloat(ratingMatch[1]);
+    }
+
+    // Extract listing title (first line that starts with uppercase and is > 5 chars)
+    for (let i = 4; i < Math.min(lines.length, 10); i++) {
+      const l = lines[i];
+      if (/^[A-Z]/.test(l) && l.length > 5 && !/^(Market|Type|Price|Connect|Get )/.test(l)) {
+        if (!data.title || data.title === document.title) data.title = l;
+        break;
+      }
+    }
+
+    // Extract value→label metric pairs
+    // Pattern: line[i] = value (e.g. "$206.1K"), line[i+1] = label (e.g. "Annual Revenue")
+    for (let i = 0; i < lines.length - 1; i++) {
+      const value = lines[i];
+      const label = lines[i + 1];
+
+      // "Annual Revenue" or "Revenue" — but NOT "Revenue Potential"
+      if (/^(?:Annual\s+)?Revenue$/i.test(label) && data.annualRevenue == null) {
+        data.annualRevenue = money(value);
+      }
+      else if (/^(?:Average\s+)?Daily\s*Rate$/i.test(label) && data.nightlyRate == null) {
+        data.nightlyRate = money(value);
+      }
+      else if (/^Occupancy$/i.test(label) && data.occupancy == null) {
+        data.occupancy = pct(value);
+      }
+      else if (/^Days?\s*Available$/i.test(label) && data.daysAvailable == null) {
+        data.daysAvailable = num(value);
+      }
+    }
+
+    return data.annualRevenue != null || data.nightlyRate != null;
   }
 
   function extract() {
@@ -111,7 +170,7 @@
       title: text('h1') || document.title || null,
       address: text('[data-testid="listing-address"]') || text('[class*="ddress"]') || null,
       airdnaUrl: location.href,
-      link: null,         // Airbnb listing link
+      link: null,
       linkShort: null,
       annualRevenue: null,
       daysAvailable: null,
@@ -135,54 +194,28 @@
       return data;
     }
 
-    // Try to find the Airbnb link
+    // Airbnb link
     const abnb = findAirbnbLink();
     if (abnb) {
       data.link = abnb;
       data.linkShort = shortLink(abnb);
     }
 
-    // Metric cards — walk generic stat containers
-    const cards = document.querySelectorAll('[class*="metric"],[class*="Metric"],[class*="stat"],[class*="Stat"],[data-testid*="metric"]');
-    cards.forEach((card) => {
-      const labelEl = card.querySelector('[class*="label"],[class*="Label"],[class*="title"],dt');
-      const valueEl = card.querySelector('[class*="value"],[class*="Value"],[class*="amount"],dd,strong');
-      if (!labelEl || !valueEl) return;
-      const L = (labelEl.textContent || '').trim().toLowerCase();
-      const V = (valueEl.textContent || '').trim();
-      if (!L || !V) return;
-      data.raw[L] = V;
-      if (/revenue/.test(L) && data.annualRevenue == null) data.annualRevenue = money(V);
-      else if (/adr|daily rate|nightly/.test(L) && data.nightlyRate == null) data.nightlyRate = money(V);
-      else if (/occupancy/.test(L) && data.occupancy == null) data.occupancy = pct(V);
-      else if (/days? (available|booked)/.test(L) && data.daysAvailable == null) data.daysAvailable = num(V);
-      else if (/bedroom/.test(L) && data.bedrooms == null) data.bedrooms = num(V);
-      else if (/bathroom/.test(L) && data.bathrooms == null) data.bathrooms = num(V);
-      else if (/guest/.test(L) && data.guests == null) data.guests = num(V);
-      else if (/\bbeds?\b/.test(L) && data.beds == null) data.beds = num(V);
-      else if (/rating/.test(L) && data.rating == null) data.rating = num(V);
-      else if (/host/.test(L) && !data.host) data.host = V;
-    });
+    // Primary: scoped body text extraction (reliable for app.airdna.co)
+    extractFromScopedText(data);
 
-    // Targeted fallbacks by label text
-    if (data.annualRevenue == null) data.annualRevenue = money(findMetric(/annual\s*revenue/i));
-    if (data.nightlyRate == null) data.nightlyRate = money(findMetric(/average\s*daily\s*rate|\badr\b|nightly\s*rate/i));
-    if (data.occupancy == null) data.occupancy = pct(findMetric(/occupancy/i));
-    if (data.daysAvailable == null) data.daysAvailable = num(findMetric(/days?\s*(available|booked)/i));
-    if (data.rating == null) data.rating = num(findMetric(/overall\s*rating|rating/i));
-
-    // Body-text fallbacks
+    // Fallback: body-text regex for beds/baths/guests if still missing
     const body = document.body.innerText || '';
     if (data.bedrooms == null) {
-      const m = body.match(/(\d+(?:\.\d+)?)\s*(?:bed|br|bedroom)/i);
-      if (m) data.bedrooms = parseFloat(m[1]);
+      const m = body.match(/(\d+)\s*(?:bedrooms?|br)\b/i);
+      if (m) data.bedrooms = parseInt(m[1], 10);
     }
     if (data.bathrooms == null) {
-      const m = body.match(/(\d+(?:\.\d+)?)\s*(?:bath|ba|bathroom)/i);
+      const m = body.match(/(\d+(?:\.\d+)?)\s*(?:bathrooms?|ba)\b/i);
       if (m) data.bathrooms = parseFloat(m[1]);
     }
     if (data.guests == null) {
-      const m = body.match(/(\d+)\s*guests?/i);
+      const m = body.match(/(\d+)\s*guests?\b/i);
       if (m) data.guests = parseInt(m[1], 10);
     }
 
@@ -192,7 +225,7 @@
   function run(attempt) {
     try {
       const data = extract();
-      // If login/paywall detected, return immediately — no point retrying
+      // If login/paywall detected, return immediately
       if (data._loginRequired) {
         chrome.runtime.sendMessage({ type: 'SCRAPE_RESULT', payload: data });
         return;
