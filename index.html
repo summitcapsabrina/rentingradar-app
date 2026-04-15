@@ -8493,6 +8493,7 @@ if(_launchTutorialAfterAuth){ history.replaceState(null, '', window.location.pat
 // already authenticated as the user — writes to Firestore. Because
 // the extension never touches Firebase, there's no auth bridge.
 window.RR_EXTENSION_IDS = [
+  'eambgkhnefkigdndllhmakfedkncgmoh', // Chrome Web Store (published)
   'caeefnfpdafpffkhoojkkalcpdinbkcm', // unpacked / development
 ];
 
@@ -8678,7 +8679,7 @@ window.addEventListener('message', (event) => {
 // Install-prompt banner — renders at the top of the app when the
 // Chrome extension isn't detected. Dismissible; remembers dismissal
 // for 7 days via localStorage.
-const RR_EXT_WEB_STORE_URL = 'https://chromewebstore.google.com/detail/rentingradar/caeefnfpdafpffkhoojkkalcpdinbkcm';
+const RR_EXT_WEB_STORE_URL = 'https://chromewebstore.google.com/detail/rentingradar/eambgkhnefkigdndllhmakfedkncgmoh';
 const RR_EXT_DISMISS_KEY = 'rrExtDismissedUntil';
 
 function rrShowInstallBanner(){
