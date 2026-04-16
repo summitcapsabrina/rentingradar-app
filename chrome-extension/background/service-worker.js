@@ -519,7 +519,7 @@ const OLLAMA_FIELD_OPTIONS = {
   outdoor: ['Balcony','Patio','Deck','Porch','Screened Porch','Sunroom','Rooftop','Courtyard','Lanai'],
   exteriorFeatures: ['Fenced Yard','Sprinkler System','Outdoor Lighting','Outdoor Kitchen/BBQ','Fire Pit','Garden Space','Shed/Outbuilding','RV Parking','Boat Parking','EV Charging','Gated Entry','Desert Landscaping','Pool Fence'],
   communityAmenities: ['Gym/Fitness Center','Clubhouse','Business Center','Package Lockers','Dog Park','Playground','Swimming Pool','Community Spa/Hot Tub','Sauna','Elevator','Concierge/Doorman','On-Site Management','On-Site Maintenance','Bike Storage','BBQ/Grill Area','Rooftop Lounge','Tennis Court','Pickleball Court'],
-  utilitiesIncluded: ['Water','Hot Water','Gas','Electric','Trash','Sewer','Recycling','Internet/WiFi','Cable TV','Landscaping/Grounds','Pest Control'],
+  utilitiesIncluded: ['Water','Hot Water','Gas','Electric','Heat','Trash','Sewer','Recycling','Internet/WiFi','Cable TV','Landscaping/Grounds','Pest Control'],
   petsAllowed: ['Cats Allowed','Dogs Allowed','Small Dogs Only','Small Pets Only','Case by Case','Service Animals Only','No Pets'],
   safetyFeatures: ['Smoke Detectors','Carbon Monoxide Detectors','Fire Extinguisher','Security System/Alarm','Gated Entry','Deadbolt Locks','Smart Locks','Security Cameras','24-Hour Security'],
 };
@@ -912,9 +912,10 @@ const AMENITY_SOURCE_TRIGGERS = {
   // listings' utilities). Use "utilities included" as a section-level trigger.
   'Water': ['water included','includes water','water is included','utilities included'],
   'Hot Water': ['hot water included','includes hot water','hot water is included','hot water'],
-  'Gas': ['gas included','includes gas','heat included','heating included','heat and hot water included','includes heat'],
-  'Electric': ['electric included','electricity included','includes electric'],
-  'Trash': ['trash included','garbage included','includes trash','trash removal'],
+  'Gas': ['gas included','includes gas'],
+  'Electric': ['electric included','electricity included','includes electric','electricity'],
+  'Heat': ['heat included','heating included','heat and hot water included','includes heat','heat '],
+  'Trash': ['trash included','garbage included','includes trash','trash removal','trash pickup'],
   'Sewer': ['sewer included','includes sewer'],
   'Recycling': ['recycling included'],
   'Internet/WiFi': ['internet included','wifi included','wi-fi included','includes wifi'],
@@ -1147,6 +1148,79 @@ function isAmenityInSource(value, text) {
   // Multi-word value: require at least 2 words present
   const hits = words.filter((w) => text.includes(w));
   return hits.length >= 2;
+}
+
+// v1.14.0: Normalize common synonyms in multi-select arrays so the AI
+// doesn't produce duplicates like "Electricity" + "Electric" or
+// "Trash removal" + "Trash".
+const MULTI_SELECT_SYNONYMS = {
+  // Utilities
+  'electricity':    'Electric',
+  'electric':       'Electric',
+  'electrical':     'Electric',
+  'trash removal':  'Trash',
+  'trash pickup':   'Trash',
+  'garbage':        'Trash',
+  'garbage removal':'Trash',
+  'trash collection':'Trash',
+  'heat':           'Heat',
+  'heating':        'Heat',
+  'wifi':           'Internet/WiFi',
+  'wi-fi':          'Internet/WiFi',
+  'internet':       'Internet/WiFi',
+  'cable':          'Cable TV',
+  'cable television':'Cable TV',
+  'water/sewer':    'Water', // Also adds Sewer below
+  'hot water':      'Hot Water',
+  'lawn care':      'Landscaping/Grounds',
+  'lawn':           'Landscaping/Grounds',
+  'grounds':        'Landscaping/Grounds',
+  'pest':           'Pest Control',
+  // Appliances
+  'dishwasher':     'Dishwasher',
+  'fridge':         'Refrigerator',
+  'refrigerator':   'Refrigerator',
+  'microwave':      'Microwave',
+  'garbage disposal':'Garbage Disposal',
+  'disposal':       'Garbage Disposal',
+};
+// Special compound synonyms that expand to multiple values
+const MULTI_SELECT_EXPANSIONS = {
+  'water/sewer': ['Water', 'Sewer'],
+  'water & sewer': ['Water', 'Sewer'],
+  'water and sewer': ['Water', 'Sewer'],
+  'trash/recycling': ['Trash', 'Recycling'],
+  'trash & recycling': ['Trash', 'Recycling'],
+  'trash and recycling': ['Trash', 'Recycling'],
+};
+
+function normalizeMultiSelectSynonyms(pd) {
+  if (!pd || typeof pd !== 'object') return;
+  for (const k of Object.keys(pd)) {
+    const v = pd[k];
+    if (!Array.isArray(v)) continue;
+    const normalized = [];
+    for (const item of v) {
+      if (typeof item !== 'string') { normalized.push(item); continue; }
+      const lower = item.trim().toLowerCase();
+      // Check compound expansions first
+      if (MULTI_SELECT_EXPANSIONS[lower]) {
+        for (const exp of MULTI_SELECT_EXPANSIONS[lower]) {
+          if (!normalized.includes(exp)) normalized.push(exp);
+        }
+        continue;
+      }
+      // Check single synonym
+      const mapped = MULTI_SELECT_SYNONYMS[lower];
+      if (mapped) {
+        if (!normalized.includes(mapped)) normalized.push(mapped);
+      } else {
+        // Keep original if no synonym match
+        if (!normalized.includes(item)) normalized.push(item);
+      }
+    }
+    pd[k] = normalized;
+  }
 }
 
 // Strip any values from the merged propertyDetails that aren't traceable
@@ -1626,6 +1700,11 @@ Return ONLY the JSON object.`;
       llmPd.petsAllowed = [llmPd.petsAllowed];
     }
   }
+
+  // v1.14.0: Normalize synonyms in multi-select fields so the AI doesn't
+  // create duplicates (e.g. "Electricity" alongside "Electric").
+  normalizeMultiSelectSynonyms(llmPd);
+  normalizeMultiSelectSynonyms(out.propertyDetails);
 
   mergeLlmIntoDictionary(out.propertyDetails, llmPd, lowerFullText);
 
