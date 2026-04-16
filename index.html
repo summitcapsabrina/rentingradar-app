@@ -5075,15 +5075,13 @@ async function handleExtensionListing(data) {
     };
   }
 
-  // ---- v1.13.0: MARKET / SUBMARKET LOOKUP ----
-  // If market/submarket are empty, ask the extension to look them up.
-  // This runs in the background and patches the record when results arrive,
-  // so it doesn't block the initial save/render.
+  // ---- v1.14.0: MARKET / SUBMARKET LOOKUP (blocking) ----
+  // Look up market/submarket BEFORE saving/rendering so the profile
+  // opens fully populated. Capped at 25s so it won't hang indefinitely.
   if (!d.market && !d.submarket && addrParts.city) {
-    (async () => {
-      try {
-        const extId = window.RR_EXTENSION_INSTALLED || (window.RR_EXTENSION_IDS || [])[0];
-        if (!extId || !chrome.runtime || !chrome.runtime.sendMessage) return;
+    try {
+      const extId = window.RR_EXTENSION_INSTALLED || (window.RR_EXTENSION_IDS || [])[0];
+      if (extId && chrome.runtime && chrome.runtime.sendMessage) {
         const resp = await new Promise((resolve) => {
           const timeout = setTimeout(() => resolve(null), 25000);
           chrome.runtime.sendMessage(extId, {
@@ -5099,20 +5097,14 @@ async function handleExtensionListing(data) {
           });
         });
         if (resp && resp.ok && resp.market) {
-          const rec = records.find(x => x.id === r.id);
-          if (rec) {
-            if (!rec.propertyDetails) rec.propertyDetails = {};
-            if (!rec.propertyDetails.market) rec.propertyDetails.market = resp.market;
-            if (!rec.propertyDetails.submarket && resp.submarket) rec.propertyDetails.submarket = resp.submarket;
-            if (typeof saveData === 'function') saveData();
-            if (typeof render === 'function') render();
-            console.log('[RR] Market auto-filled:', resp.market, '/', resp.submarket, '(source:', resp.source, ')');
-          }
+          if (!d.market) d.market = resp.market;
+          if (!d.submarket && resp.submarket) d.submarket = resp.submarket;
+          console.log('[RR] Market auto-filled:', resp.market, '/', resp.submarket, '(source:', resp.source, ')');
         }
-      } catch (e) {
-        console.log('[RR] Market lookup failed (non-blocking):', e.message);
       }
-    })();
+    } catch (e) {
+      console.log('[RR] Market lookup failed:', e.message);
+    }
   }
 
   if (typeof saveData === 'function') saveData();
