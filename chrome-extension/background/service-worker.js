@@ -14,6 +14,10 @@
 
 const CRM_ORIGIN = 'https://app.rentingradar.com';
 const SCRAPE_TIMEOUT_MS = 45000;
+const MARKET_LOOKUP_TIMEOUT_MS = 20000;
+
+// Static city→market fallback mapping
+importScripts('../data/market-fallback.js');
 
 // ------------------------------------------------------------------
 // v0.10.0: Claude API (Haiku 4.5) — primary AI engine.
@@ -229,6 +233,14 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
           return;
         }
 
+        case 'LOOKUP_MARKET': {
+          // Look up AirDNA market/submarket for a geocoded address.
+          // Tries AirDNA background scrape first, falls back to static mapping.
+          const mResult = await lookupMarket(msg.city, msg.state, msg.zip, msg.lat, msg.lng);
+          sendResponse({ ok: true, ...mResult });
+          return;
+        }
+
         default:
           sendResponse({ ok: false, error: 'Unknown external message' });
       }
@@ -350,6 +362,83 @@ async function scrapeAny(url, hint) {
   } catch (e) {
     return { ok: false, error: e.message || 'Scrape failed.' };
   }
+}
+
+// ------------------------------------------------------------------
+// v1.13.0: MARKET / SUBMARKET LOOKUP
+// Tries AirDNA background scrape, falls back to static mapping.
+// ------------------------------------------------------------------
+async function lookupMarket(city, state, zip, lat, lng) {
+  // 1. Try AirDNA background tab scrape (exact market/submarket names)
+  try {
+    const airdnaResult = await lookupMarketViaAirDNA(lat, lng, zip);
+    if (airdnaResult && airdnaResult.market) {
+      console.log('[RR ext] Market from AirDNA:', airdnaResult);
+      return { market: airdnaResult.market, submarket: airdnaResult.submarket || city, source: 'airdna' };
+    }
+  } catch (e) {
+    console.warn('[RR ext] AirDNA market lookup failed:', e.message);
+  }
+
+  // 2. Fall back to static mapping
+  const fallback = typeof _rrLookupStaticMarket === 'function'
+    ? _rrLookupStaticMarket(city, state)
+    : { market: city && state ? (city + ', ' + state) : null, submarket: city, source: 'basic-fallback' };
+  console.log('[RR ext] Market from static mapping:', fallback);
+  return fallback;
+}
+
+async function lookupMarketViaAirDNA(lat, lng, zip) {
+  // Build an AirDNA URL from lat/lng or zip
+  let airdnaUrl = null;
+  if (lat != null && lng != null) {
+    airdnaUrl = 'https://app.airdna.co/data/us?lat=' + lat + '&lng=' + lng + '&zoom=12';
+  }
+  if (!airdnaUrl) return null;
+
+  // Open background tab, inject market scraper, wait for result
+  const tab = await chrome.tabs.create({ url: airdnaUrl, active: false });
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      pendingScrapes.delete(tab.id);
+      try { chrome.tabs.remove(tab.id); } catch (_) {}
+      resolve(null); // Timeout — let static fallback handle it
+    }, MARKET_LOOKUP_TIMEOUT_MS);
+
+    pendingScrapes.set(tab.id, {
+      resolve: (data) => {
+        clearTimeout(timer);
+        try { chrome.tabs.remove(tab.id); } catch (_) {}
+        if (data && data._type === 'market-lookup') {
+          if (data._loginRequired) { resolve(null); return; }
+          resolve({ market: data.market, submarket: data.submarket });
+        } else {
+          resolve(null);
+        }
+      },
+      reject: () => {
+        clearTimeout(timer);
+        try { chrome.tabs.remove(tab.id); } catch (_) {}
+        resolve(null);
+      },
+      timer
+    });
+
+    const listener = (tabId, changeInfo) => {
+      if (tabId !== tab.id || changeInfo.status !== 'complete') return;
+      chrome.tabs.onUpdated.removeListener(listener);
+      chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ['content/airdna-market-scraper.js'],
+      }).catch(() => {
+        pendingScrapes.delete(tab.id);
+        clearTimeout(timer);
+        try { chrome.tabs.remove(tab.id); } catch (_) {}
+        resolve(null);
+      });
+    };
+    chrome.tabs.onUpdated.addListener(listener);
+  });
 }
 
 // ------------------------------------------------------------------
