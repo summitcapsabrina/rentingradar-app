@@ -3197,10 +3197,13 @@ function _renderProfileInner(){
       <div style="display:flex;align-items:center;gap:16px;margin-top:4px;flex-wrap:wrap">
         <div class="hero-stats">
             <div class="hero-stat" style="font-size:.95rem;cursor:pointer" onclick="openRentHistoryPopup('${r.id}')" title="Click to view rent history"><strong style="color:var(--success);font-size:1.05rem">${d.monthlyRent ? '$'+Number(d.monthlyRent).toLocaleString()+'/mo' : '<span style="color:var(--text3)">+ Rent</span>'}</strong></div>
-            <div class="hero-stat"><strong>${d.bedrooms||'—'}</strong> Beds</div>
-            <div class="hero-stat"><strong>${d.bathrooms||'—'}</strong> ${d.bathrooms==='1'?'Bath':'Baths'}</div>
-            <div class="hero-stat"><strong>${d.sqft ? Number(d.sqft).toLocaleString() : '—'}</strong> Sq Ft</div>
-            <div class="hero-stat"><strong>${d.availableDate==='now'?'Now': d.availableDate ? fmtDate(d.availableDate) : '—'}</strong> Available</div>
+            <div class="hero-stats-wrap" onclick="openCardEditor('${r.id}','contact')" title="Click to edit">
+              <div class="hero-stat"><strong>${d.bedrooms||'—'}</strong> Beds</div>
+              <div class="hero-stat"><strong>${d.bathrooms||'—'}</strong> ${d.bathrooms==='1'?'Bath':'Baths'}</div>
+              <div class="hero-stat"><strong>${d.sqft ? Number(d.sqft).toLocaleString() : '—'}</strong> Sq Ft</div>
+              <div class="hero-stat"><strong>${d.availableDate==='now'?'Now': d.availableDate ? fmtDate(d.availableDate) : '—'}</strong> Available</div>
+              <span class="stats-edit-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></span>
+            </div>
         </div>
       </div>
       <div class="hero-contact-name" style="margin-top:4px">
@@ -13655,7 +13658,6 @@ function openCardEditor(recId, cardType){
         <div class="prop-field" style="flex:1;min-width:0"><label>Beds</label><input type="number" id="ce_beds" value="${esc(d.bedrooms||'')}" placeholder="3" min="0" step="1" style="font-size:.82rem;padding:5px 6px"></div>
         <div class="prop-field" style="flex:1;min-width:0"><label>Baths</label><input type="number" id="ce_baths" value="${esc(d.bathrooms||'')}" placeholder="2" min="0" step="0.5" style="font-size:.82rem;padding:5px 6px"></div>
         <div class="prop-field" style="flex:1;min-width:0"><label>Sq Ft</label><input type="number" id="ce_sqft" value="${esc(d.sqft||'')}" placeholder="1200" min="0" style="font-size:.82rem;padding:5px 6px"></div>
-        <div class="prop-field" style="flex:1;min-width:0"><label>Rent</label><input type="number" id="ce_rent" value="${esc(d.monthlyRent||'')}" placeholder="2500" min="0" style="font-size:.82rem;padding:5px 6px"></div>
       </div>
       <div class="prop-field-grid" style="margin-bottom:10px">
         <div class="prop-field"><label>Available Date</label><div style="display:flex;align-items:center;gap:8px"><div class="rr-dt-trigger${isAvailNow?' rr-dt-disabled':''}" id="dt_available" style="flex:1${isAvailNow?';opacity:.4;pointer-events:none':''}"><span class="rr-dt-icon">${CALENDAR_ICON}</span><span class="rr-dt-text empty">--/--/----</span><span class="rr-dt-clear" title="Clear">${CLEAR_X_ICON}</span></div><label style="display:flex;align-items:center;gap:4px;font-size:.78rem;font-weight:400;text-transform:none;letter-spacing:0;color:var(--text2);cursor:pointer;white-space:nowrap"><input type="checkbox" id="ce_avail_now" ${isAvailNow?'checked':''} onchange="const t=document.getElementById('dt_available');if(this.checked){t.style.opacity='.4';t.style.pointerEvents='none';t.classList.add('rr-dt-disabled');const s=window._dtPickers&&window._dtPickers['dt_available'];if(s){s.date='';updateDtTriggerText('dt_available')}}else{t.style.opacity='1';t.style.pointerEvents='';t.classList.remove('rr-dt-disabled')}"> Now</label></div></div>
@@ -13770,19 +13772,17 @@ function saveContactCard(recId){
   }
   window._selectedAddrParts = null;
 
-  // Save property details (beds, baths, sqft, rent, available)
+  // Save property details (beds, baths, sqft, available — rent is edited inline on the sticky header)
   if(!r.propertyDetails) r.propertyDetails = {};
   const ceBeds = document.getElementById('ce_beds')?.value?.trim();
   const ceBaths = document.getElementById('ce_baths')?.value?.trim();
   const ceSqft = document.getElementById('ce_sqft')?.value?.trim();
-  const ceRent = document.getElementById('ce_rent')?.value?.trim();
   const ceAvailNow = document.getElementById('ce_avail_now')?.checked;
   const ceAvailVal = getDtValue('dt_available');
   const ceAvailDate = ceAvailVal.date || '';
   if(ceBeds !== undefined) r.propertyDetails.bedrooms = ceBeds;
   if(ceBaths !== undefined) r.propertyDetails.bathrooms = ceBaths;
   if(ceSqft !== undefined) r.propertyDetails.sqft = ceSqft;
-  if(ceRent !== undefined){ logRentChange(r, ceRent); r.propertyDetails.monthlyRent = ceRent; }
   r.propertyDetails.market = document.getElementById('ce_market')?.value?.trim() || '';
   r.propertyDetails.submarket = document.getElementById('ce_submarket')?.value?.trim() || '';
   r.propertyDetails.availableDate = ceAvailNow ? 'now' : ceAvailDate;
