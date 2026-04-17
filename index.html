@@ -4951,6 +4951,7 @@ async function handleExtensionListing(data) {
   // Geocode the scraped address through Places — gives us proper
   // street/unit/city/state/zip + lat/lng in one call (no new API key,
   // reuses the existing manual-entry autocomplete setup).
+  { const _prog = document.getElementById('_rrImportProgress'); if (_prog) _prog.textContent = 'Geocoding address \u2026'; }
   const geo = await rrGeocodeAddress(data.address);
   const addrParts = {
     street: geo.street || '',
@@ -5080,6 +5081,8 @@ async function handleExtensionListing(data) {
   // opens fully populated. Capped at 25s so it won't hang indefinitely.
   if (!d.market && !d.submarket && addrParts.city) {
     try {
+      const _prog = document.getElementById('_rrImportProgress');
+      if (_prog) _prog.textContent = 'Looking up market \u2026';
       const extId = window.RR_EXTENSION_INSTALLED || (window.RR_EXTENSION_IDS || [])[0];
       if (extId && chrome.runtime && chrome.runtime.sendMessage) {
         const resp = await new Promise((resolve) => {
@@ -5107,6 +5110,7 @@ async function handleExtensionListing(data) {
     }
   }
 
+  { const _prog = document.getElementById('_rrImportProgress'); if (_prog) _prog.textContent = 'Finalizing profile \u2026'; }
   if (typeof saveData === 'function') saveData();
   if (typeof render === 'function') render();
 
@@ -5481,9 +5485,9 @@ function importFromChoicePaste(){
   // Make sure handleExtensionListing creates a new record (not fills an existing one)
   window._rrPendingListingRecordId = null;
 
-  rrScrapeViaExtension(url, 'listing').then((res) => {
-    if(input) input.disabled = false;
+  rrScrapeViaExtension(url, 'listing').then(async (res) => {
     if(!res || !res.ok){
+      if(input) input.disabled = false;
       if(statusEl){
         statusEl.style.color = 'var(--danger)';
         if(res && res.error === 'extension-not-installed'){
@@ -5494,10 +5498,20 @@ function importFromChoicePaste(){
       }
       return;
     }
-    // Close the Add Property modal; handleExtensionListing will open the new profile
-    const modal = document.getElementById('detailModal');
-    if(modal) modal.classList.remove('open');
-    handleExtensionListing(res.data || {});
+    // Show loading state in the modal while handleExtensionListing runs
+    // (geocoding + market lookup + save). Modal stays open until complete.
+    const body = document.getElementById('addModalBody');
+    if(body){
+      body.innerHTML = '<div style="text-align:center;padding:40px 20px">'
+        + '<div class="import-loading"><div class="spinner"></div></div>'
+        + '<div style="font-size:1rem;font-weight:600;margin-top:12px">Building property profile\u2026</div>'
+        + '<div id="_rrImportProgress" style="font-size:.82rem;color:var(--text2);margin-top:6px">Geocoding address \u2026</div>'
+        + '</div>';
+    }
+    // handleExtensionListing is async — await it so the profile is fully
+    // built before it opens. openDetail() inside replaces the modal content
+    // with the finished property profile, giving a seamless transition.
+    await handleExtensionListing(res.data || {});
   }).catch((e) => {
     if(input) input.disabled = false;
     if(statusEl){ statusEl.style.color = 'var(--danger)'; statusEl.textContent = 'Import error: ' + (e.message || e); }
