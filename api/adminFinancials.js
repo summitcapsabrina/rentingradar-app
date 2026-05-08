@@ -33,7 +33,6 @@ module.exports = async function handler(req, res) {
     const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
 
-    // Run all Stripe API calls in parallel
     const [
       balance,
       payouts,
@@ -44,26 +43,17 @@ module.exports = async function handler(req, res) {
       canceledSubs,
       upcomingInvoices,
     ] = await Promise.all([
-      // Current balance (available + pending)
       stripe.balance.retrieve(),
-
-      // Recent payouts (last 10)
       stripe.payouts.list({ limit: 10 }),
-
-      // This month's successful charges
       stripe.charges.list({
         created: { gte: Math.floor(startOfMonth.getTime() / 1000) },
         limit: 100,
         expand: ["data.balance_transaction"],
       }),
-
-      // This year's successful charges (paginate in batches)
       stripe.charges.list({
         created: { gte: Math.floor(startOfYear.getTime() / 1000) },
         limit: 100,
       }),
-
-      // Last month's charges (for month-over-month comparison)
       stripe.charges.list({
         created: {
           gte: Math.floor(startOfLastMonth.getTime() / 1000),
@@ -71,34 +61,22 @@ module.exports = async function handler(req, res) {
         },
         limit: 100,
       }),
-
-      // Active subscriptions
       stripe.subscriptions.list({ status: "active", limit: 100 }),
-
-      // Recently canceled subscriptions (last 30 days)
       stripe.subscriptions.list({
         status: "canceled",
         created: { gte: Math.floor(Date.now() / 1000) - 30 * 86400 },
         limit: 100,
       }),
-
-      // Upcoming invoices for MRR approximation
-      stripe.invoices.list({
-        status: "open",
-        limit: 100,
-      }),
+      stripe.invoices.list({ status: "open", limit: 100 }),
     ]);
 
-    // Calculate available and pending balance
     const availableBalance = balance.available.reduce((sum, b) => sum + b.amount, 0);
     const pendingBalance = balance.pending.reduce((sum, b) => sum + b.amount, 0);
 
-    // Monthly revenue (successful charges only)
     const monthlyRevenue = monthCharges.data
       .filter((c) => c.status === "succeeded" && !c.refunded)
       .reduce((sum, c) => sum + c.amount, 0);
 
-    // Monthly fees
     const monthlyFees = monthCharges.data
       .filter((c) => c.status === "succeeded" && !c.refunded && c.balance_transaction)
       .reduce((sum, c) => {
@@ -106,17 +84,14 @@ module.exports = async function handler(req, res) {
         return sum + (bt && typeof bt === "object" ? bt.fee || 0 : 0);
       }, 0);
 
-    // Monthly refunds
     const monthlyRefunds = monthCharges.data
       .filter((c) => c.refunded || c.amount_refunded > 0)
       .reduce((sum, c) => sum + (c.amount_refunded || 0), 0);
 
-    // Yearly revenue
     let yearlyRevenue = yearCharges.data
       .filter((c) => c.status === "succeeded" && !c.refunded)
       .reduce((sum, c) => sum + c.amount, 0);
 
-    // If there are more year charges, paginate
     let hasMore = yearCharges.has_more;
     let lastId = yearCharges.data.length ? yearCharges.data[yearCharges.data.length - 1].id : null;
     while (hasMore && lastId) {
@@ -132,12 +107,10 @@ module.exports = async function handler(req, res) {
       lastId = more.data.length ? more.data[more.data.length - 1].id : null;
     }
 
-    // Last month revenue for comparison
     const lastMonthRevenue = lastMonthCharges.data
       .filter((c) => c.status === "succeeded" && !c.refunded)
       .reduce((sum, c) => sum + c.amount, 0);
 
-    // MRR from active subscriptions
     const mrr = activeSubs.data.reduce((sum, sub) => {
       if (!sub.items || !sub.items.data.length) return sum;
       return (
@@ -153,10 +126,8 @@ module.exports = async function handler(req, res) {
       );
     }, 0);
 
-    // Active vs trialing subscriptions
     const trialingSubs = activeSubs.data.filter((s) => s.status === "trialing" || (s.trial_end && s.trial_end > Date.now() / 1000));
 
-    // Payout data
     const recentPayouts = payouts.data.map((p) => ({
       id: p.id,
       amount: p.amount,
@@ -165,7 +136,6 @@ module.exports = async function handler(req, res) {
       created: new Date(p.created * 1000).toISOString(),
     }));
 
-    // Next payout: find the next scheduled one, or estimate from pending balance
     const nextPayout = payouts.data.find((p) => p.status === "in_transit" || p.status === "pending");
 
     res.status(200).json({
