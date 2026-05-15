@@ -28,6 +28,8 @@ module.exports = async function handler(req, res) {
   const PRICE_IDS = {
     basic_monthly: process.env.BASIC_MONTHLY_PRICE,
     basic_yearly: process.env.BASIC_YEARLY_PRICE,
+    standard_monthly: process.env.STANDARD_MONTHLY_PRICE,
+    standard_yearly: process.env.STANDARD_YEARLY_PRICE,
     pro_monthly: process.env.PRO_MONTHLY_PRICE,
     pro_yearly: process.env.PRO_YEARLY_PRICE,
   };

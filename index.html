@@ -2037,10 +2037,13 @@ function renderSignInPrompt(forTutorial){
 
 function renderLockoutScreen(){
   const isExpired = _subscriptionStatus === 'expired';
-  const title = isExpired ? 'Your Trial Has Ended' : 'Choose a Plan to Get Started';
+  const isCancelled = _subscriptionStatus === 'cancelled';
+  const title = isExpired ? 'Your Free Trial Has Ended' : (isCancelled ? 'Your Subscription Has Ended' : 'Choose a Plan to Continue');
   const desc = isExpired
-    ? 'Your 7-day free trial has ended. Subscribe to a plan to continue accessing your properties and analyses.'
-    : 'Get started with one of our plans. All plans include a 7-day free trial.';
+    ? 'Your 7-day free trial has ended. Your data has been preserved — subscribe to any plan to resume working where you left off.'
+    : (isCancelled
+        ? 'Your subscription has ended. Your data has been preserved — subscribe to any plan to restore full access.'
+        : 'Choose a plan to continue. Your data is preserved until you subscribe.');
 
   return `<div class="auth-signin-prompt lockout">
     <div class="asp-icon">🔒</div>
@@ -2062,9 +2065,20 @@ function render(){
     area.innerHTML = renderSignInPrompt(_launchTutorialAfterAuth);
     return;
   }
-  // If signed in but no plan or expired trial, show lockout (admins bypass)
-  if(!currentTier || _subscriptionStatus === 'expired'){
-    if(!_isAdmin){
+  // App-access gate. Users may interact only if any of these are true:
+  //   - they are signed in as an admin
+  //   - manualOverride is set on their user doc (admin-granted access without payment)
+  //   - they have an active paid subscription
+  //   - they are on a non-expired free trial
+  // Anything else (no plan, expired trial, cancelled, none) shows the lockout screen.
+  // Data is preserved server-side — locked-out users can resume by entering a card.
+  if(!_isAdmin){
+    const nowMs = Date.now();
+    const trialMs = _trialEnd ? new Date(_trialEnd).getTime() : 0;
+    const onValidTrial = _subscriptionStatus === 'trialing' && trialMs > nowMs && !!currentTier;
+    const onActiveSub  = _subscriptionStatus === 'active' && !!currentTier;
+    const canUseApp = _manualOverride || onActiveSub || onValidTrial;
+    if(!canUseApp){
       area.innerHTML = renderLockoutScreen();
       return;
     }
@@ -7489,6 +7503,7 @@ let billingPeriod = 'yearly'; // default to yearly to show savings
 let currentTier = null;
 let _subscriptionStatus = 'none';
 let _trialEnd = null;
+let _manualOverride = false;
 
 function loadTier(){
   try { currentTier = localStorage.getItem('rr_tier') || null } catch(e){}
@@ -8442,7 +8457,18 @@ function _adminFormatDate(val){
   } catch(e){ return '—'; }
 }
 
-function _adminTierBadge(tier, status, manualOverride){
+function _adminTierBadge(tier, status, manualOverride, trialEnd){
+  // Free-trial users get a distinct badge with countdown. Override below for admin/manualOverride/expired.
+  if(status === 'trialing' && trialEnd && !manualOverride){
+    const msLeft = new Date(trialEnd).getTime() - Date.now();
+    if(!isNaN(msLeft) && msLeft > 0){
+      const daysLeft = Math.max(1, Math.ceil(msLeft / (24 * 60 * 60 * 1000)));
+      const label = daysLeft === 1 ? '1 day left' : daysLeft + ' days left';
+      return `<span class="tier-badge" style="background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;white-space:nowrap">FREE TRIAL &middot; ${label}</span>`;
+    }
+    // trialEnd has passed but Firestore hasn't been updated yet — render as expired
+    return `<span class="tier-badge tier-expired">EXPIRED</span>`;
+  }
   if(!tier || !TIERS[tier]){
     const label = status === 'expired' ? 'EXPIRED' : 'NO PLAN';
     return `<span class="tier-badge tier-expired">${label}</span>`;
@@ -8452,7 +8478,6 @@ function _adminTierBadge(tier, status, manualOverride){
   }
   const t = TIERS[tier];
   let extra = '';
-  if(status === 'trialing') extra = ' · TRIAL';
   if(manualOverride) extra = ' · FREE';
   return `<span class="tier-badge ${t.badge}">${t.badgeText}${extra}</span>`;
 }
@@ -8514,12 +8539,12 @@ function _adminRenderTable(users){
           </div>
         </div>
       </td>
-      <td style="padding:8px">${_adminTierBadge(u.tier, u.subscriptionStatus, u.manualOverride)}</td>
+      <td style="padding:8px">${_adminTierBadge(u.tier, u.subscriptionStatus, u.manualOverride, u.trialEnd)}</td>
       <td style="padding:8px">${_adminStatusDot(u.subscriptionStatus)}</td>
       <td style="padding:8px;text-align:center">${_adminPaidBadge(u)}</td>
       <td style="padding:8px;font-size:.78rem;color:var(--text2)">${_adminFormatDate(u.createdAt)}</td>
       <td style="padding:8px;font-size:.78rem;color:var(--text2)${isPaid?'':';opacity:.4'}">${isPaid ? _adminFormatDate(u.currentPeriodEnd) : '—'}</td>
-      <td style="padding:8px;font-size:.78rem;color:var(--text2)">${_adminFormatDate(u.lastLogin)}</td>
+      <td style="padding:8px;font-size:.78rem;color:var(--text2)">${_adminFormatDate(u.lastLogin || u.createdAt)}</td>
       <td style="padding:8px;text-align:center;font-size:.82rem;color:var(--text2)">${u.propertyCount !== undefined ? u.propertyCount : '—'}</td>
       <td style="padding:8px;text-align:center" onclick="event.stopPropagation()">
         <button class="btn btn-secondary btn-sm" onclick="_adminOpenUserModal('${u.uid}')" style="padding:3px 8px;font-size:.72rem">Edit</button>
@@ -8543,14 +8568,14 @@ function _adminRenderCards(users){
           <div style="font-weight:600;color:var(--text);font-size:.88rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(u.name||'Unknown')}</div>
           <div style="font-size:.75rem;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(u.email||'—')}</div>
         </div>
-        <div>${_adminTierBadge(u.tier, u.subscriptionStatus, u.manualOverride)}</div>
+        <div>${_adminTierBadge(u.tier, u.subscriptionStatus, u.manualOverride, u.trialEnd)}</div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:.75rem">
         <div><span style="color:var(--text3)">Status:</span> ${_adminStatusDot(u.subscriptionStatus)}</div>
         <div><span style="color:var(--text3)">Payment:</span> ${_adminPaidBadge(u)}</div>
         <div style="color:var(--text2)"><span style="color:var(--text3)">Joined:</span> ${_adminFormatDate(u.createdAt)}</div>
         <div style="color:var(--text2)${isPaid?'':';opacity:.4'}"><span style="color:var(--text3)">Next Bill:</span> ${isPaid ? _adminFormatDate(u.currentPeriodEnd) : '—'}</div>
-        <div style="color:var(--text2)"><span style="color:var(--text3)">Last Login:</span> ${_adminFormatDate(u.lastLogin)}</div>
+        <div style="color:var(--text2)"><span style="color:var(--text3)">Last Login:</span> ${_adminFormatDate(u.lastLogin || u.createdAt)}</div>
         <div style="color:var(--text2)"><span style="color:var(--text3)">Properties:</span> ${u.propertyCount !== undefined ? u.propertyCount : '—'}</div>
       </div>
     </div>`;
@@ -8595,7 +8620,7 @@ function _adminOpenUserModal(uid){
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:.78rem">
           <div><span style="color:var(--text3)">UID:</span> <span style="color:var(--text2);font-family:monospace;font-size:.7rem">${u.uid.substring(0,16)}...</span></div>
           <div><span style="color:var(--text3)">Joined:</span> <span style="color:var(--text2)">${_adminFormatDate(u.createdAt)}</span></div>
-          <div><span style="color:var(--text3)">Last Login:</span> <span style="color:var(--text2)">${_adminFormatDate(u.lastLogin)}</span></div>
+          <div><span style="color:var(--text3)">Last Login:</span> <span style="color:var(--text2)">${_adminFormatDate(u.lastLogin || u.createdAt)}</span></div>
           <div><span style="color:var(--text3)">Properties:</span> <span style="color:var(--text2)">${u.propertyCount !== undefined ? u.propertyCount : '—'}</span></div>
           <div><span style="color:var(--text3)">Analyses Used:</span> <span style="color:var(--text2)">${u.analysisCount !== undefined ? u.analysisCount : '—'}</span></div>
           <div><span style="color:var(--text3)">Admin:</span> <span style="color:var(--text2)">${u.admin ? 'Yes' : 'No'}</span></div>
@@ -8844,7 +8869,7 @@ function _adminExportCSV(){
     u.tier||'none', u.subscriptionStatus||'none',
     u.manualOverride ? 'Unpaid' : (u.stripeSubscriptionId ? 'Paid' : '—'),
     u.manualOverride ? 'Yes' : 'No',
-    _adminFormatDate(u.createdAt), _adminFormatDate(u.lastLogin),
+    _adminFormatDate(u.createdAt), _adminFormatDate(u.lastLogin || u.createdAt),
     _adminFormatDate(u.currentPeriodEnd),
     u.propertyCount !== undefined ? u.propertyCount : '',
     u.stripeCustomerId||'', u.stripeSubscriptionId||''
@@ -9853,6 +9878,17 @@ function showDisclaimerOverlay(opts){
       const now = new Date();
       _disclaimerAcknowledgedAt = now.toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' });
       _disclaimerOverlayOpen = false;
+      // Cache in localStorage so the disclaimer survives even if the Firestore
+      // write below is silently rejected by security rules.
+      try {
+        const u = firebase.auth().currentUser;
+        const uid = u && u.uid;
+        if(uid) localStorage.setItem('rr_disclaimer_' + uid, JSON.stringify({
+          acknowledged: true,
+          version: DISCLAIMER_VERSION,
+          acknowledgedAt: _disclaimerAcknowledgedAt
+        }));
+      } catch(e){}
       // Persist to Firestore
       try {
         const u = firebase.auth().currentUser;
@@ -9860,8 +9896,8 @@ function showDisclaimerOverlay(opts){
           disclaimerAcknowledged: true,
           disclaimerVersion: DISCLAIMER_VERSION,
           disclaimerAcknowledgedAt: firebase.firestore.FieldValue.serverTimestamp()
-        }).catch(()=>{});
-      } catch(e){}
+        }).catch(function(e){ console.error('disclaimer write failed:', e && (e.code || e.message) || e); });
+      } catch(e){ console.error('disclaimer write error:', e); }
       overlay.remove();
       window.removeEventListener('beforeunload', _disclaimerBeforeUnload);
       showToast('Disclaimer acknowledged. Competitor Analysis and Projected ROI are now enabled.', 'success', 5000);
@@ -9969,10 +10005,15 @@ function renderPricing(opts){
 
 function renderPricingCard(tier, opts){
   const t = TIERS[tier];
-  const isCurrent = currentTier === tier;
+  const hasActiveSub = _subscriptionStatus === 'active';
+  // "Current Plan" only applies to paid subscribers — trialing users don't have a real plan yet.
+  const isCurrent = hasActiveSub && currentTier === tier;
   const isPopular = opts.popular && !isCurrent;
   const isYearly = billingPeriod === 'yearly';
-  const hasActiveSub = _subscriptionStatus === 'active' || _subscriptionStatus === 'trialing';
+  const onTrial = _subscriptionStatus === 'trialing';
+  // Anyone who's signed in has already consumed the in-app trial (or is on it now).
+  // Stripe checkout no longer adds a trial, so the card shouldn't promise one.
+  const trialAvailable = false;
 
   const tierOrder = { basic:0, standard:1, pro:2 };
   const currentTierRank = currentTier ? tierOrder[currentTier] : -1;
@@ -9983,19 +10024,21 @@ function renderPricingCard(tier, opts){
     const perMonth = (t.yearly / 12).toFixed(2);
     const monthlyCost = t.monthly.toFixed(2);
     priceDisplay = `<span class="pc-price-old">$${monthlyCost}</span>$${perMonth}<span>/mo</span>`;
-    billedNote = `<div class="pc-billed">Billed annually at $${t.yearly.toFixed(2)}/year<br><div style="font-size:.75rem;color:var(--text2);margin-top:4px">7-day free trial</div></div>`;
+    billedNote = `<div class="pc-billed">Billed annually at $${t.yearly.toFixed(2)}/year${trialAvailable ? '<br><div style="font-size:.75rem;color:var(--text2);margin-top:4px">7-day free trial</div>' : ''}</div>`;
   } else {
     priceDisplay = '$' + t.monthly.toFixed(2) + '<span>/mo</span>';
-    billedNote = `<div class="pc-billed">Billed monthly<br><div style="font-size:.75rem;color:var(--text2);margin-top:4px">7-day free trial</div></div>`;
+    billedNote = `<div class="pc-billed">Billed monthly${trialAvailable ? '<br><div style="font-size:.75rem;color:var(--text2);margin-top:4px">7-day free trial</div>' : ''}</div>`;
   }
 
-  // Determine button label based on user's current tier
+  // Determine button label
   if(hasActiveSub && currentTier){
     if(thisTierRank > currentTierRank) btnLabel = 'Upgrade';
     else if(thisTierRank < currentTierRank) btnLabel = 'Downgrade';
     else btnLabel = 'Current Plan';
+  } else if(onTrial){
+    btnLabel = 'Subscribe';
   } else {
-    btnLabel = 'Start Free Trial';
+    btnLabel = 'Subscribe';
   }
 
   return `<div class="pricing-card ${isPopular?'popular':''} ${isCurrent?'current':''}">
@@ -10017,23 +10060,28 @@ function renderPricingCard(tier, opts){
 
 async function handleUpgrade(tier){
   try {
-    var hasActiveSub = _subscriptionStatus === 'active' || _subscriptionStatus === 'trialing';
+    var user = firebase.auth().currentUser;
+    // Get stripeCustomerId / subscriptionId from Firestore to decide flow
+    var custId = null;
+    var subId = null;
+    if(user){
+      var udoc = await db.collection('users').doc(user.uid).get();
+      if(udoc.exists){
+        var d = udoc.data();
+        if(d.stripeCustomerId) custId = d.stripeCustomerId;
+        if(d.stripeSubscriptionId) subId = d.stripeSubscriptionId;
+      }
+    }
 
-    // Existing subscribers → Stripe Customer Portal for upgrades/downgrades
-    if(hasActiveSub && currentTier){
+    // Existing paying subscribers → Stripe Customer Portal for upgrades/downgrades.
+    // In-app trial users (no Stripe subscription yet) and expired/cancelled users go to Checkout.
+    var hasStripeSub = !!subId && (_subscriptionStatus === 'active');
+    if(hasStripeSub && currentTier){
       showToast('Opening billing portal...', 'info', 3000);
       return openStripePortal();
     }
 
-    // New subscribers → checkout session with free trial
     showToast('Preparing checkout...', 'info', 3000);
-    var user = firebase.auth().currentUser;
-    // Get stripeCustomerId from Firestore to pass to server
-    var custId = null;
-    if(user){
-      var udoc = await db.collection('users').doc(user.uid).get();
-      if(udoc.exists && udoc.data().stripeCustomerId) custId = udoc.data().stripeCustomerId;
-    }
     const result = await callFunction('createCheckoutSession', { tier: tier, period: billingPeriod, stripeCustomerId: custId });
     if(result.data && result.data.url){
       // Save stripeCustomerId to Firestore before redirect
@@ -10126,7 +10174,7 @@ function checkCheckoutReturn(){
     // Clean the URL immediately
     const cleanUrl = window.location.origin + window.location.pathname;
     window.history.replaceState({}, document.title, cleanUrl);
-    showToast('Trial started! Activating your plan...', 'success', 5000);
+    showToast('Activating your subscription...', 'success', 5000);
     // Wait for auth to be ready, then verify with Stripe
     var unsubVerify = firebase.auth().onAuthStateChanged(function(user){
       unsubVerify();
@@ -10136,14 +10184,14 @@ function checkCheckoutReturn(){
             // Write verified data to Firestore
             var updates = {
               tier: result.data.tier,
-              subscriptionStatus: result.data.status || 'trialing',
+              subscriptionStatus: result.data.status || 'active',
               stripeCustomerId: result.data.stripeCustomerId,
               stripeSubscriptionId: result.data.stripeSubscriptionId,
-              trialEnd: result.data.trialEnd,
+              trialEnd: result.data.trialEnd || null,
               updatedAt: firebase.firestore.FieldValue.serverTimestamp()
             };
             db.collection('users').doc(user.uid).update(updates).then(function(){
-              setTier(result.data.tier, result.data.status || 'trialing', result.data.trialEnd);
+              setTier(result.data.tier, result.data.status || 'active', result.data.trialEnd || null);
               showToast('Plan activated! ' + result.data.tier.charAt(0).toUpperCase() + result.data.tier.slice(1) + ' plan ready.', 'success', 4000);
               switchView('pricing');
             });
@@ -10158,7 +10206,7 @@ function checkCheckoutReturn(){
     // Fallback: no session ID in URL, try reading from Firestore
     const cleanUrl = window.location.origin + window.location.pathname;
     window.history.replaceState({}, document.title, cleanUrl);
-    showToast('Trial started! Activating your plan...', 'success', 5000);
+    showToast('Activating your subscription...', 'success', 5000);
     setTimeout(function(){
       var user = firebase.auth().currentUser;
       if(user){
@@ -10720,14 +10768,29 @@ firebase.auth().onAuthStateChanged(async (user) => {
     // If this is a token refresh for the same user, skip full reload to avoid
     // destroying any open editors or typed content
     if(_authDataLoaded && _currentUid === user.uid){
+      // Stamp lastLogin on token refresh too so the Admin Users page reflects activity
+      db.collection('users').doc(user.uid)
+        .update({ lastLogin: firebase.firestore.FieldValue.serverTimestamp() })
+        .catch(function(e){ console.error('lastLogin (refresh) write failed:', e && (e.code || e.message) || e); });
       // Silently refresh tier and disclaimer state in background without re-rendering
       try {
         const userDoc = await db.collection('users').doc(user.uid).get();
         if(userDoc.exists){
           const data = userDoc.data();
+          _manualOverride = !!data.manualOverride;
           _disclaimerAcknowledged = !!data.disclaimerAcknowledged;
           _disclaimerVersion = data.disclaimerVersion || 0;
           if(data.disclaimerAcknowledgedAt && data.disclaimerAcknowledgedAt.toDate){ _disclaimerAcknowledgedAt = data.disclaimerAcknowledgedAt.toDate().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'}); }
+          if(!_disclaimerAcknowledged){
+            try {
+              const cached = JSON.parse(localStorage.getItem('rr_disclaimer_' + user.uid) || 'null');
+              if(cached && cached.acknowledged && (cached.version || 0) >= DISCLAIMER_VERSION){
+                _disclaimerAcknowledged = true;
+                _disclaimerVersion = cached.version;
+                if(cached.acknowledgedAt) _disclaimerAcknowledgedAt = cached.acknowledgedAt;
+              }
+            } catch(e){}
+          }
           setTier(data.tier || null, data.subscriptionStatus || 'none', data.trialEnd || null);
         }
       } catch(e){ /* tier refresh failed, that's ok */ }
@@ -10737,19 +10800,36 @@ firebase.auth().onAuthStateChanged(async (user) => {
     const userRef = db.collection('users').doc(user.uid);
     const userDoc = await userRef.get();
     if(!userDoc.exists){
+      // Auto-start a 7-day no-card free trial at Pro-level for every new signup.
+      // trialUsedAt marks the trial as consumed so users can't restart it later.
+      const trialEndIso = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
       const newUserData = {
         name: user.displayName || 'User',
         email: user.email || '',
         photo: user.photoURL || null,
-        tier: null,
-        subscriptionStatus: 'none',
+        tier: 'pro',
+        subscriptionStatus: 'trialing',
+        trialEnd: trialEndIso,
+        trialUsedAt: firebase.firestore.FieldValue.serverTimestamp(),
         disclaimerAcknowledged: false,
-        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        lastLogin: firebase.firestore.FieldValue.serverTimestamp()
       };
       await userRef.set(newUserData);
       checkAndSetAdmin(user, newUserData);
       _disclaimerAcknowledged = false;
-      setTier(null, 'none', null);
+      _manualOverride = false;
+      setTier('pro', 'trialing', trialEndIso);
+      // Notify admin of new signup (fire-and-forget; failures are non-blocking)
+      try {
+        var signupMethod = (user.providerData && user.providerData.length)
+          ? user.providerData.map(function(p){ return p.providerId; }).join(', ')
+          : 'unknown';
+        callFunction('notifyAdminSignup', {
+          name: user.displayName || newUserData.name || '',
+          signupMethod: signupMethod
+        }).catch(function(e){ console.error('notifyAdminSignup failed:', e); });
+      } catch(e){ console.error('notifyAdminSignup error:', e); }
       // Initialize analysis quota with signup date
       _aqLoad();
       _aqSetSignupDate(new Date().toISOString());
@@ -10761,10 +10841,34 @@ firebase.auth().onAuthStateChanged(async (user) => {
       else { /* No tutorial for new users without a tier */ }
     } else {
       const data = userDoc.data();
+      _manualOverride = !!data.manualOverride;
+      // Lazy trial-expiry detection for the IN-APP no-card trial only.
+      // Users with a Stripe subscription rely on _doSyncSubscription further down
+      // to reconcile their real state from Stripe, so we don't touch them here.
+      if(data.subscriptionStatus === 'trialing' && data.trialEnd && !data.stripeSubscriptionId){
+        const trialEndMs = new Date(data.trialEnd).getTime();
+        if(!isNaN(trialEndMs) && trialEndMs <= Date.now()){
+          data.subscriptionStatus = 'expired';
+          data.tier = null;
+          userRef.update({ subscriptionStatus: 'expired', tier: null })
+            .catch(function(e){ console.error('trial-expiry persist failed:', e && (e.code || e.message) || e); });
+        }
+      }
       // Load disclaimer state BEFORE setting tier (so setTier doesn't re-trigger overlay)
       _disclaimerAcknowledged = !!data.disclaimerAcknowledged;
       _disclaimerVersion = data.disclaimerVersion || 0;
       if(data.disclaimerAcknowledgedAt && data.disclaimerAcknowledgedAt.toDate){ _disclaimerAcknowledgedAt = data.disclaimerAcknowledgedAt.toDate().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'}); }
+      // Fallback to localStorage if Firestore doesn't have it (e.g., write was rejected by rules)
+      if(!_disclaimerAcknowledged){
+        try {
+          const cached = JSON.parse(localStorage.getItem('rr_disclaimer_' + user.uid) || 'null');
+          if(cached && cached.acknowledged && (cached.version || 0) >= DISCLAIMER_VERSION){
+            _disclaimerAcknowledged = true;
+            _disclaimerVersion = cached.version;
+            if(cached.acknowledgedAt) _disclaimerAcknowledgedAt = cached.acknowledgedAt;
+          }
+        } catch(e){}
+      }
       _tutLoadSeenFromFirestore(data);
       checkAndSetAdmin(user, data);
       // Load analysis quota from Firestore
@@ -10787,7 +10891,8 @@ firebase.auth().onAuthStateChanged(async (user) => {
         renderUserSection();
       }
       // Track last login for admin panel
-      userRef.update({ lastLogin: firebase.firestore.FieldValue.serverTimestamp() }).catch(function(e){});
+      userRef.update({ lastLogin: firebase.firestore.FieldValue.serverTimestamp() })
+        .catch(function(e){ console.error('lastLogin write failed:', e && (e.code || e.message) || e); });
       // Load user's property data from Firestore
       await loadDataFromFirestore(user.uid);
       _authDataLoaded = true;
@@ -10816,6 +10921,7 @@ firebase.auth().onAuthStateChanged(async (user) => {
     if(_firestoreUnsubscribe){ _firestoreUnsubscribe(); _firestoreUnsubscribe = null; }
     _currentUid = null;
     _authDataLoaded = false;
+    _manualOverride = false;
     records = [];
     _lastSavedJson = '';
     _dirtyRecordIds.clear();

@@ -27,22 +27,22 @@ const PHYSICAL_ADDRESS = "RentingRadar · help@rentingradar.com";
 
 // Plan feature data (must match website/app exactly)
 const PLAN_FEATURES = {
-  Free: [
+  Basic: [
     'Analyze 1 property per month',
     'Pipeline management',
     'Full-scope property profiles',
     'Follow-up reminders & notifications',
     'Expense tracking'
   ],
-  Basic: [
+  Standard: [
     'Analyze 10 properties per month',
-    'Everything in Free',
+    'Everything in Basic',
     'CSV import & export',
     'Dark mode & 8 color themes'
   ],
   Pro: [
     'Analyze unlimited properties',
-    'Everything in Basic',
+    'Everything in Standard',
     'Negotiation Forecasting Tools',
     'Priority feature requests'
   ]
@@ -121,35 +121,30 @@ function buildFeatureList(features) {
   ).join("");
 }
 
-function welcomeEmailHtml(displayName, tierName) {
+function welcomeEmailHtml(displayName) {
   const firstName = displayName ? displayName.split(" ")[0] : null;
-  const tier = tierName || "Free";
-  const features = PLAN_FEATURES[tier] || PLAN_FEATURES.Free;
 
   return emailWrapper(`
     <h2 style="margin:0 0 16px;font-size:20px;font-weight:700;color:#ffffff">${firstName ? 'Welcome to RentingRadar, ' + firstName + '!' : 'Welcome to RentingRadar!'}</h2>
-    <p style="margin:0 0 14px;color:#c8cbd6">We're excited to have you on board. You've signed up for the <strong style="color:#6381fa">${tier}</strong> plan${tier !== "Free" ? "" : " — free forever, no credit card needed"}.</p>
+    <p style="margin:0 0 14px;color:#c8cbd6">We're excited to have you on board! To get started, choose a plan that fits your needs. Every plan comes with a <strong style="color:#34d399">free 7-day trial</strong> — no charge until your trial ends.</p>
 
     <div style="background:#1a1e30;border:1px solid #252a3d;border-radius:8px;padding:16px 20px;margin:20px 0">
-      <p style="margin:0 0 10px;font-size:13px;font-weight:600;color:#6381fa;text-transform:uppercase;letter-spacing:.5px">Your ${tier} Plan Includes</p>
+      <p style="margin:0 0 12px;font-size:13px;font-weight:600;color:#6381fa;text-transform:uppercase;letter-spacing:.5px">Choose Your Plan</p>
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-        ${buildFeatureList(features)}
+        <tr><td style="padding:6px 0;font-size:14px;color:#c8cbd6"><strong style="color:#ffffff">Basic</strong> — $9.99/mo · 1 analysis/month</td></tr>
+        <tr><td style="padding:6px 0;font-size:14px;color:#c8cbd6"><strong style="color:#ffffff">Standard</strong> — $19.99/mo · 10 analyses/month</td></tr>
+        <tr><td style="padding:6px 0;font-size:14px;color:#c8cbd6"><strong style="color:#ffffff">Pro</strong> — $29.99/mo · Unlimited analyses</td></tr>
       </table>
     </div>
+
+    <p style="text-align:center">
+      <a href="${APP_URL}" style="display:inline-block;background:#6381fa;color:#ffffff;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:600;font-size:14px;margin:8px 0 16px">Choose a Plan & Start Free Trial</a>
+    </p>
 
     <div style="height:1px;background:#252a3d;margin:24px 0"></div>
 
     <p style="margin:0 0 8px;color:#ffffff;font-weight:600">Get started in 2 minutes</p>
-    <p style="margin:0 0 16px;color:#c8cbd6">Our interactive tutorial walks you through every feature so you can hit the ground running.</p>
-    <p style="text-align:center">
-      <a href="${APP_URL}/tutorial.html" style="display:inline-block;background:#6381fa;color:#ffffff;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:600;font-size:14px;margin:8px 0 16px">Launch Tutorial</a>
-    </p>
-
-    ${tier === "Free" ? `<div style="background:#1a1e30;border:1px solid #252a3d;border-radius:8px;padding:16px 20px;margin:20px 0;text-align:center">
-      <p style="margin:0 0 4px;font-size:14px;color:#ffffff;font-weight:600">Want more features?</p>
-      <p style="margin:0 0 12px;font-size:13px;color:#9298ad">Upgrade to Basic ($9.99/mo) to analyze 10 properties per month, or Pro ($14.99/mo) for unlimited analyses & negotiation forecasting.</p>
-      <a href="${SITE_URL}/#pricing" style="color:#6381fa;font-size:13px;font-weight:600;text-decoration:none">View Plans →</a>
-    </div>` : ""}
+    <p style="margin:0 0 16px;color:#c8cbd6">Once you've picked a plan, our interactive tutorial walks you through every feature so you can hit the ground running.</p>
 
     <div style="height:1px;background:#252a3d;margin:24px 0"></div>
     <p style="font-size:13px;color:#6b7280;margin:0"><strong style="color:#9298ad">Need help?</strong> Reply to this email or reach us at <a href="mailto:help@rentingradar.com" style="color:#6381fa;text-decoration:none">help@rentingradar.com</a>. We typically respond within a few hours.</p>
@@ -171,17 +166,18 @@ function cancellationEmailHtml(displayName) {
   `);
 }
 
+// Upgrade nudge emails for BASIC tier users (nudging to Standard)
 function upgradeNudgeEmailHtml(displayName, weekNumber, unsubscribeUrl) {
   const name = displayName ? displayName.split(" ")[0] : "there";
 
   const subjects = [
     { subject: "🚀 Unlock your full potential", body: `
       <h2 style="margin:0 0 16px;font-size:20px;font-weight:700;color:#ffffff">You're doing great, ${name}!</h2>
-      <p style="margin:0 0 14px;color:#c8cbd6">You've been using RentingRadar's Free plan, and we hope it's been helpful for tracking your rental deals.</p>
-      <p style="margin:0 0 14px;color:#c8cbd6">Did you know that with a <strong style="color:#ffffff">Basic</strong> plan ($9.99/mo) you can also:</p>
+      <p style="margin:0 0 14px;color:#c8cbd6">You've been making the most of your Basic plan, and we hope it's been helpful for tracking your rental deals.</p>
+      <p style="margin:0 0 14px;color:#c8cbd6">Did you know that with the <strong style="color:#ffffff">Standard</strong> plan ($19.99/mo) you can also:</p>
       <div style="background:#1a1e30;border:1px solid #252a3d;border-radius:8px;padding:16px 20px;margin:16px 0">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-          <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span><strong style="color:#ffffff">Analyze 10 properties per month</strong> (vs. 1 on Free)</td></tr>
+          <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span><strong style="color:#ffffff">Analyze 10 properties per month</strong> (vs. 1 on Basic)</td></tr>
           <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span><strong style="color:#ffffff">CSV import & export</strong> for your data</td></tr>
           <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span><strong style="color:#ffffff">Dark mode</strong> & 8 color themes</td></tr>
         </table>
@@ -192,11 +188,11 @@ function upgradeNudgeEmailHtml(displayName, weekNumber, unsubscribeUrl) {
     `},
     { subject: "💡 Are you getting the most out of RentingRadar?", body: `
       <h2 style="margin:0 0 16px;font-size:20px;font-weight:700;color:#ffffff">Quick tip, ${name}</h2>
-      <p style="margin:0 0 14px;color:#c8cbd6">Many successful RentingRadar users tell us that <strong style="color:#ffffff">Negotiation Forecasting</strong> and <strong style="color:#ffffff">unlimited property analyses</strong> are the features that save them the most money.</p>
-      <p style="margin:0 0 14px;color:#c8cbd6">These tools are available on our <strong style="color:#6381fa">Pro plan</strong> ($14.99/mo), and they've helped users lock in better lease terms by showing landlords exactly why a lower rate makes sense for both parties.</p>
+      <p style="margin:0 0 14px;color:#c8cbd6">Many successful RentingRadar users tell us that having <strong style="color:#ffffff">10 analyses per month</strong> is what really accelerates their deal flow.</p>
+      <p style="margin:0 0 14px;color:#c8cbd6">These are available on our <strong style="color:#6381fa">Standard plan</strong> ($19.99/mo), and they've helped users evaluate more deals and close faster.</p>
       <div style="background:#1a1e30;border:1px solid #252a3d;border-radius:8px;padding:16px 20px;margin:16px 0;text-align:center">
-        <p style="margin:0 0 4px;font-size:15px;color:#ffffff;font-weight:600">Pro Plan — $14.99/mo</p>
-        <p style="margin:0 0 12px;font-size:13px;color:#9298ad">Unlimited analyses, negotiation forecasting tools, and priority feature requests.</p>
+        <p style="margin:0 0 4px;font-size:15px;color:#ffffff;font-weight:600">Standard Plan — $19.99/mo</p>
+        <p style="margin:0 0 12px;font-size:13px;color:#9298ad">10 analyses/month, CSV import/export, dark mode & themes.</p>
         <a href="${SITE_URL}/#pricing" style="color:#6381fa;font-size:13px;font-weight:600;text-decoration:none">Compare all plans →</a>
       </div>
       <p style="text-align:center">
@@ -205,16 +201,16 @@ function upgradeNudgeEmailHtml(displayName, weekNumber, unsubscribeUrl) {
     `},
     { subject: "📈 A smarter way to manage your rentals", body: `
       <h2 style="margin:0 0 16px;font-size:20px;font-weight:700;color:#ffffff">Ready to level up, ${name}?</h2>
-      <p style="margin:0 0 14px;color:#c8cbd6">Your Free plan is a great starting point, but as your portfolio grows, you'll want tools that scale with you.</p>
+      <p style="margin:0 0 14px;color:#c8cbd6">Your Basic plan is a great starting point, but as your portfolio grows, you'll want tools that scale with you.</p>
       <p style="margin:0 0 14px;color:#c8cbd6">Here's what you're missing:</p>
       <div style="background:#1a1e30;border:1px solid #252a3d;border-radius:8px;padding:16px 20px;margin:16px 0">
-        <p style="margin:0 0 8px;font-size:13px;font-weight:600;color:#f59e0b;text-transform:uppercase;letter-spacing:.5px">Basic — $9.99/mo</p>
+        <p style="margin:0 0 8px;font-size:13px;font-weight:600;color:#f59e0b;text-transform:uppercase;letter-spacing:.5px">Standard — $19.99/mo</p>
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:12px">
-          <tr><td style="padding:2px 0;font-size:13px;color:#c8cbd6"><span style="color:#34d399;margin-right:6px">✓</span>Analyze 10 properties per month, CSV import &amp; export, dark mode &amp; themes</td></tr>
+          <tr><td style="padding:2px 0;font-size:13px;color:#c8cbd6"><span style="color:#34d399;margin-right:6px">✓</span>10 analyses/month, CSV import &amp; export, dark mode &amp; themes</td></tr>
         </table>
-        <p style="margin:0 0 8px;font-size:13px;font-weight:600;color:#6381fa;text-transform:uppercase;letter-spacing:.5px">Pro — $14.99/mo</p>
+        <p style="margin:0 0 8px;font-size:13px;font-weight:600;color:#6381fa;text-transform:uppercase;letter-spacing:.5px">Pro — $29.99/mo</p>
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-          <tr><td style="padding:2px 0;font-size:13px;color:#c8cbd6"><span style="color:#34d399;margin-right:6px">✓</span>Unlimited analyses, negotiation forecasting tools, priority feature requests</td></tr>
+          <tr><td style="padding:2px 0;font-size:13px;color:#c8cbd6"><span style="color:#34d399;margin-right:6px">✓</span>Unlimited analyses, negotiation forecasting, priority feature requests</td></tr>
         </table>
       </div>
       <p style="text-align:center">
@@ -227,18 +223,18 @@ function upgradeNudgeEmailHtml(displayName, weekNumber, unsubscribeUrl) {
   return { subject: subjects[idx].subject, html: emailWrapper(subjects[idx].body, unsubscribeUrl) };
 }
 
-// Upgrade nudge emails for BASIC tier users (nudging to Pro)
-function basicUpgradeNudgeEmailHtml(displayName, weekNumber, unsubscribeUrl) {
+// Upgrade nudge emails for STANDARD tier users (nudging to Pro)
+function standardUpgradeNudgeEmailHtml(displayName, weekNumber, unsubscribeUrl) {
   const name = displayName ? displayName.split(" ")[0] : "there";
 
   const subjects = [
     { subject: "🚀 Take your rental game to the next level", body: `
       <h2 style="margin:0 0 16px;font-size:20px;font-weight:700;color:#ffffff">You're crushing it, ${name}!</h2>
-      <p style="margin:0 0 14px;color:#c8cbd6">You've been making great use of your Basic plan. Ready to unlock even more powerful tools?</p>
-      <p style="margin:0 0 14px;color:#c8cbd6">With the <strong style="color:#6381fa">Pro plan</strong> ($14.99/mo), you get:</p>
+      <p style="margin:0 0 14px;color:#c8cbd6">You've been making great use of your Standard plan. Ready to unlock even more powerful tools?</p>
+      <p style="margin:0 0 14px;color:#c8cbd6">With the <strong style="color:#6381fa">Pro plan</strong> ($29.99/mo), you get:</p>
       <div style="background:#1a1e30;border:1px solid #252a3d;border-radius:8px;padding:16px 20px;margin:16px 0">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-          <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span><strong style="color:#ffffff">Analyze unlimited properties</strong> (vs. 10/month on Basic)</td></tr>
+          <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span><strong style="color:#ffffff">Analyze unlimited properties</strong> (vs. 10/month on Standard)</td></tr>
           <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span><strong style="color:#ffffff">Negotiation Forecasting Tools</strong></td></tr>
           <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span><strong style="color:#ffffff">Priority feature requests</strong></td></tr>
         </table>
@@ -249,10 +245,10 @@ function basicUpgradeNudgeEmailHtml(displayName, weekNumber, unsubscribeUrl) {
     `},
     { subject: "💡 Negotiate smarter with Pro tools", body: `
       <h2 style="margin:0 0 16px;font-size:20px;font-weight:700;color:#ffffff">A quick thought, ${name}</h2>
-      <p style="margin:0 0 14px;color:#c8cbd6">As a Basic user, you've already got solid tools for managing your pipeline. But our most successful users say <strong style="color:#ffffff">Negotiation Forecasting</strong> is what really sets them apart.</p>
-      <p style="margin:0 0 14px;color:#c8cbd6">It shows landlords exactly why a lower rate makes sense for both parties — backed by data. That's available on our <strong style="color:#6381fa">Pro plan</strong> ($14.99/mo).</p>
+      <p style="margin:0 0 14px;color:#c8cbd6">As a Standard user, you've already got solid tools for managing your pipeline. But our most successful users say <strong style="color:#ffffff">Negotiation Forecasting</strong> is what really sets them apart.</p>
+      <p style="margin:0 0 14px;color:#c8cbd6">It shows landlords exactly why a lower rate makes sense for both parties — backed by data. That's available on our <strong style="color:#6381fa">Pro plan</strong> ($29.99/mo).</p>
       <div style="background:#1a1e30;border:1px solid #252a3d;border-radius:8px;padding:16px 20px;margin:16px 0;text-align:center">
-        <p style="margin:0 0 4px;font-size:15px;color:#ffffff;font-weight:600">Pro Plan — $14.99/mo</p>
+        <p style="margin:0 0 4px;font-size:15px;color:#ffffff;font-weight:600">Pro Plan — $29.99/mo</p>
         <p style="margin:0 0 12px;font-size:13px;color:#9298ad">Unlimited analyses, negotiation forecasting tools, and priority feature requests.</p>
         <a href="${SITE_URL}/#pricing" style="color:#6381fa;font-size:13px;font-weight:600;text-decoration:none">Compare all plans →</a>
       </div>
@@ -261,9 +257,9 @@ function basicUpgradeNudgeEmailHtml(displayName, weekNumber, unsubscribeUrl) {
       </p>
     `},
     { subject: "📈 Unlimited analyses are one click away", body: `
-      <h2 style="margin:0 0 16px;font-size:20px;font-weight:700;color:#ffffff">Outgrowing your Basic plan, ${name}?</h2>
-      <p style="margin:0 0 14px;color:#c8cbd6">With 10 analyses per month on your Basic plan, you've got a solid setup. But as your portfolio scales, you'll want the freedom of <strong style="color:#ffffff">unlimited analyses</strong> plus advanced negotiation tools.</p>
-      <p style="margin:0 0 14px;color:#c8cbd6">Here's what Pro adds on top of Basic:</p>
+      <h2 style="margin:0 0 16px;font-size:20px;font-weight:700;color:#ffffff">Outgrowing your Standard plan, ${name}?</h2>
+      <p style="margin:0 0 14px;color:#c8cbd6">With 10 analyses per month on your Standard plan, you've got a solid setup. But as your portfolio scales, you'll want the freedom of <strong style="color:#ffffff">unlimited analyses</strong> plus advanced negotiation tools.</p>
+      <p style="margin:0 0 14px;color:#c8cbd6">Here's what Pro adds on top of Standard:</p>
       <div style="background:#1a1e30;border:1px solid #252a3d;border-radius:8px;padding:16px 20px;margin:16px 0">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
           <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span><strong style="color:#ffffff">Analyze unlimited properties</strong> — no monthly cap</td></tr>
@@ -282,18 +278,18 @@ function basicUpgradeNudgeEmailHtml(displayName, weekNumber, unsubscribeUrl) {
 }
 
 
-// Analysis quota limit email — sent when a Free or Basic user uses all their analyses for the cycle
+// Analysis quota limit email — sent when a Basic or Standard user uses all their analyses for the cycle
 function analysisLimitEmailHtml(displayName, userTier, resetDateStr, unsubscribeUrl) {
   const name = displayName ? displayName.split(" ")[0] : "there";
-  const isFreePlan = userTier === "free";
-  const limit = isFreePlan ? 1 : 10;
-  const nextTier = isFreePlan ? "Basic" : "Pro";
-  const nextPrice = isFreePlan ? "$9.99" : "$14.99";
-  const nextLimit = isFreePlan ? "10 properties per month" : "unlimited properties";
+  const isBasicPlan = userTier === "basic";
+  const limit = isBasicPlan ? 1 : 10;
+  const nextTier = isBasicPlan ? "Standard" : "Pro";
+  const nextPrice = isBasicPlan ? "$19.99" : "$29.99";
+  const nextLimit = isBasicPlan ? "10 analyses per month" : "unlimited analyses";
 
   return emailWrapper(`
     <h2 style="margin:0 0 16px;font-size:20px;font-weight:700;color:#ffffff">You've hit your analysis limit, ${name}</h2>
-    <p style="margin:0 0 14px;color:#c8cbd6">You've used ${limit === 1 ? "your <strong style=\"color:#ffffff\">1 free property analysis</strong>" : "all <strong style=\"color:#ffffff\">" + limit + " property analyses</strong>"} for this 30-day cycle.</p>
+    <p style="margin:0 0 14px;color:#c8cbd6">You've used ${limit === 1 ? "your <strong style=\"color:#ffffff\">1 property analysis</strong>" : "all <strong style=\"color:#ffffff\">" + limit + " property analyses</strong>"} for this 30-day cycle.</p>
     <p style="margin:0 0 14px;color:#c8cbd6">Your analyses will reset on <strong style="color:#ffffff">${resetDateStr}</strong>. In the meantime, you can still view data on properties you've already analyzed.</p>
 
     <div style="height:1px;background:#252a3d;margin:24px 0"></div>
@@ -303,8 +299,8 @@ function analysisLimitEmailHtml(displayName, userTier, resetDateStr, unsubscribe
 
     <div style="background:#1a1e30;border:1px solid #252a3d;border-radius:8px;padding:16px 20px;margin:16px 0">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-        ${isFreePlan ? `
-          <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span><strong style="color:#ffffff">Analyze 10 properties per month</strong> (vs. 1 on Free)</td></tr>
+        ${isBasicPlan ? `
+          <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span><strong style="color:#ffffff">Analyze 10 properties per month</strong> (vs. 1 on Basic)</td></tr>
           <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span><strong style="color:#ffffff">CSV import & export</strong> for your data</td></tr>
           <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span><strong style="color:#ffffff">Dark mode</strong> & 8 color themes</td></tr>
         ` : `
@@ -329,11 +325,12 @@ function upgradeConfirmationEmailHtml(displayName, newTier, previousTier) {
   const name = displayName ? displayName.split(" ")[0] : "there";
   const tierDisplay = newTier.charAt(0).toUpperCase() + newTier.slice(1);
   const features = PLAN_FEATURES[tierDisplay] || PLAN_FEATURES.Basic;
-  const price = tierDisplay === "Pro" ? "$14.99" : "$9.99";
+  const priceMap = { Basic: "$9.99", Standard: "$19.99", Pro: "$29.99" };
+  const price = priceMap[tierDisplay] || "$9.99";
 
   let introText = "";
-  if (previousTier === "free" || !previousTier) {
-    introText = `You've upgraded from the Free plan to <strong style="color:#6381fa">${tierDisplay}</strong> — great decision! Here's everything you now have access to:`;
+  if (!previousTier || previousTier === "none") {
+    introText = `You've signed up for <strong style="color:#6381fa">${tierDisplay}</strong> — great decision! Here's everything you now have access to:`;
   } else {
     const prevDisplay = previousTier.charAt(0).toUpperCase() + previousTier.slice(1);
     introText = `You've upgraded from ${prevDisplay} to <strong style="color:#6381fa">${tierDisplay}</strong> — nice move! Here's everything included in your new plan:`;
@@ -360,6 +357,140 @@ function upgradeConfirmationEmailHtml(displayName, newTier, previousTier) {
     <p style="margin:0 0 14px;color:#c8cbd6">You can manage your subscription anytime from <a href="${APP_URL}#settings" style="color:#6381fa;text-decoration:none">Settings → Billing</a>.</p>
     <p style="font-size:13px;color:#6b7280;margin:0"><strong style="color:#9298ad">Questions?</strong> Reply to this email or reach us at <a href="mailto:help@rentingradar.com" style="color:#6381fa;text-decoration:none">help@rentingradar.com</a>.</p>
   `);
+}
+
+
+// ============================================================
+// TRIAL REMINDER EMAIL TEMPLATES
+// ============================================================
+
+function trialReminderEmailHtml(displayName, daysLeft, tierName, unsubscribeUrl) {
+  const name = displayName ? displayName.split(" ")[0] : "there";
+  const tierDisplay = tierName ? tierName.charAt(0).toUpperCase() + tierName.slice(1) : "your";
+
+  if (daysLeft === 4) {
+    // Day 3 email — halfway through trial
+    return { subject: `⏳ Your ${tierDisplay} trial is halfway over`, html: emailWrapper(`
+      <h2 style="margin:0 0 16px;font-size:20px;font-weight:700;color:#ffffff">Halfway there, ${name}!</h2>
+      <p style="margin:0 0 14px;color:#c8cbd6">You have <strong style="color:#f59e0b">4 days left</strong> on your ${tierDisplay} free trial. We hope you've been enjoying the platform so far.</p>
+      <p style="margin:0 0 14px;color:#c8cbd6">When your trial ends, you'll need an active subscription to continue accessing your properties, analyses, and pipeline data. Your data will be saved — it'll be right where you left it once you subscribe.</p>
+
+      <div style="background:#1a1e30;border:1px solid #252a3d;border-radius:8px;padding:16px 20px;margin:20px 0;text-align:center">
+        <p style="margin:0 0 4px;font-size:14px;color:#ffffff;font-weight:600">No action needed right now</p>
+        <p style="margin:0 0 0;font-size:13px;color:#9298ad">Your trial continues until it expires. You can subscribe anytime from the app.</p>
+      </div>
+
+      <p style="text-align:center">
+        <a href="${APP_URL}" style="display:inline-block;background:#6381fa;color:#ffffff;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:600;font-size:14px;margin:8px 0 16px">Open RentingRadar</a>
+      </p>
+
+      <div style="height:1px;background:#252a3d;margin:24px 0"></div>
+      <p style="font-size:13px;color:#6b7280;margin:0"><strong style="color:#9298ad">Questions?</strong> Reply to this email or reach us at <a href="mailto:help@rentingradar.com" style="color:#6381fa;text-decoration:none">help@rentingradar.com</a>.</p>
+    `, unsubscribeUrl) };
+  }
+
+  if (daysLeft === 2) {
+    // Day 5 email — 2 days left
+    return { subject: `⚠️ 2 days left on your ${tierDisplay} trial`, html: emailWrapper(`
+      <h2 style="margin:0 0 16px;font-size:20px;font-weight:700;color:#ffffff">Your trial ends in 2 days, ${name}</h2>
+      <p style="margin:0 0 14px;color:#c8cbd6">Just a heads up — your ${tierDisplay} free trial expires in <strong style="color:#f59e0b">2 days</strong>.</p>
+      <p style="margin:0 0 14px;color:#c8cbd6">After your trial ends, you will <strong style="color:#ffffff">lose access to the app</strong>, including your property pipeline, analyses, expense tracking, and all other features. Your data will be preserved, but you won't be able to view or use it until you subscribe.</p>
+
+      <div style="background:#1a1e30;border:1px solid #252a3d;border-radius:8px;padding:16px 20px;margin:20px 0">
+        <p style="margin:0 0 12px;font-size:13px;font-weight:600;color:#f59e0b;text-transform:uppercase;letter-spacing:.5px">What happens when your trial ends</p>
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+          <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#ef4444;margin-right:8px">✕</span>You will not be able to log into the app</td></tr>
+          <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#ef4444;margin-right:8px">✕</span>Your properties, analyses, and pipeline will be inaccessible</td></tr>
+          <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span>Your data is preserved — subscribe anytime to restore full access</td></tr>
+        </table>
+      </div>
+
+      <p style="text-align:center">
+        <a href="${APP_URL}" style="display:inline-block;background:#6381fa;color:#ffffff;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:600;font-size:14px;margin:8px 0 16px">Subscribe Now</a>
+      </p>
+
+      <div style="height:1px;background:#252a3d;margin:24px 0"></div>
+      <p style="font-size:13px;color:#6b7280;margin:0"><strong style="color:#9298ad">Questions?</strong> Reply to this email or reach us at <a href="mailto:help@rentingradar.com" style="color:#6381fa;text-decoration:none">help@rentingradar.com</a>.</p>
+    `, unsubscribeUrl) };
+  }
+
+  if (daysLeft === 0) {
+    // Day 7 email — trial ends today
+    return { subject: `🔒 Your ${tierDisplay} trial has ended`, html: emailWrapper(`
+      <h2 style="margin:0 0 16px;font-size:20px;font-weight:700;color:#ffffff">Your trial has ended, ${name}</h2>
+      <p style="margin:0 0 14px;color:#c8cbd6">Your 7-day ${tierDisplay} free trial has expired. As of today, <strong style="color:#ffffff">your access to RentingRadar has been paused</strong>.</p>
+      <p style="margin:0 0 14px;color:#c8cbd6">This means you can no longer log in, view your properties, run analyses, or access any features in the app.</p>
+      <p style="margin:0 0 14px;color:#c8cbd6"><strong style="color:#34d399">Your data is safe.</strong> All your properties, pipeline data, expenses, and analyses are preserved. Subscribe to any plan to instantly restore full access to everything.</p>
+
+      <div style="background:#1a1e30;border:1px solid #252a3d;border-radius:8px;padding:16px 20px;margin:20px 0">
+        <p style="margin:0 0 12px;font-size:13px;font-weight:600;color:#6381fa;text-transform:uppercase;letter-spacing:.5px">Choose a Plan</p>
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+          <tr><td style="padding:6px 0;font-size:14px;color:#c8cbd6"><strong style="color:#ffffff">Basic</strong> — $9.99/mo · 1 analysis/month</td></tr>
+          <tr><td style="padding:6px 0;font-size:14px;color:#c8cbd6"><strong style="color:#ffffff">Standard</strong> — $19.99/mo · 10 analyses/month</td></tr>
+          <tr><td style="padding:6px 0;font-size:14px;color:#c8cbd6"><strong style="color:#ffffff">Pro</strong> — $29.99/mo · Unlimited analyses</td></tr>
+        </table>
+      </div>
+
+      <p style="text-align:center">
+        <a href="${APP_URL}" style="display:inline-block;background:#6381fa;color:#ffffff;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:600;font-size:14px;margin:8px 0 16px">Subscribe & Restore Access</a>
+      </p>
+
+      <div style="height:1px;background:#252a3d;margin:24px 0"></div>
+      <p style="font-size:13px;color:#6b7280;margin:0"><strong style="color:#9298ad">Questions?</strong> Reply to this email or reach us at <a href="mailto:help@rentingradar.com" style="color:#6381fa;text-decoration:none">help@rentingradar.com</a>.</p>
+    `, unsubscribeUrl) };
+  }
+
+  if (daysLeft === -7) {
+    // 1 week after expiration
+    return { subject: `Your RentingRadar data is waiting for you`, html: emailWrapper(`
+      <h2 style="margin:0 0 16px;font-size:20px;font-weight:700;color:#ffffff">It's been a week, ${name}</h2>
+      <p style="margin:0 0 14px;color:#c8cbd6">Your RentingRadar trial ended a week ago, and your account is currently locked. You're missing out on tracking and analyzing rental deals.</p>
+      <p style="margin:0 0 14px;color:#c8cbd6"><strong style="color:#34d399">Your data is still here.</strong> Every property, analysis, and pipeline entry you created during your trial is saved and waiting for you. Subscribe to pick up right where you left off.</p>
+
+      <div style="background:#1a1e30;border:1px solid #252a3d;border-radius:8px;padding:16px 20px;margin:20px 0">
+        <p style="margin:0 0 12px;font-size:13px;font-weight:600;color:#6381fa;text-transform:uppercase;letter-spacing:.5px">Plans start at $9.99/mo</p>
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+          <tr><td style="padding:6px 0;font-size:14px;color:#c8cbd6"><strong style="color:#ffffff">Basic</strong> — $9.99/mo · 1 analysis/month</td></tr>
+          <tr><td style="padding:6px 0;font-size:14px;color:#c8cbd6"><strong style="color:#ffffff">Standard</strong> — $19.99/mo · 10 analyses/month</td></tr>
+          <tr><td style="padding:6px 0;font-size:14px;color:#c8cbd6"><strong style="color:#ffffff">Pro</strong> — $29.99/mo · Unlimited analyses</td></tr>
+        </table>
+      </div>
+
+      <p style="text-align:center">
+        <a href="${APP_URL}" style="display:inline-block;background:#6381fa;color:#ffffff;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:600;font-size:14px;margin:8px 0 16px">Subscribe & Restore Access</a>
+      </p>
+
+      <div style="height:1px;background:#252a3d;margin:24px 0"></div>
+      <p style="font-size:13px;color:#6b7280;margin:0"><strong style="color:#9298ad">Questions?</strong> Reply to this email or reach us at <a href="mailto:help@rentingradar.com" style="color:#6381fa;text-decoration:none">help@rentingradar.com</a>.</p>
+    `, unsubscribeUrl) };
+  }
+
+  if (daysLeft === -30) {
+    // 1 month after expiration — final email
+    return { subject: `Final reminder: your RentingRadar account is locked`, html: emailWrapper(`
+      <h2 style="margin:0 0 16px;font-size:20px;font-weight:700;color:#ffffff">We'd hate to see your data go unused, ${name}</h2>
+      <p style="margin:0 0 14px;color:#c8cbd6">It's been a month since your RentingRadar trial ended. Your account remains locked, but <strong style="color:#34d399">all your data is still preserved</strong>.</p>
+      <p style="margin:0 0 14px;color:#c8cbd6">This is our last reminder. If you'd like to continue using RentingRadar to manage your rental arbitrage pipeline, subscribe to a plan below. If not, no worries — we wish you the best.</p>
+
+      <div style="background:#1a1e30;border:1px solid #252a3d;border-radius:8px;padding:16px 20px;margin:20px 0">
+        <p style="margin:0 0 12px;font-size:13px;font-weight:600;color:#6381fa;text-transform:uppercase;letter-spacing:.5px">Plans start at $9.99/mo</p>
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+          <tr><td style="padding:6px 0;font-size:14px;color:#c8cbd6"><strong style="color:#ffffff">Basic</strong> — $9.99/mo</td></tr>
+          <tr><td style="padding:6px 0;font-size:14px;color:#c8cbd6"><strong style="color:#ffffff">Standard</strong> — $19.99/mo</td></tr>
+          <tr><td style="padding:6px 0;font-size:14px;color:#c8cbd6"><strong style="color:#ffffff">Pro</strong> — $29.99/mo</td></tr>
+        </table>
+      </div>
+
+      <p style="text-align:center">
+        <a href="${APP_URL}" style="display:inline-block;background:#6381fa;color:#ffffff;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:600;font-size:14px;margin:8px 0 16px">Subscribe & Restore Access</a>
+      </p>
+
+      <div style="height:1px;background:#252a3d;margin:24px 0"></div>
+      <p style="font-size:13px;color:#6b7280;margin:0">This is the last email we'll send about your trial. <strong style="color:#9298ad">Questions?</strong> <a href="mailto:help@rentingradar.com" style="color:#6381fa;text-decoration:none">help@rentingradar.com</a>.</p>
+    `, unsubscribeUrl) };
+  }
+
+  return null;
 }
 
 
@@ -454,7 +585,7 @@ exports.testEmail = functions.https.onRequest((req, res) => {
 
     try {
       initSendGrid();
-      const testHtml = welcomeEmailHtml("Test", "Free");
+      const testHtml = welcomeEmailHtml("Test");
       await sgMail.send({
         to: "sabrina@summitcapllc.com",
         from: FROM_EMAIL,
@@ -472,6 +603,52 @@ exports.testEmail = functions.https.onRequest((req, res) => {
 
 
 // ============================================================
+// 4b. TEST ADMIN NEW-USER NOTIFICATION
+// ============================================================
+exports.testAdminNotification = functions.https.onRequest((req, res) => {
+  cors(req, res, async () => {
+    if (!process.env.SENDGRID_API_KEY) {
+      return res.status(500).json({ error: "SENDGRID_API_KEY not found" });
+    }
+    try {
+      initSendGrid();
+      const testEmail = "testuser@example.com";
+      const testName = "Jane Doe";
+      const signupTime = new Date().toLocaleString("en-US", { timeZone: "America/New_York", dateStyle: "medium", timeStyle: "short" });
+      const adminNotifHtml = emailWrapper(`
+        <h2 style="color:#a855f7;margin:0 0 16px">New User Signup</h2>
+        <table style="width:100%;border-collapse:collapse">
+          <tr>
+            <td style="padding:8px 12px;color:#94a3b8;border-bottom:1px solid #334155">Name</td>
+            <td style="padding:8px 12px;color:#f1f5f9;border-bottom:1px solid #334155">${testName}</td>
+          </tr>
+          <tr>
+            <td style="padding:8px 12px;color:#94a3b8;border-bottom:1px solid #334155">Email</td>
+            <td style="padding:8px 12px;color:#f1f5f9;border-bottom:1px solid #334155"><a href="mailto:${testEmail}" style="color:#818cf8">${testEmail}</a></td>
+          </tr>
+          <tr>
+            <td style="padding:8px 12px;color:#94a3b8;border-bottom:1px solid #334155">Method</td>
+            <td style="padding:8px 12px;color:#f1f5f9;border-bottom:1px solid #334155">google.com</td>
+          </tr>
+          <tr>
+            <td style="padding:8px 12px;color:#94a3b8">Signed Up</td>
+            <td style="padding:8px 12px;color:#f1f5f9">${signupTime} ET</td>
+          </tr>
+        </table>
+        <div style="margin-top:20px">
+          <a href="${APP_URL}" style="display:inline-block;padding:10px 24px;background:linear-gradient(135deg,#a855f7,#6366f1);color:#fff;border-radius:8px;text-decoration:none;font-weight:600">View in Admin Panel</a>
+        </div>
+      `);
+      await sendEmail("help@rentingradar.com", `New Signup: ${testEmail}`, adminNotifHtml, { category: "admin-new-user" });
+      res.status(200).json({ success: true, message: "Test admin notification sent to help@rentingradar.com" });
+    } catch (err) {
+      console.error("Test admin notification failed:", err?.response?.body || err.message);
+      res.status(500).json({ error: err?.response?.body || err.message });
+    }
+  });
+});
+
+// ============================================================
 // 5. WELCOME EMAIL — triggered on new user creation
 //    Sends welcome email immediately for all users (Google & email/password).
 // ============================================================
@@ -483,12 +660,51 @@ exports.onUserCreated = functions.auth.user().onCreate(async (user) => {
   // Send welcome email immediately for all users
   try {
     initSendGrid();
-    const html = welcomeEmailHtml(displayName, "Free");
+    const html = welcomeEmailHtml(displayName);
     console.log("Sending welcome email to", email);
     await sendEmail(email, "🎉 Welcome to RentingRadar! Here's how to get started", html, { category: "welcome" });
     console.log("Welcome email sent successfully to", email);
   } catch (err) {
     console.error("Failed to send welcome email:", err);
+  }
+
+  // Notify admin(s) about new signup
+  try {
+    const signupMethod = user.providerData && user.providerData.length
+      ? user.providerData.map(p => p.providerId).join(", ")
+      : "unknown";
+    const signupTime = new Date().toLocaleString("en-US", { timeZone: "America/New_York", dateStyle: "medium", timeStyle: "short" });
+    const adminNotifHtml = emailWrapper(`
+      <h2 style="color:#a855f7;margin:0 0 16px">New User Signup</h2>
+      <table style="width:100%;border-collapse:collapse">
+        <tr>
+          <td style="padding:8px 12px;color:#94a3b8;border-bottom:1px solid #334155">Name</td>
+          <td style="padding:8px 12px;color:#f1f5f9;border-bottom:1px solid #334155">${displayName || "—"}</td>
+        </tr>
+        <tr>
+          <td style="padding:8px 12px;color:#94a3b8;border-bottom:1px solid #334155">Email</td>
+          <td style="padding:8px 12px;color:#f1f5f9;border-bottom:1px solid #334155"><a href="mailto:${email}" style="color:#818cf8">${email}</a></td>
+        </tr>
+        <tr>
+          <td style="padding:8px 12px;color:#94a3b8;border-bottom:1px solid #334155">Method</td>
+          <td style="padding:8px 12px;color:#f1f5f9;border-bottom:1px solid #334155">${signupMethod}</td>
+        </tr>
+        <tr>
+          <td style="padding:8px 12px;color:#94a3b8">Signed Up</td>
+          <td style="padding:8px 12px;color:#f1f5f9">${signupTime} ET</td>
+        </tr>
+      </table>
+      <div style="margin-top:20px">
+        <a href="${APP_URL}" style="display:inline-block;padding:10px 24px;background:linear-gradient(135deg,#a855f7,#6366f1);color:#fff;border-radius:8px;text-decoration:none;font-weight:600">View in Admin Panel</a>
+      </div>
+    `);
+    const adminEmails = ["help@rentingradar.com"];
+    for (const adminEmail of adminEmails) {
+      await sendEmail(adminEmail, `New Signup: ${email}`, adminNotifHtml, { category: "admin-new-user" });
+    }
+    console.log("Admin notification sent for new user:", email);
+  } catch (err) {
+    console.error("Failed to send admin notification:", err);
   }
 
   try {
@@ -580,7 +796,7 @@ exports.sendWelcomeEmail = functions.https.onRequest((req, res) => {
     const displayName = authUser.displayName;
     try {
       initSendGrid();
-      const html = welcomeEmailHtml(displayName, "Free");
+      const html = welcomeEmailHtml(displayName);
       console.log("Sending post-verification welcome email to", email);
       await sendEmail(email, "🎉 Welcome to RentingRadar! Here's how to get started", html, { category: "welcome" });
       console.log("Post-verification welcome email sent successfully to", email);
@@ -656,14 +872,14 @@ exports.weeklyUpgradeNudge = functions.pubsub
 
     console.log("Running monthly upgrade nudge...");
 
-    // Query free-tier AND basic-tier users (both get upgrade nudges)
-    const freeSnapshot = await db.collection("users").where("tier", "==", "free").get();
+    // Query basic-tier AND standard-tier users (both get upgrade nudges)
     const basicSnapshot = await db.collection("users").where("tier", "==", "basic").get();
+    const standardSnapshot = await db.collection("users").where("tier", "==", "standard").get();
 
-    const allUsers = [...freeSnapshot.docs, ...basicSnapshot.docs];
+    const allUsers = [...basicSnapshot.docs, ...standardSnapshot.docs];
 
     if (allUsers.length === 0) {
-      console.log("No free or basic tier users found.");
+      console.log("No basic or standard tier users found.");
       return null;
     }
 
@@ -677,7 +893,7 @@ exports.weeklyUpgradeNudge = functions.pubsub
       const uid = userDoc.id;
       const email = userData.email;
       const displayName = userData.displayName || userData.name;
-      const userTier = userData.tier || "free";
+      const userTier = userData.tier || "basic";
 
       if (!email) { skipped++; continue; }
 
@@ -702,8 +918,8 @@ exports.weeklyUpgradeNudge = functions.pubsub
 
       // Use the appropriate nudge template based on user's current tier
       let subject, html;
-      if (userTier === "basic") {
-        ({ subject, html } = basicUpgradeNudgeEmailHtml(displayName, weekNumber, unsubUrl));
+      if (userTier === "standard") {
+        ({ subject, html } = standardUpgradeNudgeEmailHtml(displayName, weekNumber, unsubUrl));
       } else {
         ({ subject, html } = upgradeNudgeEmailHtml(displayName, weekNumber, unsubUrl));
       }
@@ -731,8 +947,124 @@ exports.weeklyUpgradeNudge = functions.pubsub
 
 
 // ============================================================
-// 8. ANALYSIS QUOTA LIMIT EMAIL — triggered from client when user
-//    exhausts their monthly analyses (Free or Basic)
+// 8. TRIAL REMINDER EMAILS — runs daily at 9 AM EST
+//    Sends reminders at day 3, day 5, day 7 (expiration),
+//    1 week after expiration, and 1 month after expiration.
+//    Skips users who have converted to a paid subscription.
+// ============================================================
+exports.dailyTrialReminders = functions.pubsub
+  .schedule("every day 09:00")
+  .timeZone("America/New_York")
+  .onRun(async (context) => {
+    console.log("Running daily trial reminders...");
+
+    const now = Date.now();
+
+    // Target days: check users whose trialEnd falls on specific milestones
+    // daysLeft > 0 means trial is still active, <= 0 means expired
+    const checkpoints = [
+      { daysFromEnd: 4, label: "day3_halfway" },       // 4 days left (sent on day 3)
+      { daysFromEnd: 2, label: "day5_2days" },          // 2 days left (sent on day 5)
+      { daysFromEnd: 0, label: "day7_expired" },        // Trial ends today
+      { daysFromEnd: -7, label: "week_after" },         // 1 week after expiration
+      { daysFromEnd: -30, label: "month_after" },       // 1 month after expiration
+    ];
+
+    // Query all users with a trialEnd set (these are trial users)
+    const trialUsersSnapshot = await db.collection("users")
+      .where("trialEnd", "!=", null)
+      .get();
+
+    if (trialUsersSnapshot.empty) {
+      console.log("No trial users found.");
+      return null;
+    }
+
+    let sent = 0;
+    let skipped = 0;
+    const logBatch = [];
+
+    for (const userDoc of trialUsersSnapshot.docs) {
+      const userData = userDoc.data();
+      const uid = userDoc.id;
+      const email = userData.email;
+      const displayName = userData.displayName || userData.name;
+      const trialEnd = userData.trialEnd;
+      const subscriptionStatus = userData.subscriptionStatus;
+      const tier = userData.tier;
+
+      if (!email || !trialEnd) { skipped++; continue; }
+
+      // Skip users who have converted to a paid plan (active subscription)
+      if (subscriptionStatus === "active" && tier) {
+        skipped++;
+        continue;
+      }
+
+      // Calculate days remaining from trial end
+      const trialEndDate = new Date(trialEnd);
+      const msPerDay = 24 * 60 * 60 * 1000;
+      const daysLeft = Math.round((trialEndDate.getTime() - now) / msPerDay);
+
+      // Check if this user hits any checkpoint today (±0.5 day tolerance)
+      let matchedCheckpoint = null;
+      for (const cp of checkpoints) {
+        if (Math.abs(daysLeft - cp.daysFromEnd) < 1) {
+          matchedCheckpoint = cp;
+          break;
+        }
+      }
+
+      if (!matchedCheckpoint) { continue; }
+
+      // Check if we already sent this specific reminder
+      try {
+        const existingEmail = await db.collection("emailLog")
+          .where("uid", "==", uid)
+          .where("type", "==", "trial_reminder_" + matchedCheckpoint.label)
+          .limit(1)
+          .get();
+        if (!existingEmail.empty) { skipped++; continue; }
+      } catch (err) {
+        console.warn("Could not check existing trial emails for", uid, err);
+      }
+
+      // Check email preferences
+      const canSend = await canSendProductEmails(uid);
+      if (!canSend) { skipped++; continue; }
+
+      const unsubUrl = getUnsubscribeUrl(uid, email, "product");
+      const trialTier = tier || userData.trialTier || "basic";
+      const emailData = trialReminderEmailHtml(displayName, matchedCheckpoint.daysFromEnd, trialTier, unsubUrl);
+
+      if (!emailData) { skipped++; continue; }
+
+      const success = await sendEmail(email, emailData.subject, emailData.html, {
+        unsubscribeUrl: unsubUrl,
+        category: "trial_reminder",
+      });
+
+      if (success) {
+        sent++;
+        logBatch.push(db.collection("emailLog").add({
+          uid: uid,
+          email: email,
+          type: "trial_reminder_" + matchedCheckpoint.label,
+          subject: emailData.subject,
+          sentAt: admin.firestore.FieldValue.serverTimestamp(),
+        }));
+      }
+    }
+
+    await Promise.all(logBatch);
+    console.log(`Trial reminders complete: ${sent} sent, ${skipped} skipped.`);
+    return null;
+  });
+
+
+// ============================================================
+// 9. ANALYSIS QUOTA LIMIT EMAIL — triggered from client when user
+//    exhausts their monthly analyses (Basic or Standard)
 // ============================================================
 exports.sendAnalysisLimitEmail = functions.https.onCall(async (data, context) => {
   if (!context.auth) {
@@ -751,7 +1083,7 @@ exports.sendAnalysisLimitEmail = functions.https.onCall(async (data, context) =>
   const userData = userDoc.data();
   const email = userData.email;
   const displayName = userData.displayName || userData.name;
-  const userTier = userData.tier || "free";
+  const userTier = userData.tier || "basic";
 
   if (!email) {
     throw new functions.https.HttpsError("failed-precondition", "No email on file.");
@@ -786,8 +1118,8 @@ exports.sendAnalysisLimitEmail = functions.https.onCall(async (data, context) =>
   const unsubUrl = getUnsubscribeUrl(uid, email, "product");
   const htmlContent = analysisLimitEmailHtml(displayName, userTier, resetDateStr, unsubUrl);
 
-  const subject = userTier === "free"
-    ? "📊 You've used your free analysis for this month"
+  const subject = userTier === "basic"
+    ? "📊 You've used your analysis for this month"
     : "📊 You've used all 10 analyses for this month";
 
   const success = await sendEmail(email, subject, htmlContent, {
@@ -950,6 +1282,7 @@ a{color:#6381fa;text-decoration:none;font-weight:500}
 
 function getTierFromPriceId(priceId) {
   if (priceId === process.env.BASIC_MONTHLY_PRICE || priceId === process.env.BASIC_YEARLY_PRICE) return "basic";
+  if (priceId === process.env.STANDARD_MONTHLY_PRICE || priceId === process.env.STANDARD_YEARLY_PRICE) return "standard";
   if (priceId === process.env.PRO_MONTHLY_PRICE || priceId === process.env.PRO_YEARLY_PRICE) return "pro";
   return null;
 }
@@ -993,6 +1326,8 @@ exports.createCheckoutSession = functions.https.onRequest((req, res) => {
     const PRICE_IDS = {
       basic_monthly: process.env.BASIC_MONTHLY_PRICE,
       basic_yearly: process.env.BASIC_YEARLY_PRICE,
+      standard_monthly: process.env.STANDARD_MONTHLY_PRICE,
+      standard_yearly: process.env.STANDARD_YEARLY_PRICE,
       pro_monthly: process.env.PRO_MONTHLY_PRICE,
       pro_yearly: process.env.PRO_YEARLY_PRICE,
     };
@@ -1026,6 +1361,7 @@ exports.createCheckoutSession = functions.https.onRequest((req, res) => {
         success_url: "https://app.rentingradar.com?checkout=success&session_id={CHECKOUT_SESSION_ID}",
         cancel_url: "https://app.rentingradar.com?checkout=cancelled",
         subscription_data: {
+          trial_period_days: 7,
           metadata: { firebaseUID: uid, tier: tier },
         },
         metadata: { firebaseUID: uid, tier: tier },
@@ -1094,7 +1430,8 @@ exports.verifyCheckout = functions.https.onRequest((req, res) => {
         return sendError(res, 403, "Session does not belong to this user.");
       }
 
-      if (session.payment_status !== "paid") {
+      // Trials have payment_status "no_payment_required"; paid subs have "paid"
+      if (session.payment_status !== "paid" && session.payment_status !== "no_payment_required") {
         return sendError(res, 400, "Payment not completed.");
       }
 
@@ -1103,15 +1440,28 @@ exports.verifyCheckout = functions.https.onRequest((req, res) => {
 
       // Get previous tier before updating
       const userDoc = await db.collection("users").doc(uid).get();
-      const previousTier = userDoc.exists ? (userDoc.data().tier || "free") : "free";
+      const previousTier = userDoc.exists ? (userDoc.data().tier || null) : null;
 
-      await db.collection("users").doc(uid).update({
+      // Determine subscription status and trial end
+      const sub = session.subscription;
+      const subStatus = sub?.status || "active";
+      let trialEnd = null;
+      if (subStatus === "trialing" && sub?.trial_end) {
+        trialEnd = new Date(sub.trial_end * 1000).toISOString();
+      }
+
+      const updateData = {
         tier: tier,
         stripeCustomerId: session.customer,
-        stripeSubscriptionId: session.subscription?.id || session.subscription,
-        subscriptionStatus: "active",
+        stripeSubscriptionId: sub?.id || sub,
+        subscriptionStatus: subStatus,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      });
+      };
+      if (trialEnd) {
+        updateData.trialEnd = trialEnd;
+      }
+
+      await db.collection("users").doc(uid).update(updateData);
 
       console.log(`User ${uid} verified and upgraded to ${tier}`);
 
@@ -1151,11 +1501,21 @@ exports.syncSubscription = functions.https.onRequest((req, res) => {
     if (!userDoc.exists) return sendError(res, 404, "User not found.");
 
     const userData = userDoc.data();
+
+    // Skip Stripe sync for manually overridden accounts (testers/internal)
+    if (userData.manualOverride) {
+      return sendSuccess(res, {
+        tier: userData.tier,
+        subscriptionStatus: userData.subscriptionStatus || "active",
+        changed: false,
+      });
+    }
+
     const subscriptionId = userData.stripeSubscriptionId;
     const customerId = userData.stripeCustomerId;
 
     if (!subscriptionId && !customerId) {
-      return sendSuccess(res, { tier: "free", subscriptionStatus: "none", changed: false });
+      return sendSuccess(res, { tier: null, subscriptionStatus: "none", changed: false });
     }
 
     try {
@@ -1184,16 +1544,16 @@ exports.syncSubscription = functions.https.onRequest((req, res) => {
       }
 
       if (!subscription) {
-        const wasChanged = userData.tier !== "free" || userData.subscriptionStatus !== "cancelled";
+        const wasChanged = userData.tier !== null || userData.subscriptionStatus !== "expired";
         if (wasChanged) {
           await db.collection("users").doc(uid).update({
-            tier: "free",
-            subscriptionStatus: "cancelled",
+            tier: null,
+            subscriptionStatus: "expired",
             stripeSubscriptionId: null,
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
           });
         }
-        return sendSuccess(res, { tier: "free", subscriptionStatus: "cancelled", changed: wasChanged });
+        return sendSuccess(res, { tier: null, subscriptionStatus: "expired", changed: wasChanged });
       }
 
       const priceId = subscription.items?.data?.[0]?.price?.id;
@@ -1203,9 +1563,15 @@ exports.syncSubscription = functions.https.onRequest((req, res) => {
       let newTier = stripeTier;
       let newStatus = stripeStatus;
 
+      // Handle trial status
+      let trialEnd = null;
+      if (stripeStatus === "trialing" && subscription.trial_end) {
+        trialEnd = new Date(subscription.trial_end * 1000).toISOString();
+      }
+
       if (stripeStatus === "canceled" || stripeStatus === "unpaid" || stripeStatus === "incomplete_expired") {
-        newTier = "free";
-        newStatus = "cancelled";
+        newTier = null;
+        newStatus = "expired";
       }
 
       const changed = userData.tier !== newTier || userData.subscriptionStatus !== newStatus;
@@ -1218,11 +1584,15 @@ exports.syncSubscription = functions.https.onRequest((req, res) => {
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         };
 
-        if (stripeStatus === "active") {
+        if (stripeStatus === "active" || stripeStatus === "trialing") {
           update.currentPeriodEnd = new Date(subscription.current_period_end * 1000).toISOString();
         }
 
-        if (newTier === "free") {
+        if (trialEnd) {
+          update.trialEnd = trialEnd;
+        }
+
+        if (newTier === null) {
           update.stripeSubscriptionId = null;
         }
 
@@ -1230,7 +1600,7 @@ exports.syncSubscription = functions.https.onRequest((req, res) => {
         console.log(`Synced user ${uid}: tier=${newTier}, status=${newStatus}`);
       }
 
-      sendSuccess(res, { tier: newTier, subscriptionStatus: newStatus, changed: changed });
+      sendSuccess(res, { tier: newTier, subscriptionStatus: newStatus, trialEnd: trialEnd, changed: changed });
     } catch (err) {
       console.error("syncSubscription error:", err);
       sendError(res, 500, err.message || "Failed to sync subscription.");
@@ -1279,7 +1649,7 @@ exports.aiEnrich = functions
       const body = req.body.data || req.body;
       const { systemPrompt, userPrompt } = body || {};
       if (!systemPrompt || !userPrompt) {
-        return sendError(res, 400, "Missing systemPrompt or userPrompt");
+        return res.status(400).json({ error: { message: "Missing systemPrompt or userPrompt" }, model: CLAUDE_MODEL });
       }
 
       // Rate limit: simple per-user throttle via Firestore
