@@ -92,11 +92,6 @@ function welcomeEmailHtml(displayName, tierName) {
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${buildFeatureList(features)}</table>
     </div>
     <div class="divider-line" style="height:1px;background-color:#252a3d;margin:24px 0"></div>
-    <p style="margin:0 0 8px;color:#ffffff;font-weight:600">Get started in 2 minutes</p>
-    <p style="margin:0 0 16px;color:#c8cbd6">Our interactive tutorial walks you through every feature so you can hit the ground running.</p>
-    <p style="text-align:center">
-      <a href="${APP_URL}/tutorial.html" style="display:inline-block;background:#6381fa;color:#ffffff;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:600;font-size:14px;margin:8px 0 16px">Launch Tutorial</a>
-    </p>
     ${tier === "Free" ? `<div class="feat-box" style="background-color:#1a1e30;border:1px solid #252a3d;border-radius:8px;padding:16px 20px;margin:20px 0;text-align:center">
       <p style="margin:0 0 4px;font-size:14px;color:#ffffff;font-weight:600">Want more features?</p>
       <p style="margin:0 0 12px;font-size:13px;color:#9298ad">Upgrade to Basic ($9.99/mo) to analyze 10 properties per month, or Pro ($14.99/mo) for unlimited analyses & negotiation forecasting.</p>

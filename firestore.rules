@@ -1,0 +1,158 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{userId} {
+      allow read: if request.auth != null && (
+        request.auth.uid == userId ||
+        request.auth.token.email == "help@rentingradar.com" ||
+        (
+          resource.data.referredBy != null &&
+          'referralCodes' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data &&
+          resource.data.referredBy in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.referralCodes
+        )
+      );
+      allow write: if request.auth != null && (
+        request.auth.uid == userId ||
+        request.auth.token.email == "help@rentingradar.com"
+      );
+      match /{document=**} {
+        allow read, write: if request.auth != null && (
+          request.auth.uid == userId ||
+          request.auth.token.email == "help@rentingradar.com"
+        );
+      }
+    }
+    match /tutorialContent/{doc} {
+      allow read: if true;
+      allow write: if request.auth != null &&
+        (request.auth.token.email == "help@rentingradar.com" ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.admin == true);
+    }
+
+    // ===== Chat / Support System (Phase 1 beta: admin + affiliate users) =====
+    // Conversations are owned by `userId`. Admins can read/write any conversation.
+    // Only admins and affiliate-tier users can CREATE conversations during beta.
+    match /chatConversations/{conversationId} {
+      function isAdminUser() {
+        return request.auth != null && (
+          request.auth.token.email == "help@rentingradar.com" ||
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.admin == true
+        );
+      }
+      // Chat is for PAYING users (active sub, trialing, manual override, or
+      // affiliate) — keeps pre-sale users out. Coarse here (rules can't compare
+      // the ISO trialEnd to now); the precise trial-expiry check lives in the
+      // server gate (api/chatSend.js), which is what actually guards LLM cost.
+      function isPaidUser() {
+        let u = get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+        return u.get('manualOverride', false) == true
+          || u.get('tier', '') == 'affiliate'
+          || u.get('subscriptionStatus', '') == 'active'
+          || u.get('subscriptionStatus', '') == 'trialing';
+      }
+      allow read: if request.auth != null && (
+        resource.data.userId == request.auth.uid || isAdminUser()
+      );
+      allow create: if request.auth != null
+        && request.resource.data.userId == request.auth.uid
+        && (isAdminUser() || isPaidUser());
+      allow update: if request.auth != null && (
+        resource.data.userId == request.auth.uid || isAdminUser()
+      );
+      allow delete: if isAdminUser();
+
+      match /messages/{messageId} {
+        // Read allowed if the message's denormalized conversationUserId matches
+        // the caller (cheap path), OR — fallback — if the parent conversation
+        // is owned by the caller (covers older messages written before the
+        // conversationUserId field existed), OR caller is admin.
+        allow read: if request.auth != null && (
+          (resource.data.keys().hasAny(['conversationUserId']) && resource.data.conversationUserId == request.auth.uid) ||
+          get(/databases/$(database)/documents/chatConversations/$(conversationId)).data.userId == request.auth.uid ||
+          isAdminUser()
+        );
+        allow create: if request.auth != null && (
+          // Conversation owner can write user OR ai messages (server returns AI
+          // text to the client, which persists it under the user's auth).
+          (
+            request.resource.data.senderUid == request.auth.uid &&
+            (request.resource.data.senderType == 'user' || request.resource.data.senderType == 'ai') &&
+            get(/databases/$(database)/documents/chatConversations/$(conversationId)).data.userId == request.auth.uid
+          ) ||
+          // Conversation owner can also write presence system lines (widget
+          // open/close events), which the admin Inbox surfaces.
+          (
+            request.resource.data.senderUid == request.auth.uid &&
+            request.resource.data.senderType == 'system' &&
+            request.resource.data.presence == true &&
+            get(/databases/$(database)/documents/chatConversations/$(conversationId)).data.userId == request.auth.uid
+          ) ||
+          // Admins can write admin or system messages (take-over, internal notes).
+          isAdminUser()
+        );
+        allow update, delete: if isAdminUser();
+      }
+    }
+
+    // Structured session-event stream per user (replay system).
+    // Users write their own events; admins read all for support context.
+    match /sessionEvents/{eventId} {
+      function isAdminUser2() {
+        return request.auth != null && (
+          request.auth.token.email == "help@rentingradar.com" ||
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.admin == true
+        );
+      }
+      allow read: if request.auth != null && (
+        resource.data.userId == request.auth.uid || isAdminUser2()
+      );
+      allow create: if request.auth != null
+        && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isAdminUser2();
+    }
+
+    // Knowledge-base corpus for chat AI (RAG). Read by any signed-in user
+    // (the AI surfaces it in answers); writes are admin-only.
+    match /chatKnowledge/{docId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && (
+        request.auth.token.email == "help@rentingradar.com" ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.admin == true
+      );
+    }
+
+    // Chat config (e.g. blocked-topics list). Any signed-in user can read it (the
+    // chatSend server reads it with the caller's token to run the profanity/
+    // blocked-topic guard); only admins can edit it.
+    match /chatConfig/{docId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && (
+        request.auth.token.email == "help@rentingradar.com" ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.admin == true
+      );
+    }
+
+    // Admin device push tokens (web-push / FCM). The mobile admin PWA registers
+    // the device's token here so the escalationPush Cloud Function can notify it.
+    // Admin-only: only admins read/write; the Function reads via Admin SDK
+    // (bypasses rules). Doc id is the FCM token.
+    match /adminPushTokens/{token} {
+      function isAdminUser3() {
+        return request.auth != null && (
+          request.auth.token.email == "help@rentingradar.com" ||
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.admin == true
+        );
+      }
+      allow read, write: if isAdminUser3();
+    }
+
+    // Meeting RSVP lookup/status. The owner (operator who sent the invite)
+    // creates/updates and reads their own docs. The inboundRsvp webhook writes
+    // attendee responses via the Firebase Admin SDK, which bypasses these rules.
+    match /meetingInvites/{meetingId} {
+      allow read, update: if request.auth != null && resource.data.ownerUid == request.auth.uid;
+      allow create: if request.auth != null && request.resource.data.ownerUid == request.auth.uid;
+      allow delete: if request.auth != null && resource.data.ownerUid == request.auth.uid;
+    }
+  }
+}

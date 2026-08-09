@@ -30,6 +30,8 @@ module.exports = async function handler(req, res) {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const startOfYear = new Date(now.getFullYear(), 0, 1);
+    const startOfLastYear = new Date(now.getFullYear() - 1, 0, 1);
+    const endOfLastYear = new Date(now.getFullYear() - 1, 11, 31, 23, 59, 59);
     const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
 
@@ -38,8 +40,10 @@ module.exports = async function handler(req, res) {
       payouts,
       monthCharges,
       yearCharges,
+      lastYearCharges,
       lastMonthCharges,
       activeSubs,
+      trialingSubsList,
       canceledSubs,
       upcomingInvoices,
     ] = await Promise.all([
@@ -53,6 +57,19 @@ module.exports = async function handler(req, res) {
       stripe.charges.list({
         created: { gte: Math.floor(startOfYear.getTime() / 1000) },
         limit: 100,
+        // Expand balance_transaction so per-month fees can be computed for any
+        // period the dashboard's period selector covers, not just the current month.
+        expand: ["data.balance_transaction"],
+      }),
+      // Last full calendar year — lets the period selector's "Last Year" option
+      // show real per-month bars instead of all $0.
+      stripe.charges.list({
+        created: {
+          gte: Math.floor(startOfLastYear.getTime() / 1000),
+          lte: Math.floor(endOfLastYear.getTime() / 1000),
+        },
+        limit: 100,
+        expand: ["data.balance_transaction"],
       }),
       stripe.charges.list({
         created: {
@@ -62,6 +79,10 @@ module.exports = async function handler(req, res) {
         limit: 100,
       }),
       stripe.subscriptions.list({ status: "active", limit: 100 }),
+      // Trialing subs are a SEPARATE status in Stripe — not returned by status:"active".
+      // Previously the code listed status:"active" then filtered for status==="trialing",
+      // which always returned []. That bug zeroed the "In Trial" KPI on the dashboard.
+      stripe.subscriptions.list({ status: "trialing", limit: 100 }),
       stripe.subscriptions.list({
         status: "canceled",
         created: { gte: Math.floor(Date.now() / 1000) - 30 * 86400 },
@@ -88,9 +109,35 @@ module.exports = async function handler(req, res) {
       .filter((c) => c.refunded || c.amount_refunded > 0)
       .reduce((sum, c) => sum + (c.amount_refunded || 0), 0);
 
+    // Per-month revenue (gross & net) keyed "YYYY-MM" for both this year + last year.
+    // The client uses this to populate the Monthly Revenue / Profit chart instead of
+    // synthesizing from current user state. Net = gross − fees − refunds for that month.
+    const revenueByMonthGross = {};
+    const revenueByMonthFees = {};
+    const revenueByMonthRefunds = {};
+    function _bucketKey(unixSeconds) {
+      const d = new Date(unixSeconds * 1000);
+      return d.getUTCFullYear() + "-" + String(d.getUTCMonth() + 1).padStart(2, "0");
+    }
+    function _accumulateCharges(charges, includeFees) {
+      charges.forEach((c) => {
+        const k = _bucketKey(c.created);
+        if (c.status === "succeeded" && !c.refunded) {
+          revenueByMonthGross[k] = (revenueByMonthGross[k] || 0) + c.amount;
+          if (includeFees && c.balance_transaction && typeof c.balance_transaction === "object") {
+            revenueByMonthFees[k] = (revenueByMonthFees[k] || 0) + (c.balance_transaction.fee || 0);
+          }
+        }
+        if (c.refunded || c.amount_refunded > 0) {
+          revenueByMonthRefunds[k] = (revenueByMonthRefunds[k] || 0) + (c.amount_refunded || 0);
+        }
+      });
+    }
+
     let yearlyRevenue = yearCharges.data
       .filter((c) => c.status === "succeeded" && !c.refunded)
       .reduce((sum, c) => sum + c.amount, 0);
+    _accumulateCharges(yearCharges.data, true);
 
     let hasMore = yearCharges.has_more;
     let lastId = yearCharges.data.length ? yearCharges.data[yearCharges.data.length - 1].id : null;
@@ -99,13 +146,54 @@ module.exports = async function handler(req, res) {
         created: { gte: Math.floor(startOfYear.getTime() / 1000) },
         limit: 100,
         starting_after: lastId,
+        expand: ["data.balance_transaction"],
       });
       yearlyRevenue += more.data
         .filter((c) => c.status === "succeeded" && !c.refunded)
         .reduce((sum, c) => sum + c.amount, 0);
+      _accumulateCharges(more.data, true);
       hasMore = more.has_more;
       lastId = more.data.length ? more.data[more.data.length - 1].id : null;
     }
+
+    // Same for last year — paginate through it too so the "Last Year" period is complete.
+    _accumulateCharges(lastYearCharges.data, true);
+    let lyHasMore = lastYearCharges.has_more;
+    let lyLastId = lastYearCharges.data.length ? lastYearCharges.data[lastYearCharges.data.length - 1].id : null;
+    while (lyHasMore && lyLastId) {
+      const more = await stripe.charges.list({
+        created: {
+          gte: Math.floor(startOfLastYear.getTime() / 1000),
+          lte: Math.floor(endOfLastYear.getTime() / 1000),
+        },
+        limit: 100,
+        starting_after: lyLastId,
+        expand: ["data.balance_transaction"],
+      });
+      _accumulateCharges(more.data, true);
+      lyHasMore = more.has_more;
+      lyLastId = more.data.length ? more.data[more.data.length - 1].id : null;
+    }
+
+    // Note: monthCharges is intentionally NOT accumulated into revenueByMonth — its
+    // data is already a subset of yearCharges (both fetch from year start, monthCharges
+    // is just a window). Accumulating both would double-count current-month charges.
+    // monthCharges remains used for the standalone monthlyRevenue/Fees/Refunds totals
+    // surfaced above for the "real-time current month" Stripe metrics.
+
+    // Build the final per-month structure: { "YYYY-MM": { gross, net } }
+    const revenueByMonth = {};
+    const allKeys = new Set([
+      ...Object.keys(revenueByMonthGross),
+      ...Object.keys(revenueByMonthFees),
+      ...Object.keys(revenueByMonthRefunds),
+    ]);
+    allKeys.forEach((k) => {
+      const gross = revenueByMonthGross[k] || 0;
+      const fees = revenueByMonthFees[k] || 0;
+      const refunds = revenueByMonthRefunds[k] || 0;
+      revenueByMonth[k] = { gross, net: gross - fees - refunds, fees, refunds };
+    });
 
     const lastMonthRevenue = lastMonthCharges.data
       .filter((c) => c.status === "succeeded" && !c.refunded)
@@ -126,7 +214,8 @@ module.exports = async function handler(req, res) {
       );
     }, 0);
 
-    const trialingSubs = activeSubs.data.filter((s) => s.status === "trialing" || (s.trial_end && s.trial_end > Date.now() / 1000));
+    // status:"trialing" comes from its own list call now (see Promise.all above).
+    const trialingSubs = trialingSubsList.data;
 
     const recentPayouts = payouts.data.map((p) => ({
       id: p.id,
@@ -153,9 +242,13 @@ module.exports = async function handler(req, res) {
             lastMonthGross: lastMonthRevenue,
             yearlyGross: yearlyRevenue,
             mrr: mrr,
+            // Per-month gross/net/fees/refunds keyed "YYYY-MM" (UTC). Covers this
+            // year + last year so the period selector can populate accurately.
+            byMonth: revenueByMonth,
           },
           subscriptions: {
-            active: activeSubs.data.length - trialingSubs.length,
+            // activeSubs is now pure "active" (Stripe doesn't include trialing in this list).
+            active: activeSubs.data.length,
             trialing: trialingSubs.length,
             canceledLast30Days: canceledSubs.data.length,
           },

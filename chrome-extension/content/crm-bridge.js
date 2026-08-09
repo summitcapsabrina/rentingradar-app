@@ -9,9 +9,13 @@
   window.__rrCrmBridgeLoaded = true;
 
   // Announce extension presence to the page so the CRM can hide any
-  // "install the extension" banner.
+  // "install the extension" banner. We include our own extension ID so the
+  // CRM can message us back even for unpacked/dev builds whose ID isn't in
+  // the CRM's hardcoded allowlist (an unpacked ID is path-derived and varies
+  // per machine). chrome.runtime.id is safe to expose to our own CRM origin,
+  // which externally_connectable already authorizes.
   try {
-    window.postMessage({ rrExtension: true, type: 'READY' }, location.origin);
+    window.postMessage({ rrExtension: true, type: 'READY', extId: chrome.runtime.id }, location.origin);
   } catch (_) {}
 
   console.log('[RR bridge] content script loaded on', location.href);

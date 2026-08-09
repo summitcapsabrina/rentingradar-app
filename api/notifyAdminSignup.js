@@ -34,6 +34,7 @@ module.exports = async function handler(req, res) {
   const body = req.body && (req.body.data || req.body) || {};
   const name = body.name || "";
   const signupMethod = body.signupMethod || "unknown";
+  const referredBy = body.referredBy || null;
 
   if (!process.env.SENDGRID_API_KEY) {
     return res.status(500).json({ error: { message: "SENDGRID_API_KEY not configured" } });
@@ -69,6 +70,10 @@ module.exports = async function handler(req, res) {
           '<td style="padding:8px 12px;color:#94a3b8;border-bottom:1px solid #334155">Method</td>' +
           '<td style="padding:8px 12px;color:#f1f5f9;border-bottom:1px solid #334155">' + escHtml(signupMethod) + '</td>' +
         '</tr>' +
+        (referredBy ? '<tr>' +
+          '<td style="padding:8px 12px;color:#94a3b8;border-bottom:1px solid #334155">Referred By</td>' +
+          '<td style="padding:8px 12px;border-bottom:1px solid #334155"><span style="background:rgba(99,129,250,.15);color:#818cf8;padding:3px 9px;border-radius:5px;font-family:monospace;font-weight:700;font-size:12px">' + escHtml(referredBy) + '</span></td>' +
+        '</tr>' : '') +
         '<tr>' +
           '<td style="padding:8px 12px;color:#94a3b8">Signed Up</td>' +
           '<td style="padding:8px 12px;color:#f1f5f9">' + escHtml(signupTime) + ' ET</td>' +

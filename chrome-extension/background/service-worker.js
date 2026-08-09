@@ -81,6 +81,63 @@ function normalizePageText(text) {
 }
 
 // ------------------------------------------------------------------
+// CO-HOSTING: cross-listing inconsistency comparison (v1.16.4).
+// Compares the Airbnb vs VRBO listing text for high-signal amenities and
+// policies. Surfaces (a) CONFLICTS — present on one, explicitly denied on the
+// other (e.g. pet-friendly vs no pets); and (b) MISMATCHES — a high-value
+// amenity present on one but unmentioned on the other. This is the landlord-
+// value feature: the operator can flag where the two listings disagree.
+// Co-Hosting only; never touches the Arbitrage scrape paths.
+// ------------------------------------------------------------------
+const COHOST_COMPARE_AMENITIES = [
+  { key: 'Pet policy',        re: /pet[- ]?friendly|pets allowed|dogs? allowed|cats? allowed/i, negRe: /no pets|pets not allowed|no animals|not pet[- ]friendly/i, high: true },
+  { key: 'Pool',              re: /\bpool\b/i, negRe: /no pool/i, high: true },
+  { key: 'Hot tub / spa',     re: /hot tub|jacuzzi|\bspa\b/i, high: true },
+  { key: 'Air conditioning',  re: /air[- ]?conditioning|central air|\ba\/c\b/i, high: true },
+  { key: 'Free parking',      re: /free parking|garage|carport|driveway parking/i },
+  { key: 'EV charger',        re: /ev charg|electric vehicle charg|tesla charg/i, high: true },
+  { key: 'Washer',            re: /\bwasher\b/i },
+  { key: 'Dryer',             re: /\bdryer\b/i },
+  { key: 'Kitchen',           re: /\bkitchen\b/i },
+  { key: 'Wifi / internet',   re: /wi-?fi|wireless internet|high[- ]speed internet/i },
+  { key: 'Indoor fireplace',  re: /indoor fireplace|wood burning fireplace|gas fireplace/i, high: true },
+  { key: 'Gym / fitness',     re: /\bgym\b|fitness center/i, high: true },
+  { key: 'Sauna',             re: /\bsauna\b/i, high: true },
+];
+
+function cohostCompareListings(sources) {
+  // sources: { Airbnb: amenitiesText, VRBO: amenitiesText, … } — each is the
+  // platform's scoped amenities list. Only sources with a real list count
+  // (a short list still has several short lines, so the bar is low).
+  const active = Object.keys(sources).filter(function (k) { return sources[k] && sources[k].length > 20; });
+  if (active.length < 2) return [];
+  const low = {};
+  active.forEach(function (k) { low[k] = sources[k].toLowerCase(); });
+  const out = [];
+  COHOST_COMPARE_AMENITIES.forEach(function (a) {
+    const present = [], absent = [];
+    let value = '';
+    active.forEach(function (k) {
+      if (a.negRe && a.negRe.test(low[k])) absent.push(k);
+      else if (a.re.test(low[k])) {
+        present.push(k);
+        if (!value) { const m = low[k].match(a.re); if (m && m[0]) value = m[0]; }
+      }
+    });
+    // Title-case the specific matched phrase (e.g. "dogs allowed" → "Dogs Allowed")
+    // so the inconsistency reads "Pet policy: Dogs Allowed".
+    if (value) value = value.replace(/\b\w/g, function (c) { return c.toUpperCase(); });
+    if (present.length && absent.length) {
+      out.push({ field: a.key, value: value, severity: 'conflict', present: present, absent: absent });
+    } else if (a.high && present.length && present.length < active.length) {
+      const missing = active.filter(function (k) { return present.indexOf(k) === -1; });
+      out.push({ field: a.key, value: value, severity: 'mismatch', present: present, missing: missing });
+    }
+  });
+  return out;
+}
+
+// ------------------------------------------------------------------
 // Internal message router (popup + content scripts)
 // ------------------------------------------------------------------
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -126,7 +183,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             for (const tab of tabs) {
               try {
                 const resp = await chrome.tabs.sendMessage(tab.id, { type: 'TEST_AI_ENRICH' });
-                sendResponse({ ok: !!(resp && resp.ok), error: resp && resp.error });
+                sendResponse({ ok: !!(resp && resp.ok), error: resp && resp.error, model: resp && resp.model });
                 tested = true;
                 break;
               } catch (_) {}
@@ -214,7 +271,7 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
             for (const tab2 of tabs2) {
               try {
                 const resp2 = await chrome.tabs.sendMessage(tab2.id, { type: 'TEST_AI_ENRICH' });
-                sendResponse({ ok: !!(resp2 && resp2.ok), error: resp2 && resp2.error });
+                sendResponse({ ok: !!(resp2 && resp2.ok), error: resp2 && resp2.error, model: resp2 && resp2.model });
                 tested2 = true;
                 break;
               } catch (_) {}
@@ -262,8 +319,13 @@ async function scrapeAny(url, hint) {
   try { host = new URL(url).hostname.replace(/^www\./, '').toLowerCase(); }
   catch (_) { return { ok: false, error: 'Invalid URL' }; }
 
+  // 'cohost' = a Co-Hosting target import: scrape AirDNA for financials AND
+  // pull the underlying Airbnb listing for FULL amenities/details (runs the
+  // dictionary extractor over the Airbnb page text). Otherwise behaves like
+  // an AirDNA scrape.
+  const wantFullProperty = hint === 'cohost';
   let kind;
-  if (hint === 'airdna' || /airdna\.co$/i.test(host)) kind = 'airdna';
+  if (hint === 'airdna' || hint === 'cohost' || /airdna\.co$/i.test(host)) kind = 'airdna';
   else if (/(zillow|apartments|hotpads)\.com$/i.test(host)) kind = 'listing';
   else if (/facebook\.com$/i.test(host) && /\/marketplace\//i.test(url)) kind = 'listing';
   else if (/craigslist\.org$/i.test(host)) kind = 'listing';
@@ -272,7 +334,7 @@ async function scrapeAny(url, hint) {
   // v0.8.0: No import cache — every import runs the full pipeline fresh.
   const file = kind === 'airdna' ? 'content/airdna-scraper.js' : 'content/listing-scraper.js';
   try {
-    const data = await scrapeInBackgroundTab(url, file);
+    const data = await scrapeInBackgroundTab(url, file, { wantAiSummary: wantFullProperty });
     if (!data) return { ok: false, error: 'Could not read details from the page. Make sure you are signed in where required.' };
 
     // Detect AirDNA login/paywall gate
@@ -310,11 +372,168 @@ async function scrapeAny(url, hint) {
             beds: airbnbData.beds, bathrooms: airbnbData.bathrooms,
             host: airbnbData.host
           });
+
+          // ----- v1.16.0: CO-HOSTING FULL-PROPERTY ENRICHMENT -----
+          // For a Co-Hosting import we want the same rich Property Details
+          // that listing imports get. Run the deterministic dictionary
+          // extractor over the Airbnb listing's amenities + page text.
+          if (wantFullProperty) {
+            try {
+              // Merge amenity lists from BOTH AirDNA (extractCohostExtras) and
+              // the Airbnb listing — union, de-duped case-insensitively.
+              const airbnbAmen = Array.isArray(airbnbData.amenities) ? airbnbData.amenities : [];
+              const airdnaAmen = Array.isArray(data.amenities) ? data.amenities : [];
+              const seenA = {};
+              const mergedAmen = [];
+              airbnbAmen.concat(airdnaAmen).forEach(function (a) {
+                const k = String(a || '').trim().toLowerCase();
+                if (k && !seenA[k]) { seenA[k] = true; mergedAmen.push(String(a).trim()); }
+              });
+              const sourceText = normalizePageText([
+                airbnbData._fullPageText || '',
+                mergedAmen.join('\n'),
+                airbnbData.description || '',
+                airbnbData.title || ''
+              ].join('\n'));
+              const pd = extractPropertyDetailsFromText(sourceText);
+              groundPropertyDetails(pd, sourceText);
+              data.propertyDetails = pd;
+              data._amenities = mergedAmen;
+              // Precise rating + approximate coords from Airbnb (for the data
+              // row + reverse-geocoded address).
+              if (airbnbData.rating != null) data.coRating = airbnbData.rating;
+              if (airbnbData.lat != null) data.coLat = airbnbData.lat;
+              if (airbnbData.lng != null) data.coLng = airbnbData.lng;
+              // listingTitle fallback: if AirDNA didn't yield a clean name, use
+              // the Airbnb title with its rating/beds suffix stripped (so we get
+              // "Home in Phoenix", never "Home in Phoenix · ★4.97 · 5 beds…").
+              if (!data.listingTitle && airbnbData.title) {
+                data.listingTitle = airbnbData.title
+                  .replace(/\s*·\s*★[\d.].*$/, '')
+                  .replace(/\s*·\s*\d+\s*(bedroom|bed|bath|guest).*$/i, '')
+                  .trim();
+              }
+              if (airbnbData.description) data.description = airbnbData.description;
+              data._cohostEnriched = true;
+              console.log('[RR ext] Co-host Property Details extracted:', Object.keys(pd).length, 'fields,', mergedAmen.length, 'amenities');
+            } catch (e) {
+              console.warn('[RR ext] Co-host amenity extraction failed:', e.message);
+            }
+
+            // ── VRBO + Booking.com scrape + cross-listing inconsistency comparison ──
+            try {
+              let vrboData = null, bookingData = null;
+              if (data.vrboLink) {
+                try {
+                  console.log('[RR ext] Auto-scraping VRBO listing:', data.vrboLink);
+                  vrboData = await scrapeInBackgroundTab(data.vrboLink, 'content/vrbo-scraper.js');
+                } catch (ve) { console.warn('[RR ext] VRBO scrape failed:', ve.message); }
+              }
+              if (data.bookingLink) {
+                try {
+                  console.log('[RR ext] Auto-scraping Booking.com listing:', data.bookingLink);
+                  // vrbo-scraper.js is a generic innerText scraper — reuse it for Booking.com.
+                  bookingData = await scrapeInBackgroundTab(data.bookingLink, 'content/vrbo-scraper.js');
+                } catch (be) { console.warn('[RR ext] Booking.com scrape failed:', be.message); }
+              }
+              // Compare ONLY the amenities each platform actually lists in its
+              // amenities section (Airbnb "What this place offers", VRBO "Popular
+              // amenities", Booking "Amenities of …") — NOT the full page text.
+              // Page text pulls in Airbnb's "Safety & property" warnings (e.g.
+              // "Pool/hot tub without a gate or lock"), descriptions and house
+              // rules, which created false amenity inconsistencies.
+              const _amenList = function (d) { return d && Array.isArray(d.amenities) ? d.amenities.join('\n') : ''; };
+              const airbnbText = _amenList(airbnbData);
+              const vrboText = vrboData ? _amenList(vrboData) : '';
+              const bookingText = bookingData ? _amenList(bookingData) : '';
+              data._inconsistencies = cohostCompareListings({ Airbnb: airbnbText, VRBO: vrboText, 'B.com': bookingText });
+              // Title inconsistencies: surface ONE "Listing title" entry listing
+              // every available platform's title whenever any of them differ.
+              // (Two titles count as "the same" when one contains the other.)
+              try {
+                const norm = function (s) { return (s || '').toLowerCase().replace(/[^a-z0-9]/g, ''); };
+                const titles = {
+                  AirBNB: (data.listingTitle || '').trim(),
+                  VRBO: ((vrboData && vrboData.title) || '').trim(),
+                  'B.com': ((bookingData && bookingData.title) || '').trim()
+                };
+                // Only consider sources that actually have a usable title.
+                const present = Object.keys(titles).filter(function (k) { return norm(titles[k]).length > 3; });
+                const same = function (x, y) { const a = norm(x), b = norm(y); return a.indexOf(b) !== -1 || b.indexOf(a) !== -1; };
+                let differ = false;
+                for (let i = 0; i < present.length && !differ; i++) {
+                  for (let j = i + 1; j < present.length; j++) {
+                    if (!same(titles[present[i]], titles[present[j]])) { differ = true; break; }
+                  }
+                }
+                if (present.length >= 2 && differ) {
+                  const vals = {};
+                  present.forEach(function (k) { vals[k] = titles[k]; });
+                  data._inconsistencies.unshift({ field: 'Listing title', severity: 'mismatch', values: vals });
+                }
+              } catch (te) {}
+              // Fold VRBO + Booking.com amenities into the categorized Property Details.
+              if (vrboData) {
+                try { data.propertyDetails = mergePropertyDetails(data.propertyDetails || {}, extractPropertyDetailsFromText(normalizePageText(vrboText))); } catch (me) {}
+              }
+              if (bookingData) {
+                try { data.propertyDetails = mergePropertyDetails(data.propertyDetails || {}, extractPropertyDetailsFromText(normalizePageText(bookingText))); } catch (me) {}
+              }
+              data._vrboScraped = !!vrboData;
+              data._bookingScraped = !!bookingData;
+              console.log('[RR ext] Co-host inconsistencies:', (data._inconsistencies || []).length, '| VRBO:', !!vrboData, '| Booking:', !!bookingData);
+            } catch (e) {
+              console.warn('[RR ext] Co-host comparison failed:', e.message);
+            }
+          }
         }
       } catch (e) {
         console.warn('[RR ext] Airbnb auto-scrape failed (using AirDNA data as fallback):', e.message);
         data._airbnbEnriched = false;
       }
+    }
+
+    // ----- v1.17.0: CO-HOSTING market/submarket lookup -----
+    // If the listing scrape didn't surface the market/submarket, derive it from
+    // the listing's lat/lng using the existing AirDNA market lookup (reused,
+    // unchanged). Runs ONLY for Co-Hosting imports.
+    if (wantFullProperty && !data.market && data.lat != null && data.lng != null) {
+      try {
+        const mk = await lookupMarketViaAirDNA(data.lat, data.lng);
+        if (mk && mk.market) {
+          data.market = mk.market;
+          if (!data.submarket) data.submarket = mk.submarket || null;
+          console.log('[RR ext] Co-host market lookup:', mk.market, '/', mk.submarket);
+        }
+      } catch (e) {
+        console.warn('[RR ext] Co-host market lookup failed:', e.message);
+      }
+    }
+
+    // ----- CO-HOSTING: AirDNA AI-Summary → short note overview -----
+    // Condense AirDNA's verbose AI Summary into a brief overview the app drops
+    // into the property note (instead of pasting it verbatim). Cohost-only.
+    if (wantFullProperty && data.aiSummary) {
+      try {
+        const shortSum = await summarizeAirdnaAiSummary(data.aiSummary);
+        if (shortSum) data.aiSummaryShort = shortSum;
+      } catch (e) {
+        console.warn('[RR ext] aiSummaryShort failed:', e.message);
+      }
+    }
+
+    // Diagnostic: surface exactly what the Co-Hosting scrape captured so the
+    // AirDNA selectors can be verified against a real listing.
+    if (wantFullProperty) {
+      console.log('[RR ext] Co-host scrape summary:', {
+        listingTitle: data.listingTitle, market: data.market, submarket: data.submarket,
+        marketScore: data.marketScore, priceTier: data.priceTier, type: data.airdnaType,
+        revenuePotential: data.coRevenuePotential, annualRevenue: data.coAnnualRevenue,
+        occupancy: data.coOccupancy, adr: data.coADR, daysAvailable: data.coDaysAvailable,
+        rating: data.coRating, lat: data.coLat, lng: data.coLng,
+        airbnb: data.link, vrbo: data.vrboLink, amenityCount: (data._amenities || []).length,
+        vrboScraped: !!data._vrboScraped, inconsistencies: (data._inconsistencies || []).length
+      });
     }
 
     // ----- v0.10.0: AI ENRICHMENT (Claude primary, Ollama fallback) -----
@@ -401,14 +620,14 @@ async function lookupMarketViaAirDNA(lat, lng, zip) {
   return new Promise((resolve) => {
     const timer = setTimeout(() => {
       pendingScrapes.delete(tab.id);
-      try { chrome.tabs.remove(tab.id); } catch (_) {}
+      chrome.tabs.remove(tab.id).catch(function(){});
       resolve(null); // Timeout — let static fallback handle it
     }, MARKET_LOOKUP_TIMEOUT_MS);
 
     pendingScrapes.set(tab.id, {
       resolve: (data) => {
         clearTimeout(timer);
-        try { chrome.tabs.remove(tab.id); } catch (_) {}
+        chrome.tabs.remove(tab.id).catch(function(){});
         if (data && data._type === 'market-lookup') {
           if (data._loginRequired) { resolve(null); return; }
           resolve({ market: data.market, submarket: data.submarket });
@@ -418,7 +637,7 @@ async function lookupMarketViaAirDNA(lat, lng, zip) {
       },
       reject: () => {
         clearTimeout(timer);
-        try { chrome.tabs.remove(tab.id); } catch (_) {}
+        chrome.tabs.remove(tab.id).catch(function(){});
         resolve(null);
       },
       timer
@@ -433,7 +652,7 @@ async function lookupMarketViaAirDNA(lat, lng, zip) {
       }).catch(() => {
         pendingScrapes.delete(tab.id);
         clearTimeout(timer);
-        try { chrome.tabs.remove(tab.id); } catch (_) {}
+        chrome.tabs.remove(tab.id).catch(function(){});
         resolve(null);
       });
     };
@@ -854,10 +1073,11 @@ const AMENITY_SOURCE_TRIGGERS = {
   'Attached Garage': ['attached garage','attached 1-car','attached 2-car','attached two-car'],
   'Detached Garage': ['detached garage'],
   'Carport': ['carport'],
-  'Covered Parking': ['covered parking','covered spot','covered space'],
-  'Assigned Spot': ['assigned parking','assigned spot','reserved parking','reserved spot'],
-  'Street Only': ['street parking','on-street parking','on street parking'],
-  'Driveway': ['driveway'],
+  'Covered Parking': ['covered parking','covered spot','covered space','parking covered'],
+  'Assigned Spot': ['assigned parking','assigned spot','reserved parking','reserved spot','parking assigned'],
+  'Street Only': ['street parking','on-street parking','on street parking','parking street','parking: street'],
+  'Driveway': ['driveway','parking driveway'],
+  'Open Lot': ['parking lot','open lot','surface lot','parking: lot'],
   'Parking Garage': ['parking garage','garage parking'],
   // Pool (single)
   'Private': ['private pool','own pool','backyard pool','in-ground pool'],
@@ -1122,9 +1342,14 @@ function mergeLlmIntoDictionary(dictPd, llmPd, lowerText) {
 function isAmenityInSource(value, text) {
   if (typeof value !== 'string' || !value) return false;
   if (!text) return false;
+  // v1.14.0: Also try a flattened version of the text with all whitespace
+  // collapsed to single spaces. Tab panels (e.g. Apartments.com parking)
+  // produce text like "Parking\n\nStreet" where a trigger like "parking street"
+  // fails on text.includes() but succeeds on the flattened version.
+  const textFlat = text.replace(/\s+/g, ' ');
   const triggers = AMENITY_SOURCE_TRIGGERS[value];
   if (triggers && triggers.length) {
-    for (const t of triggers) if (text.includes(t)) return true;
+    for (const t of triggers) if (text.includes(t) || textFlat.includes(t)) return true;
     return false;
   }
   // v0.6.4: TIGHTENED fallback. Previously required only ONE 4-letter word
@@ -1387,6 +1612,34 @@ async function callClaude(apiKey, systemPrompt, userPrompt) {
       return JSON.parse(m[0]);
     }
   } finally { clearTimeout(t); }
+}
+
+// Co-Hosting only: condense AirDNA's verbose "AI Summary" / guest-sentiment
+// blurb into a short, skimmable overview for the imported property's note.
+// Reuses the same Claude proxy → user-key path as listing enrichment (both
+// return parsed JSON, so we ask for {"summary":"..."}). Returns a plain-text
+// string (may contain \n bullets) or null on any failure — callers fall back.
+async function summarizeAirdnaAiSummary(rawText) {
+  const text = String(rawText || '').replace(/ /g, ' ').trim();
+  if (text.length < 40) return null;
+  const systemPrompt = 'You are a short-term-rental analyst. You will receive the raw "AI Summary" / guest-sentiment text scraped from an AirDNA listing page. Write a SUCCINCT overview an operator can skim in seconds: the key strengths, any recurring complaints or risks, and standout amenities/selling points. Do NOT copy the text verbatim and do NOT add facts that are not present. Keep it to 2-4 short sentences OR up to 4 brief lines, about 60 words maximum. Respond ONLY with strict JSON: {"summary":"..."} where summary is plain text; if you use bullet lines, separate them with the two characters \\n.';
+  const userPrompt = 'AirDNA AI Summary text:\n\n' + text.slice(0, 1400);
+  try {
+    let res = null;
+    try {
+      res = await callClaudeProxy(systemPrompt, userPrompt);
+    } catch (proxyErr) {
+      const apiKey = await getClaudeApiKey();
+      if (apiKey) res = await callClaude(apiKey, systemPrompt, userPrompt);
+      else throw proxyErr;
+    }
+    if (res && typeof res.summary === 'string' && res.summary.trim().length > 10) {
+      return res.summary.trim();
+    }
+  } catch (e) {
+    console.warn('[RR ext] AI-summary condense failed:', (e && e.message) || e);
+  }
+  return null;
 }
 
 async function callOllamaLegacy(sysPrompt, userPrompt, timeoutMs) {
@@ -1827,34 +2080,47 @@ function resolveScrape(tabId, payload, error) {
   if (!entry) return;
   clearTimeout(entry.timer);
   pendingScrapes.delete(tabId);
-  try { chrome.tabs.remove(tabId); } catch (_) {}
+  chrome.tabs.remove(tabId).catch(function(){});
   if (error) entry.reject(new Error(error));
   else entry.resolve(payload);
 }
 
-async function scrapeInBackgroundTab(url, contentScriptPath) {
+async function scrapeInBackgroundTab(url, contentScriptPath, opts) {
+  opts = opts || {};
   const tab = await chrome.tabs.create({ url, active: false });
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       pendingScrapes.delete(tab.id);
-      try { chrome.tabs.remove(tab.id); } catch (_) {}
+      chrome.tabs.remove(tab.id).catch(function(){});
       reject(new Error('Timed out waiting for page to load.'));
     }, SCRAPE_TIMEOUT_MS);
 
     pendingScrapes.set(tab.id, { resolve, reject, timer });
 
-    const listener = (tabId, changeInfo) => {
+    const fail = (e) => {
+      pendingScrapes.delete(tab.id);
+      clearTimeout(timer);
+      chrome.tabs.remove(tab.id).catch(function(){});
+      reject(e);
+    };
+    const listener = async (tabId, changeInfo) => {
       if (tabId !== tab.id || changeInfo.status !== 'complete') return;
       chrome.tabs.onUpdated.removeListener(listener);
-      chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        files: [contentScriptPath],
-      }).catch((e) => {
-        pendingScrapes.delete(tab.id);
-        clearTimeout(timer);
-        try { chrome.tabs.remove(tab.id); } catch (_) {}
-        reject(e);
-      });
+      try {
+        // For Co-Hosting imports, set a flag in the page (ISOLATED world, shared
+        // with the content script) so the AirDNA scraper waits for the AI Summary
+        // dropdown before completing.
+        if (opts.wantAiSummary) {
+          await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            func: function () { window.__rrWantAiSummary = true; },
+          });
+        }
+        await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          files: [contentScriptPath],
+        });
+      } catch (e) { fail(e); }
     };
     chrome.tabs.onUpdated.addListener(listener);
   });

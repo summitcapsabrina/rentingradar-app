@@ -22,7 +22,7 @@ module.exports = async function handler(req, res) {
   }
 
   const body = req.body.data || req.body;
-  const { tier, period, stripeCustomerId } = body;
+  const { tier, period, stripeCustomerId, referralCode } = body;
   if (!tier || !period) return res.status(400).json({ error: { message: "Missing tier or period." } });
 
   const PRICE_IDS = {
@@ -49,21 +49,34 @@ module.exports = async function handler(req, res) {
       }
     }
 
+    // Build the customer metadata, optionally including referral attribution.
+    const customerMetadata = { firebaseUID: user.uid };
+    if (referralCode) customerMetadata.referred_by = referralCode;
+
     if (!customerId) {
       // Check if customer already exists by email
       const existing = await stripe.customers.list({ email: user.email, limit: 1 });
       if (existing.data.length > 0) {
         customerId = existing.data[0].id;
+        // Backfill referral metadata if it's missing on an existing customer
+        if (referralCode && !(existing.data[0].metadata && existing.data[0].metadata.referred_by)) {
+          try { await stripe.customers.update(customerId, { metadata: customerMetadata }); } catch (e) { console.warn("Couldn't backfill customer metadata:", e); }
+        }
       } else {
         const customer = await stripe.customers.create({
           email: user.email,
-          metadata: { firebaseUID: user.uid },
+          metadata: customerMetadata,
         });
         customerId = customer.id;
       }
     }
 
-    const session = await stripe.checkout.sessions.create({
+    // Promotion codes are user-entered at the Stripe Checkout page (allow_promotion_codes
+     // below). Referral attribution still happens via ?ref=CODE on signup — that sets
+     // referredBy on the user doc and feeds Adam's Affiliate dashboard + commission report.
+     // The metadata.referred_by tag carries that attribution onto the Stripe subscription
+     // for cross-reference, separate from whatever promo code the user manually applies.
+    const sessionConfig = {
       customer: customerId,
       mode: "subscription",
       payment_method_types: ["card"],
@@ -71,10 +84,18 @@ module.exports = async function handler(req, res) {
       success_url: "https://app.rentingradar.com?checkout=success&session_id={CHECKOUT_SESSION_ID}",
       cancel_url: "https://app.rentingradar.com?checkout=cancelled",
       subscription_data: {
-        metadata: { firebaseUID: user.uid, tier: tier },
+        // Stripe-managed 7-day free trial. Card collected upfront, no charge during the
+        // trial, auto-charge at day 7. Stripe handles trial-ending emails, dunning, retries.
+        trial_period_days: 7,
+        metadata: Object.assign({ firebaseUID: user.uid, tier: tier }, referralCode ? { referred_by: referralCode } : {}),
       },
-      metadata: { firebaseUID: user.uid, tier: tier },
-    });
+      metadata: Object.assign({ firebaseUID: user.uid, tier: tier }, referralCode ? { referred_by: referralCode } : {}),
+    };
+    // Show the promotion-code input on Stripe Checkout so users can manually enter
+    // AIRPRENEUR / AIRPRENEUR_YEAR or any other active code.
+    sessionConfig.allow_promotion_codes = true;
+
+    const session = await stripe.checkout.sessions.create(sessionConfig);
 
     res.status(200).json({
       result: {

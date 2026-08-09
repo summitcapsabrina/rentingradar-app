@@ -11,6 +11,19 @@ const aiStatusText = document.getElementById('rrAiStatusText');
 const aiTestBtn = document.getElementById('rrAiTestBtn');
 
 // ------------------------------------------------------------------
+// AI model name helper
+// ------------------------------------------------------------------
+function _friendlyModelName(modelStr){
+  if(!modelStr) return 'AI Server';
+  var m = modelStr.match(/^claude-(\w+)-([\d]+)-([\d]+)/i);
+  if(m){
+    var family = m[1].charAt(0).toUpperCase() + m[1].slice(1).toLowerCase();
+    return 'Claude ' + family + ' ' + m[2] + '.' + m[3];
+  }
+  return modelStr;
+}
+
+// ------------------------------------------------------------------
 // AI / Extension status
 // ------------------------------------------------------------------
 function checkAiStatus() {
@@ -33,7 +46,8 @@ function checkAiStatus() {
     chrome.runtime.sendMessage({ type: 'TEST_AI_PROXY' }, (proxyResp) => {
       if (chrome.runtime.lastError) proxyResp = null;
       if (proxyResp && proxyResp.ok) {
-        parts.unshift('<span style="color:var(--success)">✓ AI Server</span>');
+        var modelLabel = _friendlyModelName(proxyResp.model);
+        parts.unshift('<span style="color:var(--success)">✓ ' + modelLabel + '</span>');
       } else {
         const reason = (proxyResp && proxyResp.error) || 'unavailable';
         parts.unshift('<span style="color:var(--warning)">AI: ' + reason + '</span>');

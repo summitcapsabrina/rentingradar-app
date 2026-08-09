@@ -1919,6 +1919,12 @@ h1 .hero-edit-input{font-size:1.35rem}
 #mobileGate .mg-auth-foot a{color:var(--text2);cursor:pointer}
 #mobileGate .mg-auth-foot a:hover{color:var(--primary)}
 #mobileGate .mg-btn[disabled]{opacity:.6;pointer-events:none}
+/* While a checkout is being prepared: dim every plan/toggle so a second tap can't spawn a
+   duplicate checkout, but keep the chosen plan highlighted so the user sees what they picked. */
+#mobileGate .mg-tier[disabled],#mobileGate .mg-bp-opt[disabled]{opacity:.5;pointer-events:none}
+#mobileGate .mg-tier.mg-tier-loading{opacity:1;border-color:var(--primary);background:var(--primary-light)}
+#mobileGate .mg-spin{display:inline-block;width:14px;height:14px;border:2px solid var(--primary);border-top-color:transparent;border-radius:50%;animation:mgspin .7s linear infinite;vertical-align:-2px;margin-right:7px}
+@keyframes mgspin{to{transform:rotate(360deg)}}
 /* Sign-in / Sign-up segmented toggle */
 #mobileGate .mg-auth-tabs{display:flex;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:3px;margin-bottom:14px;gap:3px}
 #mobileGate .mg-auth-tab{flex:1;padding:9px 0;font-size:.88rem;font-weight:600;color:var(--text2);background:transparent;border:none;border-radius:7px;cursor:pointer;transition:all .15s;font-family:inherit}
@@ -2201,14 +2207,47 @@ function mgShareLink(){
   var _mgAuthMode = (function(){ try { return new URLSearchParams(location.search).get('signup') === '1' ? 'signup' : 'signin'; } catch(e){ return 'signin'; } })();
   // Billing period for the mobile tier picker. Default to yearly (matches website + better savings).
   var _mgBillingPeriod = 'yearly';
+  // True from the moment a plan is tapped until we redirect to Stripe (or hit an error).
+  // Guards against the three things that made mobile checkout feel slow / need many taps:
+  // duplicate checkouts from a second tap, the 2s poll re-render wiping the "preparing" state,
+  // and the billing toggle resetting the picker mid-checkout.
+  var _mgCheckoutInFlight = false;
+  // Fire a one-time warm-up ping when the tier picker first shows so the (cold) Vercel
+  // checkout function is already spun up by the time the user actually taps a plan.
+  var _mgWarmedCheckout = false;
+  function mgWarmCheckout(){
+    if(_mgWarmedCheckout) return;
+    _mgWarmedCheckout = true;
+    try {
+      var base = (typeof VERCEL_API_BASE !== 'undefined' && VERCEL_API_BASE) ? VERCEL_API_BASE : 'https://rentingradar-api.vercel.app';
+      // OPTIONS returns 200 immediately (see api/createCheckoutSession.js) but still boots the
+      // serverless container. Best-effort only — never block or surface errors.
+      fetch(base + '/api/createCheckoutSession', { method: 'OPTIONS' }).catch(function(){});
+    } catch(e){}
+  }
 
   function mgRenderTierPicker(firstName, TIERS_LOCAL){
+    mgWarmCheckout(); // pre-boot the checkout function while the user reads the plans
     var period = _mgBillingPeriod === 'monthly' ? 'monthly' : 'yearly';
+    // Limit copy is derived from the shared ANALYSIS_LIMITS / OPERATIONS_LIMITS constants so
+    // this picker can never drift from the real caps or from the desktop pricing cards.
+    var AL = (typeof ANALYSIS_LIMITS !== 'undefined') ? ANALYSIS_LIMITS : { basic:1, standard:10, pro:Infinity };
+    var OL = (typeof OPERATIONS_LIMITS !== 'undefined') ? OPERATIONS_LIMITS : { basic:1, standard:5, pro:Infinity };
+    function mgLimitLine(id){
+      var a = AL[id], o = OL[id];
+      var aStr = (a === Infinity) ? 'Unlimited analyses' : (a + (a === 1 ? ' analysis' : ' analyses') + '/mo');
+      var oStr;
+      if(o === Infinity) oStr = 'unlimited Operations properties';
+      else if(id === 'standard') oStr = 'up to ' + o + ' Operations properties';
+      else oStr = o + (o === 1 ? ' Operations property' : ' Operations properties');
+      return aStr + ' · ' + oStr;
+    }
     var tiers = [
-      { id:'basic',    desc:'Solo operators getting started — 1 analysis/month.' },
-      { id:'standard', desc:'Active investors — 10 analyses/month, dark mode.', recommended:false },
-      { id:'pro',      desc:'Power users — unlimited analyses, all features.', recommended:true }
+      { id:'basic',    tail:'Solo operators getting started.' },
+      { id:'standard', tail:'Dark mode & themes for active investors.', recommended:false },
+      { id:'pro',      tail:'Every feature, unlimited room.', recommended:true }
     ];
+    tiers.forEach(function(t){ t.desc = mgLimitLine(t.id) + ' · ' + t.tail; });
     var html = '<div class="mg-hero"><h1>Welcome, '+mgEsc(firstName)+'!</h1>'+
                '<p>Pick a plan to start your 7-day free trial. We won\'t charge your card until the trial ends.</p></div>';
 
@@ -2244,21 +2283,34 @@ function mgShareLink(){
   }
 
   window.mgSetBillingPeriod = function(period){
+    if(_mgCheckoutInFlight) return; // don't reset the picker while a checkout is being prepared
     _mgBillingPeriod = (period === 'monthly') ? 'monthly' : 'yearly';
     _mgLastSig = ''; // force re-render
     mgRender();
   };
 
   window.mgPickTier = async function(tier){
+    if(_mgCheckoutInFlight) return; // a checkout is already being prepared — ignore extra taps
     var msg = document.getElementById('mgTierMsg');
     function showTierMsg(text, kind){
       if(!msg) return;
       msg.textContent = text || '';
       msg.className = 'mg-auth-msg' + (kind?(' '+kind):'');
     }
-    showTierMsg('');
+    function setPickerBusy(busy){
+      try {
+        document.querySelectorAll('#mobileGate .mg-tier, #mobileGate .mg-bp-opt').forEach(function(b){
+          if(busy) b.setAttribute('disabled','disabled'); else b.removeAttribute('disabled');
+        });
+      } catch(e){}
+    }
     var btn = document.getElementById('mgTierBtn_'+tier);
-    if(btn){ btn.setAttribute('disabled','disabled'); btn.style.opacity='.6'; }
+    // Lock the whole picker so a tap on another plan/toggle can't spawn a second checkout,
+    // and highlight the chosen plan with a spinner so the wait has clear feedback.
+    _mgCheckoutInFlight = true;
+    setPickerBusy(true);
+    if(btn) btn.classList.add('mg-tier-loading');
+    if(msg){ msg.className = 'mg-auth-msg info'; msg.innerHTML = '<span class="mg-spin"></span>Preparing your secure checkout — this can take a few seconds…'; }
     try {
       if(typeof firebase==='undefined' || !firebase.auth){
         throw new Error('Not ready — please retry.');
@@ -2283,7 +2335,7 @@ function mgShareLink(){
         try { refCode = (localStorage.getItem('rr_ref_code') || '').trim().toUpperCase() || null; } catch(e){}
       }
 
-      showTierMsg('Preparing checkout…', 'info');
+      // (Spinner + "Preparing your secure checkout…" is already showing from before the awaits.)
 
       // Prefer the existing callFunction helper if it exists (handles base URL + token).
       var result = null;
@@ -2320,8 +2372,11 @@ function mgShareLink(){
 
       window.location.href = url;
     } catch(e){
+      // Unlock the picker so the user can retry (redirect never happened).
+      _mgCheckoutInFlight = false;
+      setPickerBusy(false);
+      if(btn) btn.classList.remove('mg-tier-loading');
       showTierMsg(e.message || 'Checkout failed. Please try again.', 'error');
-      if(btn){ btn.removeAttribute('disabled'); btn.style.opacity=''; }
     }
   };
 
@@ -2551,6 +2606,9 @@ function mgShareLink(){
   var _mgLastSig = '';
   function mgRender(){
     try {
+      // A checkout is being prepared — leave the picker (spinner, locked buttons) exactly as
+      // it is. Re-rendering here would blow away the "preparing" state and re-enable the plans.
+      if(_mgCheckoutInFlight) return;
       // Admin on a phone gets the dedicated mobile support Inbox (mounted by
       // applyAdminUI), NOT the "open on desktop" gate. Hide the gate and bail.
       if(typeof _isAdmin !== 'undefined' && _isAdmin){
@@ -2641,16 +2699,20 @@ function mgShareLink(){
     </div>
     <nav class="sidebar-nav">
       <div class="nav-section">Main</div>
-      <div class="nav-item active" data-view="dashboard" onclick="clearMapState();switchView('dashboard')" title="Arbitrage">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-        <span>Arbitrage</span>
+      <div class="nav-item active" data-view="dashboard" onclick="clearMapState();switchView('dashboard')" title="Single Unit">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+        <span>Single Unit</span>
+      </div>
+      <div class="nav-item" data-view="apartments" onclick="switchView('apartments')" title="Multi Unit">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21V10a1 1 0 0 1 1-1h5a1 1 0 0 1 1 1v11"/><path d="M13 21V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v17"/><path d="M3 21h18"/><path d="M6 13h1M6 17h1M16 8h1M16 12h1M16 16h1M19 8h1M19 12h1M19 16h1"/></svg>
+        <span>Multi Unit</span>
       </div>
       <div class="nav-item" data-view="coHosting" data-cohost-only onclick="switchView('coHosting')" title="Co-Hosting" style="display:none">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m11 17 2 2a1 1 0 1 0 3-3"/><path d="m14 14 2.5 2.5a1 1 0 1 0 3-3l-3.88-3.88a3 3 0 0 0-4.24 0l-.88.88a1 1 0 1 1-3-3l2.81-2.81a5.79 5.79 0 0 1 7.06-.87l.47.28a2 2 0 0 0 1.42.25L21 4"/><path d="m21 3 1 11h-2"/><path d="M3 3 2 14l6.5 6.5a1 1 0 1 0 3-3"/><path d="M3 4h8"/></svg>
         <span>Co-Hosting</span>
       </div>
       <div class="nav-item" data-view="operations" onclick="switchView('operations')" title="Operations">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
         <span>Operations</span>
       </div>
       <div class="nav-item" data-view="contacts" onclick="switchView('contacts')" title="Contacts">
@@ -2740,7 +2802,8 @@ function mgShareLink(){
             Add Property
           </button>
           <div class="user-menu" id="addMenu">
-            <div class="user-menu-item" onclick="closeAddMenu();_addPropertyChoice('arbitrage')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg> Arbitrage</div>
+            <div class="user-menu-item" onclick="closeAddMenu();_addPropertyChoice('house')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg> Single Unit</div>
+            <div class="user-menu-item" onclick="closeAddMenu();_addPropertyChoice('apartment')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21V10a1 1 0 0 1 1-1h5a1 1 0 0 1 1 1v11"/><path d="M13 21V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v17"/><path d="M3 21h18"/><path d="M6 13h1M6 17h1M16 8h1M16 12h1M16 16h1M19 8h1M19 12h1M19 16h1"/></svg> Multi Unit</div>
             <div class="user-menu-item" onclick="closeAddMenu();_addPropertyChoice('cohost')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m11 17 2 2a1 1 0 1 0 3-3"/><path d="m14 14 2.5 2.5a1 1 0 1 0 3-3l-3.88-3.88a3 3 0 0 0-4.24 0l-.88.88a1 1 0 1 1-3-3l2.81-2.81a5.79 5.79 0 0 1 7.06-.87l.47.28a2 2 0 0 0 1.42.25L21 4"/><path d="m21 3 1 11h-2"/><path d="M3 3 2 14l6.5 6.5a1 1 0 1 0 3-3"/><path d="M3 4h8"/></svg> Co-Hosting <span data-cohost-lock style="margin-left:auto;font-size:.78rem;opacity:.7">🔒</span></div>
           </div>
         </div>
@@ -2836,6 +2899,10 @@ let contactsSortCols = []; // [{col:'property',dir:'asc'},...] max 2
 let contacts = []; // Standalone contacts: { id, name, phone, email, role, photo, notes:[], linkedPropertyIds:[], createdAt, updatedAt }
 let _contactsUnsubscribe = null;
 let _pendingContactLink = null; // Contact id to auto-link after the next property is created
+let aptProspects = []; // Apartment Prospecting: { id, buildingName, address, priority, status, notes, contactTitle, contactName, email, phone, website, createdAt, updatedAt }
+let _aptProspectsUnsubscribe = null;
+let _editingAptProspect = null;
+let apartmentsActiveTab = 'pipeline'; // sub-tab within the Apartments section — 'pipeline' (deal dashboard, default) or 'prospecting' (building outreach)
 
 // ── Lifecycle stage: a property is either 'prospecting' (default) or 'operations'.
 // Set via the "Move to Operations" / "Move back to Prospecting" buttons.
@@ -3124,7 +3191,7 @@ function _mergeRecords(localRecords, remoteRecords){
 
 async function loadDataFromFirestore(userUid){
   _currentUid = userUid;
-  if(!userUid || typeof db === 'undefined') { records = []; contacts = []; render(); hideLoadingOverlay(); return; }
+  if(!userUid || typeof db === 'undefined') { records = []; contacts = []; aptProspects = []; render(); hideLoadingOverlay(); return; }
 
   // Unsubscribe from any previous real-time listener
   if(_firestoreUnsubscribe){ _firestoreUnsubscribe(); _firestoreUnsubscribe = null; }
@@ -3156,6 +3223,8 @@ async function loadDataFromFirestore(userUid){
   loadContacts(userUid).catch(function(e){ console.error('loadContacts failed:', e); });
   // Load the isolated Co-Hosting store in parallel (Admin + Affiliate feature).
   loadCohostDataFromFirestore(userUid).catch(function(e){ console.error('loadCohostData failed:', e); });
+  // Load Apartment Prospecting records in parallel.
+  loadAptProspects(userUid).catch(function(e){ console.error('loadAptProspects failed:', e); });
   render();
   geocodeExistingProperties();
   hideLoadingOverlay();
@@ -3400,6 +3469,55 @@ async function deleteContactDoc(cid){
     return true;
   } catch(e){
     console.error('Failed to delete contact:', e);
+    return false;
+  }
+}
+
+/* ===== APARTMENT PROSPECTING ===== */
+async function loadAptProspects(userUid){
+  try {
+    const snap = await db.collection('users').doc(userUid).collection('apartmentProspects').get();
+    aptProspects = snap.docs.map(d => d.data());
+  } catch(e){
+    console.error('Failed to load apartment prospects:', e);
+    aptProspects = [];
+  }
+  if(_aptProspectsUnsubscribe){ _aptProspectsUnsubscribe(); _aptProspectsUnsubscribe = null; }
+  _aptProspectsUnsubscribe = db.collection('users').doc(userUid).collection('apartmentProspects')
+    .onSnapshot(function(snap){
+      if(snap.metadata.hasPendingWrites) return;
+      aptProspects = snap.docs.map(d => d.data());
+      const ae = document.activeElement;
+      const inEditor = ae && (ae.tagName==='INPUT'||ae.tagName==='TEXTAREA'||ae.tagName==='SELECT'||ae.isContentEditable);
+      if(!inEditor && currentView === 'aptProspecting') render();
+    }, function(err){ console.error('[RR] Apartment Prospecting sync error:', err); });
+}
+
+async function saveAptProspect(prospect){
+  if(_blockIfImpersonating('Save apartment prospect')) return false;
+  if(!_currentUid || typeof db === 'undefined') return false;
+  prospect.updatedAt = new Date().toISOString();
+  if(!prospect.createdAt) prospect.createdAt = prospect.updatedAt;
+  try {
+    await db.collection('users').doc(_currentUid).collection('apartmentProspects').doc(prospect.id).set(prospect);
+    const idx = aptProspects.findIndex(p => p.id === prospect.id);
+    if(idx >= 0) aptProspects[idx] = prospect; else aptProspects.push(prospect);
+    return true;
+  } catch(e){
+    console.error('Failed to save apartment prospect:', e);
+    return false;
+  }
+}
+
+async function deleteAptProspect(pid){
+  if(_blockIfImpersonating('Delete apartment prospect')) return false;
+  if(!_currentUid || typeof db === 'undefined') return false;
+  try {
+    await db.collection('users').doc(_currentUid).collection('apartmentProspects').doc(pid).delete();
+    aptProspects = aptProspects.filter(p => p.id !== pid);
+    return true;
+  } catch(e){
+    console.error('Failed to delete apartment prospect:', e);
     return false;
   }
 }
@@ -3894,6 +4012,180 @@ function _unlinkContactProperty(pid){
   if(!_editingContact) return;
   _editingContact.linkedPropertyIds = (_editingContact.linkedPropertyIds || []).filter(function(x){ return x !== pid; });
   _renderContactModal();
+}
+
+/* ===== APARTMENT PROSPECTING MODAL ===== */
+const _APT_INPUT_STYLE = 'width:100%;padding:8px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.9rem;box-sizing:border-box';
+
+function _aptModalField(label, innerHtml){
+  return '<div style="display:flex;flex-direction:column;gap:6px">' +
+    '<label style="font-size:.7rem;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">' + label + '</label>' +
+    innerHtml +
+  '</div>';
+}
+
+function _aptOutreachStatusLabel(o){
+  if(!o || !o.status || o.status === 'none') return null;
+  const map = {
+    pending_start: '⏳ Starting — Sabrina will post a draft to RR Apartments on Telegram shortly',
+    active: '📨 Active — ' + (o.followUpsSent ? (o.followUpsSent + ' follow-up(s) sent') : 'initial email sent') +
+      (o.nextFollowUpAt ? ', next follow-up ' + String(o.nextFollowUpAt).slice(0,10) : ''),
+    replied: '✅ Replied' + (o.repliedAt ? ' ' + String(o.repliedAt).slice(0,10) : '') + ' — check the Telegram thread',
+    stalled: '⚪ No reply after ' + (o.followUpsSent||0) + ' follow-up(s) — sequence ended',
+    declined: '❌ Declined in Telegram — sequence not started',
+    no_email: '⚠️ Could not start — no email on file',
+  };
+  return map[o.status] || o.status;
+}
+
+function _renderAptOutreachRow(p){
+  const label = _aptOutreachStatusLabel(p.outreach);
+  const canStart = !label || ['stalled','declined','no_email'].indexOf(p.outreach.status) >= 0;
+  return '<div style="display:flex;flex-direction:column;gap:8px">' +
+    (label ? '<div style="font-size:.82rem;color:var(--text2)">' + label + '</div>' : '') +
+    (canStart ? '<button type="button" class="btn btn-secondary btn-sm" style="align-self:flex-start" onclick="startAptOutreachSequence(\'' + p.id + '\')">' +
+      (label ? '↻ Restart Sequence' : '✉️ Start Sequence') + '</button>' : '') +
+  '</div>';
+}
+
+async function startAptOutreachSequence(id){
+  const p = aptProspects.find(function(x){ return x.id === id; });
+  if(!p) return;
+  if(!p.email){
+    showAppAlert('Add a contact email before starting an outreach sequence for this building.', {title:'No Email on File', icon:'⚠️'});
+    return;
+  }
+  showAppConfirm(
+    'Sabrina will draft the first outreach email to <b>' + esc(p.contactName || p.email) +
+    '</b> and post it to the RR Apartments Telegram topic — nothing sends until you tap Approve there.',
+    { title: 'Start Outreach Sequence', icon: '✉️', confirmText: 'Start Sequence', confirmClass: 'btn-primary',
+      onConfirm: async function(){
+        const updated = Object.assign({}, p, { outreach: { status: 'pending_start' } });
+        const ok = await saveAptProspect(updated);
+        if(ok){
+          showToast('Sequence started — check RR Apartments on Telegram shortly.', 'success');
+          closeAptProspectModal();
+          render();
+        } else {
+          showToast('Failed to start the sequence. Please try again.', 'error');
+        }
+      }
+    });
+}
+
+function openAptProspectModal(id){
+  const isNew = !id;
+  const original = isNew ? null : aptProspects.find(function(x){ return x.id === id; });
+  if(!isNew && !original){ console.warn('Apartment prospect not found:', id); return; }
+  _editingAptProspect = isNew ? {
+    id: uid(), buildingName:'', address:'', priority:'Medium', status:'New', notes:'',
+    contactTitle:'', contactName:'', email:'', phone:'', website:'',
+    createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+  } : JSON.parse(JSON.stringify(original));
+
+  const existing = document.getElementById('aptProspectModalOverlay');
+  if(existing) existing.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'aptProspectModalOverlay';
+  overlay.className = 'multi-editor-overlay';
+  overlay.onclick = function(e){ if(e.target === overlay) closeAptProspectModal(); };
+  document.body.appendChild(overlay);
+  _renderAptProspectModal();
+}
+
+function closeAptProspectModal(){
+  const ov = document.getElementById('aptProspectModalOverlay');
+  if(ov) ov.remove();
+  _editingAptProspect = null;
+}
+
+function _renderAptProspectModal(){
+  const overlay = document.getElementById('aptProspectModalOverlay');
+  if(!overlay || !_editingAptProspect) return;
+  const p = _editingAptProspect;
+  const isNew = !aptProspects.find(function(x){ return x.id === p.id; });
+  const priorityOptions = ['High','Medium','Low'].map(function(pr){
+    return '<option value="' + pr + '"' + (p.priority === pr ? ' selected' : '') + '>' + pr + '</option>';
+  }).join('');
+  const statusOptions = STATUSES.map(function(s){
+    return '<option value="' + esc(s) + '"' + (p.status === s ? ' selected' : '') + '>' + esc(s) + '</option>';
+  }).join('');
+
+  overlay.innerHTML = '<div class="multi-editor" style="max-width:560px;max-height:92vh;overflow-y:auto">' +
+    '<div class="multi-editor-header" style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--border)">' +
+      '<div style="font-weight:700;font-size:1rem">' + (isNew ? 'Add Building' : 'Edit Building') + '</div>' +
+      '<button class="modal-close" onclick="closeAptProspectModal()" style="background:none;border:none;color:var(--text2);cursor:pointer;font-size:1.5rem;line-height:1">×</button>' +
+    '</div>' +
+    '<div class="multi-editor-body" style="padding:20px;display:flex;flex-direction:column;gap:14px">' +
+      _aptModalField('Building Name', '<input type="text" id="aptBuildingNameInput" value="' + esc(p.buildingName||'') + '" placeholder="e.g. The Grand at Riverside" autocomplete="off" data-form-type="other" style="' + _APT_INPUT_STYLE + '" oninput="_editingAptProspect.buildingName=this.value">') +
+      _aptModalField('Address', '<input type="text" id="aptAddressInput" value="' + esc(p.address||'') + '" placeholder="Start typing an address..." autocomplete="off" data-form-type="other" style="' + _APT_INPUT_STYLE + '" oninput="_editingAptProspect.address=this.value">') +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
+        _aptModalField('Priority', '<select style="' + _APT_INPUT_STYLE + '" onchange="_editingAptProspect.priority=this.value">' + priorityOptions + '</select>') +
+        _aptModalField('Status', '<select style="' + _APT_INPUT_STYLE + '" onchange="_editingAptProspect.status=this.value">' + statusOptions + '</select>') +
+      '</div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
+        _aptModalField('Contact Title', '<input type="text" value="' + esc(p.contactTitle||'') + '" placeholder="Leasing Manager" style="' + _APT_INPUT_STYLE + '" oninput="_editingAptProspect.contactTitle=this.value">') +
+        _aptModalField('Contact Name', '<input type="text" value="' + esc(p.contactName||'') + '" style="' + _APT_INPUT_STYLE + '" oninput="_editingAptProspect.contactName=this.value">') +
+      '</div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
+        _aptModalField('Email', '<input type="email" value="' + esc(p.email||'') + '" style="' + _APT_INPUT_STYLE + '" oninput="_editingAptProspect.email=this.value">') +
+        _aptModalField('Phone #', '<input type="tel" maxlength="14" value="' + esc(p.phone||'') + '" style="' + _APT_INPUT_STYLE + '" oninput="this.value=fmtPhone(this.value);_editingAptProspect.phone=this.value">') +
+      '</div>' +
+      _aptModalField('Property Website', '<input type="text" value="' + esc(p.website||'') + '" placeholder="https://..." style="' + _APT_INPUT_STYLE + '" oninput="_editingAptProspect.website=this.value">') +
+      _aptModalField('Notes', '<textarea id="aptNotesInput" rows="4" style="' + _APT_INPUT_STYLE + ';resize:vertical;font-family:inherit" oninput="_editingAptProspect.notes=this.value">' + esc(p.notes||'') + '</textarea>') +
+      (isNew ? '' : _aptModalField('Outreach (Sabrina)', _renderAptOutreachRow(p))) +
+    '</div>' +
+    '<div class="multi-editor-actions" style="display:flex;justify-content:space-between;align-items:center;padding:14px 20px;border-top:1px solid var(--border)">' +
+      '<div>' + (isNew ? '' : '<button class="btn btn-sm" style="background:transparent;color:var(--danger);border:1px solid var(--danger)" onclick="_confirmDeleteAptProspect()">Delete</button>') + '</div>' +
+      '<div style="display:flex;gap:8px">' +
+        '<button class="btn btn-secondary btn-sm" onclick="closeAptProspectModal()">Cancel</button>' +
+        '<button class="btn btn-primary btn-sm" onclick="_saveAptProspectFromModal()">' + (isNew ? 'Add Building' : 'Save Changes') + '</button>' +
+      '</div>' +
+    '</div>' +
+  '</div>';
+
+  const addrEl = document.getElementById('aptAddressInput');
+  if(addrEl) setupAddressAutocomplete(addrEl, null);
+}
+
+async function _saveAptProspectFromModal(){
+  if(!_editingAptProspect) return;
+  const p = _editingAptProspect;
+  const nameEl = document.getElementById('aptBuildingNameInput');
+  if(nameEl) p.buildingName = nameEl.value.trim();
+  const addrEl = document.getElementById('aptAddressInput');
+  if(addrEl) p.address = addrEl.value.trim();
+  if(!p.buildingName){
+    alert('Please enter a building name.');
+    if(nameEl) nameEl.focus();
+    return;
+  }
+  const ok = await saveAptProspect(p);
+  if(ok){
+    closeAptProspectModal();
+    render();
+  } else {
+    alert('Failed to save. Please try again.');
+  }
+}
+
+function _confirmDeleteAptProspect(){
+  if(!_editingAptProspect) return;
+  const p = _editingAptProspect;
+  const label = p.buildingName || 'this building';
+  const pid = p.id;
+  showAppConfirm('Delete <strong>' + esc(label) + '</strong> from your Prospecting list? This cannot be undone.', {
+    title: 'Delete Building',
+    icon: '🗑️',
+    confirmText: 'Delete',
+    cancelText: 'Cancel',
+    confirmClass: 'btn-danger',
+    onConfirm: async function(){
+      const ok = await deleteAptProspect(pid);
+      if(ok){ closeAptProspectModal(); render(); }
+      else alert('Failed to delete. Please try again.');
+    }
+  });
 }
 
 function _pruneOrphanContactLinks(){
@@ -5352,7 +5644,7 @@ function switchView(view){
   clearSearch();
   const navView = view === 'pipeline' ? 'dashboard' : view;
   document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.view === navView));
-  const titles = { dashboard:'Arbitrage', pipeline:'Pipeline', operations:'Operations', opsProfile:'Operations', coHosting:'Co-Hosting', cohostProfile:'Co-Hosting', contacts:'All Contacts', notifications:'Notifications', pricing:'Your Plan', tutorial:'Tutorial', adminUsers:'Users', financials:'Financials', affiliateDashboard:'Referrals', tutorialEditor:'Tutorial Editor', settings:'Settings', featureRequest:'Feature Request', askExpert:'Ask an Expert' };
+  const titles = { dashboard:'Single Unit', pipeline:'Pipeline', operations:'Operations', opsProfile:'Operations', coHosting:'Co-Hosting', cohostProfile:'Co-Hosting', contacts:'All Contacts', apartments:'Multi Unit', notifications:'Notifications', pricing:'Your Plan', tutorial:'Tutorial', adminUsers:'Users', financials:'Financials', affiliateDashboard:'Referrals', tutorialEditor:'Tutorial Editor', settings:'Settings', featureRequest:'Feature Request', askExpert:'Ask an Expert' };
   document.getElementById('headerTitle').textContent = titles[view] || '';
   if(!_handlingPopstate) history.pushState({ view: view, profileId: null }, '', '#' + view);
   saveViewState();
@@ -5408,12 +5700,29 @@ function renderSignInPrompt(forTutorial){
 function renderLockoutScreen(){
   const isExpired = _subscriptionStatus === 'expired';
   const isCancelled = _subscriptionStatus === 'cancelled';
-  const title = isExpired ? 'Your Free Trial Has Ended' : (isCancelled ? 'Your Subscription Has Ended' : 'Choose a Plan to Continue');
-  const desc = isExpired
-    ? 'Your 7-day free trial has ended. Your data has been preserved — subscribe to any plan to resume working where you left off.'
-    : (isCancelled
-        ? 'Your subscription has ended. Your data has been preserved — subscribe to any plan to restore full access.'
-        : 'Choose a plan to continue. Your data is preserved until you subscribe.');
+  const isPastDue = _subscriptionStatus === 'past_due';
+  const title = isPastDue ? 'Payment Failed' : (isExpired ? 'Your Free Trial Has Ended' : (isCancelled ? 'Your Subscription Has Ended' : 'Choose a Plan to Continue'));
+  const desc = isPastDue
+    ? 'Your last payment didn\'t go through. Update your payment method to restore access — your data is preserved.'
+    : (isExpired
+        ? 'Your 7-day free trial has ended. Your data has been preserved — subscribe to any plan to resume working where you left off.'
+        : (isCancelled
+            ? 'Your subscription has ended. Your data has been preserved — subscribe to any plan to restore full access.'
+            : 'Choose a plan to continue. Your data is preserved until you subscribe.'));
+
+  if(isPastDue){
+    return `<div class="auth-signin-prompt lockout">
+      <div class="asp-icon">💳</div>
+      <div class="asp-title">${title}</div>
+      <div class="asp-desc" style="margin-bottom:28px">${desc}</div>
+      <div style="text-align:center">
+        <button class="btn btn-primary" onclick="openStripePortal()" style="display:inline-flex;align-items:center;gap:6px;font-size:15px;padding:12px 28px">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+          Update Payment Method
+        </button>
+      </div>
+    </div>`;
+  }
 
   return `<div class="auth-signin-prompt lockout">
     <div class="asp-icon">🔒</div>
@@ -5464,6 +5773,7 @@ function render(){
       area.innerHTML = renderDashboard(); setTimeout(initDashboardMap, 50); break;
     case 'pipeline': _setDashMode(DASH_MODES.arbitrage); pipelineCategory=pipelineCategory||'prospects'; currentView='dashboard'; area.innerHTML = renderDashboard(); setTimeout(initDashboardMap, 50); document.querySelector('.pipeline-category-tabs')?.scrollIntoView({behavior:'smooth',block:'nearest'}); break;
     case 'contacts': area.innerHTML = renderContacts(); break;
+    case 'apartments': area.innerHTML = renderApartments(); if(apartmentsActiveTab === 'pipeline') setTimeout(initDashboardMap, 50); break;
     case 'operations': area.innerHTML = renderOperationsList(); setTimeout(initOperationsMap, 50); break;
     case 'opsProfile': area.innerHTML = renderOpsProfile(); break;
     case 'coHosting':
@@ -5553,7 +5863,8 @@ function render(){
 /* ===== MARKET / SUBMARKET FILTER ===== */
 function _collectMarkets(){
   const markets = new Map(); // market → Set of submarkets
-  const _src = (typeof _activeDashMode !== 'undefined' && _activeDashMode.isCohost && typeof cohostRecords !== 'undefined') ? cohostRecords : records;
+  const _src = (typeof _activeDashMode !== 'undefined' && _activeDashMode.isCohost && typeof cohostRecords !== 'undefined') ? cohostRecords
+    : records.filter(r => (r.recordType || 'house') === ((typeof _activeDashMode !== 'undefined' && _activeDashMode.recordType) || 'house'));
   _src.forEach(r => {
     const d = r.propertyDetails || {};
     const m = (d.market || '').trim();
@@ -5585,8 +5896,10 @@ function getDashFiltered(){
       return true;
     });
   }
-  // The Prospecting dashboard hides properties that have been moved to Operations.
-  const base = getProspectingRecords();
+  // The Prospecting dashboard hides properties that have been moved to Operations,
+  // and shows only the record type (house vs apartment) for the active dash mode.
+  const _rt = (typeof _activeDashMode !== 'undefined' && _activeDashMode.recordType) || 'house';
+  const base = getProspectingRecords().filter(r => (r.recordType || 'house') === _rt);
   if(!filterMarkets.length && !filterSubmarkets.length) return base;
   return base.filter(r => {
     const d = r.propertyDetails || {};
@@ -5631,7 +5944,9 @@ function _mfRefreshDashboard(){
   }
   var area = document.getElementById('contentArea');
   if(area){
-    area.innerHTML = renderDashboard();
+    // Apartments wraps the dashboard in its own sub-tab chrome — re-render through
+    // that wrapper so the market-filter refresh doesn't strip the Pipeline/Outreach tabs.
+    area.innerHTML = (currentView === 'apartments') ? renderApartments() : renderDashboard();
     setTimeout(initDashboardMap, 50);
   }
 }
@@ -5656,8 +5971,10 @@ function _mfClear(){
 function _mfCounts(){
   var mCounts = {};
   var sCounts = {};
-  // Co-Hosting dashboard counts its own store; otherwise prospecting-stage only.
-  var _src = (typeof _activeDashMode !== 'undefined' && _activeDashMode.isCohost && typeof cohostRecords !== 'undefined') ? cohostRecords : getProspectingRecords();
+  // Co-Hosting dashboard counts its own store; otherwise prospecting-stage only,
+  // filtered to the active dash mode's record type (house vs apartment).
+  var _src = (typeof _activeDashMode !== 'undefined' && _activeDashMode.isCohost && typeof cohostRecords !== 'undefined') ? cohostRecords
+    : getProspectingRecords().filter(function(r){ return (r.recordType || 'house') === ((typeof _activeDashMode !== 'undefined' && _activeDashMode.recordType) || 'house'); });
   _src.forEach(function(r){
     var d = r.propertyDetails || {};
     var m = (d.market || '').trim() || '(No Market)';
@@ -5897,10 +6214,11 @@ const DEFAULT_TODAY_LAYOUT = [
 ];
 const TODAY_INNER_KEYS = ['tasks', 'meetingsList', 'recentActivity', 'insights'];
 
-// Dashboard "mode": the SAME dashboard code renders both Prospecting (Arbitrage)
-// and Co-Hosting. Only the active record source, saved-layout key, and a couple of
-// behaviors differ. Defaults to arbitrage so the Arbitrage dashboard is unaffected.
-const DASH_MODES = { arbitrage: { isCohost: false }, cohost: { isCohost: true } };
+// Dashboard "mode": the SAME dashboard code renders Prospecting (Houses),
+// Apartments, and Co-Hosting. Houses and Apartments share the `records` store —
+// filtered by `recordType` — while Co-Hosting swaps to a separate store entirely.
+// Defaults to arbitrage/house so the Houses dashboard is unaffected.
+const DASH_MODES = { arbitrage: { isCohost: false, recordType: 'house' }, apartment: { isCohost: false, recordType: 'apartment' }, cohost: { isCohost: true } };
 let _activeDashMode = DASH_MODES.arbitrage;
 let _lastDashMode = null;
 // Switch dashboard mode. The Market/Submarket filter state is shared, so when
@@ -6694,7 +7012,7 @@ function renderDashboard(){
   // card. Otherwise meetings silently disappear when a property's stage flips.
   const today = _todayLocalStr();
   const _allMeetings = [];
-  const _meetingScanSet = (_activeDashMode.isCohost && typeof cohostRecords !== 'undefined') ? cohostRecords : records;
+  const _meetingScanSet = (_activeDashMode.isCohost && typeof cohostRecords !== 'undefined') ? cohostRecords : records.filter(r => (r.recordType || 'house') === (_activeDashMode.recordType || 'house'));
   _meetingScanSet.forEach(r => {
     if(Array.isArray(r.meetings)){
       r.meetings.forEach(m => { _allMeetings.push({ meeting: m, property: r }); });
@@ -8210,6 +8528,96 @@ function renderContactsCards(items){
   </div>`;
 }
 
+/* ===== APARTMENTS ===== */
+// Section landing view: an internal sub-tab bar plus whichever sub-tab's content is
+// active. 'pipeline' is the deal dashboard (same dashboard/profile system Houses
+// uses, filtered to recordType==='apartment'); 'prospecting' is the pre-existing
+// leasing-office/building outreach tool (relabeled "Outreach", untouched otherwise).
+const APARTMENTS_TABS = [
+  { id: 'pipeline', label: 'Pipeline', icon: '🏢' },
+  { id: 'prospecting', label: 'Outreach', icon: '📇' }
+];
+
+function renderApartments(){
+  const tabsHtml = APARTMENTS_TABS.map(t =>
+    `<div class="profile-tab ${apartmentsActiveTab===t.id?'active':''}" data-tab="${t.id}" onclick="setApartmentsTab('${t.id}')">${t.icon} ${esc(t.label)}</div>`
+  ).join('');
+  let content = '';
+  if(apartmentsActiveTab === 'pipeline'){
+    _setDashMode(DASH_MODES.apartment);
+    content = renderDashboard();
+  } else if(apartmentsActiveTab === 'prospecting') content = renderAptProspecting();
+  return `
+    <div style="padding:16px 16px 0"><div class="profile-tabs" style="margin-left:0">${tabsHtml}</div></div>
+    ${content}`;
+}
+
+function setApartmentsTab(tab){
+  apartmentsActiveTab = tab;
+  render();
+}
+
+/* ===== APARTMENT PROSPECTING ===== */
+function renderAptProspecting(){
+  const total = aptProspects.length;
+  const words = (searchQuery || '').split(/\s+/).filter(w => w.length > 0);
+  const filtered = words.length === 0 ? aptProspects : aptProspects.filter(p => {
+    const blob = [p.buildingName, p.address, p.contactName, p.contactTitle, p.email, p.phone, p.notes].filter(Boolean).join(' ').toLowerCase();
+    return words.every(w => blob.includes(w));
+  });
+  const sorted = filtered.slice().sort((a,b) => (a.buildingName||'').localeCompare(b.buildingName||''));
+  return `
+    <div class="table-wrap">
+      <div class="table-toolbar">
+        <div style="font-size:.78rem;color:var(--text3)">${total === 0 ? 'No buildings yet' : total + (total === 1 ? ' building' : ' buildings') + (filtered.length !== total ? ' · ' + filtered.length + ' shown' : '')}</div>
+        <div style="margin-left:auto">
+          <button class="btn btn-primary btn-sm" onclick="openAptProspectModal()" style="display:inline-flex;align-items:center;gap:4px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>Add Building</button>
+        </div>
+      </div>
+      ${sorted.length === 0 ? renderAptProspectingEmpty(total) : renderAptProspectingTable(sorted)}
+    </div>`;
+}
+
+function renderAptProspectingEmpty(total){
+  if(total === 0){
+    return `<div style="padding:60px 20px;text-align:center;color:var(--text3)">
+      <div style="font-size:1rem;margin-bottom:8px">No buildings yet</div>
+      <div style="font-size:.85rem">Click <strong>+ Add Building</strong> to start prospecting apartment communities.</div>
+    </div>`;
+  }
+  return '<div class="empty-row" style="padding:40px 20px;text-align:center">No matches</div>';
+}
+
+function _aptPriorityPill(priority){
+  const p = priority || 'Medium';
+  const colors = { High: '#f87171', Medium: '#fbbf24', Low: '#9ca3af' };
+  const color = colors[p] || colors.Medium;
+  return `<span class="status-pill" style="background:${color}22;color:${color}"><span style="width:6px;height:6px;border-radius:50%;background:${color};display:inline-block"></span>${esc(p)}</span>`;
+}
+
+function _aptNormalizeUrl(url){
+  if(!url) return '#';
+  return /^https?:\/\//i.test(url) ? url : 'https://' + url;
+}
+
+function renderAptProspectingTable(items){
+  return `<div style="overflow-x:auto"><table>
+    <thead><tr><th>Building Name</th><th>Address</th><th>Priority</th><th>Status</th><th>Notes</th><th>Contact Title</th><th>Contact Name</th><th>Email</th><th>Phone #</th><th>Property Website</th></tr></thead>
+    <tbody>${items.map(p => `<tr class="clickable" onclick="openAptProspectModal('${p.id}')">
+        <td class="td-property">${esc(truncate(p.buildingName||'(unnamed)', 45))}</td>
+        <td>${esc(truncate(p.address||'', 45))}</td>
+        <td>${_aptPriorityPill(p.priority)}</td>
+        <td>${statusPill(p.status)}</td>
+        <td>${p.notes ? `<span title="${esc(p.notes)}">${esc(truncate(p.notes, 40))}</span>` : '<span style="color:var(--text3)">—</span>'}</td>
+        <td>${p.contactTitle ? esc(p.contactTitle) : '<span style="color:var(--text3)">—</span>'}</td>
+        <td>${p.contactName ? esc(p.contactName) : '<span style="color:var(--text3)">—</span>'}</td>
+        <td>${p.email ? `<a href="mailto:${esc(p.email)}" onclick="event.stopPropagation()">${esc(truncate(p.email,26))}</a>` : '—'}</td>
+        <td class="td-phone">${p.phone ? esc(fmtPhone(p.phone)) : '—'}</td>
+        <td>${p.website ? `<a href="${esc(_aptNormalizeUrl(p.website))}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${esc(truncate(p.website.replace(/^https?:\/\//,''),22))}</a>` : '—'}</td>
+      </tr>`).join('')}</tbody>
+  </table></div>`;
+}
+
 /* ===== NOTIFICATIONS ===== */
 function getFollowUps(){
   const now = new Date();
@@ -8352,7 +8760,7 @@ function openDetail(id, restoreTab){
   }
   document.getElementById('searchAutocomplete')?.classList.remove('visible');
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-  document.getElementById('headerTitle').textContent = 'Arbitrage';
+  document.getElementById('headerTitle').textContent = r.recordType === 'apartment' ? 'Multi Unit' : 'Single Unit';
   if(!_handlingPopstate) history.pushState({ view: 'profile', profileId: id, previousView: previousView }, '', '#profile/' + id);
   saveViewState();
   render();
@@ -8563,6 +8971,7 @@ function _renderProfileInner(){
     <div style="display:flex;justify-content:flex-end;margin-top:6px;width:100%">
       <div class="profile-tabs" style="margin-top:0">
       <div class="profile-tab ${activeTab==='details'?'active':''}" data-tab="details" onclick="setProfileTab('details')">🏠 Property Details</div>
+      ${r.recordType==='apartment' ? `<div class="profile-tab ${activeTab==='units'?'active':''}" data-tab="units" onclick="setProfileTab('units')">🏘️ Units</div>` : ''}
       <div class="profile-tab ${activeTab==='expenses'?'active':''}" data-tab="expenses" onclick="setProfileTab('expenses')">💸 Income & Expenses</div>
       <div class="profile-tab ${activeTab==='analysis'?'active':''}" data-tab="analysis" onclick="${_needsConfirm ? `showAnalysisConfirmation('${r.id}','analysis')` : `setProfileTab('analysis')`}">📊 Competitor Analysis ${!proOk?'<span class=\\"tab-lock\\">🔒</span>':''}</div>
       <div class="profile-tab ${activeTab==='calculator'?'active':''}" data-tab="calculator" onclick="${_needsConfirm ? `showAnalysisConfirmation('${r.id}','calculator')` : `setProfileTab('calculator')`}">💰 Projected ROI ${!calcOk?'<span class=\\"tab-lock\\">🔒</span>':''}</div>
@@ -8588,8 +8997,8 @@ function _renderProfileInner(){
           <div class="cr-field" style="flex:1 1 100%"><div class="cr-label">Address</div><div class="cr-val-row"><div class="cr-value ${r.property?'':'empty'}">${r.property?esc(r.property):'Not set'}</div>${r.property?`<button class="cr-copy-btn" onclick="event.stopPropagation();copyAddress(this,'${r.id}')" title="Copy address"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>`:''}</div></div>
         </div>
         <div class="cr-row" style="gap:16px;align-items:flex-end">
-          <div class="cr-field" style="min-width:50px;flex:0 1 auto"><div class="cr-label">Beds</div><div class="cr-value ${d.bedrooms||d.bedrooms==='0'||d.bedrooms===0?'':'empty'}">${d.bedrooms==='0'||d.bedrooms===0?'Studio':d.bedrooms||'—'}</div></div>
-          <div class="cr-field" style="min-width:50px;flex:0 1 auto"><div class="cr-label">${d.bathrooms==='1'?'Bath':'Baths'}</div><div class="cr-value ${d.bathrooms?'':'empty'}">${d.bathrooms||'—'}</div></div>
+          ${r.recordType==='apartment' ? `<div class="cr-field" style="min-width:50px;flex:0 1 auto"><div class="cr-label">Units</div><div class="cr-value ${d.numberOfUnits?'':'empty'}">${d.numberOfUnits||'—'}</div></div>` : `<div class="cr-field" style="min-width:50px;flex:0 1 auto"><div class="cr-label">Beds</div><div class="cr-value ${d.bedrooms||d.bedrooms==='0'||d.bedrooms===0?'':'empty'}">${d.bedrooms==='0'||d.bedrooms===0?'Studio':d.bedrooms||'—'}</div></div>
+          <div class="cr-field" style="min-width:50px;flex:0 1 auto"><div class="cr-label">${d.bathrooms==='1'?'Bath':'Baths'}</div><div class="cr-value ${d.bathrooms?'':'empty'}">${d.bathrooms||'—'}</div></div>`}
           <div class="cr-field" style="min-width:55px;flex:0 1 auto"><div class="cr-label">Sq Ft</div><div class="cr-value ${d.sqft?'':'empty'}">${d.sqft ? Number(d.sqft).toLocaleString() : '—'}</div></div>
           <div class="cr-field" style="min-width:70px;flex:0 1 auto"><div class="cr-label">Available</div><div class="cr-value ${d.availableDate?'':'empty'}">${d.availableDate==='now'?'Now':d.availableDate ? fmtDate(d.availableDate) : '—'}</div></div>
           <div class="cr-field" style="min-width:auto;flex:0 1 auto"><div class="cr-label">Status</div><div class="cr-value ${r.status?'':'empty'}">${r.status||'—'}</div></div>
@@ -8692,6 +9101,13 @@ function _renderProfileInner(){
   </div>`;
 
   html += `</div>`; // end details tab
+
+  // ── TAB: Units (apartment records only) ──
+  if(r.recordType === 'apartment'){
+    html += `<div class="tab-content ${activeTab==='units'?'active':''}" data-tab="units">`;
+    html += renderUnitsTab(r);
+    html += `</div>`;
+  }
 
   // ── TAB: Expenses (available on all tiers) ──
   html += `<div class="tab-content ${activeTab==='expenses'?'active':''}" data-tab="expenses">`;
@@ -10425,6 +10841,7 @@ async function handleExtensionListing(data) {
       id: (typeof uid === 'function' ? uid() : ('r_' + Date.now())),
       property: canonical,
       addressParts: addrParts,
+      recordType: (typeof _addModalRecordType !== 'undefined' && _addModalRecordType === 'apartment') ? 'apartment' : 'house',
       name: '',
       phone: '',
       email: '',
@@ -10794,12 +11211,18 @@ function checkPendingExtensionComps() {
   }
 }
 
-function openAddModal(){
+// recordType currently selected in the + Add Property modal ('house' | 'apartment'),
+// read by every creation path (manual entry, AI paste import, auto-import) so the
+// new record lands in the right pipeline. Defaults to 'house'.
+let _addModalRecordType = 'house';
+function openAddModal(recordType){
   if(!_currentUid) return; // Must be signed in
+  _addModalRecordType = recordType === 'apartment' ? 'apartment' : 'house';
   const modal = document.getElementById('detailModal');
   const panel = document.getElementById('detailPanel');
+  const _kindLabel = _addModalRecordType === 'apartment' ? 'Multi Unit' : 'Single Unit';
   panel.innerHTML = `
-    <div class="modal-header"><h2>Add New Arbitrage Property</h2><button class="modal-close" onclick="closeAddModal()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>
+    <div class="modal-header"><h2>Add New ${_kindLabel} Property</h2><button class="modal-close" onclick="closeAddModal()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>
     <div class="modal-body" id="addModalBody">
       <div id="addStep1"></div>
       <div id="addStep2" style="display:none"></div>
@@ -11340,6 +11763,7 @@ async function saveNewRecord(){
   if(rent) propDetails.monthlyRent = rent;
   const r = {
     id: uid(), property, addressParts: addrParts,
+    recordType: _addModalRecordType === 'apartment' ? 'apartment' : 'house',
     name: document.getElementById('add_name').value.trim(),
     phone: (function(){ var d = (document.getElementById('add_phone')?.value||'').replace(/\D/g,''); return d.length===10 ? '('+d.slice(0,3)+') '+d.slice(3,6)+'-'+d.slice(6) : ''; })(),
     email: document.getElementById('add_email').value.trim(),
@@ -12301,6 +12725,24 @@ function requireTier(minTier, featureName){
 // Affiliate and admin tiers function as Pro-equivalent for analyses — no per-cycle
 // cap. (requireTier() already treats affiliate/admin >= pro for feature gates; this
 // table just keeps the per-tier quota lookup in sync.)
+// ┌──────────────────────────────────────────────────────────────────────────────────┐
+// │ WHEN A PLAN'S LIMITS OR PRICE CHANGE, UPDATE EVERY PLACE BELOW (they don't cascade):│
+// │  APP (this file):                                                                   │
+// │   1. ANALYSIS_LIMITS (here)            — per-tier monthly analysis quota            │
+// │   2. OPERATIONS_LIMITS (~120 lines below) — per-tier Operations-property cap        │
+// │   3. TIERS { monthly, yearly } (~line 12055) — display prices                       │
+// │   4. renderPricingCard() calls (~line 17870) — desktop card `analysisLimit` string  │
+// │      is HARDCODED (operationsLimit reads OPERATIONS_LIMITS; analyses does not)       │
+// │   5. mgRenderTierPicker() (~line 2230) — mobile picker; derives BOTH from the two    │
+// │      constants above, so it auto-syncs — no edit needed if you only change numbers  │
+// │   6. FAQ_ENTRIES "difference between Basic/Standard/Pro" (~line 36190) — hardcoded,  │
+// │      and it feeds Sabrina's answers                                                 │
+// │  BACKEND: functions/index.js → opsLimitForUserData() — server-enforced Operations   │
+// │      cap, hardcoded basic:1 / standard:5; MUST match OPERATIONS_LIMITS               │
+// │  STRIPE: price amounts live in Stripe; the *_PRICE env vars map tier→priceId        │
+// │  WEBSITE: rentingradar-website/index.html PLANS {} — analysisLimit + operationsLimit │
+// │      (both hardcoded there) + any pricing in JSON-LD / meta                          │
+// └──────────────────────────────────────────────────────────────────────────────────┘
 const ANALYSIS_LIMITS = { basic: 1, standard: 10, pro: Infinity, affiliate: Infinity, admin: Infinity };
 let _analysisQuota = { analyzedProperties: [], cycleStart: null, signupDate: null };
 
@@ -12404,6 +12846,8 @@ function canAccessAnalysis(propertyId){
 // Trial users get unlimited (full value before converting). EXISTING over-limit
 // users are GRANDFATHERED: their properties stay fully usable — we only block
 // ADDING new ones past the cap.
+// Changing these numbers? Also update functions/index.js opsLimitForUserData() (server
+// enforcement) and see the full plan-change checklist above ANALYSIS_LIMITS.
 const OPERATIONS_LIMITS = { basic: 1, standard: 5, pro: Infinity, affiliate: Infinity, admin: Infinity };
 
 function getOperationsLimit(){
@@ -13498,6 +13942,31 @@ const FIN_FREQUENCIES = [
 ];
 function _finFreqMeta(key){ return FIN_FREQUENCIES.find(f => f.key === key) || FIN_FREQUENCIES[0]; }
 
+// Affiliate payouts surfaced as read-only expense records so the money you paid
+// out to affiliates counts everywhere business expenses count (Expenses log +
+// totals, category charts, Overview cash-flow, Tax Projection deductions) WITHOUT
+// re-entering it. Source of truth stays the Affiliate tab's Payouts section — edit
+// or delete a mirrored row there, not here. Each is a one-time cash outflow dated
+// on the payout date, categorized "Affiliate Commissions" (100% deductible), with a
+// synthetic id ("payout:<id>") so it never collides with a real businessExpenses id.
+function _finPayoutsAsExpenses(){
+  return (_finPayouts || [])
+    .filter(p => p && p.date && (Number(p.amount) || 0) > 0)
+    .map(p => ({
+      id: 'payout:' + p.id,
+      _fromPayout: true,
+      _payoutId: p.id,
+      date: p.date,
+      amount: Number(p.amount) || 0,
+      category: 'Affiliate Commissions',
+      vendor: p.affiliateName || p.affiliateEmail || 'Affiliate payout',
+      notes: p.note || '',
+      taxDeductible: true,
+      deductionPct: _finDeductionPctForCategory('Affiliate Commissions'),
+      frequency: 'once',
+    }));
+}
+
 // Expand all expenses into virtual occurrences within [startStr, endStr]. One-time
 // expenses contribute one occurrence (if their date is in range); recurring expenses
 // generate one occurrence per period interval starting from their date through endDate
@@ -13507,7 +13976,8 @@ function _finExpenseOccurrencesInRange(startStr, endStr){
   if(!startStr || !endStr) return out;
   const rangeStart = new Date(startStr + 'T00:00:00');
   const rangeEnd = new Date(endStr + 'T23:59:59');
-  _finExpenses.forEach(e => {
+  // Real logged expenses + affiliate payouts mirrored as one-time expenses.
+  _finExpenses.concat(_finPayoutsAsExpenses()).forEach(e => {
     if(!e.date) return;
     const freq = e.frequency || 'once';
     // Hard stop date for recurring (inclusive) — Infinity if open-ended.
@@ -13600,13 +14070,18 @@ async function initFinancials(){
     // on cold start — looked like "nothing's happening" and prompted re-clicks.
     const usersP = _adminUsersLoaded ? Promise.resolve() : _adminRefreshUsers();
     const expensesP = _finExpensesLoaded ? Promise.resolve() : _finLoadExpenses();
+    // Payouts mirror into expenses, so they must be loaded for the cash-flow chart.
+    const payoutsP = _finPayoutsLoaded ? Promise.resolve() : _finLoadPayouts();
     const stripeP = _adminLoadFinancials();  // fills #adminFinancialsDash on its own
-    // First paint as soon as expenses are loaded (usually fast — local Firestore).
-    Promise.all([usersP, expensesP]).then(() => setTimeout(_finDrawOverviewCharts, 30));
+    // First paint as soon as expenses + payouts are loaded (usually fast — local Firestore).
+    Promise.all([usersP, expensesP, payoutsP]).then(() => setTimeout(_finDrawOverviewCharts, 30));
     // Second paint when Stripe revenue data arrives.
     stripeP.then(() => { if(_finActiveTab === 'overview') _finDrawOverviewCharts(); });
   } else if(_finActiveTab === 'expenses'){
-    if(!_finExpensesLoaded) await _finLoadExpenses();
+    // Load payouts too — they appear as read-only mirrored rows in the expense log.
+    if(!_finPayoutsLoaded) await _finLoadPayouts();
+    if(!_finExpensesLoaded){ await _finLoadExpenses(); }
+    else { const body = document.getElementById('finTabBody'); if(body) body.innerHTML = _renderFinExpenses(); }
     setTimeout(_finDrawExpensesCharts, 80);
   } else if(_finActiveTab === 'affiliates'){
     const needUsers = !_adminUsersLoaded, needPayouts = !_finPayoutsLoaded;
@@ -13625,6 +14100,8 @@ async function initFinancials(){
       try { const result = await callFunction('adminFinancials', {}); _adminFinData = result.data; } catch(e){ console.warn('Tax: financials load failed', e); }
     }
     if(!_finExpensesLoaded) await _finLoadExpenses();
+    // Payouts count as deductible affiliate-commission expenses in the projection.
+    if(!_finPayoutsLoaded) await _finLoadPayouts();
     if(!_finTaxSettingsLoaded) await _finLoadTaxSettings();
     const body = document.getElementById('finTabBody');
     if(body) body.innerHTML = _renderFinTaxPlaceholder();
@@ -13668,7 +14145,7 @@ function _renderFinExpenses(){
 
   let listHtml;
   if(!inPeriod.length){
-    listHtml = `<div style="padding:50px 20px;text-align:center;color:var(--text3);font-size:.88rem">${_finExpenses.length ? 'No expenses in the selected period.' : 'No expenses logged yet. Click <strong>+ Add Expense</strong> to start tracking write-offs.'}</div>`;
+    listHtml = `<div style="padding:50px 20px;text-align:center;color:var(--text3);font-size:.88rem">${(_finExpenses.length || _finPayouts.length) ? 'No expenses in the selected period.' : 'No expenses logged yet. Click <strong>+ Add Expense</strong> to start tracking write-offs.'}</div>`;
   } else {
     const sorted = inPeriod.slice().sort((a,b) => (b._occurrenceDate || b.date || '').localeCompare(a._occurrenceDate || a.date || ''));
     listHtml = `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.84rem">
@@ -13700,7 +14177,7 @@ function _renderFinExpenses(){
       </div>
       <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:12px 14px">
         <div style="font-size:.68rem;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Total Entries (all time)</div>
-        <div style="font-size:1.2rem;font-weight:800;color:var(--text)">${_finExpenses.length}</div>
+        <div style="font-size:1.2rem;font-weight:800;color:var(--text)">${_finExpenses.length + _finPayoutsAsExpenses().length}</div>
       </div>
     </div>
     <div style="display:grid;grid-template-columns:2fr 1fr;gap:14px;margin-bottom:16px">
@@ -13744,6 +14221,23 @@ function _finRenderExpenseRow(e){
   const freqCell = isRecurring
     ? `<span title="${esc(freqMeta.label + ' recurring')}" style="font-size:.62rem;font-weight:700;padding:1px 6px;border-radius:8px;background:rgba(99,129,250,.15);color:var(--primary);text-transform:uppercase;letter-spacing:.4px;white-space:nowrap">↻ ${esc(freqMeta.label)}</span>`
     : `<span style="font-size:.62rem;font-weight:600;padding:1px 6px;border-radius:8px;background:var(--bg);color:var(--text3);text-transform:uppercase;letter-spacing:.4px;white-space:nowrap">One-Time</span>`;
+  // Payout-mirrored rows are read-only here — the record lives in the Affiliate tab.
+  // Show a badge next to the vendor and route the edit action there instead of the
+  // (non-existent) businessExpenses editor; no delete button (delete it as a payout).
+  if(e._fromPayout){
+    const vendorCell = `${esc(e.vendor || '—')} <span title="Recorded as an affiliate payout — edit or delete it in the Affiliate tab" style="font-size:.6rem;font-weight:700;padding:1px 6px;border-radius:8px;background:rgba(16,185,129,.14);color:#10b981;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap;margin-left:4px">🤝 Payout</span>`;
+    return `<tr style="border-bottom:1px solid var(--border)">
+    <td style="padding:9px 12px;color:var(--text2);white-space:nowrap">${esc(occDate)}</td>
+    <td style="padding:9px 12px;color:var(--text)">${vendorCell}</td>
+    <td style="padding:9px 12px;color:var(--text2);font-size:.78rem">${esc(e.category || '—')}</td>
+    <td style="padding:9px 12px">${freqCell}</td>
+    <td style="padding:9px 12px;text-align:right;font-weight:700;color:var(--text)">$${amt.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+    <td style="padding:9px 12px;text-align:center;color:${e.taxDeductible === false ? 'var(--text3)' : '#10b981'};font-size:.78rem">${e.taxDeductible === false ? '—' : '✓'}</td>
+    <td style="padding:9px 12px;text-align:right;white-space:nowrap">
+      <button onclick="setFinTab('affiliates')" title="Manage this payout in the Affiliate tab" style="background:none;border:none;color:var(--text3);cursor:pointer;padding:3px 6px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></button>
+    </td>
+  </tr>`;
+  }
   return `<tr style="border-bottom:1px solid var(--border)">
     <td style="padding:9px 12px;color:var(--text2);white-space:nowrap">${esc(occDate)}</td>
     <td style="padding:9px 12px;color:var(--text)">${esc(e.vendor || '—')}</td>
@@ -16464,6 +16958,7 @@ async function _adminImpersonate(uid){
   // unsubscribes any existing onSnapshot listener and rewires it to the new UID.
   records = [];
   contacts = [];
+  aptProspects = [];
   if(typeof loadDataFromFirestore === 'function'){
     loadDataFromFirestore(u.uid).catch(function(e){ console.error('[impersonate] data load failed:', e); });
   }
@@ -16505,6 +17000,7 @@ function _adminShowImpersonateBanner(u, orig){
     document.body.classList.remove('impersonating');
     records = [];
     contacts = [];
+    aptProspects = [];
     if(orig.uid && typeof loadDataFromFirestore === 'function'){
       loadDataFromFirestore(orig.uid).catch(function(e){ console.error('[impersonate] restore load failed:', e); });
     }
@@ -17877,7 +18373,7 @@ async function handleUpgrade(tier){
     // Stripe Customer Portal to switch plans — never through a fresh Checkout. Creating
     // a second checkout while a subscription already exists would result in DOUBLE billing
     // / two parallel subscriptions, which is a real Stripe footgun.
-    var hasStripeSub = !!subId && (_subscriptionStatus === 'active' || _subscriptionStatus === 'trialing');
+    var hasStripeSub = !!subId && (_subscriptionStatus === 'active' || _subscriptionStatus === 'trialing' || _subscriptionStatus === 'past_due');
     if(hasStripeSub && currentTier){
       const tierLabel = (TIERS[tier] && TIERS[tier].name) || tier;
       showAppConfirm(
@@ -18904,6 +19400,8 @@ firebase.auth().onAuthStateChanged(async (user) => {
     records = [];
     contacts = [];
     cohostRecords = [];
+    aptProspects = [];
+    if(_aptProspectsUnsubscribe){ _aptProspectsUnsubscribe(); _aptProspectsUnsubscribe = null; }
     _lastSavedCohostJson = '[]';
     if(_cohostUnsubscribe){ _cohostUnsubscribe(); _cohostUnsubscribe = null; }
     _lastSavedJson = '';
@@ -19474,8 +19972,10 @@ function _addPropertyChoice(kind){
       return;
     }
     openCohostAddModal();
+  } else if(kind === 'apartment'){
+    openAddModal('apartment');
   } else {
-    openAddModal();
+    openAddModal('house');
   }
 }
 document.addEventListener('click', function(e){
@@ -19516,8 +20016,8 @@ function openImportCsvModal(){
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px">
         <button onclick="openProspectingImportFlow('arbitrage')" style="text-align:left;background:var(--bg2);border:1.5px solid var(--border);border-radius:10px;padding:18px 16px;cursor:pointer;transition:all .15s" onmouseover="this.style.borderColor='var(--primary)';this.style.background='var(--bg3,var(--bg2))'" onmouseout="this.style.borderColor='var(--border)';this.style.background='var(--bg2)'">
           <div style="font-size:1.6rem;margin-bottom:6px">🎯</div>
-          <div style="font-weight:700;color:var(--text);margin-bottom:4px">Arbitrage</div>
-          <div style="font-size:.76rem;color:var(--text3);line-height:1.4">Prospects, leads, and properties you're evaluating for rental arbitrage. Lands in your Arbitrage pipeline.</div>
+          <div style="font-weight:700;color:var(--text);margin-bottom:4px">Single Unit</div>
+          <div style="font-size:.76rem;color:var(--text3);line-height:1.4">Prospects, leads, and properties you're evaluating for rental arbitrage. Lands in your Single Unit pipeline.</div>
         </button>
         <button onclick="openProspectingImportFlow('cohost')" style="text-align:left;background:var(--bg2);border:1.5px solid var(--border);border-radius:10px;padding:18px 16px;cursor:pointer;transition:all .15s" onmouseover="this.style.borderColor='var(--primary)';this.style.background='var(--bg3,var(--bg2))'" onmouseout="this.style.borderColor='var(--border)';this.style.background='var(--bg2)'">
           <div style="font-size:1.6rem;margin-bottom:6px">🤝</div>
@@ -19539,7 +20039,7 @@ function openImportCsvModal(){
 // `target` ('arbitrage' | 'cohost') decides which store the records land in.
 function openProspectingImportFlow(target){
   target = target === 'cohost' ? 'cohost' : 'arbitrage';
-  const label = target === 'cohost' ? 'Co-Hosting' : 'Arbitrage';
+  const label = target === 'cohost' ? 'Co-Hosting' : 'Single Unit';
   const panel = document.getElementById('detailPanel');
   panel.innerHTML = `
     <div class="modal-header">
@@ -19574,7 +20074,7 @@ function openProspectingImportFlow(target){
 // sub-picker can route to it.
 function openProspectingCsvFlow(target){
   csvImportTarget = target === 'cohost' ? 'cohost' : 'arbitrage';
-  const label = csvImportTarget === 'cohost' ? 'Co-Hosting' : 'Arbitrage';
+  const label = csvImportTarget === 'cohost' ? 'Co-Hosting' : 'Single Unit';
   const panel = document.getElementById('detailPanel');
   csvImportData = null; csvHeaders = []; csvAllRows = []; csvSkipHeader = true;
   panel.innerHTML = `
@@ -19895,7 +20395,7 @@ let _customXlsxState = null;
 
 async function openCustomXlsxFlow(target){
   const _back = target === 'operations' ? 'openOperationsImportFlow()' : "openProspectingImportFlow('" + target + "')";
-  const _label = target === 'operations' ? 'Operations' : (target === 'cohost' ? 'Co-Hosting' : 'Arbitrage');
+  const _label = target === 'operations' ? 'Operations' : (target === 'cohost' ? 'Co-Hosting' : 'Single Unit');
   const panel = document.getElementById('detailPanel');
   panel.innerHTML = `
     <div class="modal-header">
@@ -20340,7 +20840,7 @@ async function renderImportHistorySection(target, hostId){
   try {
     const history = await _fetchImportHistory(target);
     if(!history.length){
-      host.innerHTML = '<div style="color:var(--text3);font-size:.82rem;padding:8px 0;font-style:italic">No past imports for ' + esc(target === 'operations' ? 'Operations' : (target === 'cohost' ? 'Co-Hosting' : (target === 'prospecting' ? 'Prospecting' : 'Arbitrage'))) + '.</div>';
+      host.innerHTML = '<div style="color:var(--text3);font-size:.82rem;padding:8px 0;font-style:italic">No past imports for ' + esc(target === 'operations' ? 'Operations' : (target === 'cohost' ? 'Co-Hosting' : (target === 'prospecting' ? 'Prospecting' : 'Single Unit'))) + '.</div>';
       return;
     }
     const isAdmin = !!_isAdmin;
@@ -21453,7 +21953,7 @@ function renderOpsMediaSection(recId, ops, kind){
   const cfg = OPS_MEDIA[kind];
   const items = Array.isArray(ops[cfg.key]) ? ops[cfg.key] : [];
   const label = kind === 'photos' ? 'Photos' : 'Videos';
-  let h = '<div class="ops-field ops-media-field" style="grid-column:1/-1">';
+  let h = '<div class="ops-field ops-media-field" data-field="'+cfg.key+'" style="grid-column:1/-1">';
   h += '<label>'+label+' <span class="ops-media-count">'+items.length+'/'+cfg.max+'</span></label>';
   h += '<div class="ops-media-grid" id="ops_media_'+recId+'_'+kind+'">'+renderOpsMediaItems(recId, kind, items)+'</div>';
   h += '</div>';
@@ -24131,9 +24631,9 @@ const OPS_SEARCH_INDEX = [
   {field:'map', label:'Map', group:'Documents & Media', keywords:'map directions location'},
   {field:'houseManual', label:'House Manual', group:'Documents & Media', keywords:'house manual guide instructions'},
   {field:'opsManual', label:'Ops Manual', group:'Documents & Media', keywords:'ops operations manual guide'},
-  {field:'video', label:'Video', group:'Documents & Media', keywords:'video tour walkthrough'},
-  {field:'photos', label:'Photos', group:'Documents & Media', keywords:'photos pictures images'},
   {field:'refVideo', label:'Ref Video', group:'Documents & Media', keywords:'ref reference video'},
+  {field:'mediaPhotos', label:'Photos', group:'Photos & Videos', keywords:'photos pictures images gallery upload media'},
+  {field:'mediaVideos', label:'Videos', group:'Photos & Videos', keywords:'videos video tour walkthrough gallery upload media clips'},
   {field:'owner', label:'Owner', group:'Owner & Contract', keywords:'owner landlord property'},
   {field:'ownerNum', label:'Owner #', group:'Owner & Contract', keywords:'owner number phone landlord'},
   {field:'ownerEmail', label:'Owner Email', group:'Owner & Contract', keywords:'owner email landlord contact'},
@@ -24640,7 +25140,7 @@ function openCohostAddModal(){
 function _cohostShowAddChoice(){
   const body = document.getElementById('cohostAddBody'); if(!body) return;
   body.innerHTML =
-    '<div style="padding:4px 2px 8px;font-size:.85rem;color:var(--text2)">Import the rental listing you will co-host — same as Arbitrage.</div>'+
+    '<div style="padding:4px 2px 8px;font-size:.85rem;color:var(--text2)">Import the rental listing you will co-host — same as Houses.</div>'+
     '<div class="field-group" style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:14px">'+
       '<label class="field-label" style="font-weight:600">🔗 Import from a listing link</label>'+
       '<div style="font-size:.72rem;color:var(--text3);margin:4px 0 8px">Paste a Zillow, Apartments.com, or HotPads URL. We will pull the address, beds/baths, sq ft, rent, and a property summary.</div>'+
@@ -26849,6 +27349,115 @@ function calcComputeAll(r){
   return { c, br, monthlyRent, furnishCost, totalInvested, avgDailyRate, estOccupancyRate, daysOccupied, annualRevenue, monthlyRevenue, cleaning, coHostFee, airbnbFee, customExpensesTotal, additionalIncomeTotal, totalMonthlyExp, annualExp, monthlyNOI, annualNOI, monthlyCF, annualCF, cocReturn, compsCount: comps.length, projectedRevenue, optimisticRevenue, pessimisticRevenue, hasProjectionData, projectedD, optimisticD, pessimisticD, positionScore, marketPercentile, losesCount: losesCount || 0, competesCount: competesCount || 0, beatsCount: beatsCount || 0 };
 }
 
+/* ===== UNITS TAB (apartment records only) ===== */
+// Each apartment building can have its own set of units, since pricing differs
+// unit-to-unit within the same building. `r.units` is an array of
+// { id, label, sqft, bedrooms, bathrooms, commonSpaces, notes }.
+function renderUnitsTab(r){
+  const units = r.units || [];
+  let h = '<div class="table-wrap" style="padding:16px">';
+  h += '<div class="table-toolbar" style="margin-bottom:14px">';
+  h += `<div style="font-size:.78rem;color:var(--text3)">${units.length === 0 ? 'No units yet' : units.length + (units.length === 1 ? ' unit' : ' units')}</div>`;
+  h += `<div style="margin-left:auto"><button class="btn btn-primary btn-sm" onclick="openAddUnitModal('${r.id}')" style="display:inline-flex;align-items:center;gap:4px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>Add Unit</button></div>`;
+  h += '</div>';
+  if(units.length === 0){
+    h += '<div style="padding:40px 20px;text-align:center;color:var(--text3)">'
+      + '<div style="font-size:1.8rem;margin-bottom:8px">🏘️</div>'
+      + '<div style="font-size:.95rem;font-weight:600;margin-bottom:4px;color:var(--text)">No units defined yet</div>'
+      + '<div style="font-size:.82rem;max-width:420px;margin:0 auto">Add each unit in this building — square footage, bedrooms/bathrooms, and common spaces — to capture how pricing differs between them.</div>'
+      + '</div>';
+  } else {
+    h += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px">';
+    units.forEach(u => {
+      h += `<div class="profile-card" style="padding:14px 16px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;gap:8px">
+          <div style="font-weight:700;color:var(--text)">${esc(u.label || 'Unit')}</div>
+          <div style="display:flex;gap:4px;flex-shrink:0">
+            <button class="card-edit-btn" onclick="openAddUnitModal('${r.id}','${u.id}')" title="Edit unit"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+            <button class="card-edit-btn" onclick="deleteUnit('${r.id}','${u.id}')" title="Delete unit" style="color:var(--danger)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>
+          </div>
+        </div>
+        <div class="cr-row" style="gap:14px;flex-wrap:wrap">
+          <div class="cr-field"><div class="cr-label">Sq Ft</div><div class="cr-value ${u.sqft?'':'empty'}">${u.sqft ? Number(u.sqft).toLocaleString() : '—'}</div></div>
+          <div class="cr-field"><div class="cr-label">Beds</div><div class="cr-value ${u.bedrooms||u.bedrooms===0?'':'empty'}">${u.bedrooms===0||u.bedrooms==='0'?'Studio':(u.bedrooms||'—')}</div></div>
+          <div class="cr-field"><div class="cr-label">${u.bathrooms==='1'?'Bath':'Baths'}</div><div class="cr-value ${u.bathrooms?'':'empty'}">${u.bathrooms||'—'}</div></div>
+          <div class="cr-field"><div class="cr-label">Common Spaces</div><div class="cr-value ${u.commonSpaces?'':'empty'}">${u.commonSpaces||'—'}</div></div>
+        </div>
+        ${u.notes ? `<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:.8rem;color:var(--text2);white-space:pre-wrap">${esc(u.notes)}</div>` : ''}
+      </div>`;
+    });
+    h += '</div>';
+  }
+  h += '</div>';
+  return h;
+}
+
+function openAddUnitModal(recordId, unitId){
+  const r = records.find(x => x.id === recordId);
+  if(!r) return;
+  if(!r.units) r.units = [];
+  const existing = unitId ? r.units.find(u => u.id === unitId) : null;
+  const modal = document.getElementById('detailModal');
+  const panel = document.getElementById('detailPanel');
+  panel.innerHTML = `
+    <div class="modal-header"><h2>${existing ? 'Edit Unit' : 'Add Unit'}</h2><button class="modal-close" onclick="document.getElementById('detailModal').classList.remove('open')"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>
+    <div class="modal-body">
+      <div class="field-group"><label class="field-label">Unit Label / Number *</label><input id="unit_label" type="text" placeholder="e.g. Unit 101, 2B" value="${existing ? esc(existing.label||'') : ''}"></div>
+      <div class="field-row" style="gap:8px">
+        <div class="field-group" style="flex:1"><label class="field-label">Sq Ft</label><input id="unit_sqft" type="number" min="0" value="${existing && existing.sqft != null ? existing.sqft : ''}"></div>
+        <div class="field-group" style="flex:1"><label class="field-label">Bedrooms</label><input id="unit_bedrooms" type="number" min="0" step="1" value="${existing && existing.bedrooms != null ? existing.bedrooms : ''}"></div>
+        <div class="field-group" style="flex:1"><label class="field-label">Bathrooms</label><input id="unit_bathrooms" type="number" min="0" step="0.5" value="${existing && existing.bathrooms != null ? existing.bathrooms : ''}"></div>
+      </div>
+      <div class="field-group"><label class="field-label">Common Spaces</label><input id="unit_commonSpaces" type="number" min="0" step="1" placeholder="e.g. 1 (shared lounge, laundry room, etc.)" value="${existing && existing.commonSpaces != null ? existing.commonSpaces : ''}"></div>
+      <div class="field-group"><label class="field-label">Notes</label><textarea id="unit_notes" rows="3" placeholder="Any other differences affecting pricing — view, floor level, renovation status, etc.">${existing ? esc(existing.notes||'') : ''}</textarea></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:20px">
+        <button class="btn btn-secondary" onclick="document.getElementById('detailModal').classList.remove('open')">Cancel</button>
+        <button class="btn btn-primary" onclick="saveUnit('${recordId}','${unitId||''}')">${existing ? 'Save Changes' : 'Add Unit'}</button>
+      </div>
+    </div>`;
+  modal.classList.add('open');
+  setTimeout(() => { const el = document.getElementById('unit_label'); if(el) el.focus(); }, 60);
+}
+
+function saveUnit(recordId, unitId){
+  const r = records.find(x => x.id === recordId);
+  if(!r) return;
+  const labelEl = document.getElementById('unit_label');
+  const label = labelEl ? labelEl.value.trim() : '';
+  if(!label){ showAppAlert('Unit label is required', {title: 'Validation', icon: '⚠️'}); return; }
+  if(!r.units) r.units = [];
+  const data = {
+    label,
+    sqft: document.getElementById('unit_sqft').value || '',
+    bedrooms: document.getElementById('unit_bedrooms').value || '',
+    bathrooms: document.getElementById('unit_bathrooms').value || '',
+    commonSpaces: document.getElementById('unit_commonSpaces').value || '',
+    notes: document.getElementById('unit_notes').value.trim()
+  };
+  if(unitId){
+    const existing = r.units.find(u => u.id === unitId);
+    if(existing) Object.assign(existing, data);
+  } else {
+    r.units.push(Object.assign({ id: uid() }, data));
+  }
+  saveData();
+  document.getElementById('detailModal').classList.remove('open');
+  render();
+}
+
+function deleteUnit(recordId, unitId){
+  const r = records.find(x => x.id === recordId);
+  if(!r || !r.units) return;
+  showAppConfirm('Delete this unit? This cannot be undone.', {
+    title: 'Delete Unit', icon: '🗑️', confirmText: 'Delete', confirmClass: 'btn-danger',
+    onConfirm: () => {
+      r.units = r.units.filter(u => u.id !== unitId);
+      saveData();
+      render();
+    }
+  });
+}
+
 function renderExpensesTab(r){
   const pd = r.propertyDetails || {};
   const v = calcComputeAll(r);
@@ -26872,6 +27481,17 @@ function renderExpensesTab(r){
           '<div>Need to edit? <a style="color:var(--primary);cursor:pointer;font-weight:600;text-decoration:none" onclick="switchView(\'pricing\')">Upgrade to Pro</a> for unlimited edits and analyses on every property. The numbers below remain visible either way.</div>' +
         '</div>' +
       '</div>' +
+    '</div>';
+  }
+
+  // Apartments compute off one rent/bedroom figure for the whole record, same as
+  // Houses — these numbers are a single-listing estimate, not a per-unit or
+  // building-wide roll-up across the Units tab. Flag that plainly rather than let
+  // a building-scale number read as authoritative.
+  if(r.recordType === 'apartment'){
+    h += '<div style="background:rgba(99,129,250,.08);border:1px solid rgba(99,129,250,.25);border-radius:8px;padding:12px 16px;margin-bottom:14px;display:flex;align-items:flex-start;gap:10px">' +
+      '<span style="font-size:1.1rem;line-height:1;flex-shrink:0">ℹ️</span>' +
+      '<div style="font-size:.82rem;color:var(--text2);line-height:1.5">These figures reflect a single-listing estimate — for multi-unit buildings, use the <strong style="color:var(--text)">Units</strong> tab to capture per-unit differences; building-wide roll-up isn\'t modeled here yet.</div>' +
     '</div>';
   }
 
@@ -30000,7 +30620,8 @@ async function selectAddress(el, recId){
   const addrEdStreet = document.getElementById('addrEdStreet');
   const addInput = document.getElementById('add_property');
   const ceAddrInput = document.getElementById('ce_address');
-  const activeInput = addrEdStreet || ceAddrInput || addInput;
+  const aptInput = document.getElementById('aptAddressInput');
+  const activeInput = addrEdStreet || ceAddrInput || addInput || aptInput;
 
   function applyParts(parts){
     window._selectedAddrParts = parts;
@@ -30035,6 +30656,12 @@ async function selectAddress(el, recId){
       if(addCityEl) addCityEl.value = parts.city || '';
       if(addStateEl) addStateEl.value = parts.state || '';
       if(addZipEl) addZipEl.value = parts.zip || '';
+    }
+    // Apartment Prospecting's Address field has no separate city/state/zip inputs,
+    // so fill it with the full formatted address.
+    if(aptInput){
+      aptInput.value = full || parts.street;
+      if(typeof _editingAptProspect !== 'undefined' && _editingAptProspect) _editingAptProspect.address = aptInput.value;
     }
   }
 
@@ -30914,6 +31541,7 @@ function openCardEditor(recId, cardType, focusField){
         <div class="prop-field" style="flex:1;min-width:0"><label>Beds</label><input type="number" id="ce_beds" value="${esc(d.bedrooms||'')}" placeholder="3" min="0" step="1" style="font-size:.82rem;padding:5px 6px"></div>
         <div class="prop-field" style="flex:1;min-width:0"><label>Baths</label><input type="number" id="ce_baths" value="${esc(d.bathrooms||'')}" placeholder="2" min="0" step="0.5" style="font-size:.82rem;padding:5px 6px"></div>
         <div class="prop-field" style="flex:1;min-width:0"><label>Sq Ft</label><input type="number" id="ce_sqft" value="${esc(d.sqft||'')}" placeholder="1200" min="0" style="font-size:.82rem;padding:5px 6px"></div>
+        ${r.recordType==='apartment' ? `<div class="prop-field" style="flex:1;min-width:0"><label>Number of Units</label><input type="number" id="ce_numberOfUnits" value="${esc(d.numberOfUnits||'')}" placeholder="24" min="0" step="1" style="font-size:.82rem;padding:5px 6px"></div>` : ''}
       </div>
       <div class="prop-field-grid" style="margin-bottom:10px">
         <div class="prop-field"><label>Available Date</label><div style="display:flex;align-items:center;gap:8px"><div class="rr-dt-trigger${isAvailNow?' rr-dt-disabled':''}" id="dt_available" style="flex:1${isAvailNow?';opacity:.4;pointer-events:none':''}"><span class="rr-dt-icon">${CALENDAR_ICON}</span><span class="rr-dt-text empty">--/--/----</span><span class="rr-dt-clear" title="Clear">${CLEAR_X_ICON}</span></div><label style="display:flex;align-items:center;gap:4px;font-size:.78rem;font-weight:400;text-transform:none;letter-spacing:0;color:var(--text2);cursor:pointer;white-space:nowrap"><input type="checkbox" id="ce_avail_now" ${isAvailNow?'checked':''} onchange="const t=document.getElementById('dt_available');if(this.checked){t.style.opacity='.4';t.style.pointerEvents='none';t.classList.add('rr-dt-disabled');const s=window._dtPickers&&window._dtPickers['dt_available'];if(s){s.date='';updateDtTriggerText('dt_available')}}else{t.style.opacity='1';t.style.pointerEvents='';t.classList.remove('rr-dt-disabled')}"> Now</label></div></div>
@@ -31053,6 +31681,10 @@ function saveContactCard(recId){
   if(ceBeds !== undefined) r.propertyDetails.bedrooms = ceBeds;
   if(ceBaths !== undefined) r.propertyDetails.bathrooms = ceBaths;
   if(ceSqft !== undefined) r.propertyDetails.sqft = ceSqft;
+  if(r.recordType === 'apartment'){
+    const ceUnits = document.getElementById('ce_numberOfUnits')?.value?.trim();
+    if(ceUnits !== undefined) r.propertyDetails.numberOfUnits = ceUnits;
+  }
   r.propertyDetails.market = document.getElementById('ce_market')?.value?.trim() || '';
   r.propertyDetails.submarket = document.getElementById('ce_submarket')?.value?.trim() || '';
   r.propertyDetails.availableDate = ceAvailNow ? 'now' : ceAvailDate;
@@ -32536,6 +33168,59 @@ function _chatRelTimeFromMs(ms){
   return new Date(ms).toLocaleDateString();
 }
 function _chatRelTime(ts){ return _chatRelTimeFromMs(_chatTsToMs(ts)); }
+
+// ===== iMessage-style message grouping (chat widget) =====
+// Consecutive messages from the same sender sent within 5 minutes of each
+// other are stacked into one "run": a clock-time divider appears above the
+// run's first message, and the sender's name appears under the run's last
+// message only. A new run starts on a sender change or a >=5min gap.
+var CHAT_GROUP_GAP_MS = 5 * 60 * 1000;
+function _chatGroupKey(m){
+  var kind = m.senderType === 'user' ? 'user' : (m.senderType === 'admin' ? 'admin' : 'ai');
+  if(kind === 'admin') return 'admin:' + (m.senderName || m.senderUid || '');
+  if(kind === 'user') return 'user:' + (m.senderUid || m.senderEmail || '');
+  return 'ai';
+}
+// Absolute (not relative) time for the group divider: "2:45 PM" today,
+// "Yesterday 2:45 PM", "Tue 2:45 PM" within the last week, else a full date.
+function _chatGroupTime(ms){
+  if(!ms) return '';
+  var d = new Date(ms);
+  var now = new Date();
+  var time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  var startOfDay = function(dt){ var x = new Date(dt); x.setHours(0, 0, 0, 0); return x.getTime(); };
+  var dayDiff = Math.round((startOfDay(now) - startOfDay(d)) / 86400000);
+  if(dayDiff <= 0) return time;
+  if(dayDiff === 1) return 'Yesterday ' + time;
+  if(dayDiff < 7) return d.toLocaleDateString('en-US', { weekday: 'short' }) + ' ' + time;
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + (d.getFullYear() !== now.getFullYear() ? ', ' + d.getFullYear() : '') + ' ' + time;
+}
+// Splits a message list into contiguous same-sender, <5min-gap runs. System
+// messages break a run without belonging to one themselves. Returns index
+// sets (starts/ends) rather than mutating the message objects.
+function _chatComputeGroups(msgs){
+  var starts = {}, ends = {};
+  var curStart = -1, curKey = null, lastTsMs = null;
+  function closeGroup(lastIdx){
+    if(curStart !== -1){ starts[curStart] = true; ends[lastIdx] = true; }
+    curStart = -1; curKey = null; lastTsMs = null;
+  }
+  for(var i = 0; i < msgs.length; i++){
+    var m = msgs[i];
+    if(m.senderType === 'system'){ closeGroup(i - 1); continue; }
+    var key = _chatGroupKey(m);
+    var tsMs = _chatTsToMs(m.timestamp);
+    var gap = (lastTsMs != null) ? (tsMs - lastTsMs) : Infinity;
+    if(curStart === -1 || key !== curKey || gap >= CHAT_GROUP_GAP_MS){
+      closeGroup(i - 1);
+      curStart = i; curKey = key;
+    }
+    lastTsMs = tsMs;
+  }
+  closeGroup(msgs.length - 1);
+  return { starts: starts, ends: ends };
+}
+
 // Escape text, then wrap occurrences of the (plain) query in <mark> for search.
 function _chatHighlight(text, q){
   var esc = _chatEscape(text);
@@ -34345,11 +35030,16 @@ function _chatWidgetInjectStyles(){
 .rr-cw-msgs{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;background:var(--bg)}
 /* Messages + the persistent typing indicator live in this flex column — THIS is
    where the inter-message spacing and per-message alignment come from. */
-#rrCwMsgsList{flex:1;display:flex;flex-direction:column;gap:18px}
+#rrCwMsgsList{flex:1;display:flex;flex-direction:column;gap:3px}
 .rr-cw-msg{display:flex;gap:8px;max-width:88%}
 .rr-cw-msg.from-user{align-self:flex-end;flex-direction:row-reverse}
 .rr-cw-msg.from-ai,.rr-cw-msg.from-admin{align-self:flex-start}
-.rr-cw-msg.from-system{align-self:center;max-width:100%}
+.rr-cw-msg.from-system{align-self:center;max-width:100%;padding:8px 0}
+/* Divider between grouped runs of messages — shows the run's clock time. Its
+   own top padding provides the visual gap between runs (the list's flex gap
+   stays small so messages WITHIN a run stack tightly). */
+.rr-cw-time-divider{align-self:center;text-align:center;color:var(--text3);font-size:.68rem;font-weight:600;padding:14px 0 4px;width:100%}
+.rr-cw-time-divider.first{padding-top:0}
 .rr-cw-bubble{padding:9px 12px;border-radius:11px;font-size:.85rem;line-height:1.45;white-space:pre-wrap;word-wrap:break-word;overflow-wrap:anywhere;color:var(--text)}
 .rr-cw-msg.from-user .rr-cw-bubble{background:var(--primary);color:#fff;border-bottom-right-radius:3px}
 /* Incoming bubbles are OUTLINED so the user can distinguish senders by color:
@@ -34359,7 +35049,7 @@ function _chatWidgetInjectStyles(){
 .rr-cw-msg.from-admin .rr-cw-bubble{background:var(--surface);border:2px solid #a855f7;color:var(--text);border-bottom-left-radius:3px}
 .rr-cw-bubble a{color:var(--primary);text-decoration:underline;font-weight:600;word-break:break-word}
 .rr-cw-msg.from-system .rr-cw-bubble{background:transparent;color:var(--text3);font-size:.72rem;font-style:italic;text-align:center;padding:2px 0}
-.rr-cw-presence{align-self:center;text-align:center;color:var(--text3);font-size:.62rem;padding:2px 0;width:100%}
+.rr-cw-presence{align-self:center;text-align:center;color:var(--text3);font-size:.62rem;padding:8px 0;width:100%}
 .rr-cw-meta{font-size:.62rem;color:var(--text3);margin-top:5px}
 .rr-cw-msg.from-user .rr-cw-meta{text-align:right}
 .rr-cw-input-wrap{border-top:1px solid var(--border);padding:10px 12px;background:var(--surface);flex-shrink:0}
@@ -34975,7 +35665,11 @@ function widgetRenderMessages(scrollToBottom){
   var seen = _chatWidget._seenMsgIds;
   var seeding = !seen;
   if(seeding){ seen = _chatWidget._seenMsgIds = {}; }
-  var html = sourceMsgs.map(function(m){
+  // Groups drive the divider/name placement below; skipped while searching
+  // since filtered results aren't a contiguous timeline.
+  var groups = q ? null : _chatComputeGroups(sourceMsgs);
+  var dividerSeen = false;
+  var html = sourceMsgs.map(function(m, i){
     if(m.senderType === 'system'){
       // Presence lines render centered, matching the size/font of the name label.
       // The user only sees support join/leave — never their own open/close events.
@@ -34998,10 +35692,24 @@ function widgetRenderMessages(scrollToBottom){
     else if(attachmentsHtml) bubble = '<div class="rr-cw-bubble" style="background:transparent;border:0;padding:0">' + attachmentsHtml + '</div>';
     var isNew = !q && !seeding && m.id && !seen[m.id];
     if(m.id) seen[m.id] = 1;
-    return '<div class="rr-cw-msg from-' + kind + (isNew ? ' rr-cw-msg-in' : '') + '">' +
+    // iMessage-style grouping (skipped while searching): a clock-time divider
+    // above the first message of each same-sender, <5min-gap run, and the
+    // sender's name under only the LAST message of that run.
+    var dividerHtml = '';
+    var metaHtml;
+    if(q){
+      metaHtml = '<div class="rr-cw-meta">' + (label ? label + ' · ' : '') + '<span class="rr-cw-time" data-ts="' + _chatTsToMs(m.timestamp) + '">' + _chatRelTime(m.timestamp) + '</span></div>';
+    } else {
+      if(groups.starts[i]){
+        dividerHtml = '<div class="rr-cw-time-divider' + (dividerSeen ? '' : ' first') + '">' + _chatEscape(_chatGroupTime(_chatTsToMs(m.timestamp))) + '</div>';
+        dividerSeen = true;
+      }
+      metaHtml = (groups.ends[i] && label) ? '<div class="rr-cw-meta">' + label + '</div>' : '';
+    }
+    return dividerHtml + '<div class="rr-cw-msg from-' + kind + (isNew ? ' rr-cw-msg-in' : '') + '">' +
       '<div>' +
         bubble +
-        '<div class="rr-cw-meta">' + (label ? label + ' · ' : '') + '<span class="rr-cw-time" data-ts="' + _chatTsToMs(m.timestamp) + '">' + _chatRelTime(m.timestamp) + '</span></div>' +
+        metaHtml +
       '</div>' +
     '</div>';
   }).join('');
@@ -35985,32 +36693,32 @@ async function kbDeleteEntry(id){
 // ============================================================================
 var _KB_STARTER_ENTRIES = [
   // ---- About RentingRadar ----
-  { question: "What is RentingRadar?", answer: "RentingRadar is a CRM for short-term rental operators. It supports two business models: Arbitrage — lease a property from a landlord and re-list it on Airbnb/Vrbo — and Co-Hosting — manage an owner's existing property as a short-term rental for a management fee. The Arbitrage side has two stages: the Arbitrage section, where you source and analyze deals, and Operations, where you manage active properties.", tags: ["overview", "about", "cohosting"] },
+  { question: "What is RentingRadar?", answer: "RentingRadar is a CRM for short-term rental operators. It supports two business models: Arbitrage — lease a property from a landlord and re-list it on Airbnb/Vrbo, whether it's a single house or an apartment building — and Co-Hosting — manage an owner's existing property as a short-term rental for a management fee. The Arbitrage side has two pipelines, Houses and Apartments, each with two stages: sourcing and analyzing deals, then Operations, where you manage active properties.", tags: ["overview", "about", "cohosting"] },
   { question: "What is rental arbitrage?", answer: "Rental arbitrage is leasing a property from a landlord on a long-term lease and then re-listing it for short stays on Airbnb or Vrbo. RentingRadar helps you find arbitrage deals that pencil out, negotiate the lease, and manage them once they're live.", tags: ["overview", "about", "arbitrage"] },
   { question: "Who is RentingRadar for?", answer: "It's for short-term rental operators — whether you run rental arbitrage (leasing properties and re-listing them on Airbnb/Vrbo) or co-host and manage other owners' properties for a fee — from sourcing your first deal to managing a full portfolio.", tags: ["overview", "about", "cohosting"] },
 
   // ---- Getting started ----
-  { question: "How do I get started with RentingRadar?", answer: "Start in the Arbitrage section, where you add and analyze candidate properties. Installing the Chrome extension is the fastest way to pull listing data in automatically rather than typing it by hand.", tags: ["getting-started", "onboarding"] },
-  { question: "How do I add my first property?", answer: "Click + Add Property in the top-right and choose Arbitrage (Admin/Affiliate accounts also see a Co-Hosting option). From there, paste a listing link — Zillow, Apartments.com, or HotPads — to auto-fill the property's details, or choose Manual Entry to type them in yourself.", tags: ["getting-started", "add-property"] },
-  { question: "What is the Chrome extension for?", answer: "It auto-fills property data into RentingRadar so you skip manual entry. It reads rental listings — Zillow, Apartments.com, and HotPads — to import a property's details, and on the Arbitrage side it also pulls competitor/comp data from AirDNA and Airbnb.", tags: ["chrome-extension", "scraping", "airdna", "airbnb", "import"] },
+  { question: "How do I get started with RentingRadar?", answer: "Start in the Houses or Apartments section, where you add and analyze candidate properties. Installing the Chrome extension is the fastest way to pull listing data in automatically rather than typing it by hand.", tags: ["getting-started", "onboarding"] },
+  { question: "How do I add my first property?", answer: "Click + Add Property in the top-right and choose House or Apartment (Admin/Affiliate accounts also see a Co-Hosting option). From there, paste a listing link — Zillow, Apartments.com, or HotPads — to auto-fill the property's details, or choose Manual Entry to type them in yourself.", tags: ["getting-started", "add-property"] },
+  { question: "What is the Chrome extension for?", answer: "It auto-fills property data into RentingRadar so you skip manual entry. It reads rental listings — Zillow, Apartments.com, and HotPads — to import a property's details, and on the Houses/Apartments side it also pulls competitor/comp data from AirDNA and Airbnb.", tags: ["chrome-extension", "scraping", "airdna", "airbnb", "import"] },
   { question: "How do I install the Chrome extension?", answer: "Add it from the Chrome Web Store, then sign in to RentingRadar in the same browser. Settings shows whether the extension is connected.", tags: ["chrome-extension", "install", "settings"] },
   { question: "What is AirDNA and why does RentingRadar use it?", answer: "AirDNA is a short-term rental market-data source. RentingRadar pulls AirDNA comp and revenue data (via the Chrome extension) so your ROI projections are based on real nearby performance, not guesses.", tags: ["airdna", "comps", "data"] },
 
   // ---- Arbitrage section & pipeline ----
-  { question: "What does the Arbitrage section do?", answer: "The Arbitrage section is your deal pipeline. You list candidate properties, analyze their ROI against AirDNA comps, and track each one through outreach from first contact to close.", tags: ["arbitrage", "overview"] },
-  { question: "How do I navigate the Arbitrage section, or where do I find things?", answer: "The Arbitrage section is your default home view. The dashboard at the top shows your Pipeline, Map, KPIs, and activity cards. Use the market filter and search bar to narrow the list, click + Add Property in the top-right to add one, and open any property to analyze it or move it through the pipeline. Switch between Arbitrage, Operations, and Co-Hosting using the left sidebar.", tags: ["arbitrage", "navigation", "getting-started"] },
-  { question: "How do I switch between Arbitrage and Operations?", answer: "Use the left sidebar — Arbitrage is your deal pipeline (sourcing and analyzing), and Operations is for properties you're actively managing. A property moves from Arbitrage to Operations when you open it and click Move to Operations.", tags: ["arbitrage", "operations", "navigation"] },
-  { question: "What are the pipeline statuses in the Arbitrage section?", answer: "The active pipeline statuses are New, No Contact, Messaged, Left Voicemail, Follow Up, Interested, and Meeting. Closed statuses are HOA Issues, Not Good Fit, Not Interested, and Un-Listed.", tags: ["arbitrage", "pipeline", "status"] },
+  { question: "What does the Houses section do?", answer: "The Houses section is your single-family deal pipeline (Apartments has its own matching Pipeline sub-tab for buildings). You list candidate properties, analyze their ROI against AirDNA comps, and track each one through outreach from first contact to close.", tags: ["arbitrage", "overview"] },
+  { question: "How do I navigate the Houses section, or where do I find things?", answer: "Houses is your default home view. The dashboard at the top shows your Pipeline, Map, KPIs, and activity cards. Use the market filter and search bar to narrow the list, click + Add Property in the top-right to add one, and open any property to analyze it or move it through the pipeline. Switch between Houses, Apartments, Operations, and Co-Hosting using the left sidebar.", tags: ["arbitrage", "navigation", "getting-started"] },
+  { question: "How do I switch between Houses and Operations?", answer: "Use the left sidebar — Houses (or Apartments) is your deal pipeline (sourcing and analyzing), and Operations is for properties you're actively managing. A property moves to Operations when you open it and click Move to Operations.", tags: ["arbitrage", "operations", "navigation"] },
+  { question: "What are the pipeline statuses in the Houses section?", answer: "The active pipeline statuses are New, No Contact, Messaged, Left Voicemail, Follow Up, Interested, and Meeting. Closed statuses are HOA Issues, Not Good Fit, Not Interested, and Un-Listed. Apartments uses the same statuses.", tags: ["arbitrage", "pipeline", "status"] },
   { question: "How are the pipeline statuses grouped?", answer: "Into four categories: New Leads (New, No Contact), In Outreach (Messaged, Left Voicemail, Follow Up), Qualified (Interested, Meeting), and Closed/Lost (HOA Issues, Not Good Fit, Not Interested, Un-Listed).", tags: ["arbitrage", "pipeline", "categories"] },
   { question: "How do I change a property's status?", answer: "Open the property and choose a new status from its status selector. The pipeline view and dashboard counts update automatically.", tags: ["arbitrage", "status"] },
-  { question: "How do I filter properties by market?", answer: "Use the market filter at the top of the Arbitrage section. Choose All Markets to see every property across all markets at once.", tags: ["arbitrage", "market", "filter"] },
+  { question: "How do I filter properties by market?", answer: "Use the market filter at the top of the Houses (or Apartments) section. Choose All Markets to see every property across all markets at once.", tags: ["arbitrage", "market", "filter"] },
   { question: "What does the map view show?", answer: "Every property you're tracking, plotted by address. It respects your current market filter, so you only see properties in the selected market.", tags: ["arbitrage", "map", "view"] },
-  { question: "How do I search for a property?", answer: "Use the search box at the top of the Arbitrage section to find a property by address, contact, or status.", tags: ["arbitrage", "search"] },
+  { question: "How do I search for a property?", answer: "Use the search box at the top of the Houses (or Apartments) section to find a property by address, contact, or status.", tags: ["arbitrage", "search"] },
   { question: "How do I delete a property?", answer: "Open the property profile and use the delete (trash) action. Deletion is permanent, so please confirm carefully before removing it.", tags: ["arbitrage", "delete"] },
-  { question: "Is there a limit on how many properties I can track?", answer: "In the Arbitrage section, no — every plan (Basic, Standard, and Pro) includes unlimited properties to source and analyze. Operations (properties you're actively managing) is tiered: Basic includes 1, Standard up to 5, and Pro unlimited. Anything already in your Operations always stays accessible.", tags: ["arbitrage", "operations", "limits", "billing"] },
+  { question: "Is there a limit on how many properties I can track?", answer: "In Houses or Apartments, no — every plan (Basic, Standard, and Pro) includes unlimited properties to source and analyze. Operations (properties you're actively managing) is tiered: Basic includes 1, Standard up to 5, and Pro unlimited. Anything already in your Operations always stays accessible.", tags: ["arbitrage", "operations", "limits", "billing"] },
 
   // ---- Importing ----
-  { question: "How do I import a spreadsheet?", answer: "From the Arbitrage section, open the import option and pick your format: CSV, Monday.com XLSX, or Custom XLSX. Every import is logged in Import History.", tags: ["import", "spreadsheet", "csv", "xlsx"] },
+  { question: "How do I import a spreadsheet?", answer: "From the Houses section, open the import option and pick your format: CSV, Monday.com XLSX, or Custom XLSX. Every import is logged in Import History.", tags: ["import", "spreadsheet", "csv", "xlsx"] },
   { question: "Which spreadsheet formats can I import?", answer: "Three: CSV, Monday.com XLSX (which auto-detects its sub-tabs), and Custom XLSX where you map your own columns to RentingRadar fields.", tags: ["import", "formats", "xlsx"] },
   { question: "Can I import data from Monday.com?", answer: "Yes. Choose the Monday.com option and it auto-detects sub-tabs like VA Schedule, Maintenance, Cases, Reviews, and Purchases, routing each to the right place in RentingRadar.", tags: ["import", "monday-com", "xlsx"] },
   { question: "What if my spreadsheet has different column names than RentingRadar?", answer: "Use the Custom XLSX option — you'll map each of your columns to a RentingRadar field by hand, so the names don't need to match.", tags: ["import", "custom-xlsx", "column-mapping"] },
@@ -36020,9 +36728,9 @@ var _KB_STARTER_ENTRIES = [
   { question: "Will importing create duplicates of properties I already have?", answer: "Imports flag likely duplicates by address so you can skip them or import anyway. The same address with a different unit number is treated as a separate property.", tags: ["import", "duplicates"] },
 
   // ---- ROI / analysis ----
-  { question: "How does the analysis / deal math work?", answer: "The deal math is set up differently on each side of RentingRadar — Arbitrage (Projected ROI) vs Co-Hosting (the Calculator). Which one are you working in? Tell me and I'll explain how it works for that side.", tags: ["analysis", "roi", "projected-roi", "calculator", "cohosting", "disambiguation"] },
-  { question: "How do I get an accurate revenue projection?", answer: "Revenue is projected differently on each side of RentingRadar — Arbitrage vs Co-Hosting. Which one are you working in? Let me know and I'll tell you how to make that projection as accurate as possible.", tags: ["analysis", "comps", "projections", "projected-roi", "market-potential", "cohosting", "disambiguation"] },
-  { question: "What are comps?", answer: "Comps (comparables) are nearby short-term rentals you measure a property against to gauge its revenue potential. You add them in the Competitor Analysis tab on the Arbitrage side, or the Market Potential tab on the Co-Hosting side.", tags: ["analysis", "comps", "cohosting"] },
+  { question: "How does the analysis / deal math work?", answer: "The deal math is set up differently on each side of RentingRadar — Houses/Apartments (Projected ROI) vs Co-Hosting (the Calculator). Which one are you working in? Tell me and I'll explain how it works for that side.", tags: ["analysis", "roi", "projected-roi", "calculator", "cohosting", "disambiguation"] },
+  { question: "How do I get an accurate revenue projection?", answer: "Revenue is projected differently on each side of RentingRadar — Houses/Apartments vs Co-Hosting. Which one are you working in? Let me know and I'll tell you how to make that projection as accurate as possible.", tags: ["analysis", "comps", "projections", "projected-roi", "market-potential", "cohosting", "disambiguation"] },
+  { question: "What are comps?", answer: "Comps (comparables) are nearby short-term rentals you measure a property against to gauge its revenue potential. You add them in the Competitor Analysis tab on the Houses/Apartments side, or the Market Potential tab on the Co-Hosting side.", tags: ["analysis", "comps", "cohosting"] },
   { question: "What does the deal recommendation mean?", answer: "It's a quick read on how strong a deal looks, based on your comps and projected returns — a shortcut for deciding which properties are worth pursuing.", tags: ["analysis", "deal-temperature", "recommendation"] },
   { question: "How is the AirBNB Service Fee calculated?", answer: "It's 15.5% of revenue.", tags: ["math", "airbnb", "service-fee"] },
   { question: "How is my Position Score calculated?", answer: "Formula: (−1 × loses + 0 × competes + +1 × beats) ÷ total comps, giving a number from −1.0 (worst) to +1.0 (best). Example: 5 comps (1 Loses To, 2 Competes, 2 Beats) → (−1 + 0 + 0 + 1 + 1) ÷ 5 = +0.20. It drives your Market Percentile and Position Adjustment.", tags: ["math", "position-score"] },
@@ -36031,15 +36739,15 @@ var _KB_STARTER_ENTRIES = [
   { question: "What does Cash Flow mean on the projection?", answer: "Cash Flow = Net Operating Income minus rent, then multiplied by your Position Adjustment (the 55–100% confidence multiplier) — so it's your confidence-discounted monthly cash flow, before tax.", tags: ["math", "cash-flow"] },
   { question: "What does Average Revenue mean on the analysis?", answer: "It's the actual annual revenue averaged from your comp properties — not a figure recalculated from rate × days × occupancy.", tags: ["math", "revenue", "comps"] },
   { question: "What is NOI?", answer: "Net Operating Income — revenue minus operating expenses (before rent and financing). It's a measure of how much the property earns on its own.", tags: ["math", "noi"] },
-  { question: "What is an analysis, and is it limited?", answer: "The monthly analysis limit applies to the Arbitrage side. Are you asking about Arbitrage, or about Co-Hosting? Tell me which and I'll give you the exact details for that side.", tags: ["analysis", "limits", "billing", "cohosting", "disambiguation"] },
+  { question: "What is an analysis, and is it limited?", answer: "The monthly analysis limit applies to the Houses/Apartments side. Are you asking about Houses/Apartments, or about Co-Hosting? Tell me which and I'll give you the exact details for that side.", tags: ["analysis", "limits", "billing", "cohosting", "disambiguation"] },
 
   // ---- Property analysis sections: Property Details · Income & Expenses · Competitor Analysis · Projected ROI ----
-  { question: "What are the sections or tabs of a property?", answer: "A property's tabs are different on each side of RentingRadar — Arbitrage and Co-Hosting each have their own set. Which one are you asking about? Let me know and I'll list that side's tabs.", tags: ["analysis", "property-details", "tabs", "cohosting", "overview", "disambiguation"] },
+  { question: "What are the sections or tabs of a property?", answer: "A property's tabs are different on each side of RentingRadar — Houses/Apartments and Co-Hosting each have their own set (Apartments also adds a Units tab for defining individual units). Which one are you asking about? Let me know and I'll list that side's tabs.", tags: ["analysis", "property-details", "tabs", "cohosting", "overview", "disambiguation"] },
   { question: "What are the Property Details and Income & Expenses tabs?", answer: "Property Details is where you capture the property's specifics, and Income & Expenses is where you enter the expected income and operating costs. Both feed into your Projected ROI alongside your Competitor Analysis.", tags: ["property-details", "income-expenses", "analysis"] },
   { question: "What is the Competitor Analysis tab?", answer: "It's where you build a property's comparison set: you add nearby comparable short-term rentals and, for each one, decide whether the property you're analyzing beats, competes with, or loses to it. Once you've entered at least 3 competitors, it unlocks your Projected ROI.", tags: ["competitor-analysis", "comps", "projected-roi", "analysis"] },
   { question: "What is the Projected ROI tab?", answer: "Projected ROI estimates how a property could perform — projecting revenue, expenses, and cash flow across pessimistic, realistic, and optimistic scenarios — based on your Property Details, Income & Expenses, and the competitors you assessed. It unlocks once you've entered at least 3 competitors in Competitor Analysis.", tags: ["projected-roi", "competitor-analysis", "analysis", "projections"] },
   { question: "Why is my Competitor Analysis or Projected ROI empty or not working?", answer: "Both the Competitor Analysis and Projected ROI tabs come to life once you've entered at least 3 competitors in the Competitor Analysis tab. If either looks empty or inactive, add 3 or more comparable properties there and assess each one — that unlocks the full analysis.", tags: ["competitor-analysis", "projected-roi", "troubleshooting", "unlock", "analysis"] },
-  { question: "How many competitors or comps do I need to add?", answer: "At least 3 in either section. On the Arbitrage side, 3 competitors in the Competitor Analysis tab unlock your Projected ROI; on the Co-Hosting side, 3 comparables in Market Potential unlock the revenue dial and break-even. More comps make the projection more accurate.", tags: ["competitor-analysis", "market-potential", "comps", "unlock", "cohosting"] },
+  { question: "How many competitors or comps do I need to add?", answer: "At least 3 in either section. On the Houses/Apartments side, 3 competitors in the Competitor Analysis tab unlock your Projected ROI; on the Co-Hosting side, 3 comparables in Market Potential unlock the revenue dial and break-even. More comps make the projection more accurate.", tags: ["competitor-analysis", "market-potential", "comps", "unlock", "cohosting"] },
   { question: "How do I use the Competitor Analysis tab?", answer: "Add comparable properties, and for each one decide whether the property you're analyzing beats, competes with, or loses to it. That assessment is yours to make — please take your time and judge each competitor honestly, since these calls directly shape your Projected ROI.", tags: ["competitor-analysis", "comps", "beats-competes-loses", "analysis"] },
   { question: "How do I decide if my property beats, competes with, or loses to a competitor?", answer: "That's your educated judgment based on how your property stacks up — location, size, amenities, condition, and overall appeal. Beats = yours is the stronger listing, Competes = they're roughly even, Loses = the competitor is stronger. It's worth taking your time here; thoughtful, honest assessments make your Projected ROI far more reliable.", tags: ["competitor-analysis", "beats-competes-loses", "comps", "analysis"] },
   { question: "How can I make my Projected ROI more accurate?", answer: "Add more competitors and assess each one carefully. The more comparable properties you enter in Competitor Analysis — and the more honestly you judge each as a beat, compete, or loss — the more accurate your Projected ROI.", tags: ["projected-roi", "competitor-analysis", "comps", "accuracy", "analysis"] },
@@ -36055,13 +36763,13 @@ var _KB_STARTER_ENTRIES = [
   { question: "What Position Score should I target?", answer: "Anything above 0 means you beat more comps than you lose to. Above +0.5 is a strong position.", tags: ["negotiation", "position-score"] },
 
   // ---- Operations ----
-  { question: "What's the difference between the Arbitrage section and Operations?", answer: "The Arbitrage section is for deals you're still evaluating. Operations is for properties you're actively managing — each gets tasks, meetings, expenses, maintenance, contracts, reviews, purchases, and contacts.", tags: ["operations", "arbitrage", "overview"] },
+  { question: "What's the difference between the Houses/Apartments section and Operations?", answer: "Houses and Apartments are for deals you're still evaluating. Operations is for properties you're actively managing — each gets tasks, meetings, expenses, maintenance, contracts, reviews, purchases, and contacts.", tags: ["operations", "arbitrage", "overview"] },
   { question: "How do I move a property to Operations?", answer: "Open the property profile and click Move to Operations in the top-right. Its status switches to Operating, and if you ever move it back, the prior status is restored.", tags: ["operations", "move-to-ops"] },
   { question: "Why can't I move a property to Operations? Why is it locked?", answer: "Operations has a per-plan limit on how many properties you can actively manage at once: Basic includes 1, Standard up to 5, and Pro unlimited. If Move to Operations shows a lock, you've reached your plan's limit. Anything already in your Operations stays fully accessible — upgrading just lets you add more. You can upgrade anytime from the Plan page.", tags: ["operations", "limits", "locked", "upgrade", "billing"] },
-  { question: "How many properties can I have in Operations?", answer: "Basic includes 1 property in Operations, Standard up to 5, and Pro unlimited. It's a running total of properties you're actively managing — removing one frees a slot. (Arbitrage properties stay unlimited on every plan.)", tags: ["operations", "limits", "billing"] },
+  { question: "How many properties can I have in Operations?", answer: "Basic includes 1 property in Operations, Standard up to 5, and Pro unlimited. It's a running total of properties you're actively managing — removing one frees a slot. (Houses and Apartments properties stay unlimited on every plan.)", tags: ["operations", "limits", "billing"] },
   { question: "How do I add more properties to Operations or raise my limit?", answer: "Upgrade your plan from the Plan page — Standard allows up to 5 properties in Operations, and Pro allows unlimited. Your existing Operations properties carry over unchanged.", tags: ["operations", "limits", "upgrade", "billing"] },
   { question: "What happens to my Operations properties if I'm over my plan's limit?", answer: "Nothing is lost — properties already in Operations stay fully accessible and editable. You just can't add new ones beyond your plan's limit until you upgrade or remove some. (If your plan changed, existing properties are grandfathered in.)", tags: ["operations", "limits", "grandfather", "billing"] },
-  { question: "How do I navigate Operations or find a managed property?", answer: "Open Operations from the left sidebar. It lists every property you're actively managing — use the market filter and search to narrow it, then click a property to open its profile, where you'll find its Tasks, Meetings, Expenses, Maintenance, Contracts, Reviews, Purchases, and Contacts. To add a property here, open it in the Arbitrage section and click Move to Operations, or bulk-import a list.", tags: ["operations", "navigation"] },
+  { question: "How do I navigate Operations or find a managed property?", answer: "Open Operations from the left sidebar. It lists every property you're actively managing — use the market filter and search to narrow it, then click a property to open its profile, where you'll find its Tasks, Meetings, Expenses, Maintenance, Contracts, Reviews, Purchases, and Contacts. To add a property here, open it in Houses or Apartments and click Move to Operations, or bulk-import a list.", tags: ["operations", "navigation"] },
   { question: "Can I track tasks per property?", answer: "Yes — every property has its own Tasks list, and you can tag each task by type (Email, Call, Text, Other). All open tasks also roll up onto your dashboard.", tags: ["operations", "tasks"] },
   { question: "How do I add a task or follow-up?", answer: "On the property profile, open the Tasks & Follow-Ups card and click Add New. Set a date, an optional time and time zone, the type, and a note.", tags: ["operations", "tasks", "follow-up"] },
   { question: "How do I log an expense?", answer: "Open the property in Operations, go to the Expenses tab, and click Add Expense. You can attach a receipt.", tags: ["operations", "expenses"] },
@@ -36080,7 +36788,7 @@ var _KB_STARTER_ENTRIES = [
 
   // ---- Plan / billing ----
   { question: "How much does RentingRadar cost?", answer: "Basic is $9.99/mo ($89.99/yr), Standard is $19.99/mo ($199.99/yr), and Pro is $29.99/mo ($289.99/yr). Yearly billing saves you roughly two months versus paying monthly.", tags: ["billing", "pricing"] },
-  { question: "What's the difference between Basic, Standard, and Pro?", answer: "All three include unlimited properties. Basic is 1 analysis/month with no dark mode. Standard is 10 analyses/month plus dark mode and themes. Pro is unlimited analyses plus dark mode and themes.", tags: ["billing", "pricing", "tiers", "features"] },
+  { question: "What's the difference between Basic, Standard, and Pro?", answer: "All three let you upload and track unlimited properties. What's tiered is how many you can Analyze and how many you can Operate. Basic: 1 analysis per month and 1 Operations property, no dark mode. Standard: 10 analyses per month and up to 5 Operations properties, plus dark mode and themes. Pro: unlimited analyses and unlimited Operations properties, plus dark mode and themes.", tags: ["billing", "pricing", "tiers", "features"] },
   { question: "Is there a yearly plan?", answer: "Yes — every tier has a yearly option ($89.99 Basic, $199.99 Standard, $289.99 Pro) that saves roughly two months compared to paying monthly.", tags: ["billing", "pricing", "yearly"] },
   { question: "How do I upgrade or change my plan?", answer: "Click Plan in the sidebar and choose the tier you want. Stripe applies the change to your billing.", tags: ["billing", "plan-change"] },
   { question: "What payment methods do you accept?", answer: "Payments are processed securely through Stripe (major credit/debit cards). For anything specific to your billing, please email help@rentingradar.com.", tags: ["billing", "payments", "stripe"] },
@@ -36130,14 +36838,14 @@ var _KB_STARTER_ENTRIES = [
   { question: "What's on the Expenses tab?", answer: "Two panels: Investment Details on the left (one-time upfront costs like application fees, deposits, furnishing, and move-in costs) and Monthly Operating Expenses on the right (recurring costs like insurance, Wi-Fi, utilities, cleaning, and co-host fees).", tags: ["expenses", "property-profile"] },
   { question: "What is 'Copy from Property'?", answer: "A shortcut on the Expenses tab that pulls expenses from another property in the same submarket with similar utilities and cost structure — handy when you're evaluating several deals in one area so you don't re-enter everything.", tags: ["expenses", "copy-from-property"] },
   { question: "What is the Activity Log?", answer: "A timestamped history on each property where you log calls, texts, emails, and notes — so you always have the full record of every conversation about that deal.", tags: ["property-profile", "activity-log", "contacts"] },
-  { question: "How do I add a competitor (comp)?", answer: "Open the property and go to its comps section — the Competitor Analysis tab on the Arbitrage side, or the Market Potential tab on the Co-Hosting side — then add a nearby comparable short-term rental. Add at least 3 to unlock the full analysis.", tags: ["analysis", "comps", "add-competitor", "market-potential", "cohosting"] },
+  { question: "How do I add a competitor (comp)?", answer: "Open the property and go to its comps section — the Competitor Analysis tab on the Houses/Apartments side, or the Market Potential tab on the Co-Hosting side — then add a nearby comparable short-term rental. Add at least 3 to unlock the full analysis.", tags: ["analysis", "comps", "add-competitor", "market-potential", "cohosting"] },
 
   // ---- Co-Hosting (second business model) ----
-  { question: "What is Co-Hosting?", answer: "Co-Hosting is RentingRadar's second business model. Instead of leasing a property yourself and re-listing it (that's Arbitrage), you manage an owner's property as a short-term rental for a management fee. RentingRadar helps you import the property, estimate its short-term-rental potential from comparable listings, run the management-fee economics, and build a pitch that shows the owner what they'd earn.", tags: ["cohosting", "overview"] },
-  { question: "What's the difference between Arbitrage and Co-Hosting?", answer: "Arbitrage = you lease a property from the landlord and re-list it on Airbnb/Vrbo, keeping the upside. Co-Hosting = you don't lease it; you manage the owner's property as a short-term rental for a percentage management fee, and the owner keeps the rest. They're separate sections, each with their own properties.", tags: ["cohosting", "arbitrage", "overview"] },
-  { question: "Who can use Co-Hosting?", answer: "Co-Hosting is available to you alongside Arbitrage — you'll find it in the left sidebar. It's RentingRadar's second business model: instead of leasing a property yourself, you manage an owner's existing property as a short-term rental for a management fee.", tags: ["cohosting", "access"] },
+  { question: "What is Co-Hosting?", answer: "Co-Hosting is RentingRadar's second business model. Instead of leasing a property yourself and re-listing it (that's Arbitrage — the Houses and Apartments pipelines), you manage an owner's property as a short-term rental for a management fee. RentingRadar helps you import the property, estimate its short-term-rental potential from comparable listings, run the management-fee economics, and build a pitch that shows the owner what they'd earn.", tags: ["cohosting", "overview"] },
+  { question: "What's the difference between Arbitrage and Co-Hosting?", answer: "Arbitrage (Houses and Apartments) = you lease a property from the landlord and re-list it on Airbnb/Vrbo, keeping the upside. Co-Hosting = you don't lease it; you manage the owner's property as a short-term rental for a percentage management fee, and the owner keeps the rest. They're separate sections, each with their own properties.", tags: ["cohosting", "arbitrage", "overview"] },
+  { question: "Who can use Co-Hosting?", answer: "Co-Hosting is available to you alongside Houses and Apartments — you'll find it in the left sidebar. It's RentingRadar's second business model: instead of leasing a property yourself, you manage an owner's existing property as a short-term rental for a management fee.", tags: ["cohosting", "access"] },
   { question: "How do I add a Co-Hosting property?", answer: "Click + Add Property in the top-right and choose Co-Hosting. You can paste a listing link (Zillow, Apartments.com, or HotPads) to auto-fill the address, beds/baths, square footage, rent, and a property summary — or choose Manual Entry to type the details in yourself.", tags: ["cohosting", "add-property", "import"] },
-  { question: "Which sites can I import a Co-Hosting listing from?", answer: "The same rental-listing sites as Arbitrage: Zillow, Apartments.com, and HotPads. Paste the listing link in the Co-Hosting add screen and the property auto-fills, just like adding an Arbitrage property.", tags: ["cohosting", "import", "zillow", "apartments", "hotpads"] },
+  { question: "Which sites can I import a Co-Hosting listing from?", answer: "The same rental-listing sites as Houses/Apartments: Zillow, Apartments.com, and HotPads. Paste the listing link in the Co-Hosting add screen and the property auto-fills, just like adding a House or Apartment property.", tags: ["cohosting", "import", "zillow", "apartments", "hotpads"] },
   { question: "What are the tabs on a Co-Hosting property?", answer: "Three: Property Details (the property's specifics and the owner's contact), Market Potential (comparable short-term rentals it could perform like), and Calculator (your management-fee economics and break-even).", tags: ["cohosting", "tabs", "overview"] },
   { question: "What is the Co-Hosting Calculator?", answer: "It lays the management deal out as line items: the investment to set the property up, average monthly cleaning, the owner's asking rent, the expected monthly revenue (from your comparables), the revenue you're modeling, the owner's payout, the additional revenue the owner earns versus their current rent, your management fee, and the break-even timeline.", tags: ["cohosting", "calculator", "economics"] },
   { question: "How is the Co-Hosting management fee determined?", answer: "It's set automatically by the gross-after-cleaning revenue (revenue minus cleaning): 10% under $4,000, 15% from $4,000 to $6,000, and 20% at $6,000 and above — a smaller cut in slower months and a larger one when the property earns more.", tags: ["cohosting", "calculator", "management-fee"] },
@@ -36490,7 +37198,7 @@ function renderHelp(){
         ${renderHelpAccordion('Can I import properties from a spreadsheet?',
           'Yes — in <strong>Prospecting</strong>, open the import option (the <strong>+ / Import</strong> menu). RentingRadar supports <strong>CSV</strong>, <strong>Monday.com XLSX</strong> (it auto-detects sub-tabs like VA Schedule, Maintenance, Cases, Reviews, and Purchases), and <strong>Custom XLSX</strong> where you map your own columns. Include a header row. Every import is logged in <strong>Import History</strong>, and you can undo within 24 hours.')}
         ${renderHelpAccordion('What\'s the difference between the plans?',
-          'All plans include <strong>unlimited properties</strong>.<br><strong>Basic ($9.99/mo)</strong> — 1 analysis per month, plus pipeline management, property profiles, follow-ups, expense tracking, operations, spreadsheet import, and negotiation forecasting tools.<br><strong>Standard ($19.99/mo)</strong> — 10 analyses per month, everything in Basic, plus dark mode &amp; color themes.<br><strong>Pro ($29.99/mo)</strong> — unlimited analyses, everything in Standard, plus priority feature requests.<br>Yearly billing saves roughly two months.')}
+          'All plans let you <strong>upload and track unlimited properties</strong> — what differs is how many you can <strong>Analyze</strong> and how many you can <strong>Operate</strong>.<br><strong>Basic ($9.99/mo)</strong> — 1 analysis per month and 1 Operations property, plus pipeline management, property profiles, follow-ups, expense tracking, spreadsheet import, and negotiation forecasting tools.<br><strong>Standard ($19.99/mo)</strong> — 10 analyses per month and up to 5 Operations properties, everything in Basic, plus dark mode &amp; color themes.<br><strong>Pro ($29.99/mo)</strong> — unlimited analyses and unlimited Operations properties, everything in Standard, plus priority feature requests.<br>Yearly billing saves roughly two months.')}
         ${renderHelpAccordion('How do follow-up reminders work?',
           'Add a follow-up in the <strong>Tasks &amp; Follow-Ups</strong> card on a property — set a date (plus optional time, time zone, type, and a note). Upcoming follow-ups appear on your dashboard, and you can turn on <strong>Browser Notifications</strong> for reminders under <strong>Settings → Notification Preferences</strong>.')}
       </div>
@@ -37172,10 +37880,11 @@ setTimeout(hideLoadingOverlay, 6000);
 // Apply the restored view's UI state
 if(currentView === 'profile' && currentProfileId){
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-  document.getElementById('headerTitle').textContent = 'Arbitrage';
+  const _initR = records.find(x => x.id === currentProfileId);
+  document.getElementById('headerTitle').textContent = (_initR && _initR.recordType === 'apartment') ? 'Multi Unit' : 'Single Unit';
 } else {
   document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.view === currentView));
-  const titles = { dashboard:'Arbitrage', pipeline:'Pipeline', operations:'Operations', opsProfile:'Operations', coHosting:'Co-Hosting', cohostProfile:'Co-Hosting', contacts:'All Contacts', notifications:'Notifications', pricing:'Your Plan', tutorial:'Tutorial', adminUsers:'Users', financials:'Financials', affiliateDashboard:'Referrals', tutorialEditor:'Tutorial Editor', settings:'Settings', featureRequest:'Feature Request', askExpert:'Ask an Expert' };
+  const titles = { dashboard:'Single Unit', pipeline:'Pipeline', operations:'Operations', opsProfile:'Operations', coHosting:'Co-Hosting', cohostProfile:'Co-Hosting', contacts:'All Contacts', apartments:'Multi Unit', notifications:'Notifications', pricing:'Your Plan', tutorial:'Tutorial', adminUsers:'Users', financials:'Financials', affiliateDashboard:'Referrals', tutorialEditor:'Tutorial Editor', settings:'Settings', featureRequest:'Feature Request', askExpert:'Ask an Expert' };
   document.getElementById('headerTitle').textContent = titles[currentView] || '';
 }
 render();
@@ -37225,7 +37934,7 @@ window.addEventListener('popstate', function(e){
         currentView = 'profile';
         document.getElementById('searchAutocomplete')?.classList.remove('visible');
         document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-        document.getElementById('headerTitle').textContent = 'Arbitrage';
+        document.getElementById('headerTitle').textContent = r.recordType === 'apartment' ? 'Multi Unit' : 'Single Unit';
         saveViewState();
         render();
         // Restore scroll position for the active tab
@@ -37277,7 +37986,7 @@ window.addEventListener('popstate', function(e){
       if(state.view !== 'opsProfile') currentOpsId = null;
       clearSearch();
       document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.view === state.view));
-      const titles = { dashboard:'Arbitrage', pipeline:'Pipeline', operations:'Operations', opsProfile:'Operations', coHosting:'Co-Hosting', cohostProfile:'Co-Hosting', contacts:'All Contacts', notifications:'Notifications', pricing:'Your Plan', tutorial:'Tutorial', adminUsers:'Users', financials:'Financials', affiliateDashboard:'Referrals', tutorialEditor:'Tutorial Editor', settings:'Settings', featureRequest:'Feature Request', askExpert:'Ask an Expert', chat:'Inbox', knowledge:'Knowledge Base' };
+      const titles = { dashboard:'Single Unit', pipeline:'Pipeline', operations:'Operations', opsProfile:'Operations', coHosting:'Co-Hosting', cohostProfile:'Co-Hosting', contacts:'All Contacts', apartments:'Multi Unit', notifications:'Notifications', pricing:'Your Plan', tutorial:'Tutorial', adminUsers:'Users', financials:'Financials', affiliateDashboard:'Referrals', tutorialEditor:'Tutorial Editor', settings:'Settings', featureRequest:'Feature Request', askExpert:'Ask an Expert', chat:'Inbox', knowledge:'Knowledge Base' };
       document.getElementById('headerTitle').textContent = titles[state.view] || '';
       saveViewState();
       render();

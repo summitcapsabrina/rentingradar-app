@@ -10,14 +10,38 @@
       { "source": "/api/emailPreferences", "function": "emailPreferences" },
       { "source": "/api/unsubscribe", "function": "unsubscribe" },
       { "source": "/api/testEmail", "function": "testEmail" },
+      { "source": "/api/testAdminNotification", "function": "testAdminNotification" },
+      { "source": "/api/testAllEmails", "function": "testAllEmails" },
+      { "source": "/api/triggerCommissionReport", "function": "triggerCommissionReport" },
       { "source": "/api/sendWelcomeEmail", "function": "sendWelcomeEmail" },
       { "source": "/api/aiEnrich", "function": "aiEnrich" },
       { "source": "/auth-action", "destination": "/auth-action.html" },
       { "source": "**", "destination": "/index.html" }
+    ],
+    "headers": [
+      {
+        "source": "/index.html",
+        "headers": [{ "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }]
+      },
+      {
+        "source": "/firebase-messaging-sw.js",
+        "headers": [{ "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }]
+      },
+      {
+        "source": "/manifest.json",
+        "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
+      }
     ]
   },
   "functions": {
     "source": "functions",
     "runtime": "nodejs22"
+  },
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "storage": {
+    "rules": "storage.rules"
   }
 }

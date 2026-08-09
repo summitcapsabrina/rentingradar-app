@@ -1,0 +1,346 @@
+
+// ===== const _AIRDNA_BLUE =====
+const _AIRDNA_BLUE = '#3b4cc9';
+
+// ===== const _ICON_AIRBNB =====
+const _ICON_AIRBNB = '<svg viewBox="0 0 24 24" width="15" height="15" fill="#FF5A5F" style="flex-shrink:0"><path d="M12 2c-1.1 0-2 .7-2.6 1.9C8 6 4 14.2 3.3 16.3c-.6 1.7-.1 3.6 1.3 4.7 1.5 1.2 3.6 1.1 5-.2l2.4-2.2 2.4 2.2c1.4 1.3 3.5 1.4 5 .2 1.4-1.1 1.9-3 1.3-4.7C20 14.2 16 6 14.6 3.9 14 2.7 13.1 2 12 2zm0 2c.3 0 .6.3.9.8C14 6.6 18 14.8 18.6 16.6c.3.9.1 1.8-.6 2.4-.7.5-1.7.5-2.4-.2L12 15.5l-3.6 3.3c-.7.7-1.7.7-2.4.2-.7-.6-.9-1.5-.6-2.4C6 14.8 10 6.6 11.1 4.8c.3-.5.6-.8.9-.8z"/></svg>';
+
+// ===== const _ICON_VRBO =====
+const _ICON_VRBO = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke-linecap="round" style="flex-shrink:0"><path d="M3.2 5 11 19.5" stroke="#4FB3E8" stroke-width="1.5"/><path d="M5.8 4.8 11.4 19" stroke="#2C7BD0" stroke-width="1.5"/><path d="M8.4 4.8 11.8 18.3" stroke="#F08A2A" stroke-width="1.5"/><path d="M11 4.8 12.1 17.5" stroke="#5FAE55" stroke-width="1.5"/><path d="M11 19.5 C 15.5 12, 18.5 7.5, 21 5" stroke="#2C7BD0" stroke-width="1.6"/></svg>';
+
+// ===== const _ICON_AIRDNA =====
+const _ICON_AIRDNA = '<svg viewBox="0 0 24 24" width="15" height="15" style="flex-shrink:0"><rect x="2.3" y="15.5" width="5.6" height="5.6" rx="1.3" fill="'+_AIRDNA_BLUE+'"/><path d="M5 4 L17.6 19.6 M17.6 4 V19.6" fill="none" stroke="'+_AIRDNA_BLUE+'" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+// ===== const _ICON_BOOKING =====
+const _ICON_BOOKING = '<svg viewBox="0 0 24 24" width="15" height="15" style="flex-shrink:0"><rect width="24" height="24" rx="5" fill="#1e3a8a"/><text x="6" y="18" font-family="Arial,Helvetica,sans-serif" font-weight="800" font-size="15" fill="#fff">B</text><circle cx="17" cy="16" r="2" fill="#4a9fd8"/></svg>';
+
+// ===== function _condenseAiSummary =====
+function _condenseAiSummary(raw){
+  let t = String(raw||'').replace(/\s+/g,' ').trim();
+  if(!t) return '';
+  t = t.replace(/^sentiment[^.!?]*[.!?]\s*/i, '');
+  const sentences = t.match(/[^.!?]+[.!?]+/g) || [t];
+  let out = sentences.slice(0, 2).map(function(s){ return s.trim(); }).join(' ').trim();
+  if(out.length > 300) out = out.slice(0, 297).replace(/\s+\S*$/,'').trim() + '…';
+  return out;
+}
+
+// ===== function importCohostFromAirDNA =====
+function importCohostFromAirDNA(){
+  const input = document.getElementById('cohost_airdna_url');
+  const statusEl = document.getElementById('cohost_airdna_status');
+  const url = (input && input.value || '').trim();
+  if(!url){ if(statusEl) statusEl.textContent='Please paste an AirDNA link.'; return; }
+  const isAirdna = /^https?:\/\/(?:[a-z0-9-]+\.)?airdna\.co\//i.test(url);
+  if(!isAirdna){ if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent='Co-Hosting imports accept AirDNA links only.'; } return; }
+  if(typeof rrScrapeViaExtension !== 'function'){ if(statusEl) statusEl.textContent='Extension unavailable.'; return; }
+  if(input) input.disabled = true;
+  if(statusEl){ statusEl.style.color='var(--text3)'; statusEl.textContent='Importing from AirDNA (pulling amenities from the listing — this can take a moment)…'; }
+  // Prominent loading toast with progress bar — same indicator the Arbitrage
+  // listing import uses (importFromChoicePaste). Replaced by the success/error
+  // toast below when the scrape resolves.
+  showToast('Importing from AirDNA…', 'loading', 30000);
+  rrScrapeViaExtension(url, 'cohost').then(function(res){
+    if(input) input.disabled = false;
+    if(!res || !res.ok){
+      const err = res && res.error;
+      let msg = 'Could not import from AirDNA: ' + (err||'Unknown error');
+      if(err==='extension-not-installed') msg = 'Install the RentingRadar Chrome extension to import from AirDNA.';
+      else if(err==='airdna-login-required') msg = (res.detail||'Please log into AirDNA in your browser first, then retry.');
+      else if(err==='airdna-paywall') msg = (res.detail||'This AirDNA listing requires a paid subscription.');
+      if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent = msg; }
+      showToast(msg, 'error', 6000);
+      return;
+    }
+    const d = res.data || {};
+    // Prefer the detail-panel-SCOPED co* financials (correct for the target
+    // listing); fall back to the generic fields only if scoping missed.
+    const annual = _cn(d.coAnnualRevenue || d.annualRevenue);
+    // The property NAME is the LISTING TITLE (e.g. "Panoramic Mountain Views",
+    // the host's listing name — confirmable on the Airbnb listing). NOT an
+    // address: AirDNA STR listings have no street address.
+    const title = (d.listingTitle || d.title || '').trim() || 'Untitled Listing';
+    const r = {
+      id: uid(), kind: 'cohost', status: 'New',
+      property: title || 'Untitled Listing',
+      links: { airbnb: d.link || '', vrbo: d.vrboLink || '', booking: d.bookingLink || '', maps: '' },
+      cohost: {
+        hostName: d.host || '',
+        setupInvestment: 3000,
+        cleaningPerMonth: 900,
+        expectedRevenue: annual ? Math.round(annual/12) : '',
+        expectedRevenueLow: '', expectedRevenueHigh: '',
+        askingRent: '', feePct: '',
+        airdnaUrl: d.airdnaUrl || url,
+        annualRevenue: annual || '',
+        occupancy: _cn(d.coOccupancy!=null?d.coOccupancy:d.occupancy)||'',
+        nightlyRate: _cn(d.coADR!=null?d.coADR:d.nightlyRate)||'',
+        daysAvailable: _cn(d.coDaysAvailable!=null?d.coDaysAvailable:d.daysAvailable)||'',
+        revenuePotential: _cn(d.coRevenuePotential)||'', marketScore: (d.marketScore!=null?d.marketScore:''), priceTier: d.priceTier||'',
+        amenities: Array.isArray(d._amenities) ? d._amenities : [],
+        inconsistencies: Array.isArray(d._inconsistencies) ? d._inconsistencies : []
+      },
+      propertyDetails: Object.assign({}, d.propertyDetails||{}, {
+        bedrooms: (d.bedrooms!=null?d.bedrooms:''), bathrooms: (d.bathrooms!=null?d.bathrooms:''),
+        guests: (d.guests!=null?d.guests:''), beds: (d.beds!=null?d.beds:''),
+        rating: (d.coRating!=null?d.coRating:(d.rating!=null?d.rating:'')),
+        propertyType: d.airdnaType || (d.propertyDetails&&d.propertyDetails.propertyType) || '',
+        market: d.market||'', submarket: d.submarket||'',
+        listingTitle: title,
+        amenitiesText: (d.description||'')
+      }),
+      details: { comps: [] },
+      notes: [], tasks: [], meetings: [],
+      createdAt: new Date().toISOString()
+    };
+    // Maps link: anchor on the listing's coordinates (or the reverse-geocoded
+    // address, or the market) — AirDNA listings have no exact street address.
+    if(!r.links.maps){
+      const la=(d.coLat!=null?d.coLat:d.lat), ln=(d.coLng!=null?d.coLng:d.lng);
+      if(la!=null && ln!=null) r.links.maps = 'https://www.google.com/maps/search/?api=1&query='+la+','+ln;
+      else if(d.market||d.submarket) r.links.maps = 'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent([d.submarket,d.market].filter(Boolean).join(', '));
+    }
+    // Seed the Property Note with a SUCCINCT overview of AirDNA's AI Summary —
+    // never the verbatim blurb. Prefer the extension's Claude-condensed version
+    // (d.aiSummaryShort); if that's unavailable (AI offline), fall back to a
+    // local heuristic condense (first couple of sentences, capped).
+    // Store the FULL AirDNA AI summary so the note can render its sections (Sentiment,
+    // What guests like, Areas to improve, Location Highlights). Falls back to the
+    // condensed version only if the full text wasn't captured.
+    const aiFull = (d.aiSummary && String(d.aiSummary).trim()) || (d.aiSummaryShort && String(d.aiSummaryShort).trim()) || '';
+    if(aiFull && aiFull.length > 20){
+      r.propertyNote = { text: aiFull, html: _cohostRenderAiSummary(aiFull), date: new Date().toISOString(), source:'AirDNA AI' };
+    }
+    cohostRecords.unshift(r);
+    saveCohostData();
+    closeAddModal();
+    showToast('Imported from AirDNA. Review the details and financials.', 'success', 4000);
+    openCohostProfile(r.id);
+  }).catch(function(e){
+    if(input) input.disabled = false;
+    if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent='Import error: '+(e.message||e); }
+    showToast('Import error: '+(e.message||e), 'error', 6000);
+  });
+}
+
+// ===== function _cohostShowAddChoice =====
+function _cohostShowAddChoice(){
+  const body = document.getElementById('cohostAddBody'); if(!body) return;
+  body.innerHTML =
+    '<div style="padding:4px 2px 8px;font-size:.85rem;color:var(--text2)">These owners are <strong>already listed</strong> on Airbnb/VRBO. Import the target listing from AirDNA.</div>'+
+    '<div class="field-group" style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:14px">'+
+      '<label class="field-label" style="font-weight:600">📈 Import from AirDNA</label>'+
+      '<div style="font-size:.72rem;color:var(--text3);margin:4px 0 8px">Paste an AirDNA listing URL. We\'ll pull revenue, occupancy, beds/baths, the host name, and the underlying Airbnb link.</div>'+
+      '<div style="display:flex;gap:6px"><input id="cohost_airdna_url" type="url" placeholder="https://app.airdna.co/data/…" style="flex:1" onkeydown="if(event.key===\'Enter\'){event.preventDefault();importCohostFromAirDNA()}"><button type="button" class="btn btn-primary btn-sm" style="white-space:nowrap" onclick="importCohostFromAirDNA()">Import</button></div>'+
+      '<div id="cohost_airdna_status" style="font-size:.72rem;color:var(--text3);margin-top:6px;min-height:1em"></div>'+
+      '<div id="addModalAiStatus" style="margin-top:8px"></div>'+
+    '</div>'+
+    '<div style="display:flex;align-items:center;gap:10px;margin:14px 2px;color:var(--text3);font-size:.72rem"><div style="flex:1;height:1px;background:var(--border)"></div><span>OR</span><div style="flex:1;height:1px;background:var(--border)"></div></div>'+
+    '<div class="field-group" style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px 16px">'+
+      '<label class="field-label" style="font-weight:600">✏️ Enter details manually</label>'+
+      '<div style="font-size:.72rem;color:var(--text3);margin:4px 0 10px">Add address, host, and listing info by hand.</div>'+
+      '<button type="button" class="btn btn-secondary btn-sm" onclick="_cohostShowManualForm()">Manual Entry</button>'+
+    '</div>';
+  setTimeout(function(){ const el=document.getElementById('cohost_airdna_url'); if(el) el.focus(); }, 60);
+  // Show extension + AI engine status under the paste field (same as the
+  // Arbitrage Add Property modal).
+  if(typeof checkAddModalAiStatus === 'function') checkAddModalAiStatus();
+}
+
+// ===== function _cohostShowManualForm =====
+function _cohostShowManualForm(){
+  const body = document.getElementById('cohostAddBody'); if(!body) return;
+  body.innerHTML =
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 12px">'+
+      '<div style="grid-column:1/-1"><label class="field-label">Property Address</label><input id="cohost_m_address" type="text" placeholder="123 Main St, City, ST" style="width:100%"></div>'+
+      '<div><label class="field-label">Host Name(s)</label><input id="cohost_m_host" type="text" placeholder="e.g. Sarah &amp; Mike" style="width:100%"></div>'+
+      '<div><label class="field-label">Market</label><input id="cohost_m_market" type="text" style="width:100%"></div>'+
+      '<div><label class="field-label">Bedrooms</label><input id="cohost_m_beds" type="number" min="0" style="width:100%"></div>'+
+      '<div><label class="field-label">Bathrooms</label><input id="cohost_m_baths" type="number" min="0" step="0.5" style="width:100%"></div>'+
+      '<div><label class="field-label">Airbnb Link</label><input id="cohost_m_airbnb" type="url" placeholder="https://airbnb.com/rooms/…" style="width:100%"></div>'+
+      '<div><label class="field-label">VRBO Link</label><input id="cohost_m_vrbo" type="url" placeholder="https://vrbo.com/…" style="width:100%"></div>'+
+      '<div><label class="field-label">Expected Revenue / mo</label><input id="cohost_m_rev" type="number" min="0" placeholder="5500" style="width:100%"></div>'+
+      '<div><label class="field-label">Avg Cleaning / mo</label><input id="cohost_m_clean" type="number" min="0" value="900" style="width:100%"></div>'+
+    '</div>'+
+    '<div style="display:flex;justify-content:space-between;gap:8px;margin-top:16px">'+
+      '<button type="button" class="btn btn-secondary btn-sm" onclick="_cohostShowAddChoice()">← Back</button>'+
+      '<button type="button" class="btn btn-primary" onclick="saveCohostManual()">Save Property</button>'+
+    '</div>';
+  setTimeout(function(){ const el=document.getElementById('cohost_m_address'); if(el) el.focus(); }, 60);
+}
+
+// ===== function saveCohostManual =====
+function saveCohostManual(){
+  const get = function(id){ const el=document.getElementById(id); return el?(el.value||'').trim():''; };
+  const address = get('cohost_m_address');
+  if(!address){ showAppAlert('Please enter a property address.', {title:'Address required', icon:'⚠️'}); return; }
+  const r = {
+    id: uid(), kind: 'cohost', status: 'New', property: address,
+    links: { airbnb: get('cohost_m_airbnb'), vrbo: get('cohost_m_vrbo'), maps: '' },
+    cohost: {
+      hostName: get('cohost_m_host'),
+      setupInvestment: 3000, cleaningPerMonth: _cn(get('cohost_m_clean'))||900,
+      expectedRevenue: _cn(get('cohost_m_rev'))||'', expectedRevenueLow:'', expectedRevenueHigh:'',
+      askingRent:'', feePct:''
+    },
+    propertyDetails: { bedrooms: get('cohost_m_beds'), bathrooms: get('cohost_m_baths'), market: get('cohost_m_market') },
+    details: { comps: [] }, notes: [], tasks: [], meetings: [], createdAt: new Date().toISOString()
+  };
+  if(r.property) r.links.maps = 'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(r.property);
+  cohostRecords.unshift(r);
+  saveCohostData();
+  closeAddModal();
+  openCohostProfile(r.id);
+}
+
+// ===== function _cohostNoteToBullets =====
+function _cohostNoteToBullets(text){
+  let t = String(text || '').trim();
+  if(!t) return '';
+  let parts = t.split(/\n+/).map(function(s){ return s.replace(/^[\-•*\s]+/, '').trim(); }).filter(Boolean);
+  if(parts.length <= 1){
+    parts = (t.match(/[^.!?]+[.!?]+/g) || [t]).map(function(s){ return s.trim(); }).filter(Boolean);
+  }
+  return '<ul style="margin:2px 0 0;padding-left:18px">'+parts.map(function(p){ return '<li style="margin:1px 0">'+esc(p)+'</li>'; }).join('')+'</ul>';
+}
+
+// ===== function _cohostRenderAiSummary =====
+function _cohostRenderAiSummary(raw){
+  let t = String(raw || '').replace(/\r/g, '').trim();
+  if(!t) return '';
+  const sm = t.match(/sentiment[^0-9]{0,12}(\d{1,3})\s*\/\s*100/i);
+  const sentiment = sm ? sm[1] : '';
+  const defs = [
+    { keys:['what guests like','what guests are saying','what guests love','guests like','positives'], icon:'👍', label:'What guests like' },
+    { keys:['areas to improve','areas for improvement','areas of improvement','room for improvement','concerns','negatives'], icon:'⚠️', label:'Areas to improve' },
+    { keys:['location highlights','location highlight','neighborhood highlights'], icon:'📍', label:'Location Highlights' }
+  ];
+  const low = t.toLowerCase();
+  const found = [];
+  defs.forEach(function(d){ for(let j=0;j<d.keys.length;j++){ const i = low.indexOf(d.keys[j]); if(i!==-1){ found.push({ def:d, idx:i, hdrLen:d.keys[j].length }); break; } } });
+  found.sort(function(a,b){ return a.idx - b.idx; });
+  if(found.length === 0) return _cohostNoteToBullets(t);
+  let html = '';
+  if(sentiment){
+    html += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:7px"><span style="display:inline-flex;align-items:center;gap:4px;font-size:.78rem;font-weight:700;background:rgba(58,210,159,.14);color:var(--success);border-radius:6px;padding:1px 8px">📊 Sentiment '+esc(sentiment)+'/100</span><span style="font-weight:400;font-size:.66rem;color:var(--text3)">AI-analyzed reviews</span></div>';
+  }
+  found.forEach(function(f, i){
+    const start = f.idx + f.hdrLen;
+    const end = (i+1 < found.length) ? found[i+1].idx : t.length;
+    let body = t.slice(start, end).trim();
+    let parts = body.split(/\n+/).map(function(s){ return s.replace(/^[\-•*·\s]+/, '').trim(); }).filter(function(s){ return s.length > 1; });
+    if(parts.length <= 1){ parts = (body.match(/[^.!?]+[.!?]+/g) || [body]).map(function(s){ return s.trim(); }).filter(Boolean); }
+    html += '<div style="margin-bottom:8px"><div style="display:flex;align-items:center;gap:6px;font-weight:700;font-size:.82rem;color:var(--text);margin-bottom:2px"><span style="font-size:.92rem">'+f.def.icon+'</span>'+esc(f.def.label)+'</div>';
+    html += '<ul style="margin:0;padding-left:20px">'+parts.map(function(p){ return '<li style="margin:1px 0;font-size:.82rem;color:var(--text2)">'+esc(p)+'</li>'; }).join('')+'</ul></div>';
+  });
+  return html;
+}
+
+// ===== function _cohostMetricsStrip =====
+function _cohostMetricsStrip(c){
+  c = c || {};
+  const items = [
+    ['Revenue Potential', c.revenuePotential ? _cmoney(c.revenuePotential) : '—'],
+    ['Annual Revenue', c.annualRevenue ? _cmoney(c.annualRevenue) : '—'],
+    ['Occupancy', (c.occupancy!=='' && c.occupancy!=null) ? Math.round(_cn(c.occupancy))+'%' : '—'],
+    ['Avg Daily Rate', c.nightlyRate ? _cmoney(c.nightlyRate) : '—'],
+    ['Days Available', (c.daysAvailable!=='' && c.daysAvailable!=null) ? Math.round(_cn(c.daysAvailable)) : '—'],
+    ['Host', c.hostName ? esc(c.hostName) : '—']
+  ];
+  let h = '<div style="display:flex;gap:20px;flex-wrap:wrap;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">';
+  items.forEach(function(it){
+    h += '<div><div style="font-size:.62rem;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;font-weight:600">'+it[0]+'</div><div style="font-size:.98rem;font-weight:700;color:var(--text)">'+it[1]+'</div></div>';
+  });
+  h += '</div>';
+  return h;
+}
+
+// ===== function _cohostPlatformLink =====
+function _cohostPlatformLink(url, label, icon, recId){
+  const openIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"/></svg>';
+  if(url) return '<a class="profile-platform" href="'+esc(url)+'" target="_blank" rel="noopener">'+icon+' '+label+' '+openIcon+'</a>';
+  // No URL captured (AirDNA didn't surface this platform) — show a DISABLED,
+  // non-clickable chip. It is intentionally NOT an editor link: letting users edit
+  // the links risks accidentally clearing a good listing they'd then have to re-find.
+  return '<span class="profile-platform" style="opacity:.4;cursor:default;pointer-events:none" title="No '+label+' link available">'+icon+' '+label+'</span>';
+}
+
+// ===== function _cohostMergeIncons =====
+function _cohostMergeIncons(incons){
+  const out = [], byField = {};
+  (incons||[]).forEach(function(it){
+    if(it && it.values){
+      const key = String(it.field||'');
+      if(byField[key]){
+        Object.keys(it.values).forEach(function(k){ if(!(k in byField[key].values)) byField[key].values[k] = it.values[k]; });
+        return;
+      }
+      byField[key] = { field: it.field, severity: it.severity, value: it.value, values: Object.assign({}, it.values) };
+      out.push(byField[key]);
+    } else { out.push(it); }
+  });
+  return out;
+}
+
+// ===== function _cohostIncRow =====
+function _cohostIncRow(it, srcs, extraHeader){
+  const conflict = it.severity === 'conflict';
+  const col = conflict ? 'var(--danger)' : 'var(--warning)';
+  const bg = conflict ? 'rgba(239,68,68,.06)' : 'rgba(245,158,11,.06)';
+  const tag = conflict ? 'Conflict' : 'Mismatch';
+  const label = esc(it.field||'Difference'); // field name only — value text dropped
+  const _indicator = function(present, absent, src){
+    const key = src==='AirBNB' ? 'Airbnb' : src; // VRBO→VRBO, B.com→B.com
+    if((present||[]).indexOf(key)!==-1) return '<span style="color:var(--success);font-weight:700">✓</span>';
+    if((absent||[]).indexOf(key)!==-1) return '<span style="color:var(--danger);font-weight:700">✗</span>';
+    return '<span style="color:var(--text3)">—</span>';
+  };
+  let h = '<div style="border-left:3px solid '+col+';padding:8px 12px;background:'+bg+';border-radius:0 8px 8px 0">';
+  h += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px"><span style="font-weight:600;font-size:.82rem">'+label+'</span><span style="font-size:.58rem;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:'+col+';border:1px solid '+col+';border-radius:10px;padding:0 6px">'+tag+'</span>'+(extraHeader||'')+'</div>';
+  if(it.values){
+    h += '<div style="display:flex;flex-direction:column;gap:3px">';
+    srcs.forEach(function(src){
+      if(!(src in it.values) && !((src==='AirBNB'?'Airbnb':src) in it.values)) return;
+      const v = it.values[src] || it.values[src==='AirBNB'?'Airbnb':src];
+      h += '<div style="font-size:.78rem;display:flex;gap:8px"><span style="color:var(--text3);min-width:54px">'+src+'</span><span style="color:var(--text)">'+(v?esc(v):'—')+'</span></div>';
+    });
+    h += '</div>';
+  } else {
+    h += '<div style="display:flex;gap:26px;font-size:.8rem;align-items:center">'+
+      srcs.map(function(src){ return '<span><span style="color:var(--text3);margin-right:7px">'+src+'</span>'+_indicator(it.present,it.absent,src)+'</span>'; }).join('')+
+      '</div>';
+  }
+  h += '</div>';
+  return h;
+}
+
+// ===== function cohostToggleIncShow =====
+function cohostToggleIncShow(id, field, checked){
+  const r = getCohostById(id); if(!r) return;
+  if(!r.cohost) r.cohost = {};
+  let arr = Array.isArray(r.cohost.shownInconsistencies) ? r.cohost.shownInconsistencies.slice() : [];
+  const i = arr.indexOf(field);
+  if(checked && i === -1) arr.push(field);
+  else if(!checked && i !== -1) arr.splice(i, 1);
+  r.cohost.shownInconsistencies = arr;
+  _saveRecFor(r, id);
+}
+
+// ===== function _cohostSummaryInconsistencies =====
+function _cohostSummaryInconsistencies(r){
+  const c = r.cohost || {};
+  const incons = Array.isArray(c.inconsistencies) ? c.inconsistencies : [];
+  const shown = Array.isArray(c.shownInconsistencies) ? c.shownInconsistencies : [];
+  if(!incons.length || !shown.length) return '';
+  const L = r.links || {};
+  const srcs = ['AirBNB','VRBO'].concat(L.booking ? ['B.com'] : []);
+  const rows = _cohostMergeIncons(incons).filter(function(it){ return shown.indexOf(it.field) !== -1; });
+  if(!rows.length) return '';
+  let h = '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:18px 20px;margin-top:14px">';
+  h += '<div style="font-weight:600;margin-bottom:4px">⚠️ Listing Inconsistencies to Discuss</div>';
+  h += '<div style="font-size:.76rem;color:var(--text3);margin-bottom:14px">Differences you flagged across the landlord’s listings — talking points to get them back in sync.</div>';
+  h += '<div style="display:flex;flex-direction:column;gap:9px">';
+  rows.forEach(function(it){ h += _cohostIncRow(it, srcs, ''); });
+  h += '</div></div>';
+  return h;
+}

@@ -207,6 +207,13 @@
           el.remove();
         }
       });
+      // v1.14.0: Unhide tab panels (e.g. Apartments.com parking/pets tabs)
+      clone.querySelectorAll('[role="tabpanel"], [id*="tab"], [class*="tabPanel"]').forEach(n => {
+        n.style.display = 'block';
+        n.style.visibility = 'visible';
+        n.style.height = 'auto';
+        n.style.overflow = 'visible';
+      });
       const txt = (clone.innerText || clone.textContent || '')
         .replace(/[ \t]+/g, ' ')
         .replace(/\n{3,}/g, '\n\n')
@@ -475,6 +482,14 @@
       [/intercom/i, 'Intercom'],
       [/24-?hour security|24\/7 security/i, '24-Hour Security'],
     ],
+    petsAllowed: [
+      [/no pets|pets not allowed|no pets allowed/i, 'No Pets'],
+      [/cats? allowed/i, 'Cats Allowed'],
+      [/dogs? allowed/i, 'Dogs Allowed'],
+      [/cats? and dogs?|dogs? and cats?/i, 'Cats Allowed', 'Dogs Allowed'],
+      [/pets? (allowed|welcome|friendly|ok\b|okay)/i, 'Cats Allowed', 'Dogs Allowed'],
+      [/small dogs? only/i, 'Small Dogs Only'],
+    ],
   };
 
   function matchAmenities(text) {
@@ -482,10 +497,19 @@
     const out = {};
     for (const field in AMENITY_PATTERNS) {
       const hits = [];
-      for (const [re, label] of AMENITY_PATTERNS[field]) {
-        if (re.test(text) && !hits.includes(label)) hits.push(label);
+      for (const entry of AMENITY_PATTERNS[field]) {
+        const re = entry[0];
+        if (re.test(text)) {
+          for (let i = 1; i < entry.length; i++) {
+            if (!hits.includes(entry[i])) hits.push(entry[i]);
+          }
+        }
       }
       if (hits.length) out[field] = hits;
+    }
+    // "No Pets" overrides any positive pet entries
+    if (out.petsAllowed && out.petsAllowed.includes('No Pets')) {
+      out.petsAllowed = ['No Pets'];
     }
     return out;
   }
@@ -548,6 +572,8 @@
       '[class*="header-column"], [class*="HeaderColumn"]';
     const headings = document.querySelectorAll(headingSel);
     for (const h of headings) {
+      // v0.11.0: Skip headings inside footer, navigation, or similar listings
+      if (h.closest('footer, nav, [class*="footer" i], [class*="similar" i], [class*="nearby" i], [class*="recommend" i], [class*="SeoFooter"], [class*="seo-footer" i]')) continue;
       const t = ((h.innerText || h.textContent || '') + '').replace(/\s+/g, ' ').trim();
       if (!t || t.length > 60) continue;
       let container = h.parentElement;
@@ -636,9 +662,31 @@
     // with no unit reference, then falls back to defaulting the prefix to
     // "Unit" — which is wrong for any listing that uses #, Apt, Ste, etc.
     const streetAddress = gdp.streetAddress || (gdp.address && gdp.address.streetAddress);
-    const unitNumber = gdp.unitNumber || gdp.unit
+    let unitNumber = gdp.unitNumber || gdp.unit
                     || (gdp.address && (gdp.address.unitNumber || gdp.address.unit))
                     || null;
+    // v0.11.0: Preserve correct casing for unit numbers. JSON-LD/state blobs
+    // sometimes lowercase them (e.g. "g3" instead of "G3"). Check the URL
+    // and h1 title for the authoritative casing.
+    if (unitNumber) {
+      const unitStr = String(unitNumber).trim();
+      // Try to find the unit in the URL path (e.g. "/2010-Ocean-Ave-G3-Brooklyn/")
+      const urlMatch = location.pathname.match(new RegExp(unitStr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'));
+      if (urlMatch && urlMatch[0] !== unitStr) {
+        unitNumber = urlMatch[0];
+      } else {
+        // Try h1 title (e.g. "2010 Ocean Ave #G3")
+        const h1 = (document.querySelector('h1')?.textContent || '').trim();
+        const h1Match = h1.match(new RegExp('[#]?' + unitStr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'));
+        if (h1Match) {
+          unitNumber = h1Match[0].replace(/^#/, '');
+        } else {
+          // Default: uppercase unit numbers that are purely alphanumeric
+          // (e.g. "g3" → "G3", "4a" → "4A") since listings conventionally uppercase them
+          unitNumber = unitStr.toUpperCase();
+        }
+      }
+    }
     const city = gdp.city || (gdp.address && gdp.address.city);
     const state = gdp.state || (gdp.address && gdp.address.state);
     const zipcode = gdp.zipcode || (gdp.address && gdp.address.zipcode);
@@ -649,6 +697,14 @@
       let street = streetAddress;
       if (unitNumber && !/(#|\b(?:unit|ste|suite|apt|apartment|bldg|building)\b)/i.test(street)) {
         street = street.trim().replace(/,\s*$/, '') + ' #' + String(unitNumber).trim();
+      } else if (unitNumber) {
+        // v0.11.0: Unit is already in streetAddress but may have wrong casing.
+        // Replace the lowercase unit with the correctly-cased version.
+        const correctUnit = String(unitNumber).trim();
+        street = street.replace(
+          new RegExp('(#|\\b(?:unit|ste|suite|apt|apartment)\\s*)' + correctUnit.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'),
+          (match, prefix) => prefix + correctUnit
+        );
       }
       const cityState = [city, state].filter(Boolean).join(' ');
       const csz = [cityState, zipcode].filter(Boolean).join(' ').trim();
@@ -937,6 +993,7 @@
     if (ogBlob) {
       log('og meta present', { len: ogBlob.length });
       if (out.bedrooms == null) out.bedrooms = num(ogBlob.match(/(\d+(?:\.\d+)?)\s*(?:bd|bed(?:room)?s?)/i)?.[1]);
+      if (out.bedrooms == null && /\bstudio\b/i.test(ogBlob)) out.bedrooms = 0;
       if (out.bathrooms == null) out.bathrooms = num(ogBlob.match(/(\d+(?:\.\d+)?)\s*(?:ba|bath(?:room)?s?)/i)?.[1]);
       if (out.sqft == null) out.sqft = num(ogBlob.match(/([\d,]+)\s*(?:sq\s*ft|sqft|square feet)/i)?.[1]);
       if (out.price == null) out.price = num(ogBlob.match(/\$([\d,]+)(?:\/mo)?/i)?.[1]);
@@ -985,6 +1042,7 @@
     if (bbsEl) {
       const t = bbsEl.textContent;
       if (out.bedrooms == null) out.bedrooms = num(t.match(/(\d+(?:\.\d+)?)\s*(?:bd|bed)/i)?.[1]);
+      if (out.bedrooms == null && /\bstudio\b/i.test(t)) out.bedrooms = 0;
       if (out.bathrooms == null) out.bathrooms = num(t.match(/(\d+(?:\.\d+)?)\s*(?:ba|bath)/i)?.[1]);
       if (out.sqft == null) out.sqft = num(t.match(/([\d,]+)\s*(?:sq\s*ft|sqft)/i)?.[1]);
     }
@@ -1013,11 +1071,28 @@
       log('availability: ' + avail);
     }
 
+    // Studio fallback: if no bedroom count found, check page text for "Studio"
+    if (out.bedrooms == null && /\bstudio\b/i.test(document.body.innerText || '')) out.bedrooms = 0;
+
     // Sanity-guard beds/baths (same rules as Apartments)
     if (out.bedrooms != null && (out.bedrooms < 0 || out.bedrooms > 20)) out.bedrooms = null;
     if (out.bathrooms != null && (out.bathrooms <= 0 || out.bathrooms > 15)) out.bathrooms = null;
 
     out.title = document.title;
+
+    // v0.11.0: Fix unit number casing in the final address. Zillow's state
+    // blobs often lowercase unit numbers (e.g. "#g3"). Use the URL as the
+    // source of truth — Zillow URLs preserve original casing (e.g. "G3").
+    if (out.address) {
+      out.address = out.address.replace(/(#|(?:unit|apt|ste|suite)\s*)([a-z0-9]+)/i, (match, prefix, unit) => {
+        // Find the unit in the URL with correct casing
+        const urlMatch = location.pathname.match(new RegExp('[-/](' + unit.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')[-/]', 'i'));
+        if (urlMatch) return prefix + urlMatch[1];
+        // Fallback: uppercase the unit
+        return prefix + unit.toUpperCase();
+      });
+    }
+
     log('final', {
       hasAddress: !!out.address,
       beds: out.bedrooms, baths: out.bathrooms, sqft: out.sqft, price: out.price,
@@ -1287,13 +1362,49 @@
 
     // Grab a cleaned page-text blob for the amenity sweep, availability
     // detection, and the last-resort price fallback below.
-    const bodyText = (document.querySelector('main') || document.body).innerText || '';
+    // v0.11.0: Strip footer, navigation, similar/nearby listings, and page
+    // chrome so the dictionary extractor only sees THIS listing's content.
+    const bodyText = (() => {
+      try {
+        const el = (document.querySelector('main, [role="main"], #main, .main, #content, .content') || document.body).cloneNode(true);
+        // Remove page chrome and navigation
+        el.querySelectorAll('script, style, noscript, iframe, svg, nav, footer, header').forEach(n => n.remove());
+        el.querySelectorAll('[class*="footer" i], [class*="nav-" i], [class*="navbar" i], [class*="header" i]').forEach(n => n.remove());
+        // Remove similar/nearby/recommended listings — OTHER properties
+        el.querySelectorAll(
+          '[class*="similar" i], [class*="nearby" i], [class*="recommend" i], ' +
+          '[class*="carousel" i], [class*="SeoFooter"], [class*="seoFooter"], ' +
+          '[class*="seo-footer"], [class*="also-viewed" i], [class*="alsoViewed" i], ' +
+          '[class*="moreListings" i], [class*="related" i]'
+        ).forEach(n => n.remove());
+        // Remove sections with headings about other listings
+        el.querySelectorAll('article, section, div').forEach(section => {
+          const h = section.querySelector('h1, h2, h3, h4');
+          if (h && /similar|nearby|recommended|you may also|other apartments|more apartments|find similar|explore nearby|pricing comparison|nearby schools/i.test(h.textContent)) {
+            section.remove();
+          }
+        });
+        // v1.14.0: Unhide tab panels (e.g. Apartments.com parking/pets tabs)
+        el.querySelectorAll('[role="tabpanel"], [id*="tab"], [class*="tabPanel"]').forEach(n => {
+          n.style.display = 'block';
+          n.style.visibility = 'visible';
+          n.style.height = 'auto';
+          n.style.overflow = 'visible';
+        });
+        return (el.innerText || '').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+      } catch (_) {
+        return (document.querySelector('main') || document.body).innerText || '';
+      }
+    })();
 
     // Body-text price fallback REMOVED — too dangerous. Body text includes
     // "Pricing comparison" sections, market rates, deposit amounts, and
     // other dollar figures that are NOT the rent. Price must come from
     // structured data (state blob, JSON-LD, DOM hero block) or not at all.
     // if (out.price == null) { ... }
+
+    // Studio fallback: if no bedroom count found, check page text for "Studio"
+    if (out.bedrooms == null && /\bstudio\b/i.test(document.body.innerText || '')) out.bedrooms = 0;
 
     // ---- Sanity guard: reject obviously-bogus beds/baths ----
     if (out.bedrooms != null && (out.bedrooms < 0 || out.bedrooms > 20)) {
@@ -1317,13 +1428,22 @@
     }
 
     // ---- Amenity dictionary sweep ----
+    // v0.11.0: Only select amenity nodes that are NOT inside footer,
+    // similar listings, or navigation sections.
     const amenityNodes = document.querySelectorAll(
       '#amenitiesSection, .amenitiesSection, .specList, .feesPoliciesSection, ' +
-      '#feesAndPolicies, .uniqueFeatures, .propertyAmenities, .communityAmenities, ' +
+      '#feesAndPolicies, [id*="fees-policies"], [class*="fees-policies"], ' +
+      '.uniqueFeatures, .propertyAmenities, .communityAmenities, ' +
       '[data-tag="amenities"], [class*="amenit"], [class*="Amenit"], ' +
-      '[class*="feature"], [class*="Feature"]'
+      '[class*="feature"], [class*="Feature"], [class*="parking" i]'
     );
-    const amenityBlob = Array.from(amenityNodes).map((n) => n.textContent).join(' ').toLowerCase();
+    const amenityBlob = Array.from(amenityNodes)
+      .filter(n => {
+        // Skip nodes inside footer, navigation, similar listings sections
+        const parent = n.closest('footer, nav, [class*="footer" i], [class*="similar" i], [class*="nearby" i], [class*="recommend" i], [class*="seo-footer" i], [class*="SeoFooter"]');
+        return !parent;
+      })
+      .map((n) => n.textContent).join(' ').toLowerCase();
 
     // v0.6.4: The searchBlob no longer includes labeled-section values.
     // v0.6.3 added ALL labeled values (with synthetic verbs) to searchBlob,
@@ -1490,6 +1610,21 @@
             if (pets.length) setPD(pd, 'petsAllowed', pets);
           }
         }
+
+        // Parking — Apartments.com uses heading "Parking" with values like "Street --"
+        if (/^parking$/i.test(heading)) {
+          const norm = values.map(v => String(v).toLowerCase()).join(' ');
+          if (/attached garage/i.test(norm)) setPD(pd, 'parking', 'Attached Garage');
+          else if (/detached garage/i.test(norm)) setPD(pd, 'parking', 'Detached Garage');
+          else if (/garage/i.test(norm)) setPD(pd, 'parking', 'Attached Garage');
+          else if (/covered/i.test(norm)) setPD(pd, 'parking', 'Covered Parking');
+          else if (/carport/i.test(norm)) setPD(pd, 'parking', 'Carport');
+          else if (/assigned/i.test(norm)) setPD(pd, 'parking', 'Assigned Spot');
+          else if (/driveway/i.test(norm)) setPD(pd, 'parking', 'Driveway');
+          else if (/street/i.test(norm)) setPD(pd, 'parking', 'Street Only');
+          else if (/\blot\b/i.test(norm)) setPD(pd, 'parking', 'Open Lot');
+          else if (/none/i.test(norm)) setPD(pd, 'parking', 'None');
+        }
       }
     } catch (e) { log('section routing error', String(e && e.message || e)); }
 
@@ -1510,14 +1645,41 @@
       if (pets.length) setPD(pd, 'petsAllowed', pets);
     }
 
-    // Parking
+    // v1.14.0: Direct DOM query for Apartments.com parking tab panel.
+    // The parking info lives in a display:none tab panel that innerText misses.
+    // Query the live DOM directly — this is the most reliable approach.
+    if (!pd.parking) {
+      try {
+        const parkingPanel = document.getElementById('fees-policies-parking-tab')
+          || document.querySelector('[id*="parking"][role="tabpanel"]');
+        if (parkingPanel) {
+          const parkingText = (parkingPanel.textContent || '').toLowerCase();
+          log('parking panel text', parkingText.replace(/\s+/g, ' ').trim());
+          if (/attached garage/i.test(parkingText)) setPD(pd, 'parking', 'Attached Garage');
+          else if (/detached garage/i.test(parkingText)) setPD(pd, 'parking', 'Detached Garage');
+          else if (/garage/i.test(parkingText)) setPD(pd, 'parking', 'Attached Garage');
+          else if (/covered/i.test(parkingText)) setPD(pd, 'parking', 'Covered Parking');
+          else if (/carport/i.test(parkingText)) setPD(pd, 'parking', 'Carport');
+          else if (/assigned/i.test(parkingText)) setPD(pd, 'parking', 'Assigned Spot');
+          else if (/driveway/i.test(parkingText)) setPD(pd, 'parking', 'Driveway');
+          else if (/street/i.test(parkingText)) setPD(pd, 'parking', 'Street Only');
+          else if (/\blot\b/i.test(parkingText)) setPD(pd, 'parking', 'Open Lot');
+          else if (/none/i.test(parkingText)) setPD(pd, 'parking', 'None');
+        }
+      } catch (e) { log('parking panel query error', e.message); }
+    }
+
+    // Parking — match both "street parking" and "parking street" (Apartments.com
+    // formats as heading "Parking" with value "Street" beneath it)
     if (/attached garage/i.test(searchBlob)) setPD(pd, 'parking', 'Attached Garage');
     else if (/detached garage/i.test(searchBlob)) setPD(pd, 'parking', 'Detached Garage');
     else if (/garage/i.test(searchBlob)) setPD(pd, 'parking', 'Attached Garage');
-    else if (/covered parking/i.test(searchBlob)) setPD(pd, 'parking', 'Covered Parking');
+    else if (/covered parking|parking\s*[-–:.]?\s*covered/i.test(searchBlob)) setPD(pd, 'parking', 'Covered Parking');
     else if (/carport/i.test(searchBlob)) setPD(pd, 'parking', 'Carport');
-    else if (/assigned/i.test(searchBlob)) setPD(pd, 'parking', 'Assigned Spot');
-    else if (/street parking/i.test(searchBlob)) setPD(pd, 'parking', 'Street Only');
+    else if (/assigned\s*(parking|spot)|parking\s*[-–:.]?\s*assigned/i.test(searchBlob)) setPD(pd, 'parking', 'Assigned Spot');
+    else if (/street parking|parking\s*[-–:.]?\s*street/i.test(searchBlob)) setPD(pd, 'parking', 'Street Only');
+    else if (/parking\s*[-–:.]?\s*lot/i.test(searchBlob)) setPD(pd, 'parking', 'Open Lot');
+    else if (/parking\s*[-–:.]?\s*none|no parking/i.test(searchBlob)) setPD(pd, 'parking', 'None');
 
     // Laundry
     if (/washer.*dryer in unit|in.?unit laundry|w\/d in unit|w\/d in-unit/i.test(searchBlob)) setPD(pd, 'laundry', 'In-Unit W/D');
@@ -1734,6 +1896,7 @@
       // Match "1\nBed" or "1 Bed" or "1 bed" or "1 BR" — scoped to hero
       const bedM = heroText.match(/(\d+)\s*(?:\n\s*)?(?:bed|br|bedroom)/i);
       if (bedM) { out.bedrooms = num(bedM[1]); log('beds from hero', out.bedrooms); }
+      else if (/\bstudio\b/i.test(heroText)) { out.bedrooms = 0; log('studio from hero'); }
     }
     if (out.bathrooms == null) {
       const bathM = heroText.match(/(\d+\.?\d*)\s*(?:\n\s*)?(?:bath|ba|bathroom)/i);
@@ -1789,6 +1952,9 @@
                   || null;
     }
 
+    // Studio fallback: if no bedroom count found, check page text for "Studio"
+    if (out.bedrooms == null && /\bstudio\b/i.test(document.body.innerText || '')) out.bedrooms = 0;
+
     // Sanity-guard beds/baths
     if (out.bedrooms != null && (out.bedrooms < 0 || out.bedrooms > 20)) out.bedrooms = null;
     if (out.bathrooms != null && (out.bathrooms <= 0 || out.bathrooms > 15)) out.bathrooms = null;
@@ -1827,6 +1993,7 @@
     const priceMatch = bodyText.match(/\$[\d,]+(?:\.\d{2})?/);
     if (priceMatch) out.price = num(priceMatch[0]);
     out.bedrooms = num(bodyText.match(/(\d+(?:\.\d+)?)\s*bed/i)?.[1]);
+    if (out.bedrooms == null && /\bstudio\b/i.test(bodyText)) out.bedrooms = 0;
     out.bathrooms = num(bodyText.match(/(\d+(?:\.\d+)?)\s*bath/i)?.[1]);
     out.sqft = num(bodyText.match(/([\d,]+)\s*sq\s*ft/i)?.[1]);
     out.description = null;
@@ -1852,6 +2019,7 @@
       .join(' | ');
     out.bedrooms = num(attrText.match(/(\d+(?:\.\d+)?)\s*BR/i)?.[1])
       || num(attrText.match(/(\d+(?:\.\d+)?)\s*bed/i)?.[1]);
+    if (out.bedrooms == null && /\bstudio\b/i.test(attrText + ' ' + (document.body.innerText || ''))) out.bedrooms = 0;
     out.bathrooms = num(attrText.match(/(\d+(?:\.\d+)?)\s*Ba/i)?.[1])
       || num(attrText.match(/(\d+(?:\.\d+)?)\s*bath/i)?.[1]);
     out.sqft = num(attrText.match(/([\d,]+)\s*ft2/i)?.[1])
@@ -1956,6 +2124,15 @@
           });
           // Remove footer (often contains links to other listings by area)
           rawClone.querySelectorAll('footer, [class*="footer" i]').forEach(n => n.remove());
+          // v1.14.0: Unhide tab panels (e.g. Apartments.com parking/pets tabs)
+          // so innerText captures their content. These panels are in the DOM
+          // but display:none — making them visible in the clone exposes their text.
+          rawClone.querySelectorAll('[role="tabpanel"], [id*="tab"], [class*="tabPanel"]').forEach(n => {
+            n.style.display = 'block';
+            n.style.visibility = 'visible';
+            n.style.height = 'auto';
+            n.style.overflow = 'visible';
+          });
           data._rawPageText = (rawClone.innerText || '')
             .replace(/[ \t]+/g, ' ')
             .replace(/\n{3,}/g, '\n\n')

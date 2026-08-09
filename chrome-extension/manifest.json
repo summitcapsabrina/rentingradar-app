@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "RentingRadar",
-  "version": "1.14.0",
+  "version": "1.16.14",
   "description": "Paste rental listing links to auto-fill property and competitor details in your RentingRadar CRM.",
   "author": "Summit Capital LLC",
   "homepage_url": "https://rentingradar.com",
@@ -32,6 +32,8 @@
   "host_permissions": [
     "https://*.airdna.co/*",
     "https://*.airbnb.com/*",
+    "https://*.vrbo.com/*",
+    "https://*.booking.com/*",
     "https://www.zillow.com/*",
     "https://www.apartments.com/*",
     "https://*.hotpads.com/*",
