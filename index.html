@@ -2884,7 +2884,10 @@ function statusPill(s){ return `<span class="status-pill ${statusClass(s)}">${s|
 let records = [];
 // ── Co-Hosting (Admin + Affiliate, in development) ──────────────────────────
 // Co-Hosting properties live in a SEPARATE store from `records` so they can
-// never leak into Prospecting/Operations dashboards, search, maps, or KPIs.
+// never leak into Prospecting search, maps, or KPIs. The one deliberate
+// exception is Operations: once a Co-Hosting property is moved there (same
+// "Move to Operations" flow as Arbitrage), it shows up in the shared
+// Operations list/cap alongside Arbitrage properties — see getOperatingRecords().
 // Persisted to users/{uid}/properties/cohosting (parallel to .../records).
 let cohostRecords = [];
 let _lastSavedCohostJson = '[]';
@@ -2911,7 +2914,13 @@ let opsActiveSubtab = 'property'; // Active horizontal sub-tab on Operations Pro
 
 function isOpsProperty(r){ return !!(r && r.stage === 'operations'); }
 function getProspectingRecords(){ return records.filter(function(r){ return !isOpsProperty(r); }); }
-function getOperatingRecords(){ return records.filter(isOpsProperty); }
+// Operations is the one place Arbitrage and Co-Hosting properties share a list —
+// both stores are searched so the Operations dashboard/cap sees every property
+// that's actually being operated, regardless of which pipeline it came from.
+function getOperatingRecords(){
+  const cohostOps = (typeof cohostRecords !== 'undefined') ? cohostRecords.filter(isOpsProperty) : [];
+  return records.filter(isOpsProperty).concat(cohostOps);
+}
 let previousView = 'dashboard';
 let currentProfileId = null;
 let pipelineCategory = 'all'; // 'all', 'prospects', 'outreach', 'qualified', 'lost'
@@ -5884,8 +5893,10 @@ function _collectMarkets(){
 
 function getDashFiltered(){
   // Co-Hosting dashboard: its own store, narrowed by the shared Market/Submarket filter.
+  // Properties moved to Operations are hidden here (they've moved to the shared
+  // Operations list), mirroring how the Prospecting dashboard hides ops properties below.
   if(typeof _activeDashMode !== 'undefined' && _activeDashMode.isCohost){
-    const baseC = (typeof cohostRecords !== 'undefined') ? cohostRecords : [];
+    const baseC = ((typeof cohostRecords !== 'undefined') ? cohostRecords : []).filter(r => !isOpsProperty(r));
     if(!filterMarkets.length && !filterSubmarkets.length) return baseC.slice();
     return baseC.filter(r => {
       const d = r.propertyDetails || {};
@@ -21840,15 +21851,15 @@ function getOps(r){
 }
 
 function saveOpsDetail(recId, field, value){
-  const r = records.find(x => x.id === recId);
+  const r = _findRec(recId);
   if(!r) return;
   if(!r.operations) r.operations = {};
   r.operations[field] = value;
-  saveData(recId);
+  _saveRecFor(r, recId);
 }
 
 function saveOpsBeds(recId){
-  const r = records.find(x => x.id === recId);
+  const r = _findRec(recId);
   if(!r) return;
   if(!r.operations) r.operations = {};
   const countEl = document.getElementById('ops_bedCount_'+recId);
@@ -21860,7 +21871,7 @@ function saveOpsBeds(recId){
   }
   r.operations.bedCount = count;
   r.operations.bedSizes = beds;
-  saveData(recId);
+  _saveRecFor(r, recId);
   // Re-render beds list
   const container = document.getElementById('ops_bedsList_'+recId);
   if(container) container.innerHTML = renderOpsBedRows(recId, count, beds);
@@ -21893,7 +21904,7 @@ async function opsUploadFile(recId, field, inputEl){
     inputEl.value = '';
     return;
   }
-  const r = records.find(x => x.id === recId);
+  const r = _findRec(recId);
   if(!r) return;
   if(!r.operations) r.operations = {};
   const ext = file.name.split('.').pop();
@@ -21905,7 +21916,7 @@ async function opsUploadFile(recId, field, inputEl){
     await ref.put(file);
     const url = await ref.getDownloadURL();
     r.operations[field] = { url: url, name: file.name, path: storagePath };
-    saveData();
+    _saveRecFor(r, recId);
     if(previewEl) previewEl.innerHTML = renderOpsFilePreview(recId, field, r.operations[field]);
     showToast('File uploaded', 'success', 2000);
   } catch(e){
@@ -21917,7 +21928,7 @@ async function opsUploadFile(recId, field, inputEl){
 }
 
 async function opsDeleteFile(recId, field){
-  const r = records.find(x => x.id === recId);
+  const r = _findRec(recId);
   if(!r || !r.operations || !r.operations[field]) return;
   const fileData = r.operations[field];
   try {
@@ -21926,7 +21937,7 @@ async function opsDeleteFile(recId, field){
     }
   } catch(e){ console.warn('Could not delete from storage:', e); }
   delete r.operations[field];
-  saveData();
+  _saveRecFor(r, recId);
   const previewEl = document.getElementById('ops_preview_'+recId+'_'+field);
   if(previewEl) previewEl.innerHTML = renderOpsUploadZone(recId, field);
   showToast('File removed', 'info', 2000);
@@ -21985,7 +21996,7 @@ function renderOpsMediaItems(recId, kind, items){
 let _mediaLightbox = { recId: null, kind: null, index: 0 };
 
 function _mediaLightboxItems(){
-  const r = records.find(x => x.id === _mediaLightbox.recId);
+  const r = _findRec(_mediaLightbox.recId);
   if(!r || !r.operations) return [];
   const key = OPS_MEDIA[_mediaLightbox.kind] && OPS_MEDIA[_mediaLightbox.kind].key;
   return Array.isArray(r.operations[key]) ? r.operations[key] : [];
@@ -22062,7 +22073,7 @@ async function opsUploadMedia(recId, kind, inputEl){
   const cfg = OPS_MEDIA[kind];
   const files = inputEl && inputEl.files ? Array.from(inputEl.files) : [];
   if(!files.length) return;
-  const r = records.find(x => x.id === recId);
+  const r = _findRec(recId);
   if(!r) return;
   if(!r.operations) r.operations = {};
   if(!Array.isArray(r.operations[cfg.key])) r.operations[cfg.key] = [];
@@ -22091,7 +22102,7 @@ async function opsUploadMedia(recId, kind, inputEl){
     }
   }
   if(added){
-    saveData();
+    _saveRecFor(r, recId);
     showToast(added + ' ' + cfg.noun + (added > 1 ? 's' : '') + ' uploaded', 'success', 2000);
   }
   if(hitCap) showToast(cfg.noun.charAt(0).toUpperCase()+cfg.noun.slice(1)+' limit reached ('+cfg.max+')', 'info', 2500);
@@ -22100,7 +22111,7 @@ async function opsUploadMedia(recId, kind, inputEl){
 
 async function opsDeleteMedia(recId, kind, index){
   const cfg = OPS_MEDIA[kind];
-  const r = records.find(x => x.id === recId);
+  const r = _findRec(recId);
   if(!r || !r.operations || !Array.isArray(r.operations[cfg.key])) return;
   const list = r.operations[cfg.key];
   const item = list[index];
@@ -22109,7 +22120,7 @@ async function opsDeleteMedia(recId, kind, index){
     if(item.path) await firebase.storage().ref(item.path).delete();
   } catch(e){ console.warn('Could not delete from storage:', e); }
   list.splice(index, 1);
-  saveData();
+  _saveRecFor(r, recId);
   _opsMediaRefresh(recId, kind, list);
   showToast('Removed', 'info', 1500);
 }
@@ -22160,7 +22171,7 @@ function opsConfirmIfUnsaved(onProceed){
 function opsSaveItem(kind, recId, itemId, btn){
   if(btn && btn._busy) return;
   if(btn) btn._busy = true;
-  saveData(recId); // flush autosave debounce
+  _saveRecFor(_findRec(recId), recId); // flush autosave debounce
   opsClearDirty(kind, itemId);
   if(kind !== 'va'){
     const card = document.getElementById(kind + '_card_' + itemId);
@@ -22345,7 +22356,7 @@ function renderOpsAccounts(recId, ops){
 }
 
 function _opsRerenderAccounts(recId){
-  const r = records.find(x => x.id === recId);
+  const r = _findRec(recId);
   if(!r) return;
   const el = document.getElementById('ops_accounts_'+recId);
   if(el) el.innerHTML = renderOpsAccounts(recId, getOps(r));
@@ -22354,7 +22365,7 @@ function _opsRerenderAccounts(recId){
 // Add Account (acctId='') or Edit existing account — opens a modal form. Nothing
 // is persisted until the user clicks Save (acctSaveModal).
 function acctOpenModal(recId, acctId){
-  const r = records.find(x => x.id === recId);
+  const r = _findRec(recId);
   if(!r) return;
   const existing = acctId ? _opsEnsureAccounts(getOps(r)).find(a => a.id === acctId) : null;
   const a = existing || { accountType:'', email:'', password:'', phone:'', link:'' };
@@ -22390,7 +22401,7 @@ function acctOpenModal(recId, acctId){
 }
 
 function acctSaveModal(recId, acctId){
-  const r = records.find(x => x.id === recId);
+  const r = _findRec(recId);
   if(!r) return;
   const accounts = _opsEnsureAccounts(getOps(r));
   const get = function(key){ const el = document.getElementById('acct_f_'+key); return el ? el.value.trim() : ''; };
@@ -22398,7 +22409,7 @@ function acctSaveModal(recId, acctId){
   let acct = acctId ? accounts.find(a => a.id === acctId) : null;
   if(acct){ Object.assign(acct, data); }
   else { accounts.push(Object.assign({ id: uid() }, data)); }
-  saveData(recId);
+  _saveRecFor(r, recId);
   const overlay = document.getElementById('acctModalOverlay');
   if(overlay) overlay.remove();
   _opsRerenderAccounts(recId);
@@ -22406,7 +22417,7 @@ function acctSaveModal(recId, acctId){
 }
 
 function acctDelete(recId, acctId){
-  const r = records.find(x => x.id === recId);
+  const r = _findRec(recId);
   if(!r) return;
   const ops = getOps(r);
   if(!Array.isArray(ops.accounts)) return;
@@ -22414,7 +22425,7 @@ function acctDelete(recId, acctId){
   const name = acct && acct.accountType ? '"'+acct.accountType+'"' : 'this account';
   const doDelete = function(){
     ops.accounts = ops.accounts.filter(a => a.id !== acctId);
-    saveData(recId);
+    _saveRecFor(r, recId);
     _opsRerenderAccounts(recId);
   };
   if(typeof showAppConfirm === 'function'){
@@ -23007,30 +23018,30 @@ document.addEventListener('scroll', function(e){
 }, true);
 
 function opsAddVA(recId){
-  const r = records.find(x => x.id === recId);
+  const r = _findRec(recId);
   if(!r) return;
   const ops = getOps(r);
   if(!ops.vaSchedule) ops.vaSchedule = [];
   ops.vaSchedule.push({ id: uid(), name:'', startTime:'', endTime:'', role:'', offDays:[] });
-  saveData(recId);
+  _saveRecFor(r, recId);
   // Re-render the VA sub-tab
   const el = document.querySelector('#opsContainer_'+recId+' .ops-subcontent[data-subtab="va-schedule"]');
   if(el) el.innerHTML = renderOpsVASubtab(r);
 }
 
 function opsDeleteVA(recId, vaId){
-  const r = records.find(x => x.id === recId);
+  const r = _findRec(recId);
   if(!r) return;
   const ops = getOps(r);
   if(!ops.vaSchedule) return;
   ops.vaSchedule = ops.vaSchedule.filter(v => v.id !== vaId);
-  saveData(recId);
+  _saveRecFor(r, recId);
   const el = document.querySelector('#opsContainer_'+recId+' .ops-subcontent[data-subtab="va-schedule"]');
   if(el) el.innerHTML = renderOpsVASubtab(r);
 }
 
 function opsSaveVAField(recId, vaId, field, value){
-  const r = records.find(x => x.id === recId);
+  const r = _findRec(recId);
   if(!r) return;
   const ops = getOps(r);
   if(!ops.vaSchedule) return;
@@ -23038,7 +23049,7 @@ function opsSaveVAField(recId, vaId, field, value){
   if(!va) return;
   opsMarkDirty('va', recId, vaId);
   va[field] = value;
-  saveData(recId);
+  _saveRecFor(r, recId);
 
   // Update name in card header
   if(field === 'name'){
@@ -23060,7 +23071,7 @@ function opsSaveVAField(recId, vaId, field, value){
 }
 
 function opsToggleVADay(recId, vaId, day){
-  const r = records.find(x => x.id === recId);
+  const r = _findRec(recId);
   if(!r) return;
   const ops = getOps(r);
   if(!ops.vaSchedule) return;
@@ -23070,7 +23081,7 @@ function opsToggleVADay(recId, vaId, day){
   const idx = va.offDays.indexOf(day);
   if(idx >= 0) va.offDays.splice(idx, 1);
   else va.offDays.push(day);
-  saveData(recId);
+  _saveRecFor(r, recId);
   // Update the toggle button text
   const btn = document.getElementById('va_days_btn_'+vaId);
   if(btn) btn.textContent = va.offDays.length ? va.offDays.map(d => d.slice(0,3)).join(', ') : 'None';
@@ -23176,7 +23187,7 @@ const MR_ISSUES = ['Cleanliness','Dishwasher','Blinds','Toilet Issue','Microwave
 const MR_PRIORITIES = ['Urgent!','Minor','Done','Internal Need'];
 
 function mrAdd(recId){
-  const r = records.find(x => x.id === recId);
+  const r = _findRec(recId);
   if(!r) return;
   const ops = getOps(r);
   if(!ops.maintenanceRequests) ops.maintenanceRequests = [];
@@ -23201,7 +23212,7 @@ function mrAdd(recId){
     createdBy: (currentUser && currentUser.name) || (currentUser && currentUser.email) || 'Unknown',
     _createdAt: Date.now()
   });
-  saveData(recId);
+  _saveRecFor(r, recId);
   const el = document.querySelector('#opsContainer_'+recId+' .ops-subcontent[data-subtab="maintenance"]');
   if(el) el.innerHTML = renderOpsMRSubtab(r);
   // Auto-open the new card
@@ -23213,7 +23224,7 @@ function mrAdd(recId){
 
 function mrDelete(recId, mrId){
   // Confirmation handled by opsConfirmDeleteItem() in the styled in-app dialog.
-  const r = records.find(x => x.id === recId);
+  const r = _findRec(recId);
   if(!r) return;
   const ops = getOps(r);
   if(!ops.maintenanceRequests) return;
@@ -23227,13 +23238,13 @@ function mrDelete(recId, mrId){
     });
   }
   ops.maintenanceRequests = ops.maintenanceRequests.filter(m => m.id !== mrId);
-  saveData(recId);
+  _saveRecFor(r, recId);
   const el = document.querySelector('#opsContainer_'+recId+' .ops-subcontent[data-subtab="maintenance"]');
   if(el) el.innerHTML = renderOpsMRSubtab(r);
 }
 
 function mrSaveField(recId, mrId, field, value){
-  const r = records.find(x => x.id === recId);
+  const r = _findRec(recId);
   if(!r) return;
   const ops = getOps(r);
   if(!ops.maintenanceRequests) return;
@@ -23241,7 +23252,7 @@ function mrSaveField(recId, mrId, field, value){
   if(!mr) return;
   opsMarkDirty('mr', recId, mrId);
   mr[field] = value;
-  saveData(recId);
+  _saveRecFor(r, recId);
   // Update summary in card header
   mrUpdateHeader(mrId, mr);
 }
@@ -23285,7 +23296,7 @@ async function mrUploadFile(recId, mrId, inputEl){
   if(_blockIfImpersonating('Upload file')){ if(inputEl) inputEl.value = ''; return; }
   const files = inputEl.files;
   if(!files || !files.length) return;
-  const r = records.find(x => x.id === recId);
+  const r = _findRec(recId);
   if(!r) return;
   const ops = getOps(r);
   if(!ops.maintenanceRequests) return;
@@ -23318,13 +23329,13 @@ async function mrUploadFile(recId, mrId, inputEl){
       showToast('Upload failed: '+e.message,'error',3000);
     }
   }
-  saveData(recId);
+  _saveRecFor(r, recId);
   if(listEl) listEl.innerHTML = mrRenderFiles(recId, mrId, mr.files);
   inputEl.value = '';
 }
 
 async function mrDeleteFile(recId, mrId, fileIdx){
-  const r = records.find(x => x.id === recId);
+  const r = _findRec(recId);
   if(!r) return;
   const ops = getOps(r);
   if(!ops.maintenanceRequests) return;
@@ -23335,7 +23346,7 @@ async function mrDeleteFile(recId, mrId, fileIdx){
     try { await firebase.storage().ref(f.path).delete(); } catch(e){ console.warn(e); }
   }
   mr.files.splice(fileIdx, 1);
-  saveData(recId);
+  _saveRecFor(r, recId);
   const listEl = document.getElementById('mr_files_'+mrId);
   if(listEl) listEl.innerHTML = mrRenderFiles(recId, mrId, mr.files);
   showToast('File removed','info',2000);
@@ -23571,7 +23582,7 @@ function renderOpsMRSubtab(r){
     if(createdByDisplay.indexOf('@') !== -1 && currentUser && currentUser.email === createdByDisplay && currentUser.name){
       mr.createdBy = currentUser.name;
       createdByDisplay = currentUser.name;
-      saveData(recId);
+      _saveRecFor(r, recId);
     }
     h += '<div class="mr-field"><label>Request Created By</label>';
     h += '<input type="text" value="'+esc(createdByDisplay)+'" readonly></div>';
@@ -23590,7 +23601,7 @@ function renderOpsMRSubtab(r){
    ══════════════════════════════════════════════════════════ */
 
 function puAdd(recId){
-  const r = records.find(x => x.id === recId);
+  const r = _findRec(recId);
   if(!r) return;
   const ops = getOps(r);
   if(!ops.purchases) ops.purchases = [];
@@ -23609,7 +23620,7 @@ function puAdd(recId){
     photos: [],
     _createdAt: Date.now()
   });
-  saveData(recId);
+  _saveRecFor(r, recId);
   const el = document.querySelector('#opsContainer_'+recId+' .ops-subcontent[data-subtab="purchases"]');
   if(el) el.innerHTML = renderOpsPUSubtab(r);
   setTimeout(function(){
@@ -23620,7 +23631,7 @@ function puAdd(recId){
 
 function puDelete(recId, puId){
   // Confirmation handled by opsConfirmDeleteItem() in the styled in-app dialog.
-  const r = records.find(x => x.id === recId);
+  const r = _findRec(recId);
   if(!r) return;
   const ops = getOps(r);
   if(!ops.purchases) return;
@@ -23631,13 +23642,13 @@ function puDelete(recId, puId){
     });
   }
   ops.purchases = ops.purchases.filter(p => p.id !== puId);
-  saveData(recId);
+  _saveRecFor(r, recId);
   const el = document.querySelector('#opsContainer_'+recId+' .ops-subcontent[data-subtab="purchases"]');
   if(el) el.innerHTML = renderOpsPUSubtab(r);
 }
 
 function puSaveField(recId, puId, field, value){
-  const r = records.find(x => x.id === recId);
+  const r = _findRec(recId);
   if(!r) return;
   const ops = getOps(r);
   if(!ops.purchases) return;
@@ -23645,7 +23656,7 @@ function puSaveField(recId, puId, field, value){
   if(!pu) return;
   opsMarkDirty('pu', recId, puId);
   pu[field] = value;
-  saveData(recId);
+  _saveRecFor(r, recId);
   puUpdateHeader(puId, pu);
 }
 
@@ -23678,13 +23689,13 @@ function puToggleCard(puId){
 
 /* Items sub-list */
 function puAddItem(recId, puId){
-  const r = records.find(x => x.id === recId);
+  const r = _findRec(recId);
   if(!r) return;
   const pu = (getOps(r).purchases||[]).find(p => p.id === puId);
   if(!pu) return;
   if(!pu.itemsList) pu.itemsList = [];
   pu.itemsList.push({name:'', amount:''});
-  saveData(recId);
+  _saveRecFor(r, recId);
   const el = document.getElementById('pu_items_'+puId);
   if(el) el.innerHTML = puRenderItems(recId, puId, pu.itemsList);
   // Focus the new input
@@ -23697,7 +23708,7 @@ function puAddItem(recId, puId){
 }
 
 function puSaveItem(recId, puId, idx, field, value){
-  const r = records.find(x => x.id === recId);
+  const r = _findRec(recId);
   if(!r) return;
   const pu = (getOps(r).purchases||[]).find(p => p.id === puId);
   if(!pu || !pu.itemsList) return;
@@ -23708,7 +23719,7 @@ function puSaveItem(recId, puId, idx, field, value){
   pu.itemsList[idx][field] = value;
   // Auto-calculate total
   if(field === 'amount') _puCalcTotal(recId, puId, pu);
-  saveData(recId);
+  _saveRecFor(r, recId);
 }
 
 function _puCalcTotal(recId, puId, pu){
@@ -23733,13 +23744,13 @@ function _puCalcTotal(recId, puId, pu){
 }
 
 function puDeleteItem(recId, puId, idx){
-  const r = records.find(x => x.id === recId);
+  const r = _findRec(recId);
   if(!r) return;
   const pu = (getOps(r).purchases||[]).find(p => p.id === puId);
   if(!pu || !pu.itemsList) return;
   pu.itemsList.splice(idx, 1);
   _puCalcTotal(recId, puId, pu);
-  saveData(recId);
+  _saveRecFor(r, recId);
   const el = document.getElementById('pu_items_'+puId);
   if(el) el.innerHTML = puRenderItems(recId, puId, pu.itemsList);
 }
@@ -23764,7 +23775,7 @@ async function puUploadPhotos(recId, puId, inputEl){
   if(_blockIfImpersonating('Upload photo')){ if(inputEl) inputEl.value = ''; return; }
   const files = inputEl.files;
   if(!files || !files.length) return;
-  const r = records.find(x => x.id === recId);
+  const r = _findRec(recId);
   if(!r) return;
   const pu = (getOps(r).purchases||[]).find(p => p.id === puId);
   if(!pu) return;
@@ -23786,20 +23797,20 @@ async function puUploadPhotos(recId, puId, inputEl){
       showToast('Upload failed: '+e.message,'error',3000);
     }
   }
-  saveData(recId);
+  _saveRecFor(r, recId);
   if(listEl) listEl.innerHTML = puRenderPhotos(recId, puId, pu.photos);
   inputEl.value = '';
 }
 
 async function puDeletePhoto(recId, puId, idx){
-  const r = records.find(x => x.id === recId);
+  const r = _findRec(recId);
   if(!r) return;
   const pu = (getOps(r).purchases||[]).find(p => p.id === puId);
   if(!pu || !pu.photos) return;
   const f = pu.photos[idx];
   if(f && f.path){ try { await firebase.storage().ref(f.path).delete(); } catch(e){ console.warn(e); } }
   pu.photos.splice(idx, 1);
-  saveData(recId);
+  _saveRecFor(r, recId);
   const listEl = document.getElementById('pu_photos_'+puId);
   if(listEl) listEl.innerHTML = puRenderPhotos(recId, puId, pu.photos);
   showToast('Photo removed','info',2000);
@@ -23931,7 +23942,7 @@ function _acStatusClass(status){
 }
 
 function acAdd(recId){
-  const r = records.find(x => x.id === recId);
+  const r = _findRec(recId);
   if(!r) return;
   const ops = getOps(r);
   if(!ops.airbnbCases) ops.airbnbCases = [];
@@ -23950,7 +23961,7 @@ function acAdd(recId){
     files: [],
     _createdAt: Date.now()
   });
-  saveData(recId);
+  _saveRecFor(r, recId);
   const el = document.querySelector('#opsContainer_'+recId+' .ops-subcontent[data-subtab="airbnb-cases"]');
   if(el) el.innerHTML = renderOpsACSubtab(r);
   setTimeout(function(){
@@ -23961,7 +23972,7 @@ function acAdd(recId){
 
 function acDelete(recId, acId){
   // Confirmation handled by opsConfirmDeleteItem() in the styled in-app dialog.
-  const r = records.find(x => x.id === recId);
+  const r = _findRec(recId);
   if(!r) return;
   const ops = getOps(r);
   if(!ops.airbnbCases) return;
@@ -23972,13 +23983,13 @@ function acDelete(recId, acId){
     });
   }
   ops.airbnbCases = ops.airbnbCases.filter(c => c.id !== acId);
-  saveData(recId);
+  _saveRecFor(r, recId);
   const el = document.querySelector('#opsContainer_'+recId+' .ops-subcontent[data-subtab="airbnb-cases"]');
   if(el) el.innerHTML = renderOpsACSubtab(r);
 }
 
 function acSaveField(recId, acId, field, value){
-  const r = records.find(x => x.id === recId);
+  const r = _findRec(recId);
   if(!r) return;
   const ops = getOps(r);
   if(!ops.airbnbCases) return;
@@ -23986,7 +23997,7 @@ function acSaveField(recId, acId, field, value){
   if(!ac) return;
   opsMarkDirty('ac', recId, acId);
   ac[field] = value;
-  saveData(recId);
+  _saveRecFor(r, recId);
   acUpdateHeader(acId, ac);
   // Update nights if dates changed
   if(field === 'checkIn' || field === 'checkOut'){
@@ -24026,7 +24037,7 @@ async function acUploadFile(recId, acId, inputEl){
   if(_blockIfImpersonating('Upload file')){ if(inputEl) inputEl.value = ''; return; }
   const files = inputEl.files;
   if(!files || !files.length) return;
-  const r = records.find(x => x.id === recId);
+  const r = _findRec(recId);
   if(!r) return;
   const ac = (getOps(r).airbnbCases||[]).find(c => c.id === acId);
   if(!ac) return;
@@ -24048,20 +24059,20 @@ async function acUploadFile(recId, acId, inputEl){
       showToast('Upload failed: '+e.message,'error',3000);
     }
   }
-  saveData(recId);
+  _saveRecFor(r, recId);
   if(listEl) listEl.innerHTML = acRenderFiles(recId, acId, ac.files);
   inputEl.value = '';
 }
 
 async function acDeleteFile(recId, acId, idx){
-  const r = records.find(x => x.id === recId);
+  const r = _findRec(recId);
   if(!r) return;
   const ac = (getOps(r).airbnbCases||[]).find(c => c.id === acId);
   if(!ac || !ac.files) return;
   const f = ac.files[idx];
   if(f && f.path){ try { await firebase.storage().ref(f.path).delete(); } catch(e){ console.warn(e); } }
   ac.files.splice(idx, 1);
-  saveData(recId);
+  _saveRecFor(r, recId);
   const listEl = document.getElementById('ac_files_'+acId);
   if(listEl) listEl.innerHTML = acRenderFiles(recId, acId, ac.files);
   showToast('File removed','info',2000);
@@ -24230,12 +24241,12 @@ function rvHoverStars(rvId, n){
 }
 
 function rvSetRating(recId, rvId, rating){
-  const r = records.find(x => x.id === recId);
+  const r = _findRec(recId);
   if(!r) return;
   const rv = (getOps(r).reviews||[]).find(v => v.id === rvId);
   if(!rv) return;
   rv.starRating = rating;
-  saveData(recId);
+  _saveRecFor(r, recId);
   // Update picker
   const wrap = document.getElementById('rv_stars_'+rvId);
   if(wrap){
@@ -24250,7 +24261,7 @@ function rvSetRating(recId, rvId, rating){
 }
 
 function rvAdd(recId){
-  const r = records.find(x => x.id === recId);
+  const r = _findRec(recId);
   if(!r) return;
   const ops = getOps(r);
   if(!ops.reviews) ops.reviews = [];
@@ -24270,7 +24281,7 @@ function rvAdd(recId){
     files: [],
     _createdAt: Date.now()
   });
-  saveData(recId);
+  _saveRecFor(r, recId);
   const el = document.querySelector('#opsContainer_'+recId+' .ops-subcontent[data-subtab="reviews"]');
   if(el) el.innerHTML = renderOpsRVSubtab(r);
   _rvUpdateBadge(recId);
@@ -24283,7 +24294,7 @@ function rvAdd(recId){
 
 function rvDelete(recId, rvId){
   // Confirmation handled by opsConfirmDeleteItem() in the styled in-app dialog.
-  const r = records.find(x => x.id === recId);
+  const r = _findRec(recId);
   if(!r) return;
   const ops = getOps(r);
   if(!ops.reviews) return;
@@ -24294,7 +24305,7 @@ function rvDelete(recId, rvId){
     });
   }
   ops.reviews = ops.reviews.filter(v => v.id !== rvId);
-  saveData(recId);
+  _saveRecFor(r, recId);
   const el = document.querySelector('#opsContainer_'+recId+' .ops-subcontent[data-subtab="reviews"]');
   if(el) el.innerHTML = renderOpsRVSubtab(r);
   _rvUpdateBadge(recId);
@@ -24302,7 +24313,7 @@ function rvDelete(recId, rvId){
 }
 
 function rvSaveField(recId, rvId, field, value){
-  const r = records.find(x => x.id === recId);
+  const r = _findRec(recId);
   if(!r) return;
   const ops = getOps(r);
   if(!ops.reviews) return;
@@ -24310,7 +24321,7 @@ function rvSaveField(recId, rvId, field, value){
   if(!rv) return;
   opsMarkDirty('rv', recId, rvId);
   rv[field] = value;
-  saveData(recId);
+  _saveRecFor(r, recId);
   rvUpdateHeader(rvId, rv);
   if(field === 'status'){
     // Update card's data attribute for filtering
@@ -24321,7 +24332,7 @@ function rvSaveField(recId, rvId, field, value){
     const el = document.querySelector('#opsContainer_'+recId+' .ops-subcontent[data-subtab="reviews"]');
     if(el){
       const summaryOld = el.querySelector('.rv-summary-bar');
-      const r2 = records.find(x => x.id === recId);
+      const r2 = _findRec(recId);
       if(r2){
         const tempDiv = document.createElement('div');
         tempDiv.innerHTML = renderOpsRVSubtab(r2);
@@ -24365,7 +24376,7 @@ async function rvUploadFile(recId, rvId, inputEl){
   if(_blockIfImpersonating('Upload file')){ if(inputEl) inputEl.value = ''; return; }
   const files = inputEl.files;
   if(!files || !files.length) return;
-  const r = records.find(x => x.id === recId);
+  const r = _findRec(recId);
   if(!r) return;
   const rv = (getOps(r).reviews||[]).find(v => v.id === rvId);
   if(!rv) return;
@@ -24387,20 +24398,20 @@ async function rvUploadFile(recId, rvId, inputEl){
       showToast('Upload failed: '+e.message,'error',3000);
     }
   }
-  saveData(recId);
+  _saveRecFor(r, recId);
   if(listEl) listEl.innerHTML = rvRenderFiles(recId, rvId, rv.files);
   inputEl.value = '';
 }
 
 async function rvDeleteFile(recId, rvId, idx){
-  const r = records.find(x => x.id === recId);
+  const r = _findRec(recId);
   if(!r) return;
   const rv = (getOps(r).reviews||[]).find(v => v.id === rvId);
   if(!rv || !rv.files) return;
   const f = rv.files[idx];
   if(f && f.path){ try { await firebase.storage().ref(f.path).delete(); } catch(e){ console.warn(e); } }
   rv.files.splice(idx, 1);
-  saveData(recId);
+  _saveRecFor(r, recId);
   const listEl = document.getElementById('rv_files_'+rvId);
   if(listEl) listEl.innerHTML = rvRenderFiles(recId, rvId, rv.files);
   showToast('File removed','info',2000);
@@ -24423,7 +24434,7 @@ function _rvPendingCount(r){
 }
 
 function _rvUpdateBadge(recId){
-  const r = records.find(x => x.id === recId);
+  const r = _findRec(recId);
   if(!r) return;
   const badge = document.getElementById('rv_badge_'+recId);
   if(!badge) return;
@@ -24804,24 +24815,27 @@ function renderOperationsTab(r){
 // The Operations Profile reuses the per-subtab content renderers (renderOps*Subtab)
 // but lays the tabs out horizontally above a single content pane.
 function moveToOperations(rid){
-  const r = records.find(function(x){ return x.id === rid; });
+  const r = _findRec(rid);
   if(!r) return;
+  const isCohost = r.kind === 'cohost';
   // Operations cap (grandfathered): block moving a NEW property in once the
   // tier limit is reached. Existing Operations properties are untouched.
+  // The cap is shared across Arbitrage and Co-Hosting — both count against
+  // the same per-plan Operations limit.
   if(!isOpsProperty(r) && !canAddToOperations()){ showOperationsLimitPrompt(); return; }
   const finish = function(){
     r.stage = 'operations';
     r._stageChangedAt = new Date().toISOString();
-    // Remember the Prospecting status so it can be restored if the property
-    // is later moved back to Prospecting. Force status to "Operating" while
-    // the property is in Operations.
+    // Remember the pre-Operations status so it can be restored if the property
+    // is later moved back. Force status to "Operating" while in Operations.
     if(r.status && r.status !== 'Operating') r._prevProspectingStatus = r.status;
     r.status = 'Operating';
-    saveData(rid);
+    _saveRecFor(r, rid);
     openOpsProfile(rid);
   };
+  const listName = isCohost ? 'Co-Hosting' : 'Prospecting';
   if(typeof showAppConfirm === 'function'){
-    showAppConfirm('Move "' + (r.property || 'this property') + '" to Operations? It will no longer appear in the Prospecting list (all data is preserved).', {
+    showAppConfirm('Move "' + (r.property || 'this property') + '" to Operations? It will no longer appear in the ' + listName + ' list (all data is preserved).', {
       title: 'Move to Operations',
       icon: '📦',
       confirmText: 'Move to Operations',
@@ -24835,29 +24849,31 @@ function moveToOperations(rid){
 }
 
 function moveBackToProspecting(rid){
-  const r = records.find(function(x){ return x.id === rid; });
+  const r = _findRec(rid);
   if(!r) return;
+  const isCohost = r.kind === 'cohost';
+  const destLabel = isCohost ? 'Co-Hosting' : 'Prospecting';
   const finish = function(){
-    r.stage = 'prospecting';
+    if(isCohost) delete r.stage; else r.stage = 'prospecting';
     r._stageChangedAt = new Date().toISOString();
-    // Restore the status the property had the last time it was in Prospecting.
+    // Restore the status the property had before it moved to Operations.
     // Falls back to 'New' if there's no prior value recorded (e.g., property
     // was created directly in Operations or upgraded before this field existed).
     r.status = r._prevProspectingStatus || 'New';
     delete r._prevProspectingStatus;
-    saveData(rid);
+    _saveRecFor(r, rid);
     openDetail(rid);
   };
   if(typeof showAppConfirm === 'function'){
-    showAppConfirm('Move "' + (r.property || 'this property') + '" back to Prospecting? Operations data (VA Schedule, Maintenance, etc.) stays attached and will reappear if you move it back.', {
-      title: 'Move back to Prospecting',
+    showAppConfirm('Move "' + (r.property || 'this property') + '" back to ' + destLabel + '? Operations data (VA Schedule, Maintenance, etc.) stays attached and will reappear if you move it back.', {
+      title: 'Move back to ' + destLabel,
       icon: '⬅️',
-      confirmText: 'Move to Prospecting',
+      confirmText: 'Move to ' + destLabel,
       cancelText: 'Cancel',
       confirmClass: 'btn-primary',
       onConfirm: finish
     });
-  } else if(confirm('Move this property back to Prospecting?')){
+  } else if(confirm('Move this property back to ' + destLabel + '?')){
     finish();
   }
 }
@@ -24868,10 +24884,10 @@ function moveBackToProspecting(rid){
 // it into view. Used by the dashboard widgets so clicking a maintenance request
 // / case / review / purchase takes the user straight to the expanded item.
 function openOpsProfile(rid, subtab, focusItemId){
-  const r = records.find(function(x){ return x.id === rid; });
+  const r = _findRec(rid);
   if(!r) return;
   r.lastAccessed = new Date().toISOString();
-  saveData();
+  _saveRecFor(r, rid);
   // Capture before overwrite — used below to decide whether this open is "switching
   // to a different property" (reset to Property tab) vs. re-opening the same one
   // (preserve sessionStorage so page reloads land on the same sub-tab).
@@ -25059,7 +25075,7 @@ function cohostCompute(r){
 // Co-Hosting dashboard aggregates — KPIs + Upcoming Meetings + Tasks/Follow-Ups
 // across all co-host properties (mirrors the Arbitrage dashboard widgets).
 function _cohostDashboardAggregates(){
-  const recs = cohostRecords;
+  const recs = cohostRecords.filter(function(r){ return !isOpsProperty(r); });
   const today = (typeof _todayLocalStr === 'function') ? _todayLocalStr() : new Date().toISOString().slice(0,10);
   let totalProfit = 0;
   recs.forEach(function(r){ totalProfit += cohostCompute(r).pmFee || 0; });
@@ -25323,6 +25339,10 @@ function saveCohostManual(){
 
 /* ---------- Profile ---------- */
 function openCohostProfile(id, tab){
+  // Route properties that have moved to Operations to the Operations profile
+  // instead — mirrors openDetail()'s equivalent redirect for Arbitrage records.
+  const rec = getCohostById(id);
+  if(rec && isOpsProperty(rec)){ openOpsProfile(id); return; }
   currentCohostId = id;
   cohostActiveTab = tab || 'details';
   if(cohostActiveTab === 'pitch' && !_COHOST_SUMMARY_ENABLED) cohostActiveTab = 'details';
@@ -25739,9 +25759,10 @@ function renderCohostProfile(){
   h += '</div>';
   h += metaRow;
   h += '</div>'; // hero-left
-  // hero-right — minimize toggle (top) + Follow-Up + Meeting subtle indicators.
+  // hero-right — minimize toggle (top) + Move to Operations + Follow-Up + Meeting subtle indicators.
   h += '<div class="profile-hero-right">';
   h += '<div style="align-self:flex-end">'+heroToggle+'</div>';
+  h += renderMoveToOperationsButton(r);
   h += '<div style="display:flex;flex-direction:column;gap:2px;align-items:flex-end;margin:auto 0">'+renderFollowUpSubtle(r)+renderMeetingSubtle(r)+'</div>';
   h += '</div>';
   h += tabsHtml;
@@ -26249,7 +26270,7 @@ function renderOperationsList(){
     return '<div style="padding:60px 24px;text-align:center;color:var(--text3);max-width:520px;margin:0 auto">' +
       '<div style="font-size:2rem;margin-bottom:12px">🔑</div>' +
       '<div style="font-size:1.05rem;font-weight:600;margin-bottom:8px;color:var(--text)">No properties in Operations yet</div>' +
-      '<div style="font-size:.88rem;line-height:1.5">Open a property from <strong style="color:var(--text2)">Prospecting</strong> and click <strong style="color:var(--text2)">Move to Operations</strong> to start tracking it here.</div>' +
+      '<div style="font-size:.88rem;line-height:1.5">Open a property from <strong style="color:var(--text2)">Prospecting</strong> or <strong style="color:var(--text2)">Co-Hosting</strong> and click <strong style="color:var(--text2)">Move to Operations</strong> to start tracking it here.</div>' +
       '<div style="font-size:.88rem;line-height:1.5;margin-top:10px">Or, you can click ' + importIcon + ' in the top right to bulk-import a list of properties.</div>' +
     '</div>';
   }
@@ -26286,16 +26307,20 @@ function _renderOpsPropertyTable(ops, filtered){
       '<div style="font-size:.78rem;color:var(--text3)">' + ops.length + ' operating propert' + (ops.length === 1 ? 'y' : 'ies') + (filtered.length !== ops.length ? ' · ' + filtered.length + ' shown' : '') + '</div>' +
     '</div>' +
     '<div style="overflow-x:auto"><table>' +
-      '<thead><tr><th>Property</th><th>Market</th><th>Beds / Baths</th><th>Rent</th><th>Primary Contact</th><th>Moved</th></tr></thead>' +
+      '<thead><tr><th>Property</th><th>Source</th><th>Market</th><th>Beds / Baths</th><th>Rent</th><th>Primary Contact</th><th>Moved</th></tr></thead>' +
       '<tbody>' + (filtered.length === 0
-        ? '<tr><td colspan="6" class="empty-row">No matches</td></tr>'
+        ? '<tr><td colspan="7" class="empty-row">No matches</td></tr>'
         : filtered.map(function(r){
             const d = r.propertyDetails || {};
+            const isCohost = r.kind === 'cohost';
+            // Co-Hosting prices off the fee-tier model's Asking In Rent, not propertyDetails.monthlyRent.
+            const rentVal = isCohost ? _cn(r.cohost && r.cohost.askingRent) : Number(d.monthlyRent);
             return '<tr class="clickable" onclick="openOpsProfile(\'' + r.id + '\')">' +
               '<td class="td-property">' + esc(truncate(r.property || '(no address)', 40)) + '</td>' +
+              '<td>' + (isCohost ? '🤝 Co-Hosting' : '🏠 Arbitrage') + '</td>' +
               '<td>' + esc([d.market, d.submarket].filter(Boolean).join(' · ') || '—') + '</td>' +
               '<td>' + (d.bedrooms === '0' || d.bedrooms === 0 ? 'Studio' : (d.bedrooms || '—')) + (d.bedrooms ? ' / ' : ' / ') + (d.bathrooms || '—') + '</td>' +
-              '<td>' + (d.monthlyRent ? '$' + Number(d.monthlyRent).toLocaleString() : '<span style="color:var(--text3)">—</span>') + '</td>' +
+              '<td>' + (rentVal ? '$' + rentVal.toLocaleString() : '<span style="color:var(--text3)">—</span>') + '</td>' +
               '<td>' + (r.name ? esc(r.name) : '<span style="color:var(--text3)">—</span>') + '</td>' +
               '<td class="td-date">' + (r._stageChangedAt ? fmtDate(r._stageChangedAt) : '—') + '</td>' +
             '</tr>';
@@ -26686,6 +26711,8 @@ function initOperationsMap(){
     return d.latitude && d.longitude;
   }).map(function(r){
     const d = r.propertyDetails || {};
+    // Co-Hosting prices off the fee-tier model's Asking In Rent, not propertyDetails.monthlyRent.
+    const rentVal = r.kind === 'cohost' ? _cn(r.cohost && r.cohost.askingRent) : (d.monthlyRent || 0);
     return {
       id: r.id,
       lat: d.latitude,
@@ -26693,7 +26720,7 @@ function initOperationsMap(){
       property: r.property,
       name: r.name || '',
       phone: r.phone || '',
-      rent: d.monthlyRent || 0,
+      rent: rentVal,
       beds: d.bedrooms === '0' || d.bedrooms === 0 ? 'Studio' : (d.bedrooms || '—'),
       baths: d.bathrooms || '—',
       sqft: d.sqft || '—'
@@ -27005,7 +27032,7 @@ function initOperationsMap(){
 }
 
 function renderOpsProfile(){
-  const r = records.find(function(x){ return x.id === currentOpsId; });
+  const r = _findRec(currentOpsId);
   if(!r){
     return '<div style="padding:60px 20px;text-align:center;color:var(--text3)">' +
       '<div style="font-size:1.1rem;font-weight:600;color:var(--text)">Operations property not found</div>' +
@@ -27018,8 +27045,15 @@ function renderOpsProfile(){
     setTimeout(function(){ openDetail(r.id); }, 0);
     return '<div style="padding:40px;text-align:center;color:var(--text3)">Redirecting…</div>';
   }
+  const isCohost = r.kind === 'cohost';
   const d = r.propertyDetails || {};
   const platLink = r.link ? detectPlatform(r.link) : null;
+  // Rent stat: Arbitrage prices off propertyDetails.monthlyRent; Co-Hosting prices
+  // off the fee-tier model's Asking In Rent instead — same figure, different field.
+  const rentVal = isCohost ? _cn(r.cohost && r.cohost.askingRent) : Number(d.monthlyRent);
+  // Subtle origin badge so it's clear at a glance which pipeline a property came
+  // from — both share the same Operations list/tabs now, but the source still matters.
+  const originBadge = '<div class="hero-market-badge" title="' + (isCohost ? 'Came from Co-Hosting' : 'Came from Arbitrage') + '" style="opacity:.75">' + (isCohost ? '🤝 Co-Hosting' : '🏠 Arbitrage') + '</div>';
 
   let h = '<div class="profile-hero profile-sticky-header">' +
     '<div class="profile-hero-left">' +
@@ -27031,10 +27065,11 @@ function renderOpsProfile(){
         ((d.market || d.submarket)
           ? '<div class="hero-market-badge" title="Market"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:.5;flex-shrink:0"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg><span>' + esc(d.market || '') + (d.market && d.submarket ? ' <span style="opacity:.4;margin:0 3px">›</span> ' : '') + esc(d.submarket || '') + '</span></div>'
           : '') +
+        originBadge +
       '</div>' +
       '<div style="display:flex;align-items:center;gap:16px;margin-top:4px;flex-wrap:wrap">' +
         '<div class="hero-stats">' +
-          '<div class="hero-stat" style="font-size:.95rem"><strong style="color:var(--success);font-size:1.05rem">' + (d.monthlyRent ? '$' + Number(d.monthlyRent).toLocaleString() + '/mo' : '<span style="color:var(--text3)">No rent set</span>') + '</strong></div>' +
+          '<div class="hero-stat" style="font-size:.95rem"><strong style="color:var(--success);font-size:1.05rem">' + (rentVal ? '$' + rentVal.toLocaleString() + '/mo' : '<span style="color:var(--text3)">No rent set</span>') + '</strong></div>' +
           '<div class="hero-stats-wrap">' +
             '<div class="hero-stat"><strong>' + (d.bedrooms === '0' || d.bedrooms === 0 ? 'Studio' : (d.bedrooms || '—')) + '</strong> ' + (d.bedrooms === '0' || d.bedrooms === 0 ? '' : 'Beds') + '</div>' +
             '<div class="hero-stat"><strong>' + (d.bathrooms || '—') + '</strong> ' + (d.bathrooms === '1' ? 'Bath' : 'Baths') + '</div>' +
@@ -27063,7 +27098,7 @@ function renderOpsProfile(){
         : '') +
     '</div>' +
     '<div class="profile-hero-right">' +
-      '<button class="btn btn-secondary btn-sm" onclick="moveBackToProspecting(\'' + r.id + '\')" title="Move this property back to Prospecting">Move to Prospecting</button>' +
+      '<button class="btn btn-secondary btn-sm" onclick="moveBackToProspecting(\'' + r.id + '\')" title="Move this property back to ' + (isCohost ? 'Co-Hosting' : 'Prospecting') + '">Move to ' + (isCohost ? 'Co-Hosting' : 'Prospecting') + '</button>' +
     '</div>' +
     // Horizontal sub-tabs — replaces the old vertical sidebar layout
     '<div style="display:flex;justify-content:flex-end;margin-top:6px;width:100%">' +
