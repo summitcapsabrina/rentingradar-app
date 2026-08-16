@@ -4082,6 +4082,60 @@ async function startAptOutreachSequence(id){
     });
 }
 
+function _renderAptMoveToPipelineRow(p){
+  return '<button type="button" class="btn btn-secondary btn-sm" style="align-self:flex-start" onclick="moveAptProspectToPipeline(\'' + p.id + '\')">🏢 Move to Pipeline</button>';
+}
+
+const _movingAptProspectIds = new Set();
+function _normalizeListingLink(raw){
+  const v = (raw || '').trim();
+  if(!v) return '';
+  if(/^https?:\/\//i.test(v)) return v;
+  // Only treat it as a URL if it looks like a domain; otherwise leave as plain text
+  // (freeform "website" entries like "N/A" or a name shouldn't be coerced into a fake link).
+  if(/^[a-z0-9-]+(\.[a-z0-9-]+)+([/?#].*)?$/i.test(v)) return 'https://' + v;
+  return v;
+}
+async function moveAptProspectToPipeline(id){
+  const p = aptProspects.find(function(x){ return x.id === id; });
+  if(!p) return;
+  if(!checkPropertyLimit()) return;
+  if(_movingAptProspectIds.has(id)) return;
+  showAppConfirm(
+    'Move <b>' + esc(p.buildingName || p.address || 'this building') + '</b> to the Pipeline? It will be removed from Outreach and appear as a new deal.',
+    { title: 'Move to Pipeline', icon: '🏢', confirmText: 'Move to Pipeline', confirmClass: 'btn-primary',
+      onConfirm: async function(){
+        if(_movingAptProspectIds.has(id)) return;
+        _movingAptProspectIds.add(id);
+        try {
+          const noteText = [p.contactTitle, p.notes].filter(Boolean).join(' — ');
+          const today = new Date().toISOString().split('T')[0];
+          const r = {
+            id: uid(), property: p.address || p.buildingName || '', addressParts: { street: p.address || '', unit:'', city:'', state:'', zip:'' },
+            recordType: 'apartment', buildingName: p.buildingName || '',
+            name: p.contactName || '', phone: p.phone || '', email: p.email || '',
+            status: 'New', link: _normalizeListingLink(p.website), note: noteText,
+            date: today, followUpDate: null, meetingDate: null,
+            notes: noteText ? [{ id: uid(), text: noteText, date: today, type: 'note' }] : [],
+            propertyDetails: {}, propertyNotes: [],
+            createdAt: new Date().toISOString()
+          };
+          records.unshift(r);
+          _afterPropertyCreate(r);
+          saveData();
+          const ok = await deleteAptProspect(p.id);
+          showToast(ok ? 'Moved to Pipeline.' : 'Moved to Pipeline, but failed to remove from Outreach list.', ok ? 'success' : 'warning');
+          closeAptProspectModal();
+          apartmentsActiveTab = 'pipeline';
+          render();
+          setTimeout(function(){ openDetail(r.id); }, 60);
+        } finally {
+          _movingAptProspectIds.delete(id);
+        }
+      }
+    });
+}
+
 function openAptProspectModal(id){
   const isNew = !id;
   const original = isNew ? null : aptProspects.find(function(x){ return x.id === id; });
@@ -4142,7 +4196,7 @@ function _renderAptProspectModal(){
       '</div>' +
       _aptModalField('Property Website', '<input type="text" value="' + esc(p.website||'') + '" placeholder="https://..." style="' + _APT_INPUT_STYLE + '" oninput="_editingAptProspect.website=this.value">') +
       _aptModalField('Notes', '<textarea id="aptNotesInput" rows="4" style="' + _APT_INPUT_STYLE + ';resize:vertical;font-family:inherit" oninput="_editingAptProspect.notes=this.value">' + esc(p.notes||'') + '</textarea>') +
-      (isNew ? '' : _aptModalField('Outreach (Sabrina)', _renderAptOutreachRow(p))) +
+      (isNew ? '' : _aptModalField('Pipeline', _renderAptMoveToPipelineRow(p))) +
     '</div>' +
     '<div class="multi-editor-actions" style="display:flex;justify-content:space-between;align-items:center;padding:14px 20px;border-top:1px solid var(--border)">' +
       '<div>' + (isNew ? '' : '<button class="btn btn-sm" style="background:transparent;color:var(--danger);border:1px solid var(--danger)" onclick="_confirmDeleteAptProspect()">Delete</button>') + '</div>' +
@@ -8273,7 +8327,7 @@ function renderPipeline(){
   if(searchQuery){
     const words = searchQuery.split(/\s+/).filter(w => w.length > 0);
     displayRecords = displayRecords.filter(r => {
-      const blob = [r.property, r.name, r.phone, r.email, r.status].filter(Boolean).join(' ').toLowerCase();
+      const blob = [r.property, r.buildingName, r.name, r.phone, r.email, r.status].filter(Boolean).join(' ').toLowerCase();
       return words.every(w => blob.includes(w));
     });
   }
@@ -8545,8 +8599,8 @@ function renderContactsCards(items){
 // uses, filtered to recordType==='apartment'); 'prospecting' is the pre-existing
 // leasing-office/building outreach tool (relabeled "Outreach", untouched otherwise).
 const APARTMENTS_TABS = [
-  { id: 'pipeline', label: 'Pipeline', icon: '🏢' },
-  { id: 'prospecting', label: 'Outreach', icon: '📇' }
+  { id: 'prospecting', label: 'Outreach', icon: '📇' },
+  { id: 'pipeline', label: 'Pipeline', icon: '🏢' }
 ];
 
 function renderApartments(){
@@ -8804,7 +8858,15 @@ function detectPlatform(url){
   if(u.includes('furnished')) return { name:'Furnished Finder', icon:'🛋️', color:'#f79c42' };
   if(u.includes('rent.com')) return { name:'Rent.com', icon:'🔑', color:'#ff6f00' };
   if(u.includes('zumper.com')) return { name:'Zumper', icon:'🏙️', color:'#1c8dd9' };
-  return { name: new URL(url).hostname.replace('www.',''), icon:'🔗', color:'var(--primary)' };
+  try {
+    return { name: new URL(url).hostname.replace('www.',''), icon:'🔗', color:'var(--primary)' };
+  } catch(e) {
+    try {
+      return { name: new URL('https://'+url).hostname.replace('www.',''), icon:'🔗', color:'var(--primary)' };
+    } catch(e2) {
+      return { name:'Link', icon:'🔗', color:'var(--primary)' };
+    }
+  }
 }
 
 /* ===== PROPERTY DETAILS SCHEMA ===== */
@@ -8941,6 +9003,11 @@ function _renderProfileInner(){
         ${heroMarketHtml}
       </div>
       <div style="display:flex;align-items:center;gap:16px;margin-top:4px;flex-wrap:wrap">
+        ${r.recordType==='apartment' ? `
+        <div class="hero-stats">
+            <div class="hero-stat" style="font-size:.95rem;cursor:pointer" onclick="setProfileTab('units')" title="View units"><strong>${(r.units&&r.units.length) || d.numberOfUnits || '—'}</strong> ${(r.units&&r.units.length===1)?'Unit':'Units'}</div>
+        </div>
+        ` : `
         <div class="hero-stats">
             <div class="hero-stat" style="font-size:.95rem;cursor:pointer" onclick="openRentHistoryPopup('${r.id}')" title="Click to view rent history"><strong style="color:var(--success);font-size:1.05rem">${d.monthlyRent ? '$'+Number(d.monthlyRent).toLocaleString()+'/mo' : '<span style="color:var(--text3)">+ Rent</span>'}</strong></div>
             <div class="hero-stats-wrap" onclick="openCardEditor('${r.id}','contact')" title="Click to edit">
@@ -8951,6 +9018,7 @@ function _renderProfileInner(){
               <span class="stats-edit-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></span>
             </div>
         </div>
+        `}
       </div>
       <div class="hero-contact-name" style="margin-top:4px">
         ${r.name
@@ -8981,7 +9049,7 @@ function _renderProfileInner(){
     </div>
     <div style="display:flex;justify-content:flex-end;margin-top:6px;width:100%">
       <div class="profile-tabs" style="margin-top:0">
-      <div class="profile-tab ${activeTab==='details'?'active':''}" data-tab="details" onclick="setProfileTab('details')">🏠 Property Details</div>
+      <div class="profile-tab ${activeTab==='details'?'active':''}" data-tab="details" onclick="setProfileTab('details')">${r.recordType==='apartment'?'🏢':'🏠'} Property Details</div>
       ${r.recordType==='apartment' ? `<div class="profile-tab ${activeTab==='units'?'active':''}" data-tab="units" onclick="setProfileTab('units')">🏘️ Units</div>` : ''}
       <div class="profile-tab ${activeTab==='expenses'?'active':''}" data-tab="expenses" onclick="setProfileTab('expenses')">💸 Income & Expenses</div>
       <div class="profile-tab ${activeTab==='analysis'?'active':''}" data-tab="analysis" onclick="${_needsConfirm ? `showAnalysisConfirmation('${r.id}','analysis')` : `setProfileTab('analysis')`}">📊 Competitor Analysis ${!proOk?'<span class=\\"tab-lock\\">🔒</span>':''}</div>
@@ -11802,7 +11870,7 @@ function getFiltered(){
   if(searchQuery){
     const words = searchQuery.split(/\s+/).filter(w => w.length > 0);
     list = list.filter(r => {
-      const blob = [r.property, r.name, r.phone, r.email, r.note, r.status].filter(Boolean).join(' ').toLowerCase();
+      const blob = [r.property, r.buildingName, r.name, r.phone, r.email, r.note, r.status].filter(Boolean).join(' ').toLowerCase();
       return words.every(w => blob.includes(w));
     });
   }
@@ -12218,7 +12286,7 @@ function updateAutocomplete(q){
   const propLimit = 8;
   records.forEach(r => {
     if(seenProps.has(r.id)) return;
-    const searchable = [r.property, r.name, r.phone, r.email].filter(Boolean).join(' ');
+    const searchable = [r.property, r.buildingName, r.name, r.phone, r.email].filter(Boolean).join(' ');
     if(matchesAllWords(searchable, q)){
       seenProps.add(r.id);
       matchedProps.push(r);
@@ -26279,7 +26347,7 @@ function renderOperationsList(){
   const words = (searchQuery || '').split(/\s+/).filter(function(w){ return w.length > 0; });
   const filtered = words.length === 0 ? ops : ops.filter(function(r){
     const d = r.propertyDetails || {};
-    const blob = [r.property, r.name, r.phone, r.email, d.market, d.submarket].filter(Boolean).join(' ').toLowerCase();
+    const blob = [r.property, r.buildingName, r.name, r.phone, r.email, d.market, d.submarket].filter(Boolean).join(' ').toLowerCase();
     return words.every(function(w){ return blob.includes(w); });
   });
 
@@ -27385,12 +27453,33 @@ function calcComputeAll(r){
 }
 
 /* ===== UNITS TAB (apartment records only) ===== */
-// Each apartment building can have its own set of units, since pricing differs
-// unit-to-unit within the same building. `r.units` is an array of
-// { id, label, sqft, bedrooms, bathrooms, commonSpaces, notes }.
+// Each apartment building can have its own set of units, since pricing and
+// availability differ unit-to-unit within the same building. `r.units` is an
+// array of { id, label, rent, sqft, bedrooms, bathrooms, availableDate, commonSpaces, notes }.
+// Building-level rent/beds/baths/sqft/available-date don't apply to a
+// multi-unit building, so those live per-unit here instead of on the sticky header.
+function _unitRangeFmt(vals, fmt){
+  const nums = vals.filter(v => v !== '' && v != null && !isNaN(Number(v))).map(Number);
+  if(!nums.length) return '—';
+  const min = Math.min(...nums), max = Math.max(...nums);
+  return min === max ? fmt(min) : fmt(min) + '–' + fmt(max);
+}
+function renderUnitRangeSummary(units){
+  const rentRange = _unitRangeFmt(units.map(u=>u.rent), n => '$'+n.toLocaleString());
+  const bedsRange = _unitRangeFmt(units.map(u=>u.bedrooms), n => n===0?'Studio':String(n));
+  const bathsRange = _unitRangeFmt(units.map(u=>u.bathrooms), n => String(n));
+  const sqftRange = _unitRangeFmt(units.map(u=>u.sqft), n => n.toLocaleString());
+  return `<div class="cr-row" style="gap:20px;flex-wrap:wrap;margin-bottom:14px;padding:12px 14px;background:var(--surface2,rgba(148,163,184,.06));border:1px solid var(--border);border-radius:var(--radius)">
+    <div class="cr-field"><div class="cr-label">Rent Range</div><div class="cr-value ${rentRange==='—'?'empty':''}">${rentRange}${rentRange!=='—'?'/mo':''}</div></div>
+    <div class="cr-field"><div class="cr-label">Beds Range</div><div class="cr-value ${bedsRange==='—'?'empty':''}">${bedsRange}</div></div>
+    <div class="cr-field"><div class="cr-label">Baths Range</div><div class="cr-value ${bathsRange==='—'?'empty':''}">${bathsRange}</div></div>
+    <div class="cr-field"><div class="cr-label">Sq Ft Range</div><div class="cr-value ${sqftRange==='—'?'empty':''}">${sqftRange}</div></div>
+  </div>`;
+}
 function renderUnitsTab(r){
   const units = r.units || [];
   let h = '<div class="table-wrap" style="padding:16px">';
+  if(units.length > 0) h += renderUnitRangeSummary(units);
   h += '<div class="table-toolbar" style="margin-bottom:14px">';
   h += `<div style="font-size:.78rem;color:var(--text3)">${units.length === 0 ? 'No units yet' : units.length + (units.length === 1 ? ' unit' : ' units')}</div>`;
   h += `<div style="margin-left:auto"><button class="btn btn-primary btn-sm" onclick="openAddUnitModal('${r.id}')" style="display:inline-flex;align-items:center;gap:4px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>Add Unit</button></div>`;
@@ -27413,9 +27502,11 @@ function renderUnitsTab(r){
           </div>
         </div>
         <div class="cr-row" style="gap:14px;flex-wrap:wrap">
+          <div class="cr-field"><div class="cr-label">Rent</div><div class="cr-value ${u.rent?'':'empty'}">${u.rent ? '$'+Number(u.rent).toLocaleString()+'/mo' : '—'}</div></div>
           <div class="cr-field"><div class="cr-label">Sq Ft</div><div class="cr-value ${u.sqft?'':'empty'}">${u.sqft ? Number(u.sqft).toLocaleString() : '—'}</div></div>
           <div class="cr-field"><div class="cr-label">Beds</div><div class="cr-value ${u.bedrooms||u.bedrooms===0?'':'empty'}">${u.bedrooms===0||u.bedrooms==='0'?'Studio':(u.bedrooms||'—')}</div></div>
           <div class="cr-field"><div class="cr-label">${u.bathrooms==='1'?'Bath':'Baths'}</div><div class="cr-value ${u.bathrooms?'':'empty'}">${u.bathrooms||'—'}</div></div>
+          <div class="cr-field"><div class="cr-label">Available</div><div class="cr-value ${u.availableDate?'':'empty'}">${u.availableDate==='now'?'Now':(u.availableDate?fmtDate(u.availableDate):'—')}</div></div>
           <div class="cr-field"><div class="cr-label">Common Spaces</div><div class="cr-value ${u.commonSpaces?'':'empty'}">${u.commonSpaces||'—'}</div></div>
         </div>
         ${u.notes ? `<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:.8rem;color:var(--text2);white-space:pre-wrap">${esc(u.notes)}</div>` : ''}
@@ -27439,9 +27530,19 @@ function openAddUnitModal(recordId, unitId){
     <div class="modal-body">
       <div class="field-group"><label class="field-label">Unit Label / Number *</label><input id="unit_label" type="text" placeholder="e.g. Unit 101, 2B" value="${existing ? esc(existing.label||'') : ''}"></div>
       <div class="field-row" style="gap:8px">
+        <div class="field-group" style="flex:1"><label class="field-label">Monthly Rent</label><input id="unit_rent" type="number" min="0" placeholder="e.g. 1500" value="${existing && existing.rent != null ? existing.rent : ''}"></div>
         <div class="field-group" style="flex:1"><label class="field-label">Sq Ft</label><input id="unit_sqft" type="number" min="0" value="${existing && existing.sqft != null ? existing.sqft : ''}"></div>
+      </div>
+      <div class="field-row" style="gap:8px">
         <div class="field-group" style="flex:1"><label class="field-label">Bedrooms</label><input id="unit_bedrooms" type="number" min="0" step="1" value="${existing && existing.bedrooms != null ? existing.bedrooms : ''}"></div>
         <div class="field-group" style="flex:1"><label class="field-label">Bathrooms</label><input id="unit_bathrooms" type="number" min="0" step="0.5" value="${existing && existing.bathrooms != null ? existing.bathrooms : ''}"></div>
+      </div>
+      <div class="field-group">
+        <label class="field-label">Available Date</label>
+        <div style="display:flex;align-items:center;gap:8px">
+          <input id="unit_availableDate" type="date" style="flex:1" value="${existing && existing.availableDate && existing.availableDate !== 'now' ? existing.availableDate : ''}" ${existing && existing.availableDate === 'now' ? 'disabled' : ''}>
+          <label style="display:flex;align-items:center;gap:4px;font-size:.78rem;font-weight:400;color:var(--text2);cursor:pointer;white-space:nowrap"><input type="checkbox" id="unit_avail_now" ${existing && existing.availableDate === 'now' ? 'checked' : ''} onchange="const el=document.getElementById('unit_availableDate');el.disabled=this.checked;if(this.checked)el.value='';"> Now</label>
+        </div>
       </div>
       <div class="field-group"><label class="field-label">Common Spaces</label><input id="unit_commonSpaces" type="number" min="0" step="1" placeholder="e.g. 1 (shared lounge, laundry room, etc.)" value="${existing && existing.commonSpaces != null ? existing.commonSpaces : ''}"></div>
       <div class="field-group"><label class="field-label">Notes</label><textarea id="unit_notes" rows="3" placeholder="Any other differences affecting pricing — view, floor level, renovation status, etc.">${existing ? esc(existing.notes||'') : ''}</textarea></div>
@@ -27461,11 +27562,15 @@ function saveUnit(recordId, unitId){
   const label = labelEl ? labelEl.value.trim() : '';
   if(!label){ showAppAlert('Unit label is required', {title: 'Validation', icon: '⚠️'}); return; }
   if(!r.units) r.units = [];
+  const unitAvailNow = document.getElementById('unit_avail_now')?.checked;
+  const unitAvailDate = document.getElementById('unit_availableDate')?.value || '';
   const data = {
     label,
+    rent: document.getElementById('unit_rent').value || '',
     sqft: document.getElementById('unit_sqft').value || '',
     bedrooms: document.getElementById('unit_bedrooms').value || '',
     bathrooms: document.getElementById('unit_bathrooms').value || '',
+    availableDate: unitAvailNow ? 'now' : unitAvailDate,
     commonSpaces: document.getElementById('unit_commonSpaces').value || '',
     notes: document.getElementById('unit_notes').value.trim()
   };
@@ -27996,7 +28101,7 @@ function openCopyExpensesSearch(targetId){
     const matched = [];
     records.forEach(r => {
       if(r.id === targetId) return;
-      const searchable = [r.property, r.name, r.phone, r.email].filter(Boolean).join(' ');
+      const searchable = [r.property, r.buildingName, r.name, r.phone, r.email].filter(Boolean).join(' ');
       if(matchAllWords(searchable, q)) matched.push(r);
     });
 
@@ -30500,15 +30605,28 @@ function formatAddressOneLine(parts){
 
 function renderHeroAddress(r){
   const addr = r.addressParts || parseAddressParts(r.property);
-  let streetLine = esc(addr.street || r.property);
-  if(addr.unit) streetLine += ', ' + esc(addr.unit);
-  let html = '<h1 style="font-size:1.65rem;font-weight:700;line-height:1.2;margin:0">' + streetLine + '</h1>';
+  let street = addr.street || r.property || '';
+  if(addr.unit) street += ', ' + addr.unit;
   let csz = '';
   if(addr.city) csz += addr.city + ',';
   if(addr.state) csz += ' ' + addr.state;
   if(addr.zip) csz += ' ' + addr.zip;
-  if(csz.trim()){
-    html += '<div style="font-size:1.35rem;color:var(--text);font-weight:600;margin-top:2px">' + esc(csz.trim()) + '</div>';
+  csz = csz.trim();
+
+  // Buildings with a name lead with that title; the full address moves underneath
+  // in smaller text instead of sharing the H1 with the street line.
+  if(r.buildingName && r.buildingName.trim()){
+    const fullAddress = [street, csz].filter(Boolean).join(', ');
+    let html = '<h1 style="font-size:1.65rem;font-weight:700;line-height:1.2;margin:0">' + esc(r.buildingName.trim()) + '</h1>';
+    if(fullAddress){
+      html += '<div style="font-size:.92rem;color:var(--text3);font-weight:500;margin-top:2px">' + esc(fullAddress) + '</div>';
+    }
+    return html;
+  }
+
+  let html = '<h1 style="font-size:1.65rem;font-weight:700;line-height:1.2;margin:0">' + esc(street) + '</h1>';
+  if(csz){
+    html += '<div style="font-size:1.35rem;color:var(--text);font-weight:600;margin-top:2px">' + esc(csz) + '</div>';
   }
   return html;
 }
@@ -31552,6 +31670,7 @@ function openCardEditor(recId, cardType, focusField){
     }
     const isAvailNow = d.availableDate === 'now';
     fieldsHtml = `
+      ${r.recordType==='apartment' ? `<div class="prop-field" style="margin-bottom:6px"><label>Building Name</label><input type="text" id="ce_buildingName" value="${esc(r.buildingName||'')}" placeholder="e.g. The Grand at Riverside"></div>` : ''}
       <div class="prop-field" style="margin-bottom:6px;position:relative"><label>Address</label><input type="text" id="ce_address" value="${esc(ceAddr.street || r.property)}" placeholder="Start typing an address..." autocomplete="off"></div>
       <div class="prop-field-grid" style="margin-bottom:10px">
         <div class="prop-field"><label>Unit Type</label><select id="ce_unit_type" style="font-size:.9rem;padding:7px 10px;width:100%">
@@ -31719,6 +31838,7 @@ function saveContactCard(recId){
   if(r.recordType === 'apartment'){
     const ceUnits = document.getElementById('ce_numberOfUnits')?.value?.trim();
     if(ceUnits !== undefined) r.propertyDetails.numberOfUnits = ceUnits;
+    r.buildingName = document.getElementById('ce_buildingName')?.value?.trim() || '';
   }
   r.propertyDetails.market = document.getElementById('ce_market')?.value?.trim() || '';
   r.propertyDetails.submarket = document.getElementById('ce_submarket')?.value?.trim() || '';
