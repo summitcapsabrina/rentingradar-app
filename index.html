@@ -2902,10 +2902,10 @@ let contactsSortCols = []; // [{col:'property',dir:'asc'},...] max 2
 let contacts = []; // Standalone contacts: { id, name, phone, email, role, photo, notes:[], linkedPropertyIds:[], createdAt, updatedAt }
 let _contactsUnsubscribe = null;
 let _pendingContactLink = null; // Contact id to auto-link after the next property is created
-let aptProspects = []; // Apartment Prospecting: { id, buildingName, address, priority, status, notes, contactTitle, contactName, email, phone, website, createdAt, updatedAt }
+let aptProspects = []; // Legacy Apartment Prospecting (Outreach tab, removed): { id, buildingName, address, priority, status, notes, contactTitle, contactName, email, phone, website, createdAt, updatedAt }. Only populated transiently for migrateAptProspectsToPipeline.
 let _aptProspectsUnsubscribe = null;
 let _editingAptProspect = null;
-let apartmentsActiveTab = 'pipeline'; // sub-tab within the Apartments section — 'pipeline' (deal dashboard, default) or 'prospecting' (building outreach)
+let _savingAptProspect = false; // re-entrancy guard for _saveAptProspectFromModal — see 2026-08-15 duplicate-record lesson
 
 // ── Lifecycle stage: a property is either 'prospecting' (default) or 'operations'.
 // Set via the "Move to Operations" / "Move back to Prospecting" buttons.
@@ -3482,7 +3482,8 @@ async function deleteContactDoc(cid){
   }
 }
 
-/* ===== APARTMENT PROSPECTING ===== */
+/* ===== APARTMENT PROSPECTING (legacy Outreach tab, removed — kept only to
+   migrate any pre-existing entries into the Pipeline) ===== */
 async function loadAptProspects(userUid){
   try {
     const snap = await db.collection('users').doc(userUid).collection('apartmentProspects').get();
@@ -3496,26 +3497,26 @@ async function loadAptProspects(userUid){
     .onSnapshot(function(snap){
       if(snap.metadata.hasPendingWrites) return;
       aptProspects = snap.docs.map(d => d.data());
-      const ae = document.activeElement;
-      const inEditor = ae && (ae.tagName==='INPUT'||ae.tagName==='TEXTAREA'||ae.tagName==='SELECT'||ae.isContentEditable);
-      if(!inEditor && currentView === 'aptProspecting') render();
     }, function(err){ console.error('[RR] Apartment Prospecting sync error:', err); });
-}
 
-async function saveAptProspect(prospect){
-  if(_blockIfImpersonating('Save apartment prospect')) return false;
-  if(!_currentUid || typeof db === 'undefined') return false;
-  prospect.updatedAt = new Date().toISOString();
-  if(!prospect.createdAt) prospect.createdAt = prospect.updatedAt;
-  try {
-    await db.collection('users').doc(_currentUid).collection('apartmentProspects').doc(prospect.id).set(prospect);
-    const idx = aptProspects.findIndex(p => p.id === prospect.id);
-    if(idx >= 0) aptProspects[idx] = prospect; else aptProspects.push(prospect);
-    return true;
-  } catch(e){
-    console.error('Failed to save apartment prospect:', e);
-    return false;
-  }
+  // One-time migration: the Outreach/Prospecting tab is gone, so fold any
+  // buildings a user added there (and never moved to Pipeline) into the
+  // Pipeline now, instead of leaving them stranded with no UI to reach them.
+  // Gated by aptProspectsMigratedAt on the user doc so it only runs once.
+  // Skipped during impersonation — an admin viewing a customer's account should
+  // never trigger a data migration on their behalf.
+  if(_isImpersonating()){
+    console.log('[impersonate] skipping apartment prospects migration check for', userUid);
+  } else try {
+    const userDoc = await db.collection('users').doc(userUid).get();
+    const alreadyMigrated = userDoc.exists && userDoc.data().aptProspectsMigratedAt;
+    if(!alreadyMigrated && aptProspects.length > 0){
+      await migrateAptProspectsToPipeline(userUid);
+      if(currentView === 'apartments') render();
+    } else if(!alreadyMigrated){
+      try { await db.collection('users').doc(userUid).set({ aptProspectsMigratedAt: new Date().toISOString() }, { merge: true }); } catch(e){}
+    }
+  } catch(e){ console.error('Apartment prospects migration check failed:', e); }
 }
 
 async function deleteAptProspect(pid){
@@ -3529,6 +3530,23 @@ async function deleteAptProspect(pid){
     console.error('Failed to delete apartment prospect:', e);
     return false;
   }
+}
+
+async function migrateAptProspectsToPipeline(userUid){
+  const toMigrate = aptProspects.slice();
+  toMigrate.forEach(function(p){
+    const r = _aptProspectToPipelineRecord(p);
+    records.unshift(r);
+    _afterPropertyCreate(r);
+  });
+  saveData();
+  await Promise.all(toMigrate.map(function(p){
+    return deleteAptProspect(p.id).catch(function(e){ console.error('Migration delete failed for prospect', p.id, e); });
+  }));
+  try {
+    await db.collection('users').doc(userUid).set({ aptProspectsMigratedAt: new Date().toISOString() }, { merge: true });
+  } catch(e){ console.error('Failed to mark apartment prospects migration done:', e); }
+  console.log('[RR] Apartment prospects migration complete: moved ' + toMigrate.length + ' building(s) to Pipeline');
 }
 
 // Dedup key for matching property-inline contacts to standalone contacts.
@@ -4033,60 +4051,6 @@ function _aptModalField(label, innerHtml){
   '</div>';
 }
 
-function _aptOutreachStatusLabel(o){
-  if(!o || !o.status || o.status === 'none') return null;
-  const map = {
-    pending_start: '⏳ Starting — Sabrina will post a draft to RR Apartments on Telegram shortly',
-    active: '📨 Active — ' + (o.followUpsSent ? (o.followUpsSent + ' follow-up(s) sent') : 'initial email sent') +
-      (o.nextFollowUpAt ? ', next follow-up ' + String(o.nextFollowUpAt).slice(0,10) : ''),
-    replied: '✅ Replied' + (o.repliedAt ? ' ' + String(o.repliedAt).slice(0,10) : '') + ' — check the Telegram thread',
-    stalled: '⚪ No reply after ' + (o.followUpsSent||0) + ' follow-up(s) — sequence ended',
-    declined: '❌ Declined in Telegram — sequence not started',
-    no_email: '⚠️ Could not start — no email on file',
-  };
-  return map[o.status] || o.status;
-}
-
-function _renderAptOutreachRow(p){
-  const label = _aptOutreachStatusLabel(p.outreach);
-  const canStart = !label || ['stalled','declined','no_email'].indexOf(p.outreach.status) >= 0;
-  return '<div style="display:flex;flex-direction:column;gap:8px">' +
-    (label ? '<div style="font-size:.82rem;color:var(--text2)">' + label + '</div>' : '') +
-    (canStart ? '<button type="button" class="btn btn-secondary btn-sm" style="align-self:flex-start" onclick="startAptOutreachSequence(\'' + p.id + '\')">' +
-      (label ? '↻ Restart Sequence' : '✉️ Start Sequence') + '</button>' : '') +
-  '</div>';
-}
-
-async function startAptOutreachSequence(id){
-  const p = aptProspects.find(function(x){ return x.id === id; });
-  if(!p) return;
-  if(!p.email){
-    showAppAlert('Add a contact email before starting an outreach sequence for this building.', {title:'No Email on File', icon:'⚠️'});
-    return;
-  }
-  showAppConfirm(
-    'Sabrina will draft the first outreach email to <b>' + esc(p.contactName || p.email) +
-    '</b> and post it to the RR Apartments Telegram topic — nothing sends until you tap Approve there.',
-    { title: 'Start Outreach Sequence', icon: '✉️', confirmText: 'Start Sequence', confirmClass: 'btn-primary',
-      onConfirm: async function(){
-        const updated = Object.assign({}, p, { outreach: { status: 'pending_start' } });
-        const ok = await saveAptProspect(updated);
-        if(ok){
-          showToast('Sequence started — check RR Apartments on Telegram shortly.', 'success');
-          closeAptProspectModal();
-          render();
-        } else {
-          showToast('Failed to start the sequence. Please try again.', 'error');
-        }
-      }
-    });
-}
-
-function _renderAptMoveToPipelineRow(p){
-  return '<button type="button" class="btn btn-secondary btn-sm" style="align-self:flex-start" onclick="moveAptProspectToPipeline(\'' + p.id + '\')">🏢 Move to Pipeline</button>';
-}
-
-const _movingAptProspectIds = new Set();
 function _normalizeListingLink(raw){
   const v = (raw || '').trim();
   if(!v) return '';
@@ -4096,55 +4060,34 @@ function _normalizeListingLink(raw){
   if(/^[a-z0-9-]+(\.[a-z0-9-]+)+([/?#].*)?$/i.test(v)) return 'https://' + v;
   return v;
 }
-async function moveAptProspectToPipeline(id){
-  const p = aptProspects.find(function(x){ return x.id === id; });
-  if(!p) return;
-  if(!checkPropertyLimit()) return;
-  if(_movingAptProspectIds.has(id)) return;
-  showAppConfirm(
-    'Move <b>' + esc(p.buildingName || p.address || 'this building') + '</b> to the Pipeline? It will be removed from Outreach and appear as a new deal.',
-    { title: 'Move to Pipeline', icon: '🏢', confirmText: 'Move to Pipeline', confirmClass: 'btn-primary',
-      onConfirm: async function(){
-        if(_movingAptProspectIds.has(id)) return;
-        _movingAptProspectIds.add(id);
-        try {
-          const noteText = [p.contactTitle, p.notes].filter(Boolean).join(' — ');
-          const today = new Date().toISOString().split('T')[0];
-          const r = {
-            id: uid(), property: p.address || p.buildingName || '', addressParts: { street: p.address || '', unit:'', city:'', state:'', zip:'' },
-            recordType: 'apartment', buildingName: p.buildingName || '',
-            name: p.contactName || '', phone: p.phone || '', email: p.email || '',
-            status: 'New', link: _normalizeListingLink(p.website), note: noteText,
-            date: today, followUpDate: null, meetingDate: null,
-            notes: noteText ? [{ id: uid(), text: noteText, date: today, type: 'note' }] : [],
-            propertyDetails: {}, propertyNotes: [],
-            createdAt: new Date().toISOString()
-          };
-          records.unshift(r);
-          _afterPropertyCreate(r);
-          saveData();
-          const ok = await deleteAptProspect(p.id);
-          showToast(ok ? 'Moved to Pipeline.' : 'Moved to Pipeline, but failed to remove from Outreach list.', ok ? 'success' : 'warning');
-          closeAptProspectModal();
-          apartmentsActiveTab = 'pipeline';
-          render();
-          setTimeout(function(){ openDetail(r.id); }, 60);
-        } finally {
-          _movingAptProspectIds.delete(id);
-        }
-      }
-    });
+
+// Shared by the Add Building modal (new save) and migrateAptProspectsToPipeline
+// (one-time migration of pre-existing Outreach entries) — both turn the same
+// building-form shape into a Pipeline record.
+function _aptProspectToPipelineRecord(p){
+  const noteText = [p.contactTitle, p.notes].filter(Boolean).join(' — ');
+  const today = new Date().toISOString().split('T')[0];
+  return {
+    id: uid(), property: p.address || p.buildingName || '', addressParts: { street: p.address || '', unit:'', city:'', state:'', zip:'' },
+    recordType: 'apartment', buildingName: p.buildingName || '',
+    name: p.contactName || '', phone: p.phone || '', email: p.email || '',
+    status: 'New', link: _normalizeListingLink(p.website), note: noteText,
+    date: today, followUpDate: null, meetingDate: null,
+    notes: noteText ? [{ id: uid(), text: noteText, date: today, type: 'note' }] : [],
+    propertyDetails: {}, propertyNotes: [],
+    createdAt: p.createdAt || new Date().toISOString()
+  };
 }
 
-function openAptProspectModal(id){
-  const isNew = !id;
-  const original = isNew ? null : aptProspects.find(function(x){ return x.id === id; });
-  if(!isNew && !original){ console.warn('Apartment prospect not found:', id); return; }
-  _editingAptProspect = isNew ? {
+// "Add Building" modal — reused from the removed Outreach tab. Always creates;
+// saving lands the new building straight in the Pipeline (see _saveAptProspectFromModal).
+function openAptProspectModal(){
+  _savingAptProspect = false;
+  _editingAptProspect = {
     id: uid(), buildingName:'', address:'', priority:'Medium', status:'New', notes:'',
     contactTitle:'', contactName:'', email:'', phone:'', website:'',
     createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
-  } : JSON.parse(JSON.stringify(original));
+  };
 
   const existing = document.getElementById('aptProspectModalOverlay');
   if(existing) existing.remove();
@@ -4160,13 +4103,13 @@ function closeAptProspectModal(){
   const ov = document.getElementById('aptProspectModalOverlay');
   if(ov) ov.remove();
   _editingAptProspect = null;
+  _savingAptProspect = false;
 }
 
 function _renderAptProspectModal(){
   const overlay = document.getElementById('aptProspectModalOverlay');
   if(!overlay || !_editingAptProspect) return;
   const p = _editingAptProspect;
-  const isNew = !aptProspects.find(function(x){ return x.id === p.id; });
   const priorityOptions = ['High','Medium','Low'].map(function(pr){
     return '<option value="' + pr + '"' + (p.priority === pr ? ' selected' : '') + '>' + pr + '</option>';
   }).join('');
@@ -4176,7 +4119,7 @@ function _renderAptProspectModal(){
 
   overlay.innerHTML = '<div class="multi-editor" style="max-width:560px;max-height:92vh;overflow-y:auto">' +
     '<div class="multi-editor-header" style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--border)">' +
-      '<div style="font-weight:700;font-size:1rem">' + (isNew ? 'Add Building' : 'Edit Building') + '</div>' +
+      '<div style="font-weight:700;font-size:1rem">Add Building</div>' +
       '<button class="modal-close" onclick="closeAptProspectModal()" style="background:none;border:none;color:var(--text2);cursor:pointer;font-size:1.5rem;line-height:1">×</button>' +
     '</div>' +
     '<div class="multi-editor-body" style="padding:20px;display:flex;flex-direction:column;gap:14px">' +
@@ -4196,13 +4139,11 @@ function _renderAptProspectModal(){
       '</div>' +
       _aptModalField('Property Website', '<input type="text" value="' + esc(p.website||'') + '" placeholder="https://..." style="' + _APT_INPUT_STYLE + '" oninput="_editingAptProspect.website=this.value">') +
       _aptModalField('Notes', '<textarea id="aptNotesInput" rows="4" style="' + _APT_INPUT_STYLE + ';resize:vertical;font-family:inherit" oninput="_editingAptProspect.notes=this.value">' + esc(p.notes||'') + '</textarea>') +
-      (isNew ? '' : _aptModalField('Pipeline', _renderAptMoveToPipelineRow(p))) +
     '</div>' +
-    '<div class="multi-editor-actions" style="display:flex;justify-content:space-between;align-items:center;padding:14px 20px;border-top:1px solid var(--border)">' +
-      '<div>' + (isNew ? '' : '<button class="btn btn-sm" style="background:transparent;color:var(--danger);border:1px solid var(--danger)" onclick="_confirmDeleteAptProspect()">Delete</button>') + '</div>' +
+    '<div class="multi-editor-actions" style="display:flex;justify-content:flex-end;align-items:center;padding:14px 20px;border-top:1px solid var(--border)">' +
       '<div style="display:flex;gap:8px">' +
         '<button class="btn btn-secondary btn-sm" onclick="closeAptProspectModal()">Cancel</button>' +
-        '<button class="btn btn-primary btn-sm" onclick="_saveAptProspectFromModal()">' + (isNew ? 'Add Building' : 'Save Changes') + '</button>' +
+        '<button class="btn btn-primary btn-sm" onclick="_saveAptProspectFromModal()">Add Building</button>' +
       '</div>' +
     '</div>' +
   '</div>';
@@ -4212,7 +4153,7 @@ function _renderAptProspectModal(){
 }
 
 async function _saveAptProspectFromModal(){
-  if(!_editingAptProspect) return;
+  if(!_editingAptProspect || _savingAptProspect) return;
   const p = _editingAptProspect;
   const nameEl = document.getElementById('aptBuildingNameInput');
   if(nameEl) p.buildingName = nameEl.value.trim();
@@ -4223,32 +4164,14 @@ async function _saveAptProspectFromModal(){
     if(nameEl) nameEl.focus();
     return;
   }
-  const ok = await saveAptProspect(p);
-  if(ok){
-    closeAptProspectModal();
-    render();
-  } else {
-    alert('Failed to save. Please try again.');
-  }
-}
-
-function _confirmDeleteAptProspect(){
-  if(!_editingAptProspect) return;
-  const p = _editingAptProspect;
-  const label = p.buildingName || 'this building';
-  const pid = p.id;
-  showAppConfirm('Delete <strong>' + esc(label) + '</strong> from your Prospecting list? This cannot be undone.', {
-    title: 'Delete Building',
-    icon: '🗑️',
-    confirmText: 'Delete',
-    cancelText: 'Cancel',
-    confirmClass: 'btn-danger',
-    onConfirm: async function(){
-      const ok = await deleteAptProspect(pid);
-      if(ok){ closeAptProspectModal(); render(); }
-      else alert('Failed to delete. Please try again.');
-    }
-  });
+  if(!checkPropertyLimit()) return;
+  _savingAptProspect = true;
+  const r = _aptProspectToPipelineRecord(p);
+  records.unshift(r);
+  _afterPropertyCreate(r);
+  saveData();
+  closeAptProspectModal();
+  openDetail(r.id);
 }
 
 function _pruneOrphanContactLinks(){
@@ -5836,7 +5759,7 @@ function render(){
       area.innerHTML = renderDashboard(); setTimeout(initDashboardMap, 50); break;
     case 'pipeline': _setDashMode(DASH_MODES.arbitrage); pipelineCategory=pipelineCategory||'prospects'; currentView='dashboard'; area.innerHTML = renderDashboard(); setTimeout(initDashboardMap, 50); document.querySelector('.pipeline-category-tabs')?.scrollIntoView({behavior:'smooth',block:'nearest'}); break;
     case 'contacts': area.innerHTML = renderContacts(); break;
-    case 'apartments': area.innerHTML = renderApartments(); if(apartmentsActiveTab === 'pipeline') setTimeout(initDashboardMap, 50); break;
+    case 'apartments': _setDashMode(DASH_MODES.apartment); area.innerHTML = renderDashboard(); setTimeout(initDashboardMap, 50); break;
     case 'operations': area.innerHTML = renderOperationsList(); setTimeout(initOperationsMap, 50); break;
     case 'opsProfile': area.innerHTML = renderOpsProfile(); break;
     case 'coHosting':
@@ -6009,9 +5932,7 @@ function _mfRefreshDashboard(){
   }
   var area = document.getElementById('contentArea');
   if(area){
-    // Apartments wraps the dashboard in its own sub-tab chrome — re-render through
-    // that wrapper so the market-filter refresh doesn't strip the Pipeline/Outreach tabs.
-    area.innerHTML = (currentView === 'apartments') ? renderApartments() : renderDashboard();
+    area.innerHTML = renderDashboard();
     setTimeout(initDashboardMap, 50);
   }
 }
@@ -8594,94 +8515,12 @@ function renderContactsCards(items){
 }
 
 /* ===== APARTMENTS ===== */
-// Section landing view: an internal sub-tab bar plus whichever sub-tab's content is
-// active. 'pipeline' is the deal dashboard (same dashboard/profile system Houses
-// uses, filtered to recordType==='apartment'); 'prospecting' is the pre-existing
-// leasing-office/building outreach tool (relabeled "Outreach", untouched otherwise).
-const APARTMENTS_TABS = [
-  { id: 'prospecting', label: 'Outreach', icon: '📇' },
-  { id: 'pipeline', label: 'Pipeline', icon: '🏢' }
-];
-
-function renderApartments(){
-  const tabsHtml = APARTMENTS_TABS.map(t =>
-    `<div class="profile-tab ${apartmentsActiveTab===t.id?'active':''}" data-tab="${t.id}" onclick="setApartmentsTab('${t.id}')">${t.icon} ${esc(t.label)}</div>`
-  ).join('');
-  let content = '';
-  if(apartmentsActiveTab === 'pipeline'){
-    _setDashMode(DASH_MODES.apartment);
-    content = renderDashboard();
-  } else if(apartmentsActiveTab === 'prospecting') content = renderAptProspecting();
-  return `
-    <div style="padding:16px 16px 0"><div class="profile-tabs" style="margin-left:0">${tabsHtml}</div></div>
-    ${content}`;
-}
-
-function setApartmentsTab(tab){
-  apartmentsActiveTab = tab;
-  render();
-}
-
-/* ===== APARTMENT PROSPECTING ===== */
-function renderAptProspecting(){
-  const total = aptProspects.length;
-  const words = (searchQuery || '').split(/\s+/).filter(w => w.length > 0);
-  const filtered = words.length === 0 ? aptProspects : aptProspects.filter(p => {
-    const blob = [p.buildingName, p.address, p.contactName, p.contactTitle, p.email, p.phone, p.notes].filter(Boolean).join(' ').toLowerCase();
-    return words.every(w => blob.includes(w));
-  });
-  const sorted = filtered.slice().sort((a,b) => (a.buildingName||'').localeCompare(b.buildingName||''));
-  return `
-    <div class="table-wrap">
-      <div class="table-toolbar">
-        <div style="font-size:.78rem;color:var(--text3)">${total === 0 ? 'No buildings yet' : total + (total === 1 ? ' building' : ' buildings') + (filtered.length !== total ? ' · ' + filtered.length + ' shown' : '')}</div>
-        <div style="margin-left:auto">
-          <button class="btn btn-primary btn-sm" onclick="openAptProspectModal()" style="display:inline-flex;align-items:center;gap:4px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>Add Building</button>
-        </div>
-      </div>
-      ${sorted.length === 0 ? renderAptProspectingEmpty(total) : renderAptProspectingTable(sorted)}
-    </div>`;
-}
-
-function renderAptProspectingEmpty(total){
-  if(total === 0){
-    return `<div style="padding:60px 20px;text-align:center;color:var(--text3)">
-      <div style="font-size:1rem;margin-bottom:8px">No buildings yet</div>
-      <div style="font-size:.85rem">Click <strong>+ Add Building</strong> to start prospecting apartment communities.</div>
-    </div>`;
-  }
-  return '<div class="empty-row" style="padding:40px 20px;text-align:center">No matches</div>';
-}
-
-function _aptPriorityPill(priority){
-  const p = priority || 'Medium';
-  const colors = { High: '#f87171', Medium: '#fbbf24', Low: '#9ca3af' };
-  const color = colors[p] || colors.Medium;
-  return `<span class="status-pill" style="background:${color}22;color:${color}"><span style="width:6px;height:6px;border-radius:50%;background:${color};display:inline-block"></span>${esc(p)}</span>`;
-}
-
-function _aptNormalizeUrl(url){
-  if(!url) return '#';
-  return /^https?:\/\//i.test(url) ? url : 'https://' + url;
-}
-
-function renderAptProspectingTable(items){
-  return `<div style="overflow-x:auto"><table>
-    <thead><tr><th>Building Name</th><th>Address</th><th>Priority</th><th>Status</th><th>Notes</th><th>Contact Title</th><th>Contact Name</th><th>Email</th><th>Phone #</th><th>Property Website</th></tr></thead>
-    <tbody>${items.map(p => `<tr class="clickable" onclick="openAptProspectModal('${p.id}')">
-        <td class="td-property">${esc(truncate(p.buildingName||'(unnamed)', 45))}</td>
-        <td>${esc(truncate(p.address||'', 45))}</td>
-        <td>${_aptPriorityPill(p.priority)}</td>
-        <td>${statusPill(p.status)}</td>
-        <td>${p.notes ? `<span title="${esc(p.notes)}">${esc(truncate(p.notes, 40))}</span>` : '<span style="color:var(--text3)">—</span>'}</td>
-        <td>${p.contactTitle ? esc(p.contactTitle) : '<span style="color:var(--text3)">—</span>'}</td>
-        <td>${p.contactName ? esc(p.contactName) : '<span style="color:var(--text3)">—</span>'}</td>
-        <td>${p.email ? `<a href="mailto:${esc(p.email)}" onclick="event.stopPropagation()">${esc(truncate(p.email,26))}</a>` : '—'}</td>
-        <td class="td-phone">${p.phone ? esc(fmtPhone(p.phone)) : '—'}</td>
-        <td>${p.website ? `<a href="${esc(_aptNormalizeUrl(p.website))}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${esc(truncate(p.website.replace(/^https?:\/\//,''),22))}</a>` : '—'}</td>
-      </tr>`).join('')}</tbody>
-  </table></div>`;
-}
+// The 'apartments' view renders straight through renderDashboard() (see the main
+// render() switch), same as Single Unit — no sub-tab wrapper. The old Outreach/
+// Prospecting sub-tab (a separate leasing-office building list, gated behind an
+// extra "Move to Pipeline" step) was removed; +Add Property → Multi Unit now opens
+// the Add Building modal (openAptProspectModal, below) and lands new buildings in
+// the Pipeline directly. See _saveAptProspectFromModal.
 
 /* ===== NOTIFICATIONS ===== */
 function getFollowUps(){
@@ -20052,7 +19891,7 @@ function _addPropertyChoice(kind){
     }
     openCohostAddModal();
   } else if(kind === 'apartment'){
-    openAddModal('apartment');
+    openAptProspectModal();
   } else {
     openAddModal('house');
   }
