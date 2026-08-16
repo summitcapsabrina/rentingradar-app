@@ -12134,8 +12134,9 @@ function handleSearch(q){
   searchQuery = q.toLowerCase();
   if(q.trim().length > 0) updateAutocomplete(q.toLowerCase());
   else showRecentlyAccessed();
-  // On the dashboard, only refresh the pipeline cards — avoid destroying/rebuilding the map
-  if(currentView === 'dashboard' && document.getElementById('pipelineUIContainer')){
+  // On the dashboard (Houses or Multi Unit — both share the same renderDashboard()
+  // layout), only refresh the pipeline cards — avoid destroying/rebuilding the map
+  if((currentView === 'dashboard' || currentView === 'apartments') && document.getElementById('pipelineUIContainer')){
     updatePipelineUI();
   } else {
     render();
