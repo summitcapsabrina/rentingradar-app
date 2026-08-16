@@ -18637,6 +18637,26 @@ const FIREBASE_CONFIG = {
 const firebaseApp = firebase.initializeApp(FIREBASE_CONFIG);
 const db = firebase.firestore();
 
+// Offline persistence: without this, every write (saveData/saveCohostData/notes/
+// tasks/contacts) only exists in JS memory until its network round-trip to
+// Firestore finishes. beforeunload can ask the browser to wait, but it can't force
+// it to — a refresh can still tear the page down mid-write and lose data that was
+// already "saved" from the user's perspective. enablePersistence() queues every
+// write to IndexedDB synchronously as part of the same call, so it survives a
+// reload/crash/offline gap and the SDK resumes syncing it on next load, regardless
+// of unload timing. Must be called before any other Firestore call.
+// synchronizeTabs lets multiple open tabs share one persistent cache instead of
+// only the first tab getting persistence and the rest silently not having it.
+db.enablePersistence({ synchronizeTabs: true }).catch(function(err){
+  if(err.code === 'failed-precondition'){
+    console.warn('[RR] Firestore persistence unavailable (failed-precondition):', err);
+  } else if(err.code === 'unimplemented'){
+    console.warn('[RR] Firestore persistence not supported in this browser:', err);
+  } else {
+    console.error('[RR] Failed to enable Firestore persistence:', err);
+  }
+});
+
 // Check if user arrived via ?tutorial=1 (from website "Try the Interactive Tutorial" link)
 let _launchTutorialAfterAuth = new URLSearchParams(window.location.search).get('tutorial') === '1';
 if(_launchTutorialAfterAuth){ history.replaceState(null, '', window.location.pathname); } // Clean URL
