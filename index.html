@@ -3308,18 +3308,51 @@ function saveData(recId){
 
   // Debounce Firestore writes to avoid excessive calls
   if(_saveTimeout) clearTimeout(_saveTimeout);
-  _saveTimeout = setTimeout(() => {
-    if(_currentUid && typeof db !== 'undefined'){
-      const jsonData = JSON.stringify(records);
-      _lastSavedJson = jsonData;
-      _dirtyRecordIds.clear();
-      db.collection('users').doc(_currentUid).collection('properties').doc('records').set({
-        data: jsonData,
-        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-      }).catch(e => console.error('Failed to save data:', e));
-    }
-  }, 1000);
+  _saveTimeout = setTimeout(_flushSaveWrite, 1000);
 }
+
+// The actual Firestore write, factored out of the debounce so it can also be
+// fired immediately (see _flushPendingSave below) instead of only after the
+// full 1s of quiet. Every note, screenshot, or profile view resets the same
+// debounce timer app-wide, so a burst of activity right before a tab closes
+// can push the real write out indefinitely — this is what silently dropped
+// data in the 2026-08-16 incident. Flushing on visibilitychange/pagehide
+// closes that window; see _flushPendingSave.
+function _flushSaveWrite(){
+  _saveTimeout = null;
+  if(_currentUid && typeof db !== 'undefined'){
+    const jsonData = JSON.stringify(records);
+    _lastSavedJson = jsonData;
+    _dirtyRecordIds.clear();
+    return db.collection('users').doc(_currentUid).collection('properties').doc('records').set({
+      data: jsonData,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }).catch(e => console.error('Failed to save data:', e));
+  }
+  return Promise.resolve();
+}
+
+// Fire any pending debounced save right now instead of waiting out the timer.
+// Hooked to visibilitychange/pagehide/beforeunload below so switching tabs,
+// backgrounding the browser, or closing the tab flushes in-memory edits
+// immediately rather than risking them never reaching Firestore at all.
+function _flushPendingSave(){
+  if(_saveTimeout){
+    clearTimeout(_saveTimeout);
+    _flushSaveWrite();
+  }
+}
+document.addEventListener('visibilitychange', function(){
+  if(document.visibilityState === 'hidden') _flushPendingSave();
+});
+window.addEventListener('pagehide', _flushPendingSave);
+window.addEventListener('beforeunload', function(e){
+  if(_saveTimeout){
+    _flushPendingSave();
+    e.preventDefault();
+    e.returnValue = '';
+  }
+});
 
 /* ===== CO-HOSTING STORE (isolated from `records`) ===== */
 // Mirrors the records persistence pattern but in a separate Firestore doc so
