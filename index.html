@@ -3336,19 +3336,52 @@ function _flushSaveWrite(){
 // Hooked to visibilitychange/pagehide/beforeunload below so switching tabs,
 // backgrounding the browser, or closing the tab flushes in-memory edits
 // immediately rather than risking them never reaching Firestore at all.
+// Covers both stores (records + cohostRecords) since they share this risk.
 function _flushPendingSave(){
   if(_saveTimeout){
     clearTimeout(_saveTimeout);
     _flushSaveWrite();
+  }
+  if(_cohostSaveTimeout){
+    clearTimeout(_cohostSaveTimeout);
+    _flushCohostSaveWrite();
   }
 }
 document.addEventListener('visibilitychange', function(){
   if(document.visibilityState === 'hidden') _flushPendingSave();
 });
 window.addEventListener('pagehide', _flushPendingSave);
+
+// Separately: typed-but-not-yet-added text in a note/description editor (Activity
+// Log, property note, section notes, competitor notes) never enters `records`/
+// `cohostRecords` at all until the user clicks Add/Save, so it's invisible to
+// saveData()/saveCohostData() and can't be flushed like a pending write — the only
+// protection is warning before the refresh/close discards it. Track each
+// .rte-editor's content as of when it was first focused, so pre-filled editors
+// (e.g. Edit Note, competitor notes) don't false-positive when untouched.
+const _rteDraftInitial = new WeakMap();
+document.addEventListener('focusin', function(e){
+  const ed = e.target.closest && e.target.closest('.rte-editor');
+  if(ed && !_rteDraftInitial.has(ed)) _rteDraftInitial.set(ed, ed.innerHTML);
+});
+function _hasUnsavedRteDraft(){
+  const eds = document.querySelectorAll('.rte-editor');
+  for(let i = 0; i < eds.length; i++){
+    const ed = eds[i];
+    const initial = _rteDraftInitial.has(ed) ? _rteDraftInitial.get(ed) : '';
+    if(ed.innerHTML !== initial) return true;
+  }
+  return false;
+}
+
 window.addEventListener('beforeunload', function(e){
-  if(_saveTimeout){
+  if(_saveTimeout || _cohostSaveTimeout){
     _flushPendingSave();
+    e.preventDefault();
+    e.returnValue = '';
+    return;
+  }
+  if(_hasUnsavedRteDraft()){
     e.preventDefault();
     e.returnValue = '';
   }
@@ -3428,18 +3461,24 @@ async function loadCohostDataFromFirestore(userUid){
 function saveCohostData(){
   if(_blockIfImpersonating('Save')) return;
   if(_cohostSaveTimeout) clearTimeout(_cohostSaveTimeout);
-  _cohostSaveTimeout = setTimeout(function(){
-    if(_currentUid && typeof db !== 'undefined'){
-      const jsonData = JSON.stringify(cohostRecords);
-      _lastSavedCohostJson = jsonData;
-      db.collection('users').doc(_currentUid).collection('properties').doc('cohosting').set({
-        data: jsonData,
-        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-      }).catch(function(e){ console.error('Failed to save co-hosting data:', e); });
-    }
-  }, 1000);
+  _cohostSaveTimeout = setTimeout(_flushCohostSaveWrite, 1000);
 }
 let _cohostSaveTimeout = null;
+
+// Same debounce-drop risk as saveData()/_flushSaveWrite() (see comment there) —
+// factored out so visibilitychange/pagehide/beforeunload can flush it immediately.
+function _flushCohostSaveWrite(){
+  _cohostSaveTimeout = null;
+  if(_currentUid && typeof db !== 'undefined'){
+    const jsonData = JSON.stringify(cohostRecords);
+    _lastSavedCohostJson = jsonData;
+    return db.collection('users').doc(_currentUid).collection('properties').doc('cohosting').set({
+      data: jsonData,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }).catch(function(e){ console.error('Failed to save co-hosting data:', e); });
+  }
+  return Promise.resolve();
+}
 
 /* ===== STANDALONE CONTACTS ===== */
 // One Firestore doc per contact at users/{uid}/contacts/{cid}.
