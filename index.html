@@ -3297,15 +3297,21 @@ async function loadDataFromFirestore(userUid){
   loadContacts(userUid).catch(function(e){ console.error('loadContacts failed:', e); });
   // Load the isolated Co-Hosting store in parallel (Admin + Affiliate feature).
   loadCohostDataFromFirestore(userUid).then(function(){
-    // Same legacy-inline-image cleanup as above, applied to the co-hosting store
-    // once it's actually loaded (it's a separate parallel fetch). Low urgency today
-    // (cohost notes rarely carry pasted screenshots yet) but same blob-size risk if
-    // left unaddressed, so it gets the same one-time migration.
     if(_isImpersonating()) return;
     return db.collection('users').doc(userUid).get().then(function(userDoc){
-      const alreadyMigrated = userDoc.exists && userDoc.data().noteImagesMigratedAtCohost;
-      if(alreadyMigrated) return;
-      return _migrateInlineNoteImagesCohost(userUid);
+      const data = userDoc.exists ? userDoc.data() : {};
+      const chain = [];
+      // Same legacy-inline-image cleanup as above, applied to the co-hosting store
+      // once it's actually loaded (it's a separate parallel fetch). Low urgency today
+      // (cohost notes rarely carry pasted screenshots yet) but same blob-size risk if
+      // left unaddressed, so it gets the same one-time migration.
+      if(!data.noteImagesMigratedAtCohost) chain.push(_migrateInlineNoteImagesCohost(userUid));
+      // cohostRecords mirror (see _softDeleteRecordMirror / the dual-write in
+      // _flushCohostSaveWrite) only picks up records as they're touched going
+      // forward — this backfills every pre-existing cohost record once, same as
+      // _backfillPropertyRecordsCollection does for `records`.
+      if(!data.cohostRecordsMigratedAt) chain.push(_backfillCohostRecordsCollection(userUid));
+      return Promise.all(chain);
     });
   }).catch(function(e){ console.error('loadCohostData failed:', e); });
   // Load Apartment Prospecting records in parallel.
@@ -3505,6 +3511,23 @@ function _dualWriteDirtyRecords(ids){
   });
 }
 
+// 2026-08-17: writes the FULL record (not just an _deletedAt flag merged onto
+// whatever the mirror already happened to have) so "deleted but recoverable"
+// is actually guaranteed even if this exact edit was never dual-written before
+// — e.g. edit-then-immediately-delete, or a duplicate getting replaced without
+// ever having been individually dirty-tracked. Called by every place a record
+// leaves `records`/`cohostRecords` (deleteRecord, deleteCohostRecord, and both
+// duplicate-replace flows) so there's one single place this guarantee lives.
+// There's no recovery UI yet — restoring today means reading this doc directly
+// in Firestore — but the data itself is never actually gone.
+function _softDeleteRecordMirror(r, collectionName){
+  if(!r || !_currentUid || typeof db === 'undefined') return;
+  const payload = Object.assign({}, r, { _deletedAt: new Date().toISOString() });
+  db.collection('users').doc(_currentUid).collection(collectionName).doc(r.id)
+    .set(payload)
+    .catch(e => console.error('[migration] ' + collectionName + ' soft-delete failed for', r.id, e));
+}
+
 // Stage B of the property data-safety migration — one-time backfill, called from
 // loadDataFromFirestore. Copies every record that existed *before* Stage A shipped
 // into the new per-record collection, so a future read-cutover has full history
@@ -3520,6 +3543,19 @@ async function _backfillPropertyRecordsCollection(userUid){
     await db.collection('users').doc(userUid).set({ propertyRecordsMigratedAt: new Date().toISOString() }, { merge: true });
     console.log('[migration] propertyRecords backfill complete:', snapshot.length, 'records');
   } catch(e){ console.error('[migration] propertyRecords backfill failed:', e); }
+}
+
+// Co-hosting counterpart of _backfillPropertyRecordsCollection.
+async function _backfillCohostRecordsCollection(userUid){
+  try {
+    const col = db.collection('users').doc(userUid).collection('cohostRecords');
+    const snapshot = cohostRecords.slice();
+    await Promise.all(snapshot.map(function(r){
+      return col.doc(r.id).set(r).catch(function(e){ console.error('[migration] cohost backfill failed for', r.id, e); });
+    }));
+    await db.collection('users').doc(userUid).set({ cohostRecordsMigratedAt: new Date().toISOString() }, { merge: true });
+    console.log('[migration] cohostRecords backfill complete:', snapshot.length, 'records');
+  } catch(e){ console.error('[migration] cohostRecords backfill failed:', e); }
 }
 
 // One-time cleanup: upload every legacy inline-base64 note screenshot to Storage
@@ -3761,8 +3797,27 @@ async function loadCohostDataFromFirestore(userUid){
       if(!doc.exists) return;
       const remoteJson = doc.data().data || '[]';
       if(remoteJson === _lastSavedCohostJson) return;
+      const remoteRecords = _normalizeCohostRecords(JSON.parse(remoteJson));
+      // Don't blind-replace — a record this tab is mid-editing (differs from the
+      // last snapshot it knows about) would otherwise get wiped by an unrelated
+      // remote update before it ever gets a chance to flush. Same reasoning as
+      // records' _mergeRecords, applied here since cohost has no persistent dirty
+      // set to check — "differs from _lastSavedCohostJson" IS the dirty signal.
+      let prevMap = {};
+      try { (JSON.parse(_lastSavedCohostJson || '[]')).forEach(r => { prevMap[r.id] = JSON.stringify(r); }); } catch(e){}
+      const localMap = {};
+      cohostRecords.forEach(r => { localMap[r.id] = r; });
       _lastSavedCohostJson = remoteJson;
-      cohostRecords = _normalizeCohostRecords(JSON.parse(remoteJson));
+      const merged = [];
+      const seen = new Set();
+      remoteRecords.forEach(r => {
+        const local = localMap[r.id];
+        const localIsDirty = local && (!prevMap.hasOwnProperty(r.id) || prevMap[r.id] !== JSON.stringify(local));
+        merged.push(localIsDirty ? local : r);
+        seen.add(r.id);
+      });
+      cohostRecords.forEach(r => { if(!seen.has(r.id)) merged.push(r); }); // local-only (not yet on server)
+      cohostRecords = merged;
       const ae = document.activeElement;
       const isEditing = ae && (ae.tagName==='INPUT'||ae.tagName==='TEXTAREA'||ae.tagName==='SELECT'||ae.isContentEditable);
       if(!isEditing && (currentView === 'coHosting' || currentView === 'cohostProfile')){ render(); }
@@ -3833,6 +3888,14 @@ function _flushCohostSaveWrite(){
     const pulledInForeignChange = result.jsonData !== JSON.stringify(cohostRecords);
     _lastSavedCohostJson = result.jsonData;
     cohostRecords = result.merged;
+    // Same per-record mirror records already has (_dualWriteDirtyRecords) — cohost
+    // previously only got one on delete; this keeps it live going forward too, same
+    // recovery guarantee if this store ever nears its own size ceiling.
+    dirtyIds.forEach(function(id){
+      const r = cohostRecords.find(function(x){ return x.id === id; });
+      if(r) db.collection('users').doc(_currentUid).collection('cohostRecords').doc(id).set(r)
+        .catch(function(e){ console.error('[migration] cohostRecords dual-write failed for', id, e); });
+    });
     if(pulledInForeignChange){
       const ae = document.activeElement;
       const isEditing = ae && (ae.tagName==='INPUT'||ae.tagName==='TEXTAREA'||ae.tagName==='SELECT'||ae.isContentEditable);
@@ -10755,17 +10818,9 @@ function deleteRecord(id){
   records = records.filter(x => x.id !== id);
   _deletedRecordIds.add(id);
   saveData();
-  // Stage A dual-write mirror (see _dualWriteDirtyRecords) — soft-delete only. The
-  // record disappears from the UI exactly as before (removed from `records`/the old
-  // blob above, unchanged), but its mirror doc is marked, not erased, so the full
-  // data still exists in Firestore and can be recovered later if needed. Nothing
-  // reads/restores from this yet — that's a future recovery-UI feature — this just
-  // makes sure the data to restore from actually exists when that gets built.
-  if(_currentUid && typeof db !== 'undefined'){
-    db.collection('users').doc(_currentUid).collection('propertyRecords').doc(id)
-      .set({ _deletedAt: new Date().toISOString() }, { merge: true })
-      .catch(e => console.error('[migration] propertyRecords soft-delete failed for', id, e));
-  }
+  // Gone from the UI exactly as before, but the full record (not just a flag) is
+  // preserved in propertyRecords — see _softDeleteRecordMirror.
+  _softDeleteRecordMirror(r, 'propertyRecords');
   if(currentView === 'profile') closeDetail();
   else { document.getElementById('detailModal').classList.remove('open'); render(); }
   showToast('Deleted "' + name + '"', 'error', 3000);
@@ -11321,6 +11376,7 @@ async function handleExtensionListing(data) {
         if (idx !== -1) records.splice(idx, 1);
         _deletedRecordIds.add(dupRecord.id);
         saveData();
+        _softDeleteRecordMirror(dupRecord, 'propertyRecords');
       }
       // 'keep-both' falls through and creates the new record normally
     }
@@ -12235,6 +12291,7 @@ async function saveNewRecord(){
       if(idx !== -1) records.splice(idx, 1);
       _deletedRecordIds.add(dupRecord.id);
       saveData();
+      _softDeleteRecordMirror(dupRecord, 'propertyRecords');
     }
   }
 
@@ -25753,7 +25810,7 @@ async function handleCohostListing(data){
   if(dup){
     const choice = await showDuplicateDialog(canonical, dup);
     if(choice === 'cancel') return;
-    if(choice === 'replace'){ const i = cohostRecords.findIndex(function(x){ return x.id===dup.id; }); if(i!==-1) cohostRecords.splice(i,1); _deletedCohostIds.add(dup.id); saveCohostData(); }
+    if(choice === 'replace'){ const i = cohostRecords.findIndex(function(x){ return x.id===dup.id; }); if(i!==-1) cohostRecords.splice(i,1); _deletedCohostIds.add(dup.id); saveCohostData(); _softDeleteRecordMirror(dup, 'cohostRecords'); }
   }
   const rent = (data.price!=null && data.price!=='') ? (_cn(data.price)||'') : '';
   const r = {
@@ -25911,6 +25968,7 @@ function deleteCohostRecord(id){
       if(i>=0) cohostRecords.splice(i,1);
       _deletedCohostIds.add(id);
       saveCohostData();
+      _softDeleteRecordMirror(r, 'cohostRecords');
       switchView('coHosting');
     }
   });
