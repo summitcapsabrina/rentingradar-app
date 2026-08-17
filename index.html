@@ -3262,6 +3262,21 @@ async function loadDataFromFirestore(userUid){
     console.error('Failed to load data from Firestore:', e);
     records = [];
   }
+  // 2026-08-17: one-time cleanup for the inline-base64-screenshot problem (see
+  // setupNotePasteHandler's comment) — the blob was already at ~95% of Firestore's
+  // 1 MiB cap from screenshots pasted before the Storage-upload fix shipped, so new
+  // pastes are fixed going forward but this account is still one edit away from
+  // every save starting to fail outright. Uploads each legacy inline image to
+  // Storage and rewrites the note to reference the URL instead, shrinking the blob
+  // back down. Gated by noteImagesMigratedAt so it only ever runs once; skipped
+  // during impersonation like the other one-time migrations here.
+  if(!_isImpersonating()){
+    db.collection('users').doc(userUid).get().then(function(userDoc){
+      const alreadyMigrated = userDoc.exists && userDoc.data().noteImagesMigratedAt;
+      if(alreadyMigrated) return;
+      return _migrateInlineNoteImages(userUid);
+    }).catch(function(e){ console.error('noteImages migration check failed:', e); });
+  }
   // Stage B of the property data-safety migration (vault: Roadmap & Aspirations):
   // one-time backfill so records that existed before Stage A shipped also get a
   // mirror doc, not just ones touched going forward. Gated by
@@ -3281,7 +3296,18 @@ async function loadDataFromFirestore(userUid){
   // Load standalone contacts in parallel — fire-and-forget so the UI shows fast.
   loadContacts(userUid).catch(function(e){ console.error('loadContacts failed:', e); });
   // Load the isolated Co-Hosting store in parallel (Admin + Affiliate feature).
-  loadCohostDataFromFirestore(userUid).catch(function(e){ console.error('loadCohostData failed:', e); });
+  loadCohostDataFromFirestore(userUid).then(function(){
+    // Same legacy-inline-image cleanup as above, applied to the co-hosting store
+    // once it's actually loaded (it's a separate parallel fetch). Low urgency today
+    // (cohost notes rarely carry pasted screenshots yet) but same blob-size risk if
+    // left unaddressed, so it gets the same one-time migration.
+    if(_isImpersonating()) return;
+    return db.collection('users').doc(userUid).get().then(function(userDoc){
+      const alreadyMigrated = userDoc.exists && userDoc.data().noteImagesMigratedAtCohost;
+      if(alreadyMigrated) return;
+      return _migrateInlineNoteImagesCohost(userUid);
+    });
+  }).catch(function(e){ console.error('loadCohostData failed:', e); });
   // Load Apartment Prospecting records in parallel.
   loadAptProspects(userUid).catch(function(e){ console.error('loadAptProspects failed:', e); });
   render();
@@ -3494,6 +3520,83 @@ async function _backfillPropertyRecordsCollection(userUid){
     await db.collection('users').doc(userUid).set({ propertyRecordsMigratedAt: new Date().toISOString() }, { merge: true });
     console.log('[migration] propertyRecords backfill complete:', snapshot.length, 'records');
   } catch(e){ console.error('[migration] propertyRecords backfill failed:', e); }
+}
+
+// One-time cleanup: upload every legacy inline-base64 note screenshot to Storage
+// and rewrite the note to hold the URL instead — see loadDataFromFirestore's call
+// site comment for why this is urgent (the shared blob was near Firestore's 1 MiB
+// document cap). Only ever touches `note.images` entries that are still `data:`
+// URIs; anything already migrated (or pasted after the Storage-upload fix) is a
+// normal https:// URL and gets skipped.
+async function _migrateInlineNoteImages(userUid){
+  let touchedAny = false;
+  let failedAny = false;
+  const snapshot = records.slice(); // current in-memory records as of load time
+  for(const r of snapshot){
+    if(!Array.isArray(r.notes)) continue;
+    for(const note of r.notes){
+      if(!Array.isArray(note.images)) continue;
+      for(let i = 0; i < note.images.length; i++){
+        const img = note.images[i];
+        if(typeof img !== 'string' || !img.startsWith('data:')) continue;
+        try {
+          const blob = await (await fetch(img)).blob();
+          const ext = (blob.type && blob.type.split('/')[1]) || 'png';
+          const path = 'noteImages/' + userUid + '/' + r.id + '/' + Date.now() + '_' + Math.random().toString(36).slice(2,8) + '.' + ext;
+          const ref = firebase.storage().ref(path);
+          await ref.put(blob);
+          note.images[i] = await ref.getDownloadURL();
+          touchedAny = true;
+          r._updatedAt = Date.now();
+          _dirtyRecordIds.add(r.id);
+        } catch(e){
+          failedAny = true;
+          console.error('[migration] note image upload failed for record', r.id, e);
+        }
+      }
+    }
+  }
+  if(touchedAny) saveData();
+  if(!failedAny){
+    await db.collection('users').doc(userUid).set({ noteImagesMigratedAt: new Date().toISOString() }, { merge: true });
+  }
+  console.log('[migration] inline note images migrated:', touchedAny, failedAny ? '(some failed, will retry next load)' : '');
+}
+
+// Co-hosting counterpart of _migrateInlineNoteImages — same fix, different store.
+// cohostRecords has no _dirtyRecordIds-style tracking, so saveCohostData()'s own
+// diff-at-flush (against _lastSavedCohostJson) is what picks up these edits.
+async function _migrateInlineNoteImagesCohost(userUid){
+  let touchedAny = false;
+  let failedAny = false;
+  const snapshot = cohostRecords.slice();
+  for(const r of snapshot){
+    if(!Array.isArray(r.notes)) continue;
+    for(const note of r.notes){
+      if(!Array.isArray(note.images)) continue;
+      for(let i = 0; i < note.images.length; i++){
+        const img = note.images[i];
+        if(typeof img !== 'string' || !img.startsWith('data:')) continue;
+        try {
+          const blob = await (await fetch(img)).blob();
+          const ext = (blob.type && blob.type.split('/')[1]) || 'png';
+          const path = 'noteImages/' + userUid + '/' + r.id + '/' + Date.now() + '_' + Math.random().toString(36).slice(2,8) + '.' + ext;
+          const ref = firebase.storage().ref(path);
+          await ref.put(blob);
+          note.images[i] = await ref.getDownloadURL();
+          touchedAny = true;
+        } catch(e){
+          failedAny = true;
+          console.error('[migration] cohost note image upload failed for record', r.id, e);
+        }
+      }
+    }
+  }
+  if(touchedAny) saveCohostData();
+  if(!failedAny){
+    await db.collection('users').doc(userUid).set({ noteImagesMigratedAtCohost: new Date().toISOString() }, { merge: true });
+  }
+  console.log('[migration] cohost inline note images migrated:', touchedAny, failedAny ? '(some failed, will retry next load)' : '');
 }
 
 // Fire any pending debounced save right now instead of waiting out the timer.
@@ -10383,6 +10486,24 @@ function setNoteType(recId, type){
 const pendingNoteImages = {};
 // Pending images for edit note popup
 let pendingEditImages = [];
+// 2026-08-17: pasted screenshots used to go straight into these arrays as raw
+// base64 data URLs and get embedded inline in the note, which itself lives inside
+// the single per-user JSON blob shared by all properties — that blob was already
+// at ~95% of Firestore's 1 MiB hard per-document size limit before this. One more
+// screenshot pushed the whole blob over the edge; Firestore rejected the write
+// outright, so the note text (saved separately, small) survived a refresh but the
+// image silently never reached the server — it only ever existed in that tab's
+// memory. Fix: upload the pasted image to Firebase Storage instead (same pattern
+// already used for receipts/proofs elsewhere in the app — no meaningful size
+// ceiling there) and store just the small download URL in the note, exactly like
+// every other image reference in this app already works. The array element is a
+// blob: object URL for an instant local preview, swapped in place for the real
+// https:// URL once the upload finishes; _pendingNoteImageUploads/
+// _pendingEditImageUploads track the in-flight promises so addNote()/saveEditNote()
+// can wait for them before saving, so a fast Add-immediately-after-paste can't
+// save the note before the upload — and therefore the real URL — exists.
+const _pendingNoteImageUploads = {};
+let _pendingEditImageUploads = [];
 
 function setupNotePasteHandler(editorId, recId){
   const ed = document.getElementById(editorId);
@@ -10396,21 +10517,33 @@ function setupNotePasteHandler(editorId, recId){
         e.preventDefault();
         const blob = items[i].getAsFile();
         if(!blob) return;
-        const reader = new FileReader();
-        reader.onload = function(ev){
-          const dataUrl = ev.target.result;
-          // Determine if this is a new-note editor or edit-note editor
-          const isEdit = editorId.startsWith('editNoteRte_');
-          if(isEdit){
-            pendingEditImages.push(dataUrl);
-            renderImgPreview('_editPreview', pendingEditImages);
-          } else {
-            if(!pendingNoteImages[recId]) pendingNoteImages[recId] = [];
-            pendingNoteImages[recId].push(dataUrl);
-            renderImgPreview('imgPreview_'+recId, pendingNoteImages[recId]);
-          }
-        };
-        reader.readAsDataURL(blob);
+        const isEdit = editorId.startsWith('editNoteRte_');
+        const targetArr = isEdit ? pendingEditImages : (pendingNoteImages[recId] || (pendingNoteImages[recId] = []));
+        const previewContainerId = isEdit ? '_editPreview' : 'imgPreview_'+recId;
+        const previewUrl = URL.createObjectURL(blob);
+        const slotIdx = targetArr.push(previewUrl) - 1;
+        renderImgPreview(previewContainerId, targetArr);
+        const uid = firebase.auth().currentUser?.uid;
+        const ext = (blob.type && blob.type.split('/')[1]) || 'png';
+        const path = 'noteImages/' + uid + '/' + recId + '/' + Date.now() + '_' + Math.random().toString(36).slice(2,8) + '.' + ext;
+        const uploadPromise = firebase.storage().ref(path).put(blob)
+          .then(function(snap){ return snap.ref.getDownloadURL(); })
+          .then(function(url){
+            if(targetArr[slotIdx] === previewUrl){
+              targetArr[slotIdx] = url;
+              renderImgPreview(previewContainerId, targetArr);
+            }
+            URL.revokeObjectURL(previewUrl);
+          })
+          .catch(function(err){
+            console.error('Note image upload failed:', err);
+            const stillIdx = targetArr.indexOf(previewUrl);
+            if(stillIdx !== -1){ targetArr.splice(stillIdx, 1); renderImgPreview(previewContainerId, targetArr); }
+            URL.revokeObjectURL(previewUrl);
+            showToast('Screenshot failed to upload — paste it again before saving', 'error', 4500);
+          });
+        if(isEdit) _pendingEditImageUploads.push(uploadPromise);
+        else (_pendingNoteImageUploads[recId] || (_pendingNoteImageUploads[recId] = [])).push(uploadPromise);
         return;
       }
     }
@@ -10441,13 +10574,21 @@ function removePreviewImg(containerId, idx){
   }
 }
 
-function addNote(id){
+async function addNote(id){
   const ed = document.getElementById('newNoteRte_'+id);
   if(!ed) return;
   const html = ed.innerHTML.trim();
   const text = ed.innerText.trim();
+  if(!text && (pendingNoteImages[id] || []).length === 0) return;
+  // Wait for any pasted screenshots still uploading to Storage (see
+  // setupNotePasteHandler) so we never save a blob: preview URL — that only
+  // resolves inside this tab's memory and would be a broken <img src> forever.
+  const uploads = _pendingNoteImageUploads[id];
+  if(uploads && uploads.length){
+    await Promise.all(uploads);
+    delete _pendingNoteImageUploads[id];
+  }
   const images = pendingNoteImages[id] || [];
-  if(!text && images.length === 0) return;
   const r = _findRec(id);
   if(!r) return;
   const type = selectedNoteType[id] || 'note';
@@ -10510,7 +10651,7 @@ function editNote(recId, noteId){
   }, 100);
 }
 
-function saveEditNote(recId, noteId){
+async function saveEditNote(recId, noteId){
   const r = _findRec(recId);
   if(!r) return;
   const note = r.notes.find(n => n.id === noteId);
@@ -10521,6 +10662,12 @@ function saveEditNote(recId, noteId){
   const newHtml = ed.innerHTML.trim();
   const newText = ed.innerText.trim();
   if(!newText && pendingEditImages.length === 0) return;
+  // See addNote()'s matching comment — don't save a blob: preview URL for a
+  // screenshot that's still mid-upload.
+  if(_pendingEditImageUploads.length){
+    await Promise.all(_pendingEditImageUploads);
+    _pendingEditImageUploads = [];
+  }
   const activeBtn = document.querySelector('#editNoteTypeBar .note-type-btn.active');
   const newType = activeBtn?.dataset?.type || note.type;
   note.text = newText;

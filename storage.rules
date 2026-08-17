@@ -27,6 +27,16 @@ service firebase.storage {
         (request.auth.uid == uid || request.auth.token.email == "help@rentingradar.com");
     }
 
+    // Activity Log / property note pasted screenshots. Scoped to UID because the
+    // notes live inside the per-user properties blob (records/cohosting docs).
+    // 2026-08-17: these used to be embedded inline as base64 straight in that
+    // blob, which pushed it toward Firestore's 1 MiB document cap and started
+    // silently failing to save. Moved to Storage — see setupNotePasteHandler.
+    match /noteImages/{uid}/{recId}/{file} {
+      allow read, write: if request.auth != null &&
+        (request.auth.uid == uid || request.auth.token.email == "help@rentingradar.com");
+    }
+
     // Business expense receipts — Financials section in Admin. Scoped to UID
     // because the expense data lives under users/{uid}/businessExpenses/{id}.
     // New unsaved expenses use the literal segment 'new' as the expenseId; the
