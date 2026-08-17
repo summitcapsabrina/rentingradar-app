@@ -2912,6 +2912,7 @@ let records = [];
 // Persisted to users/{uid}/properties/cohosting (parallel to .../records).
 let cohostRecords = [];
 let _lastSavedCohostJson = '[]';
+let _deletedCohostIds = new Set();
 let _cohostUnsubscribe = null;
 let currentCohostId = null;
 let _lastStampedCohostId = null; // tracks the cohost profile we last stamped lastAccessed for
@@ -2960,6 +2961,7 @@ let _saveTimeout = null;
 let _currentUid = null;
 let _firestoreUnsubscribe = null;
 let _dirtyRecordIds = new Set();
+let _deletedRecordIds = new Set();
 let _lastSavedJson = '';
 // Continuous activity (e.g. navigating between properties, which stamps lastAccessed
 // on every open) keeps resetting the 1s "quiet" debounce below indefinitely, so a
@@ -3374,21 +3376,89 @@ function saveData(recId){
 // closes the tab-close window; SAVE_MAX_WAIT_MS (above) closes the separate
 // window where the tab stays open and active the whole time, so it never
 // goes hidden and the quiet timer never gets a chance to settle.
+//
+// 2026-08-17 incident: this used to blind-overwrite the whole blob with
+// `JSON.stringify(records)` — this tab's ENTIRE in-memory copy, including every
+// record it never touched. With two tabs open (e.g. switching back and forth
+// entering different data, as intended), whichever tab flushed last won outright:
+// its stale copy of records the OTHER tab had just edited silently reverted them,
+// even though the correct data had already reached Firestore seconds earlier. The
+// per-record onSnapshot merge below (_mergeRecords) couldn't save this — it only
+// updates the local render, it never gated what actually gets written, and it's
+// skipped whenever this tab has its own pending write in flight (near-constant
+// during active multi-tab use), so a stale tab could go a long time without ever
+// absorbing the other tab's change before clobbering it.
+//
+// Fix: only ever write what THIS tab actually changed (_dirtyRecordIds /
+// _deletedRecordIds), merged into the latest server state read right before
+// writing — never this tab's full local snapshot. A stale tab can no longer
+// revert records it never touched, no matter how old its in-memory copy is.
 function _flushSaveWrite(){
   _saveTimeout = null;
   _saveFirstPendingAt = null;
-  if(_currentUid && typeof db !== 'undefined'){
-    const jsonData = JSON.stringify(records);
-    _lastSavedJson = jsonData;
-    const _dirtyIdsForDualWrite = Array.from(_dirtyRecordIds);
-    _dirtyRecordIds.clear();
-    _dualWriteDirtyRecords(_dirtyIdsForDualWrite);
-    return db.collection('users').doc(_currentUid).collection('properties').doc('records').set({
-      data: jsonData,
-      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-    }).catch(e => console.error('Failed to save data:', e));
-  }
-  return Promise.resolve();
+  if(!_currentUid || typeof db === 'undefined') return Promise.resolve();
+  const dirtyIds = Array.from(_dirtyRecordIds);
+  const deletedIds = Array.from(_deletedRecordIds);
+  _dirtyRecordIds.clear();
+  _deletedRecordIds.clear();
+  if(dirtyIds.length === 0 && deletedIds.length === 0) return Promise.resolve();
+  const localById = {};
+  dirtyIds.forEach(id => {
+    const r = records.find(x => x.id === id);
+    if(r) localById[id] = r;
+  });
+  const docRef = db.collection('users').doc(_currentUid).collection('properties').doc('records');
+  // Deliberately NOT a transaction: transactions reject outright when offline
+  // instead of queuing like a plain .set() does, which would silently undo last
+  // night's offline-persistence fix for exactly the case it exists to cover. A
+  // plain get-then-set leaves a narrow race (another write landing between the
+  // get and the set), but that's a huge improvement over always overwriting with
+  // this tab's full stale snapshot, and it keeps working offline exactly like
+  // the write it replaces did.
+  return docRef.get().then(function(doc){
+    let serverRecords = [];
+    if(doc.exists){
+      try { serverRecords = JSON.parse(doc.data().data || '[]'); } catch(e){ serverRecords = []; }
+    }
+    const merged = [];
+    const seen = new Set();
+    serverRecords.forEach(r => {
+      if(deletedIds.indexOf(r.id) !== -1) return; // this tab deleted it — drop even if another tab's write re-added/kept it
+      merged.push(Object.prototype.hasOwnProperty.call(localById, r.id) ? localById[r.id] : r);
+      seen.add(r.id);
+    });
+    dirtyIds.forEach(id => {
+      // Edited then deleted before this flush ran (id can be in both sets) — deletion wins.
+      if(!seen.has(id) && deletedIds.indexOf(id) === -1) merged.push(localById[id]); // record this tab created, not yet on the server
+    });
+    const jsonData = JSON.stringify(merged);
+    return docRef.set({ data: jsonData, updatedAt: firebase.firestore.FieldValue.serverTimestamp() })
+      .then(function(){ return { jsonData, merged }; });
+  }).then(function(result){
+    // Did the merge pull in anything from another tab/device that this tab's own
+    // local `records` didn't already have? Only re-render for that — a render on
+    // every routine save (the common single-tab case) would reset scroll/focus
+    // for no reason.
+    const pulledInForeignChange = result.jsonData !== JSON.stringify(records);
+    _lastSavedJson = result.jsonData;
+    records = result.merged;
+    _dualWriteDirtyRecords(dirtyIds);
+    if(pulledInForeignChange){
+      const ae = document.activeElement;
+      const isEditing = ae && (ae.tagName==='INPUT'||ae.tagName==='TEXTAREA'||ae.tagName==='SELECT'||ae.isContentEditable);
+      if(!isEditing) render();
+      else ae.addEventListener('blur', function handler(){ render(); ae.removeEventListener('blur', handler); }, {once:true});
+    }
+  }).catch(e => {
+    console.error('Failed to save data:', e);
+    // Genuine failure (not the offline case above, which .set() already queues
+    // and resolves once synced) — put the ids back so the next flush retries.
+    dirtyIds.forEach(id => _dirtyRecordIds.add(id));
+    deletedIds.forEach(id => _deletedRecordIds.add(id));
+    if(_saveFirstPendingAt == null) _saveFirstPendingAt = Date.now();
+    if(_saveTimeout) clearTimeout(_saveTimeout);
+    _saveTimeout = setTimeout(_flushSaveWrite, 2000);
+  });
 }
 
 // Stage A of the property data-safety migration (vault: Roadmap & Aspirations,
@@ -3612,18 +3682,71 @@ let _cohostSaveFirstPendingAt = null;
 // factored out so visibilitychange/pagehide/beforeunload can flush it immediately.
 // Also shares the same SAVE_MAX_WAIT_MS ceiling so continuous activity on a
 // Co-Hosting profile can't push the write out indefinitely either.
+//
+// Same blind-overwrite/multi-tab clobber risk _flushSaveWrite() had (see its
+// comment — the 2026-08-17 incident) and the same transaction-merge fix, adapted
+// because this store never had per-record dirty tracking: diff cohostRecords
+// against _lastSavedCohostJson (the last snapshot this tab synced) right here to
+// find which ids this tab actually changed, instead of writing the whole array.
 function _flushCohostSaveWrite(){
   _cohostSaveTimeout = null;
   _cohostSaveFirstPendingAt = null;
-  if(_currentUid && typeof db !== 'undefined'){
-    const jsonData = JSON.stringify(cohostRecords);
-    _lastSavedCohostJson = jsonData;
-    return db.collection('users').doc(_currentUid).collection('properties').doc('cohosting').set({
-      data: jsonData,
-      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-    }).catch(function(e){ console.error('Failed to save co-hosting data:', e); });
-  }
-  return Promise.resolve();
+  if(!_currentUid || typeof db === 'undefined') return Promise.resolve();
+  const deletedIds = Array.from(_deletedCohostIds);
+  _deletedCohostIds.clear();
+  let prevMap = {};
+  try { (JSON.parse(_lastSavedCohostJson || '[]')).forEach(r => { prevMap[r.id] = JSON.stringify(r); }); } catch(e){}
+  const localById = {};
+  const dirtyIds = [];
+  cohostRecords.forEach(r => {
+    if(!prevMap.hasOwnProperty(r.id) || prevMap[r.id] !== JSON.stringify(r)){
+      dirtyIds.push(r.id);
+      localById[r.id] = r;
+    }
+  });
+  if(dirtyIds.length === 0 && deletedIds.length === 0) return Promise.resolve();
+  const docRef = db.collection('users').doc(_currentUid).collection('properties').doc('cohosting');
+  // See _flushSaveWrite — plain get-then-set on purpose, not a transaction, so this
+  // keeps working (and queuing) offline instead of rejecting outright.
+  return docRef.get().then(function(doc){
+    let serverRecords = [];
+    if(doc.exists){
+      try { serverRecords = JSON.parse(doc.data().data || '[]'); } catch(e){ serverRecords = []; }
+    }
+    const merged = [];
+    const seen = new Set();
+    serverRecords.forEach(r => {
+      if(deletedIds.indexOf(r.id) !== -1) return;
+      merged.push(Object.prototype.hasOwnProperty.call(localById, r.id) ? localById[r.id] : r);
+      seen.add(r.id);
+    });
+    dirtyIds.forEach(id => {
+      if(!seen.has(id) && deletedIds.indexOf(id) === -1) merged.push(localById[id]);
+    });
+    const jsonData = JSON.stringify(merged);
+    return docRef.set({ data: jsonData, updatedAt: firebase.firestore.FieldValue.serverTimestamp() })
+      .then(function(){ return { jsonData, merged }; });
+  }).then(function(result){
+    const pulledInForeignChange = result.jsonData !== JSON.stringify(cohostRecords);
+    _lastSavedCohostJson = result.jsonData;
+    cohostRecords = result.merged;
+    if(pulledInForeignChange){
+      const ae = document.activeElement;
+      const isEditing = ae && (ae.tagName==='INPUT'||ae.tagName==='TEXTAREA'||ae.tagName==='SELECT'||ae.isContentEditable);
+      if(!isEditing) render();
+      else ae.addEventListener('blur', function handler(){ render(); ae.removeEventListener('blur', handler); }, {once:true});
+    }
+  }).catch(function(e){
+    console.error('Failed to save co-hosting data:', e);
+    // See _flushSaveWrite's catch — transactions reject outright when offline instead
+    // of queuing like the old plain .set() did, so retry rather than drop the edit.
+    // dirtyIds don't need restoring: they're recomputed from cohostRecords vs
+    // _lastSavedCohostJson next flush, and _lastSavedCohostJson was never advanced.
+    deletedIds.forEach(function(id){ _deletedCohostIds.add(id); });
+    if(_cohostSaveFirstPendingAt == null) _cohostSaveFirstPendingAt = Date.now();
+    if(_cohostSaveTimeout) clearTimeout(_cohostSaveTimeout);
+    _cohostSaveTimeout = setTimeout(_flushCohostSaveWrite, 2000);
+  });
 }
 
 /* ===== STANDALONE CONTACTS ===== */
@@ -10483,6 +10606,7 @@ function deleteRecord(id){
   const r = records.find(x => x.id === id);
   const name = r ? (r.property || r.name || 'Property') : 'Property';
   records = records.filter(x => x.id !== id);
+  _deletedRecordIds.add(id);
   saveData();
   // Stage A dual-write mirror (see _dualWriteDirtyRecords) — soft-delete only. The
   // record disappears from the UI exactly as before (removed from `records`/the old
@@ -11048,6 +11172,7 @@ async function handleExtensionListing(data) {
       if (choice === 'replace') {
         const idx = records.findIndex(x => x.id === dupRecord.id);
         if (idx !== -1) records.splice(idx, 1);
+        _deletedRecordIds.add(dupRecord.id);
         saveData();
       }
       // 'keep-both' falls through and creates the new record normally
@@ -11961,6 +12086,7 @@ async function saveNewRecord(){
     if(choice === 'replace'){
       const idx = records.findIndex(x => x.id === dupRecord.id);
       if(idx !== -1) records.splice(idx, 1);
+      _deletedRecordIds.add(dupRecord.id);
       saveData();
     }
   }
@@ -19666,6 +19792,8 @@ firebase.auth().onAuthStateChanged(async (user) => {
     if(_cohostUnsubscribe){ _cohostUnsubscribe(); _cohostUnsubscribe = null; }
     _lastSavedJson = '';
     _dirtyRecordIds.clear();
+    _deletedRecordIds.clear();
+    _deletedCohostIds.clear();
     _isAdmin = false;
     applyAdminUI();
     render();
@@ -25478,7 +25606,7 @@ async function handleCohostListing(data){
   if(dup){
     const choice = await showDuplicateDialog(canonical, dup);
     if(choice === 'cancel') return;
-    if(choice === 'replace'){ const i = cohostRecords.findIndex(function(x){ return x.id===dup.id; }); if(i!==-1) cohostRecords.splice(i,1); saveCohostData(); }
+    if(choice === 'replace'){ const i = cohostRecords.findIndex(function(x){ return x.id===dup.id; }); if(i!==-1) cohostRecords.splice(i,1); _deletedCohostIds.add(dup.id); saveCohostData(); }
   }
   const rent = (data.price!=null && data.price!=='') ? (_cn(data.price)||'') : '';
   const r = {
@@ -25634,6 +25762,7 @@ function deleteCohostRecord(id){
     onConfirm: function(){
       const i = cohostRecords.findIndex(function(x){ return x.id===id; });
       if(i>=0) cohostRecords.splice(i,1);
+      _deletedCohostIds.add(id);
       saveCohostData();
       switchView('coHosting');
     }
