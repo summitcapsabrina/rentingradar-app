@@ -17862,13 +17862,15 @@ async function _adminEnrichUsers(){
   let changed = false;
   for(const u of _adminUsers){
     try {
-      const recDoc = await db.collection('users').doc(u.uid).collection('properties').doc('records').get();
-      if(recDoc.exists){
-        const data = recDoc.data();
-        try { u.propertyCount = JSON.parse(data.data || '[]').length; } catch(e){ u.propertyCount = 0; }
-      } else {
-        u.propertyCount = 0;
-      }
+      // Stage 3 of the property-per-document migration plan: count from the
+      // propertyRecords mirror instead of parsing the blob. Read-only, admin-only,
+      // purely a stats display — the lowest-risk read cutover, and doubles as a
+      // free ambient sanity check every time this panel is opened (see
+      // verifyPropertyDataMirrors for the real verification tool).
+      const mirrorSnap = await db.collection('users').doc(u.uid).collection('propertyRecords').get();
+      let count = 0;
+      mirrorSnap.forEach(function(doc){ if(!doc.data()._deletedAt) count++; });
+      u.propertyCount = count;
       changed = true;
     } catch(e){
       console.error('Admin enrich FAILED for', u.uid, u.email, ':', e.code, e.message);
