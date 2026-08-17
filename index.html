@@ -3262,6 +3262,7 @@ async function loadDataFromFirestore(userUid){
     console.error('Failed to load data from Firestore:', e);
     records = [];
   }
+  _shadowVerifyMirror(userUid, records, 'propertyRecords', '_lastMirrorMismatchAt');
   // 2026-08-17: one-time cleanup for the inline-base64-screenshot problem (see
   // setupNotePasteHandler's comment) — the blob was already at ~95% of Firestore's
   // 1 MiB cap from screenshots pasted before the Storage-upload fix shipped, so new
@@ -3758,6 +3759,51 @@ async function _migrateInlineNoteImagesCohost(userUid){
   console.log('[migration] cohost inline note images migrated:', touchedAny, failedAny ? '(some failed, will retry next load)' : '');
 }
 
+// Stage 4a of the property-per-document migration plan: shadow-read the mirror on
+// every real load and diff it against what the blob-based load just populated.
+// Pure instrumentation — never changes what the user sees or how data is written.
+// This is the thing that needs to run under real usage (real devices, tabs,
+// connectivity, the actual variety of how people use the app) for a real soak
+// period before Stage 4b can trust the mirror as the read source; it can't be
+// shortened by moving faster, only by time actually elapsing clean.
+function _stableStringifyClient(obj){
+  if(obj === null || typeof obj !== 'object') return JSON.stringify(obj);
+  if(Array.isArray(obj)) return '[' + obj.map(_stableStringifyClient).join(',') + ']';
+  const keys = Object.keys(obj).sort();
+  return '{' + keys.map(function(k){ return JSON.stringify(k) + ':' + _stableStringifyClient(obj[k]); }).join(',') + '}';
+}
+async function _shadowVerifyMirror(userUid, localArr, mirrorCollectionName, breadcrumbField){
+  if(_isImpersonating()) return; // don't run diagnostics against a customer's account on the admin's behalf
+  try {
+    const snap = await db.collection('users').doc(userUid).collection(mirrorCollectionName).get();
+    const mirrorMap = {};
+    snap.forEach(function(doc){ mirrorMap[doc.id] = doc.data(); });
+    const localMap = {};
+    localArr.forEach(function(r){ if(r && r.id) localMap[r.id] = r; });
+
+    const missingInMirror = [];
+    const hashMismatch = [];
+    Object.keys(localMap).forEach(function(id){
+      if(!mirrorMap[id]){ missingInMirror.push(id); return; }
+      if(_stableStringifyClient(localMap[id]) !== _stableStringifyClient(mirrorMap[id])) hashMismatch.push(id);
+    });
+    const missingInBlobUnexpected = [];
+    Object.keys(mirrorMap).forEach(function(id){
+      if(localMap[id]) return;
+      if(mirrorMap[id]._deletedAt) return; // expected: soft-deleted, correctly absent from the blob
+      missingInBlobUnexpected.push(id);
+    });
+
+    if(missingInMirror.length || hashMismatch.length || missingInBlobUnexpected.length){
+      console.error('[migration-verify]', mirrorCollectionName, 'MISMATCH for', userUid, { missingInMirror, hashMismatch, missingInBlobUnexpected });
+      const payload = {};
+      payload[breadcrumbField] = new Date().toISOString();
+      payload[breadcrumbField + 'Summary'] = { missingInMirror: missingInMirror.length, hashMismatch: hashMismatch.length, missingInBlobUnexpected: missingInBlobUnexpected.length };
+      db.collection('users').doc(userUid).set(payload, { merge: true }).catch(function(){});
+    }
+  } catch(e){ console.error('[migration-verify] shadow check failed for', userUid, mirrorCollectionName, e); }
+}
+
 // Fire any pending debounced save right now instead of waiting out the timer.
 // Hooked to visibilitychange/pagehide/beforeunload below so switching tabs,
 // backgrounding the browser, or closing the tab flushes in-memory edits
@@ -3907,6 +3953,7 @@ async function loadCohostDataFromFirestore(userUid){
     console.error('Failed to load co-hosting data:', e);
     cohostRecords = [];
   }
+  _shadowVerifyMirror(userUid, cohostRecords, 'cohostRecords', '_lastMirrorMismatchAtCohost');
   // If a Co-Hosting view is already on screen (e.g. restored from the URL hash
   // on a hard reload), re-render now that the data has loaded — otherwise the
   // dashboard/profile stays empty until the user clicks the sidebar.
