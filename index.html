@@ -3425,6 +3425,33 @@ function saveData(recId){
 // _deletedRecordIds), merged into the latest server state read right before
 // writing — never this tab's full local snapshot. A stale tab can no longer
 // revert records it never touched, no matter how old its in-memory copy is.
+// 2026-08-17: a failed save used to be invisible — console.error only, so the
+// first anyone knew about it was missing data, sometimes days later. Surfaces
+// it to the user instead, once per failure episode (not on every 2s retry —
+// that would be its own kind of alarming/unusable if offline for a while).
+// Offline gets a calm, expected-looking message since the retry loop + Firestore
+// queueing genuinely handle it; anything else gets a louder one since automatic
+// retry may not actually resolve it.
+function _showSaveTroubleToast(){
+  if(navigator.onLine === false){
+    showToast("You're offline — changes will save automatically once you're back online.", 'warning', 5000);
+  } else {
+    showToast("A save didn't go through and is retrying. If this keeps happening, contact support before making more changes.", 'error', 8000);
+  }
+}
+let _saveFailureNotified = false;
+function _notifySaveTrouble(){
+  if(_saveFailureNotified) return;
+  _saveFailureNotified = true;
+  _showSaveTroubleToast();
+}
+let _cohostSaveFailureNotified = false;
+function _notifyCohostSaveTrouble(){
+  if(_cohostSaveFailureNotified) return;
+  _cohostSaveFailureNotified = true;
+  _showSaveTroubleToast();
+}
+
 function _flushSaveWrite(){
   _saveTimeout = null;
   _saveFirstPendingAt = null;
@@ -3474,6 +3501,7 @@ function _flushSaveWrite(){
     const pulledInForeignChange = result.jsonData !== JSON.stringify(records);
     _lastSavedJson = result.jsonData;
     records = result.merged;
+    _saveFailureNotified = false;
     _dualWriteDirtyRecords(dirtyIds);
     if(pulledInForeignChange){
       const ae = document.activeElement;
@@ -3487,6 +3515,7 @@ function _flushSaveWrite(){
     // and resolves once synced) — put the ids back so the next flush retries.
     dirtyIds.forEach(id => _dirtyRecordIds.add(id));
     deletedIds.forEach(id => _deletedRecordIds.add(id));
+    _notifySaveTrouble();
     if(_saveFirstPendingAt == null) _saveFirstPendingAt = Date.now();
     if(_saveTimeout) clearTimeout(_saveTimeout);
     _saveTimeout = setTimeout(_flushSaveWrite, 2000);
@@ -3888,6 +3917,7 @@ function _flushCohostSaveWrite(){
     const pulledInForeignChange = result.jsonData !== JSON.stringify(cohostRecords);
     _lastSavedCohostJson = result.jsonData;
     cohostRecords = result.merged;
+    _cohostSaveFailureNotified = false;
     // Same per-record mirror records already has (_dualWriteDirtyRecords) — cohost
     // previously only got one on delete; this keeps it live going forward too, same
     // recovery guarantee if this store ever nears its own size ceiling.
@@ -3909,6 +3939,7 @@ function _flushCohostSaveWrite(){
     // dirtyIds don't need restoring: they're recomputed from cohostRecords vs
     // _lastSavedCohostJson next flush, and _lastSavedCohostJson was never advanced.
     deletedIds.forEach(function(id){ _deletedCohostIds.add(id); });
+    _notifyCohostSaveTrouble();
     if(_cohostSaveFirstPendingAt == null) _cohostSaveFirstPendingAt = Date.now();
     if(_cohostSaveTimeout) clearTimeout(_cohostSaveTimeout);
     _cohostSaveTimeout = setTimeout(_flushCohostSaveWrite, 2000);
