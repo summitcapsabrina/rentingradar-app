@@ -3387,6 +3387,36 @@ window.addEventListener('beforeunload', function(e){
   }
 });
 
+// A warning only helps if the user reads it and cancels — dismiss it (or a refresh
+// that skips beforeunload entirely, e.g. some mobile browsers) and the typed text
+// is still gone. So mirror it to localStorage as they type, synchronously, well
+// before any Add/Save click — that's the only way a still-uncommitted note editor
+// (which saveData()/saveCohostData() don't know exists yet) survives an instant
+// refresh. Scoped to the new-note and edit-note editors specifically (stable ids
+// keyed by record/note id) since those are the reported loss path; each is
+// restored into its editor on next render and cleared once actually committed.
+function _draftKey(editorId){ return 'rr_draft_' + editorId; }
+function _getDraftHtml(editorId){
+  try { return localStorage.getItem(_draftKey(editorId)) || ''; } catch(e){ return ''; }
+}
+function _setDraftHtml(editorId, html){
+  try { localStorage.setItem(_draftKey(editorId), html); } catch(e){}
+}
+function _clearDraftHtml(editorId){
+  try { localStorage.removeItem(_draftKey(editorId)); } catch(e){}
+}
+const _draftSaveTimers = {};
+document.addEventListener('input', function(e){
+  const ed = e.target.closest && e.target.closest('.rte-editor');
+  if(!ed || !ed.id || !/^(newNoteRte_|editNoteRte_)/.test(ed.id)) return;
+  clearTimeout(_draftSaveTimers[ed.id]);
+  _draftSaveTimers[ed.id] = setTimeout(function(){
+    const html = ed.innerHTML;
+    if(html && html.trim()) _setDraftHtml(ed.id, html);
+    else _clearDraftHtml(ed.id);
+  }, 250);
+});
+
 /* ===== CO-HOSTING STORE (isolated from `records`) ===== */
 // Mirrors the records persistence pattern but in a separate Firestore doc so
 // Co-Hosting properties are fully partitioned from Prospecting/Operations.
@@ -9023,7 +9053,7 @@ function _renderProfileInner(){
           <div style="display:flex;gap:8px">
             <div style="flex:1">
               ${buildRteToolbarHtml('newNoteRte_'+r.id)}
-              <div class="rte-editor" contenteditable="true" id="newNoteRte_${r.id}" data-placeholder="Add a note..." data-hint="Paste screenshots to attach | Shift + Enter to save" onkeydown="handleRteKeydown(event,'${r.id}')"></div>
+              <div class="rte-editor" contenteditable="true" id="newNoteRte_${r.id}" data-placeholder="Add a note..." data-hint="Paste screenshots to attach | Shift + Enter to save" onkeydown="handleRteKeydown(event,'${r.id}')">${_getDraftHtml('newNoteRte_'+r.id)}</div>
             </div>
             <button class="btn btn-primary btn-sm" onclick="addNote('${r.id}')" style="align-self:flex-end;white-space:nowrap">Add</button>
           </div>
@@ -10116,6 +10146,7 @@ function addNote(id){
   r.notes.push(noteObj);
   selectedNoteType[id] = 'note';
   delete pendingNoteImages[id];
+  _clearDraftHtml('newNoteRte_'+id);
   _saveRecFor(r, id);
   render();
 }
@@ -10144,7 +10175,7 @@ function editNote(recId, noteId){
       <button class="note-type-btn ${currentType==='email'?'active':''}" data-type="email" onclick="document.querySelectorAll('#editNoteTypeBar .note-type-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active')" title="Email">📧</button>
     </div>
     ${buildRteToolbarHtml(editEditorId)}
-    <div class="rte-editor" contenteditable="true" id="${editEditorId}" data-placeholder="Edit note..." onkeydown="handleRteKeydown(event,'${recId}')">${note.html || esc(note.text)}</div>
+    <div class="rte-editor" contenteditable="true" id="${editEditorId}" data-placeholder="Edit note..." onkeydown="handleRteKeydown(event,'${recId}')">${_getDraftHtml(editEditorId) || note.html || esc(note.text)}</div>
     <div class="rte-img-preview" id="_editPreview"></div>
     <div style="font-size:.6rem;color:var(--text3);opacity:.6;margin-top:3px">Paste screenshots to attach</div>
     <div class="sp-actions">
@@ -10192,6 +10223,7 @@ function saveEditNote(recId, noteId){
     delete note.images;
   }
   pendingEditImages = [];
+  _clearDraftHtml(editEditorId);
   _saveRecFor(r, recId);
   document.getElementById('editNoteOverlay')?.remove();
   render();
@@ -25813,7 +25845,7 @@ function _cohostActivityLogCard(r){
       '</div>'+
       '<div style="margin-top:10px"><div style="display:flex;gap:8px"><div style="flex:1">'+
         buildRteToolbarHtml('newNoteRte_'+r.id)+
-        '<div class="rte-editor" contenteditable="true" id="newNoteRte_'+r.id+'" data-placeholder="Add a note..." data-hint="Paste screenshots to attach | Shift + Enter to save" onkeydown="handleRteKeydown(event,\''+r.id+'\')"></div>'+
+        '<div class="rte-editor" contenteditable="true" id="newNoteRte_'+r.id+'" data-placeholder="Add a note..." data-hint="Paste screenshots to attach | Shift + Enter to save" onkeydown="handleRteKeydown(event,\''+r.id+'\')">'+_getDraftHtml('newNoteRte_'+r.id)+'</div>'+
       '</div><button class="btn btn-primary btn-sm" onclick="addNote(\''+r.id+'\')" style="align-self:flex-end;white-space:nowrap">Add</button></div>'+
       '<div class="rte-img-preview" id="imgPreview_'+r.id+'"></div></div></div>'+
     '<div style="flex:1;overflow-y:auto;max-height:240px;padding:10px 16px 14px"><div class="note-list">'+notesHtml+'</div></div>'+
