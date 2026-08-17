@@ -1632,6 +1632,27 @@ h1 .hero-edit-input{font-size:1.35rem}
 .cr-copy-btn.copied{color:var(--success,#22c55e)!important;opacity:1}
 .ce-email-error{color:var(--danger);font-size:.72rem;margin-top:3px;display:none}
 .ce-email-error.visible{display:block}
+/* ===== UNITS TAB (Multi Unit) ===== */
+.unit-card{padding:0;display:flex;flex-direction:column;transition:box-shadow .15s,transform .15s}
+.unit-card:hover{box-shadow:var(--card-hover-shadow);transform:translateY(-2px)}
+.unit-card-top{display:flex;align-items:flex-start;gap:10px;padding:14px 16px 10px}
+.unit-card-icon{width:36px;height:36px;border-radius:10px;background:var(--primary-light);color:var(--primary);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.unit-card-title{flex:1;min-width:0}
+.unit-card-label{font-weight:700;color:var(--text);font-size:.95rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.unit-avail-pill{margin-top:5px;padding:2px 9px;font-size:.68rem}
+.unit-avail-pill.ua-now{background:rgba(16,185,129,.15);color:#34d399}.unit-avail-pill.ua-now::before{background:#34d399}
+.unit-avail-pill.ua-date{background:rgba(245,158,11,.15);color:#fbbf24}.unit-avail-pill.ua-date::before{background:#fbbf24}
+:root.light .unit-avail-pill.ua-now{background:#065f46;color:#fff}:root.light .unit-avail-pill.ua-now::before{background:#6ee7b7}
+:root.light .unit-avail-pill.ua-date{background:#92400e;color:#fff}:root.light .unit-avail-pill.ua-date::before{background:#fcd34d}
+.unit-card-rent{padding:2px 16px 0;font-size:1.5rem;font-weight:800;color:var(--num-success);letter-spacing:-.02em}
+.unit-card-rent span{font-size:.78rem;font-weight:500;color:var(--text3);margin-left:2px}
+.unit-card-rent.empty{color:var(--text3);font-size:.9rem;font-weight:600;font-style:italic}
+.unit-card-stats{display:flex;gap:14px;padding:10px 16px 14px;flex-wrap:wrap}
+.unit-stat{display:flex;align-items:center;gap:5px;font-size:.8rem;color:var(--text2);font-weight:500}
+.unit-stat svg{color:var(--text3);flex-shrink:0}
+.unit-card-extra{margin:0 16px 14px;padding-top:10px;border-top:1px solid var(--border);font-size:.8rem}
+.unit-card-extra .uce-common{color:var(--text3);margin-bottom:4px}
+.unit-card-extra .uce-notes{color:var(--text2);white-space:pre-wrap}
 /* ===== CUSTOM DATE/TIME PICKER ===== */
 .rr-dt-trigger{display:flex;align-items:center;gap:6px;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;font-size:.85rem;color:var(--text);background:var(--surface);transition:border-color .15s;user-select:none;width:100%}
 .rr-dt-trigger:hover{border-color:var(--primary)}
@@ -2913,6 +2934,9 @@ let currentOpsId = null; // Property id when viewing the Operations Profile
 let opsActiveSubtab = 'property'; // Active horizontal sub-tab on Operations Profile
 
 function isOpsProperty(r){ return !!(r && r.stage === 'operations'); }
+// Multi-unit properties (recordType 'apartment') get the building emoji everywhere
+// a single-unit property would get the house emoji — mirrors the Property Details tab.
+function propertyEmoji(r){ return (r && r.recordType === 'apartment') ? '🏢' : '🏠'; }
 function getProspectingRecords(){ return records.filter(function(r){ return !isOpsProperty(r); }); }
 // Operations is the one place Arbitrage and Co-Hosting properties share a list —
 // both stores are searched so the Operations dashboard/cap sees every property
@@ -2937,6 +2961,14 @@ let _currentUid = null;
 let _firestoreUnsubscribe = null;
 let _dirtyRecordIds = new Set();
 let _lastSavedJson = '';
+// Continuous activity (e.g. navigating between properties, which stamps lastAccessed
+// on every open) keeps resetting the 1s "quiet" debounce below indefinitely, so a
+// write can be deferred forever as long as the tab stays visible and active — the
+// flush-on-hide/pagehide handlers never help because the tab never goes hidden.
+// SAVE_MAX_WAIT_MS is a hard ceiling: no matter how often the quiet timer resets,
+// a flush fires within this many ms of the *first* unsaved change.
+const SAVE_MAX_WAIT_MS = 4000;
+let _saveFirstPendingAt = null;
 
 // Admin impersonation. When set, _currentUid is swapped to this UID so every Firestore
 // read/write targets the impersonated user's data. Restore in _adminExitImpersonate.
@@ -3228,6 +3260,22 @@ async function loadDataFromFirestore(userUid){
     console.error('Failed to load data from Firestore:', e);
     records = [];
   }
+  // Stage B of the property data-safety migration (vault: Roadmap & Aspirations):
+  // one-time backfill so records that existed before Stage A shipped also get a
+  // mirror doc, not just ones touched going forward. Gated by
+  // propertyRecordsMigratedAt on the user doc, fire-and-forget like the other
+  // parallel loads below, skipped during impersonation (an admin viewing a
+  // customer's account should never trigger a migration on their behalf).
+  // Never touches or deletes anything in the old blob doc — additive only.
+  if(_isImpersonating()){
+    console.log('[impersonate] skipping propertyRecords backfill check for', userUid);
+  } else {
+    db.collection('users').doc(userUid).get().then(function(userDoc){
+      const alreadyMigrated = userDoc.exists && userDoc.data().propertyRecordsMigratedAt;
+      if(alreadyMigrated) return;
+      return _backfillPropertyRecordsCollection(userUid);
+    }).catch(function(e){ console.error('propertyRecords backfill check failed:', e); });
+  }
   // Load standalone contacts in parallel — fire-and-forget so the UI shows fast.
   loadContacts(userUid).catch(function(e){ console.error('loadContacts failed:', e); });
   // Load the isolated Co-Hosting store in parallel (Admin + Affiliate feature).
@@ -3306,9 +3354,15 @@ function saveData(recId){
     } catch(e){ /* first save or parse error — stamp all */ records.forEach(r => { r._updatedAt = now; }); }
   }
 
-  // Debounce Firestore writes to avoid excessive calls
+  // Debounce Firestore writes to avoid excessive calls, but never let continuous
+  // activity push the write out indefinitely: cap how long a change can sit
+  // pending at SAVE_MAX_WAIT_MS from the *first* unsaved change, regardless of
+  // how many more times the 1s "quiet" timer below gets reset in the meantime.
   if(_saveTimeout) clearTimeout(_saveTimeout);
-  _saveTimeout = setTimeout(_flushSaveWrite, 1000);
+  if(_saveFirstPendingAt == null) _saveFirstPendingAt = now;
+  const elapsed = now - _saveFirstPendingAt;
+  const delay = Math.max(0, Math.min(1000, SAVE_MAX_WAIT_MS - elapsed));
+  _saveTimeout = setTimeout(_flushSaveWrite, delay);
 }
 
 // The actual Firestore write, factored out of the debounce so it can also be
@@ -3317,19 +3371,59 @@ function saveData(recId){
 // debounce timer app-wide, so a burst of activity right before a tab closes
 // can push the real write out indefinitely — this is what silently dropped
 // data in the 2026-08-16 incident. Flushing on visibilitychange/pagehide
-// closes that window; see _flushPendingSave.
+// closes the tab-close window; SAVE_MAX_WAIT_MS (above) closes the separate
+// window where the tab stays open and active the whole time, so it never
+// goes hidden and the quiet timer never gets a chance to settle.
 function _flushSaveWrite(){
   _saveTimeout = null;
+  _saveFirstPendingAt = null;
   if(_currentUid && typeof db !== 'undefined'){
     const jsonData = JSON.stringify(records);
     _lastSavedJson = jsonData;
+    const _dirtyIdsForDualWrite = Array.from(_dirtyRecordIds);
     _dirtyRecordIds.clear();
+    _dualWriteDirtyRecords(_dirtyIdsForDualWrite);
     return db.collection('users').doc(_currentUid).collection('properties').doc('records').set({
       data: jsonData,
       updatedAt: firebase.firestore.FieldValue.serverTimestamp()
     }).catch(e => console.error('Failed to save data:', e));
   }
   return Promise.resolve();
+}
+
+// Stage A of the property data-safety migration (vault: Roadmap & Aspirations,
+// "property data-safety migration"). Additive only, zero risk to current behavior —
+// the blob write above stays the sole source of truth. This just also writes each
+// touched record to its own doc, one write per record, no shared debounce, mirroring
+// saveContact() (~line 3604). Purpose: give a future read-cutover real history to
+// switch to instead of a blank collection. Never blocks, never affects, and can never
+// break the blob write above — failures here are logged and swallowed, same as that
+// write's own .catch two lines up.
+function _dualWriteDirtyRecords(ids){
+  if(!ids || !ids.length || !_currentUid || typeof db === 'undefined') return;
+  const col = db.collection('users').doc(_currentUid).collection('propertyRecords');
+  ids.forEach(id => {
+    const r = records.find(x => x.id === id);
+    if(!r) return; // removed since being marked dirty — deletion paths handle their own cleanup
+    col.doc(id).set(r).catch(e => console.error('[migration] propertyRecords dual-write failed for', id, e));
+  });
+}
+
+// Stage B of the property data-safety migration — one-time backfill, called from
+// loadDataFromFirestore. Copies every record that existed *before* Stage A shipped
+// into the new per-record collection, so a future read-cutover has full history
+// rather than only records touched after tonight. Idempotent (a .set() per record
+// is safe to re-run), never deletes or modifies the old blob doc.
+async function _backfillPropertyRecordsCollection(userUid){
+  try {
+    const col = db.collection('users').doc(userUid).collection('propertyRecords');
+    const snapshot = records.slice(); // current in-memory records as of load time
+    await Promise.all(snapshot.map(function(r){
+      return col.doc(r.id).set(r).catch(function(e){ console.error('[migration] backfill failed for', r.id, e); });
+    }));
+    await db.collection('users').doc(userUid).set({ propertyRecordsMigratedAt: new Date().toISOString() }, { merge: true });
+    console.log('[migration] propertyRecords backfill complete:', snapshot.length, 'records');
+  } catch(e){ console.error('[migration] propertyRecords backfill failed:', e); }
 }
 
 // Fire any pending debounced save right now instead of waiting out the timer.
@@ -3408,13 +3502,44 @@ function _clearDraftHtml(editorId){
 const _draftSaveTimers = {};
 document.addEventListener('input', function(e){
   const ed = e.target.closest && e.target.closest('.rte-editor');
-  if(!ed || !ed.id || !/^(newNoteRte_|editNoteRte_)/.test(ed.id)) return;
+  if(!ed || !ed.id || !/^(newNoteRte_|editNoteRte_|compNoteRte_)/.test(ed.id)) return;
   clearTimeout(_draftSaveTimers[ed.id]);
   _draftSaveTimers[ed.id] = setTimeout(function(){
     const html = ed.innerHTML;
     if(html && html.trim()) _setDraftHtml(ed.id, html);
     else _clearDraftHtml(ed.id);
   }, 250);
+});
+
+// Same guarantee as the note-editor drafts above (typed-but-not-submitted text
+// survives a refresh), generalized to plain <input>/<textarea> form fields instead
+// of contenteditable rich-text editors. Scoped by an explicit context string, not
+// just the field's DOM id, since form field ids are reused across every instance of
+// a modal (e.g. every unit's Add/Edit Unit modal uses the same `unit_label` id) —
+// without a context key, editing one record's draft would leak into another's.
+// A form opts in by setting _fieldDraftCtx + _fieldDraftIds while it's open (see
+// openAddUnitModal) and clearing drafts via _clearFieldDrafts once actually saved.
+function _fieldDraftKey(ctx, fieldId){ return 'rr_draft_field_' + ctx + '_' + fieldId; }
+function _getFieldDraft(ctx, fieldId){
+  try { return localStorage.getItem(_fieldDraftKey(ctx, fieldId)); } catch(e){ return null; }
+}
+function _setFieldDraft(ctx, fieldId, value){
+  try {
+    if(value) localStorage.setItem(_fieldDraftKey(ctx, fieldId), value);
+    else localStorage.removeItem(_fieldDraftKey(ctx, fieldId));
+  } catch(e){}
+}
+function _clearFieldDrafts(ctx, fieldIds){
+  (fieldIds || []).forEach(function(id){ try { localStorage.removeItem(_fieldDraftKey(ctx, id)); } catch(e){} });
+}
+let _fieldDraftCtx = null;
+let _fieldDraftIds = [];
+const _fieldDraftTimers = {};
+document.addEventListener('input', function(e){
+  const el = e.target;
+  if(!_fieldDraftCtx || !el.id || _fieldDraftIds.indexOf(el.id) === -1) return;
+  clearTimeout(_fieldDraftTimers[el.id]);
+  _fieldDraftTimers[el.id] = setTimeout(function(){ _setFieldDraft(_fieldDraftCtx, el.id, el.value); }, 250);
 });
 
 /* ===== CO-HOSTING STORE (isolated from `records`) ===== */
@@ -3491,14 +3616,22 @@ async function loadCohostDataFromFirestore(userUid){
 function saveCohostData(){
   if(_blockIfImpersonating('Save')) return;
   if(_cohostSaveTimeout) clearTimeout(_cohostSaveTimeout);
-  _cohostSaveTimeout = setTimeout(_flushCohostSaveWrite, 1000);
+  const now = Date.now();
+  if(_cohostSaveFirstPendingAt == null) _cohostSaveFirstPendingAt = now;
+  const elapsed = now - _cohostSaveFirstPendingAt;
+  const delay = Math.max(0, Math.min(1000, SAVE_MAX_WAIT_MS - elapsed));
+  _cohostSaveTimeout = setTimeout(_flushCohostSaveWrite, delay);
 }
 let _cohostSaveTimeout = null;
+let _cohostSaveFirstPendingAt = null;
 
 // Same debounce-drop risk as saveData()/_flushSaveWrite() (see comment there) —
 // factored out so visibilitychange/pagehide/beforeunload can flush it immediately.
+// Also shares the same SAVE_MAX_WAIT_MS ceiling so continuous activity on a
+// Co-Hosting profile can't push the write out indefinitely either.
 function _flushCohostSaveWrite(){
   _cohostSaveTimeout = null;
+  _cohostSaveFirstPendingAt = null;
   if(_currentUid && typeof db !== 'undefined'){
     const jsonData = JSON.stringify(cohostRecords);
     _lastSavedCohostJson = jsonData;
@@ -3947,6 +4080,7 @@ let _pendingPrimaryPid = null;
 //   prelinkAsPrimary — when creating a new contact, also set it as that property's primary
 //   sourcePid        — if set, modal was opened from a property profile; restricts to
 //                      "Remove from this Property" (no full Delete)
+let _contactModalDraftCtx = null;
 function openContactModal(cid, prelinkPid, prelinkAsPrimary, sourcePid){
   const isNew = !cid;
   const original = isNew ? null : contacts.find(function(c){ return c.id === cid; });
@@ -3964,6 +4098,29 @@ function openContactModal(cid, prelinkPid, prelinkAsPrimary, sourcePid){
   if(isNew && _pendingContactPreset && _pendingContactPreset.role){
     _editingContact.role = _pendingContactPreset.role;
   }
+  // Draft context: a freshly-generated uid (isNew) is NOT stable across a
+  // refresh — a new one gets minted every time this function runs, so keying
+  // drafts on it would defeat the entire point (the draft would be orphaned
+  // under the old, now-unreachable id the instant the page reloads and this
+  // function runs again). Existing contacts use their real, stable id;
+  // brand-new ones use a fixed singleton key instead, same shape as the
+  // Cohost manual-add form. Tracked separately from _editingContact itself
+  // (not as a field on it) so it never accidentally gets written to Firestore
+  // as part of the saved contact document.
+  _contactModalDraftCtx = isNew ? 'contactAdd_new' : cid;
+  // One-time restoration of any draft left over from an interrupted previous
+  // session. Deliberately NOT re-applied on every _renderContactModal() call —
+  // that would let a stale localStorage snapshot clobber a value the user just
+  // typed in the current session before its own 250ms debounce had a chance
+  // to save.
+  (function(){
+    const ctx = _contactModalDraftCtx;
+    const nameDft = _getFieldDraft(ctx, 'contactNameInput'); if(nameDft != null) _editingContact.name = nameDft;
+    const pronDft = _getFieldDraft(ctx, 'contactPronunciationInput'); if(pronDft != null) _editingContact.pronunciation = pronDft;
+    const phoneDft = _getFieldDraft(ctx, 'contactPhoneInput'); if(phoneDft != null) _editingContact.phone = phoneDft;
+    const emailDft = _getFieldDraft(ctx, 'contactEmailInput'); if(emailDft != null) _editingContact.email = emailDft;
+    const roleDft = _getFieldDraft(ctx, 'contactRoleInput'); if(roleDft != null) _editingContact.role = roleDft;
+  })();
   _contactModalSourcePid = sourcePid || null;
   _pendingPrimaryPid = (prelinkAsPrimary && prelinkPid) ? prelinkPid : null;
 
@@ -3990,11 +4147,19 @@ function closeContactModal(){
   _pendingContactPreset = null;
 }
 
+const CONTACT_MODAL_DRAFT_FIELD_IDS = ['contactNameInput','contactPronunciationInput','contactPhoneInput','contactEmailInput','contactRoleInput'];
 function _renderContactModal(){
   const overlay = document.getElementById('contactModalOverlay');
   if(!overlay || !_editingContact) return;
   const c = _editingContact;
   const isNew = !contacts.find(function(x){ return x.id === c.id; });
+  // c.id is a stable uid generated at modal-open time (even for a brand-new
+  // contact), so it's a valid draft context from the first render onward —
+  // typed-but-unsaved edits here (currently held only in the in-memory
+  // _editingContact scratch object, same loss risk as an uncommitted field
+  // anywhere else) now survive a refresh too.
+  _fieldDraftCtx = _contactModalDraftCtx || c.id;
+  _fieldDraftIds = CONTACT_MODAL_DRAFT_FIELD_IDS;
 
   const avatar = c.photo
     ? '<img src="' + c.photo + '" alt="" style="width:80px;height:80px;border-radius:50%;object-fit:cover">'
@@ -4049,7 +4214,7 @@ function _renderContactModal(){
           '<label style="font-size:.7rem;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">Name</label>' +
           '<input type="text" id="contactNameInput" value="' + esc(c.name || '') + '" placeholder="Full name" style="width:100%;padding:8px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.95rem" oninput="_editingContact.name=this.value">' +
           '<label style="font-size:.7rem;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-top:6px">Pronunciation <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></label>' +
-          '<input type="text" value="' + esc(c.pronunciation || '') + '" placeholder="e.g., suh-BREE-nuh" style="width:100%;padding:8px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.85rem;font-style:italic" oninput="_editingContact.pronunciation=this.value">' +
+          '<input type="text" id="contactPronunciationInput" value="' + esc(c.pronunciation || '') + '" placeholder="e.g., suh-BREE-nuh" style="width:100%;padding:8px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.85rem;font-style:italic" oninput="_editingContact.pronunciation=this.value">' +
           (c.photo ? '<button class="btn btn-secondary btn-sm" style="font-size:.7rem;padding:3px 8px;align-self:flex-start;margin-top:2px" onclick="_removeContactPhoto()">Remove photo</button>' : '') +
         '</div>' +
       '</div>' +
@@ -4057,15 +4222,15 @@ function _renderContactModal(){
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px">' +
         '<div style="display:flex;flex-direction:column;gap:6px">' +
           '<label style="font-size:.7rem;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">Phone</label>' +
-          '<input type="tel" maxlength="14" value="' + esc(c.phone || '') + '" style="padding:8px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text)" oninput="this.value=fmtPhone(this.value);_editingContact.phone=this.value">' +
+          '<input type="tel" id="contactPhoneInput" maxlength="14" value="' + esc(c.phone || '') + '" style="padding:8px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text)" oninput="this.value=fmtPhone(this.value);_editingContact.phone=this.value">' +
         '</div>' +
         '<div style="display:flex;flex-direction:column;gap:6px">' +
           '<label style="font-size:.7rem;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">Email</label>' +
-          '<input type="email" value="' + esc(c.email || '') + '" style="padding:8px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text)" oninput="_editingContact.email=this.value">' +
+          '<input type="email" id="contactEmailInput" value="' + esc(c.email || '') + '" style="padding:8px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text)" oninput="_editingContact.email=this.value">' +
         '</div>' +
         '<div style="display:flex;flex-direction:column;gap:6px;grid-column:span 2">' +
           '<label style="font-size:.7rem;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">Role</label>' +
-          '<input type="text" list="contactRoleSuggestions" value="' + esc(c.role || '') + '" placeholder="Landlord, Agent, Handyman, Virtual Assistant, Cleaner…" style="padding:8px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text)" oninput="_editingContact.role=this.value">' +
+          '<input type="text" id="contactRoleInput" list="contactRoleSuggestions" value="' + esc(c.role || '') + '" placeholder="Landlord, Agent, Handyman, Virtual Assistant, Cleaner…" style="padding:8px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text)" oninput="_editingContact.role=this.value">' +
           '<datalist id="contactRoleSuggestions"><option value="Landlord"><option value="Property Manager"><option value="Agent"><option value="HOA"><option value="Handyman"><option value="Virtual Assistant"><option value="Cleaner"><option value="Other"></datalist>' +
         '</div>' +
       '</div>' +
@@ -4183,6 +4348,7 @@ function _aptProspectToPipelineRecord(p){
 
 // "Add Building" modal — reused from the removed Outreach tab. Always creates;
 // saving lands the new building straight in the Pipeline (see _saveAptProspectFromModal).
+const APT_PROSPECT_DRAFT_FIELD_IDS = ['aptBuildingNameInput','aptAddressInput','aptContactTitleInput','aptContactNameInput','aptEmailInput','aptPhoneInput','aptWebsiteInput','aptNotesInput'];
 function openAptProspectModal(){
   _savingAptProspect = false;
   _editingAptProspect = {
@@ -4190,6 +4356,17 @@ function openAptProspectModal(){
     contactTitle:'', contactName:'', email:'', phone:'', website:'',
     createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
   };
+  // This form always creates (no edit path), so _editingAptProspect.id is a
+  // freshly-minted uid every single call — not stable across a refresh, so it
+  // can't be the draft key (same reasoning as the Contact modal's new-contact
+  // case). Fixed singleton context instead, same shape as the Cohost
+  // manual-add form. One-time restoration (see openContactModal for why this
+  // happens once here, not on every re-render).
+  (function(){
+    const ctx = 'aptProspectAdd';
+    const map = { buildingName:'aptBuildingNameInput', address:'aptAddressInput', contactTitle:'aptContactTitleInput', contactName:'aptContactNameInput', email:'aptEmailInput', phone:'aptPhoneInput', website:'aptWebsiteInput', notes:'aptNotesInput' };
+    Object.keys(map).forEach(function(prop){ const dft = _getFieldDraft(ctx, map[prop]); if(dft != null) _editingAptProspect[prop] = dft; });
+  })();
 
   const existing = document.getElementById('aptProspectModalOverlay');
   if(existing) existing.remove();
@@ -4212,6 +4389,8 @@ function _renderAptProspectModal(){
   const overlay = document.getElementById('aptProspectModalOverlay');
   if(!overlay || !_editingAptProspect) return;
   const p = _editingAptProspect;
+  _fieldDraftCtx = 'aptProspectAdd';
+  _fieldDraftIds = APT_PROSPECT_DRAFT_FIELD_IDS;
   const priorityOptions = ['High','Medium','Low'].map(function(pr){
     return '<option value="' + pr + '"' + (p.priority === pr ? ' selected' : '') + '>' + pr + '</option>';
   }).join('');
@@ -4232,14 +4411,14 @@ function _renderAptProspectModal(){
         _aptModalField('Status', '<select style="' + _APT_INPUT_STYLE + '" onchange="_editingAptProspect.status=this.value">' + statusOptions + '</select>') +
       '</div>' +
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
-        _aptModalField('Contact Title', '<input type="text" value="' + esc(p.contactTitle||'') + '" placeholder="Leasing Manager" style="' + _APT_INPUT_STYLE + '" oninput="_editingAptProspect.contactTitle=this.value">') +
-        _aptModalField('Contact Name', '<input type="text" value="' + esc(p.contactName||'') + '" style="' + _APT_INPUT_STYLE + '" oninput="_editingAptProspect.contactName=this.value">') +
+        _aptModalField('Contact Title', '<input type="text" id="aptContactTitleInput" value="' + esc(p.contactTitle||'') + '" placeholder="Leasing Manager" style="' + _APT_INPUT_STYLE + '" oninput="_editingAptProspect.contactTitle=this.value">') +
+        _aptModalField('Contact Name', '<input type="text" id="aptContactNameInput" value="' + esc(p.contactName||'') + '" style="' + _APT_INPUT_STYLE + '" oninput="_editingAptProspect.contactName=this.value">') +
       '</div>' +
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
-        _aptModalField('Email', '<input type="email" value="' + esc(p.email||'') + '" style="' + _APT_INPUT_STYLE + '" oninput="_editingAptProspect.email=this.value">') +
-        _aptModalField('Phone #', '<input type="tel" maxlength="14" value="' + esc(p.phone||'') + '" style="' + _APT_INPUT_STYLE + '" oninput="this.value=fmtPhone(this.value);_editingAptProspect.phone=this.value">') +
+        _aptModalField('Email', '<input type="email" id="aptEmailInput" value="' + esc(p.email||'') + '" style="' + _APT_INPUT_STYLE + '" oninput="_editingAptProspect.email=this.value">') +
+        _aptModalField('Phone #', '<input type="tel" id="aptPhoneInput" maxlength="14" value="' + esc(p.phone||'') + '" style="' + _APT_INPUT_STYLE + '" oninput="this.value=fmtPhone(this.value);_editingAptProspect.phone=this.value">') +
       '</div>' +
-      _aptModalField('Property Website', '<input type="text" value="' + esc(p.website||'') + '" placeholder="https://..." style="' + _APT_INPUT_STYLE + '" oninput="_editingAptProspect.website=this.value">') +
+      _aptModalField('Property Website', '<input type="text" id="aptWebsiteInput" value="' + esc(p.website||'') + '" placeholder="https://..." style="' + _APT_INPUT_STYLE + '" oninput="_editingAptProspect.website=this.value">') +
       _aptModalField('Notes', '<textarea id="aptNotesInput" rows="4" style="' + _APT_INPUT_STYLE + ';resize:vertical;font-family:inherit" oninput="_editingAptProspect.notes=this.value">' + esc(p.notes||'') + '</textarea>') +
     '</div>' +
     '<div class="multi-editor-actions" style="display:flex;justify-content:flex-end;align-items:center;padding:14px 20px;border-top:1px solid var(--border)">' +
@@ -4272,6 +4451,7 @@ async function _saveAptProspectFromModal(){
   records.unshift(r);
   _afterPropertyCreate(r);
   saveData();
+  _clearFieldDrafts('aptProspectAdd', APT_PROSPECT_DRAFT_FIELD_IDS);
   closeAptProspectModal();
   openDetail(r.id);
 }
@@ -4670,6 +4850,12 @@ function openPropertyTaskEditor(pid, taskId){
   // commitment is explicit). Edits preserve whatever was set; legacy migrated tasks
   // without a TASK_TYPES match fall back to 'other'.
   if(existing && !TASK_TYPES.some(t => t.key === draft.type)) draft.type = 'other';
+  _fieldDraftCtx = pid + '_' + (taskId || 'new');
+  _fieldDraftIds = ['taskEditorDate','taskEditorNote'];
+  const _teDateDraft = _getFieldDraft(_fieldDraftCtx, 'taskEditorDate');
+  if(_teDateDraft != null) draft.date = _teDateDraft;
+  const _teNoteDraft = _getFieldDraft(_fieldDraftCtx, 'taskEditorNote');
+  if(_teNoteDraft != null) draft.note = _teNoteDraft;
 
   const existingOverlay = document.getElementById('taskEditorOverlay');
   if(existingOverlay) existingOverlay.remove();
@@ -4746,6 +4932,7 @@ function savePropertyTaskFromEditor(pid, taskId){
   } else {
     addPropertyTask(pid, { date, time, type, note: note.trim(), timezone });
   }
+  _clearFieldDrafts(pid + '_' + (taskId || 'new'), ['taskEditorDate','taskEditorNote']);
   overlay.remove();
   render();
 }
@@ -4917,6 +5104,11 @@ function openPropertyMeetingEditor(pid, meetingId){
   const draft = existing
     ? { title: existing.title || defaultTitle, date: existing.date || '', time: existing.time || '', note: existing.note || '', status: existing.status || 'upcoming', timezone: existing.timezone || getUserTimezone(), attendees: Array.isArray(existing.attendees) ? existing.attendees : [] }
     : { title: defaultTitle, date: '', time: '', note: '', status: 'upcoming', timezone: getUserTimezone(), attendees: [] };
+  _fieldDraftCtx = pid + '_' + (meetingId || 'new');
+  _fieldDraftIds = ['meetingEditorTitle','meetingEditorDate','meetingEditorNote'];
+  { const _d1 = _getFieldDraft(_fieldDraftCtx, 'meetingEditorTitle'); if(_d1 != null) draft.title = _d1; }
+  { const _d2 = _getFieldDraft(_fieldDraftCtx, 'meetingEditorDate'); if(_d2 != null) draft.date = _d2; }
+  { const _d3 = _getFieldDraft(_fieldDraftCtx, 'meetingEditorNote'); if(_d3 != null) draft.note = _d3; }
 
   // Build the attendee picker. Every known recipient — property contacts AND any
   // non-contact emails already on the meeting — gets its OWN checkbox, so each
@@ -5287,6 +5479,7 @@ function savePropertyMeetingFromEditor(pid, meetingId){
     }
   }
 
+  _clearFieldDrafts(pid + '_' + (meetingId || 'new'), ['meetingEditorTitle','meetingEditorDate','meetingEditorNote']);
   overlay.remove();
   render();
   if(!targetId) return;
@@ -5541,6 +5734,7 @@ async function _saveContactFromModal(){
   }
   const ok = await saveContact(c);
   if(ok){
+    _clearFieldDrafts(_contactModalDraftCtx || c.id, CONTACT_MODAL_DRAFT_FIELD_IDS);
     // Capture any pending picker callback before closing the modal clears state.
     const pendingCb = _pendingContactPreset && _pendingContactPreset.onSaved;
     closeContactModal();
@@ -9339,19 +9533,29 @@ function openSectionEditor(recId, sectionKey){
   const section = PROP_SECTIONS.find(s => s.key === sectionKey);
   if(!section) return;
 
+  // Typed-but-unsaved text survives a refresh here too — scoped by record AND
+  // section, since the same field key never appears in two sections, but the
+  // same DOM id (se_<key>) is reused across every property's editor for this
+  // section, so recId alone wouldn't be enough to avoid cross-talk. Only the
+  // free-typed field types (text/number/date) participate — selects are a
+  // single click, not something worth persisting a draft of.
+  _fieldDraftCtx = recId + '_' + sectionKey;
+  _fieldDraftIds = section.fields.filter(f => f.t !== 'multi' && f.t !== 'select' && f.t !== 'bool').map(f => 'se_'+f.k);
+  const fd = function(fieldId, fallback){ const dft = _getFieldDraft(_fieldDraftCtx, fieldId); return dft != null ? dft : fallback; };
+
   let fieldsHtml = '<div class="prop-field-grid">';
   section.fields.filter(f => f.t !== 'multi').forEach(f => {
     const val = d[f.k] || '';
     if(f.t === 'select'){
       fieldsHtml += '<div class="prop-field"><label>'+esc(f.l)+'</label><select id="se_'+f.k+'">'+(f.o||[]).map(o => '<option value="'+esc(o)+'" '+(val===o?'selected':'')+'>'+esc(o||'—')+'</option>').join('')+'</select></div>';
     } else if(f.t === 'date'){
-      fieldsHtml += '<div class="prop-field"><label>'+esc(f.l)+'</label><input type="date" id="se_'+f.k+'" value="'+esc(val)+'"></div>';
+      fieldsHtml += '<div class="prop-field"><label>'+esc(f.l)+'</label><input type="date" id="se_'+f.k+'" value="'+esc(fd('se_'+f.k, val))+'"></div>';
     } else if(f.t === 'number'){
-      fieldsHtml += '<div class="prop-field"><label>'+esc(f.l)+'</label><input type="number" id="se_'+f.k+'" value="'+esc(val)+'" placeholder="—"></div>';
+      fieldsHtml += '<div class="prop-field"><label>'+esc(f.l)+'</label><input type="number" id="se_'+f.k+'" value="'+esc(fd('se_'+f.k, val))+'" placeholder="—"></div>';
     } else if(f.t === 'bool'){
       fieldsHtml += '<div class="prop-field"><label>'+esc(f.l)+'</label><select id="se_'+f.k+'"><option value="" '+(!val?'selected':'')+'>—</option><option value="Yes" '+(val==='Yes'?'selected':'')+'>Yes</option><option value="No" '+(val==='No'?'selected':'')+'>No</option></select></div>';
     } else {
-      fieldsHtml += '<div class="prop-field"><label>'+esc(f.l)+'</label><input type="text" id="se_'+f.k+'" value="'+esc(val)+'" placeholder="—"></div>';
+      fieldsHtml += '<div class="prop-field"><label>'+esc(f.l)+'</label><input type="text" id="se_'+f.k+'" value="'+esc(fd('se_'+f.k, val))+'" placeholder="—"></div>';
     }
   });
   fieldsHtml += '</div>';
@@ -9418,6 +9622,7 @@ function saveSectionEditor(recId, sectionKey){
   }
 
   _saveRecFor(r, recId);
+  _clearFieldDrafts(recId + '_' + sectionKey, section.fields.filter(f => f.t !== 'multi' && f.t !== 'select' && f.t !== 'bool').map(f => 'se_'+f.k));
   document.getElementById('sectionEditOverlay')?.remove();
   render();
 }
@@ -10297,6 +10502,17 @@ function deleteRecord(id){
   const name = r ? (r.property || r.name || 'Property') : 'Property';
   records = records.filter(x => x.id !== id);
   saveData();
+  // Stage A dual-write mirror (see _dualWriteDirtyRecords) — soft-delete only. The
+  // record disappears from the UI exactly as before (removed from `records`/the old
+  // blob above, unchanged), but its mirror doc is marked, not erased, so the full
+  // data still exists in Firestore and can be recovered later if needed. Nothing
+  // reads/restores from this yet — that's a future recovery-UI feature — this just
+  // makes sure the data to restore from actually exists when that gets built.
+  if(_currentUid && typeof db !== 'undefined'){
+    db.collection('users').doc(_currentUid).collection('propertyRecords').doc(id)
+      .set({ _deletedAt: new Date().toISOString() }, { merge: true })
+      .catch(e => console.error('[migration] propertyRecords soft-delete failed for', id, e));
+  }
   if(currentView === 'profile') closeDetail();
   else { document.getElementById('detailModal').classList.remove('open'); render(); }
   showToast('Deleted "' + name + '"', 'error', 3000);
@@ -12177,11 +12393,13 @@ function showRecentlyAccessed(){
   let html = '<div class="ac-section"><div class="ac-section-label">Recently Viewed</div>';
   recents.forEach((r, i) => {
     const timeAgo = getTimeAgo(r.lastAccessed);
-    const emoji = (r.kind === 'cohost') ? (STATUS_EMOJI[r.status] || '⚪') : (isOpsProperty(r) ? '🏠' : (STATUS_EMOJI[r.status] || '⚪'));
+    const emoji = (r.kind === 'cohost') ? (STATUS_EMOJI[r.status] || '⚪') : (isOpsProperty(r) ? propertyEmoji(r) : (STATUS_EMOJI[r.status] || '⚪'));
+    const buildingName = r.buildingName && r.buildingName.trim();
     html += `<div class="ac-item" data-id="${r.id}" data-idx="${i}" onmousedown="acSelect('${r.id}')" onmouseenter="acIndex=${i};highlightAcItem()">
       <div class="ac-icon">${emoji}</div>
       <div class="ac-main">
-        <div class="ac-title">${esc(r.property)}</div>
+        <div class="ac-title">${esc(buildingName || r.property)}</div>
+        ${buildingName ? '<div class="ac-sub" style="margin-top:0;opacity:.75">' + esc(r.property) + '</div>' : ''}
         <div class="ac-sub">${r.name?esc(r.name)+' • ':''}${esc(r.status)} • ${timeAgo}</div>
       </div>
     </div>`;
@@ -12280,6 +12498,7 @@ function updateAutocomplete(q){
     }
     matchedProps.slice(0, propLimit).forEach((r) => {
       const address = r.property || 'No address';
+      const buildingName = r.buildingName && r.buildingName.trim();
       const name = r.name || '';
       const status = r.status || '';
       const phone = r.phone || '';
@@ -12290,11 +12509,17 @@ function updateAutocomplete(q){
       if(phone && matchesAllWords(phone, q)) extras.push('📞 ' + highlight(phone, q));
       if(email && matchesAllWords(email, q)) extras.push('✉️ ' + highlight(email, q));
       const extraLine = extras.length ? '<div class="ac-sub" style="margin-top:1px">' + extras.join(' · ') + '</div>' : '';
-      const _acIcon = (r.kind === 'cohost') ? _statusDot(r.status) : '🏠';
+      const _acIcon = (r.kind === 'cohost') ? _statusDot(r.status) : propertyEmoji(r);
+      // Multi-unit properties: lead with the building name (more likely to be
+      // searched than the address, since each unit can have its own address);
+      // the address still moves underneath, smaller, so it's visible either way.
+      const titleLine = buildingName ? highlight(buildingName, q) : highlight(address, q);
+      const addressLine = buildingName ? '<div class="ac-sub" style="margin-top:0;opacity:.75">' + highlight(address, q) + '</div>' : '';
       html += `<div class="ac-item" data-id="${r.id}" data-idx="${flatIdx}" data-kind="property" onmousedown="acSelect('${r.id}')" onmouseenter="acIndex=${flatIdx};highlightAcItem()">
         <div class="ac-icon">${_acIcon}</div>
         <div class="ac-main">
-          <div class="ac-title">${highlight(address, q)}</div>
+          <div class="ac-title">${titleLine}</div>
+          ${addressLine}
           <div style="display:flex;justify-content:space-between;align-items:center">
             <div class="ac-sub">${nameLine}</div>
             ${isFirst ? '<div style="font-size:.58rem;color:var(--text3);opacity:.5;white-space:nowrap;margin-left:8px">Shift+Enter</div>' : ''}
@@ -14351,10 +14576,14 @@ async function _finLoadPayouts(){
 let _finReceiptStaged = null;
 let _finReceiptCleared = false; // set true when user removes an existing receipt
 
+const FIN_EXPENSE_DRAFT_FIELD_IDS = ['finExpDate','finExpAmount','finExpEndDate','finExpVendor','finExpNotes'];
 function _finOpenExpenseEditor(id){
   const editing = id ? _finExpenses.find(e => e.id === id) : null;
   const e = editing || { date: _todayLocalStr(), amount: '', category: FIN_EXPENSE_CATEGORIES[0], vendor: '', notes: '', taxDeductible: true, frequency: 'once', endDate: '' };
   if(!e.frequency) e.frequency = 'once';
+  _fieldDraftCtx = 'finExpense_' + (id || 'new');
+  _fieldDraftIds = FIN_EXPENSE_DRAFT_FIELD_IDS;
+  const fd = function(fieldId, fallback){ const dft = _getFieldDraft(_fieldDraftCtx, fieldId); return dft != null ? dft : fallback; };
   _finReceiptStaged = null;
   _finReceiptCleared = false;
   const old = document.getElementById('finExpenseModal');
@@ -14374,16 +14603,16 @@ function _finOpenExpenseEditor(id){
     </div>
     <div style="padding:18px 20px;display:flex;flex-direction:column;gap:12px">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-        <div><label style="display:block;font-size:.7rem;color:var(--text3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px" id="finExpDateLabel">${e.frequency && e.frequency !== 'once' ? 'Start Date' : 'Date'}</label><input type="date" id="finExpDate" value="${esc(e.date)}" style="width:100%;padding:8px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.9rem"></div>
-        <div><label style="display:block;font-size:.7rem;color:var(--text3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px"><span id="finExpAmountLabel">Amount${e.frequency && e.frequency !== 'once' ? ' (per period)' : ''}</span></label><input type="number" step="0.01" min="0" id="finExpAmount" value="${e.amount}" style="width:100%;padding:8px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.9rem"></div>
+        <div><label style="display:block;font-size:.7rem;color:var(--text3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px" id="finExpDateLabel">${e.frequency && e.frequency !== 'once' ? 'Start Date' : 'Date'}</label><input type="date" id="finExpDate" value="${esc(fd('finExpDate', e.date))}" style="width:100%;padding:8px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.9rem"></div>
+        <div><label style="display:block;font-size:.7rem;color:var(--text3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px"><span id="finExpAmountLabel">Amount${e.frequency && e.frequency !== 'once' ? ' (per period)' : ''}</span></label><input type="number" step="0.01" min="0" id="finExpAmount" value="${esc(fd('finExpAmount', e.amount))}" style="width:100%;padding:8px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.9rem"></div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
         <div><label style="display:block;font-size:.7rem;color:var(--text3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">Frequency</label><select id="finExpFrequency" onchange="_finOnFrequencyChange()" style="width:100%;padding:8px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.9rem">${FIN_FREQUENCIES.map(f => `<option value="${f.key}" ${e.frequency===f.key?'selected':''}>${esc(f.label)}</option>`).join('')}</select></div>
-        <div id="finExpEndDateWrap" style="${e.frequency==='once' ? 'display:none' : ''}"><label style="display:block;font-size:.7rem;color:var(--text3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">End Date <span style="text-transform:none;letter-spacing:0;color:var(--text3);font-weight:400">(optional)</span></label><input type="date" id="finExpEndDate" value="${esc(e.endDate || '')}" style="width:100%;padding:8px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.9rem"></div>
+        <div id="finExpEndDateWrap" style="${e.frequency==='once' ? 'display:none' : ''}"><label style="display:block;font-size:.7rem;color:var(--text3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">End Date <span style="text-transform:none;letter-spacing:0;color:var(--text3);font-weight:400">(optional)</span></label><input type="date" id="finExpEndDate" value="${esc(fd('finExpEndDate', e.endDate || ''))}" style="width:100%;padding:8px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.9rem"></div>
       </div>
       <div><label style="display:block;font-size:.7rem;color:var(--text3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">Category</label><select id="finExpCategory" onchange="_finOnCategoryChange()" style="width:100%;padding:8px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.9rem">${catOptions}</select></div>
-      <div><label style="display:block;font-size:.7rem;color:var(--text3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">Vendor / Payee</label><input type="text" id="finExpVendor" value="${esc(e.vendor || '')}" style="width:100%;padding:8px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.9rem"></div>
-      <div><label style="display:block;font-size:.7rem;color:var(--text3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">Notes</label><textarea id="finExpNotes" rows="2" style="width:100%;padding:8px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.9rem;resize:vertical;font-family:inherit">${esc(e.notes || '')}</textarea></div>
+      <div><label style="display:block;font-size:.7rem;color:var(--text3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">Vendor / Payee</label><input type="text" id="finExpVendor" value="${esc(fd('finExpVendor', e.vendor || ''))}" style="width:100%;padding:8px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.9rem"></div>
+      <div><label style="display:block;font-size:.7rem;color:var(--text3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">Notes</label><textarea id="finExpNotes" rows="2" style="width:100%;padding:8px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.9rem;resize:vertical;font-family:inherit">${esc(fd('finExpNotes', e.notes || ''))}</textarea></div>
       <div>
         <label style="display:block;font-size:.7rem;color:var(--text3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">Receipt</label>
         <div id="finReceiptBlock">${receiptBlock}</div>
@@ -14608,6 +14837,7 @@ async function _finSaveExpense(id){
       if(!endDate) delete cached.endDate;
       _finExpenses.push(cached);
     }
+    _clearFieldDrafts('finExpense_' + (id || 'new'), FIN_EXPENSE_DRAFT_FIELD_IDS);
     document.getElementById('finExpenseModal')?.remove();
     _finReceiptStaged = null;
     _finReceiptCleared = false;
@@ -14841,9 +15071,13 @@ function _finRenderPayoutsSection(){
   </div>`;
 }
 
+const FIN_PAYOUT_DRAFT_FIELD_IDS = ['finPayoutDate','finPayoutAmount','finPayoutMethod','finPayoutNote'];
 function _finOpenPayoutEditor(id){
   const editing = id ? _finPayouts.find(p => p.id === id) : null;
   const p = editing || { date: _todayLocalStr(), amount:'', affiliateEmail:'', affiliateName:'', method:'', note:'', proofs:[] };
+  _fieldDraftCtx = 'finPayout_' + (id || 'new');
+  _fieldDraftIds = FIN_PAYOUT_DRAFT_FIELD_IDS;
+  const fd = function(fieldId, fallback){ const dft = _getFieldDraft(_fieldDraftCtx, fieldId); return dft != null ? dft : fallback; };
   _finPayoutProofs = Array.isArray(p.proofs) ? p.proofs.slice() : [];
   _finPayoutProofsNew = [];
   const old = document.getElementById('finPayoutModal'); if(old) old.remove();
@@ -14863,12 +15097,12 @@ function _finOpenPayoutEditor(id){
     </div>
     <div style="padding:18px 20px;display:flex;flex-direction:column;gap:12px">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-        <div><label style="${lbl}">Date</label><input type="date" id="finPayoutDate" value="${esc(p.date)}" style="${inp}"></div>
-        <div><label style="${lbl}">Amount Paid</label><input type="number" step="0.01" min="0" id="finPayoutAmount" value="${p.amount}" style="${inp}"></div>
+        <div><label style="${lbl}">Date</label><input type="date" id="finPayoutDate" value="${esc(fd('finPayoutDate', p.date))}" style="${inp}"></div>
+        <div><label style="${lbl}">Amount Paid</label><input type="number" step="0.01" min="0" id="finPayoutAmount" value="${esc(fd('finPayoutAmount', p.amount))}" style="${inp}"></div>
       </div>
       <div><label style="${lbl}">Affiliate <span style="${opt}">(optional)</span></label><select id="finPayoutAffiliate" style="${inp}">${affOptions}</select></div>
-      <div><label style="${lbl}">Method <span style="${opt}">(optional)</span></label><input type="text" id="finPayoutMethod" value="${esc(p.method || '')}" placeholder="e.g. PayPal, ACH, Zelle, Wise" style="${inp}"></div>
-      <div><label style="${lbl}">Note <span style="${opt}">(optional)</span></label><textarea id="finPayoutNote" rows="2" style="${inp};resize:vertical;font-family:inherit">${esc(p.note || '')}</textarea></div>
+      <div><label style="${lbl}">Method <span style="${opt}">(optional)</span></label><input type="text" id="finPayoutMethod" value="${esc(fd('finPayoutMethod', p.method || ''))}" placeholder="e.g. PayPal, ACH, Zelle, Wise" style="${inp}"></div>
+      <div><label style="${lbl}">Note <span style="${opt}">(optional)</span></label><textarea id="finPayoutNote" rows="2" style="${inp};resize:vertical;font-family:inherit">${esc(fd('finPayoutNote', p.note || ''))}</textarea></div>
       <div>
         <label style="${lbl}">Proof screenshots <span style="${opt}">(bank / platform confirmation)</span></label>
         <div id="finPayoutProofsList" style="display:flex;flex-direction:column;gap:6px;margin-bottom:6px"></div>
@@ -14994,6 +15228,7 @@ async function _finSavePayout(id){
       const cached = Object.assign({ id: ref.id }, payload); delete cached.createdAt; delete cached.updatedAt;
       _finPayouts.push(cached);
     }
+    _clearFieldDrafts('finPayout_' + (id || 'new'), FIN_PAYOUT_DRAFT_FIELD_IDS);
     document.getElementById('finPayoutModal')?.remove();
     _finPayoutProofs = []; _finPayoutProofsNew = [];
     showToast('Payout saved', 'success', 2000);
@@ -22403,9 +22638,16 @@ function acctOpenModal(recId, acctId){
   const a = existing || { accountType:'', email:'', password:'', phone:'', link:'' };
   const old = document.getElementById('acctModalOverlay');
   if(old) old.remove();
+  // Draft-persist every field except password — a typed password sitting in
+  // localStorage, even transiently, is a different risk class than losing a note,
+  // so that one field is deliberately excluded from this mechanism.
+  _fieldDraftCtx = recId + '_' + (acctId || 'new');
+  _fieldDraftIds = ['acct_f_accountType','acct_f_email','acct_f_phone','acct_f_link'];
   const fieldHtml = function(key, label, ph, type){
+    const raw = a[key]||'';
+    const val = key === 'password' ? raw : (function(){ const dft = _getFieldDraft(_fieldDraftCtx, 'acct_f_'+key); return dft != null ? dft : raw; })();
     return '<div class="acct-modal-field"><label>'+label+'</label>'+
-      '<input type="'+(type||'text')+'" id="acct_f_'+key+'" value="'+esc(a[key]||'')+'" placeholder="'+ph+'"></div>';
+      '<input type="'+(type||'text')+'" id="acct_f_'+key+'" value="'+esc(val)+'" placeholder="'+ph+'"></div>';
   };
   let body = '';
   body += fieldHtml('accountType','Account Type','e.g. Electric, Netflix, Gate Code');
@@ -22442,6 +22684,7 @@ function acctSaveModal(recId, acctId){
   if(acct){ Object.assign(acct, data); }
   else { accounts.push(Object.assign({ id: uid() }, data)); }
   _saveRecFor(r, recId);
+  _clearFieldDrafts(recId + '_' + (acctId || 'new'), ['acct_f_accountType','acct_f_email','acct_f_phone','acct_f_link']);
   const overlay = document.getElementById('acctModalOverlay');
   if(overlay) overlay.remove();
   _opsRerenderAccounts(recId);
@@ -24784,7 +25027,8 @@ function renderOperationsTab(r){
     } else if(st.key === 'reviews'){
       badge = '<span class="rv-badge" id="rv_badge_'+recId+'" style="display:none">0</span>';
     }
-    h += '<div class="ops-subtab '+(savedSubtab===st.key?'active':'')+'" data-subtab="'+st.key+'" onclick="setOpsSubtab(\''+recId+'\',\''+st.key+'\')">'+st.icon+' '+st.label+badge+'</div>';
+    const stIcon = st.key === 'property' ? propertyEmoji(r) : st.icon;
+    h += '<div class="ops-subtab '+(savedSubtab===st.key?'active':'')+'" data-subtab="'+st.key+'" onclick="setOpsSubtab(\''+recId+'\',\''+st.key+'\')">'+stIcon+' '+st.label+badge+'</div>';
   });
   h += '</div>';
 
@@ -25325,17 +25569,21 @@ async function handleCohostListing(data){
   showToast(coreCount ? 'Co-Hosting property imported.' : 'Import partial — some details may need manual entry.', coreCount?'success':'warning', 3500);
   openCohostProfile(r.id);
 }
+const COHOST_MANUAL_DRAFT_FIELD_IDS = ['cohost_m_address','cohost_m_host','cohost_m_market','cohost_m_beds','cohost_m_baths','cohost_m_link','cohost_m_rent'];
 function _cohostShowManualForm(){
   const body = document.getElementById('cohostAddBody'); if(!body) return;
+  _fieldDraftCtx = 'cohostAdd_manual';
+  _fieldDraftIds = COHOST_MANUAL_DRAFT_FIELD_IDS;
+  const fd = function(fieldId){ const dft = _getFieldDraft(_fieldDraftCtx, fieldId); return dft != null ? esc(dft) : ''; };
   body.innerHTML =
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 12px">'+
-      '<div style="grid-column:1/-1"><label class="field-label">Property Address</label><input id="cohost_m_address" type="text" placeholder="123 Main St, City, ST" style="width:100%"></div>'+
-      '<div><label class="field-label">Contact Name</label><input id="cohost_m_host" type="text" placeholder="e.g. Sarah Mills" style="width:100%"></div>'+
-      '<div><label class="field-label">Market</label><input id="cohost_m_market" type="text" style="width:100%"></div>'+
-      '<div><label class="field-label">Bedrooms</label><input id="cohost_m_beds" type="number" min="0" style="width:100%"></div>'+
-      '<div><label class="field-label">Bathrooms</label><input id="cohost_m_baths" type="number" min="0" step="0.5" style="width:100%"></div>'+
-      '<div><label class="field-label">Listing Link</label><input id="cohost_m_link" type="url" placeholder="https://… (Zillow/Apartments/Hotpads)" style="width:100%"></div>'+
-      '<div><label class="field-label">Asking Rent / mo</label><input id="cohost_m_rent" type="number" min="0" placeholder="2500" style="width:100%"></div>'+
+      '<div style="grid-column:1/-1"><label class="field-label">Property Address</label><input id="cohost_m_address" type="text" value="'+fd('cohost_m_address')+'" placeholder="123 Main St, City, ST" style="width:100%"></div>'+
+      '<div><label class="field-label">Contact Name</label><input id="cohost_m_host" type="text" value="'+fd('cohost_m_host')+'" placeholder="e.g. Sarah Mills" style="width:100%"></div>'+
+      '<div><label class="field-label">Market</label><input id="cohost_m_market" type="text" value="'+fd('cohost_m_market')+'" style="width:100%"></div>'+
+      '<div><label class="field-label">Bedrooms</label><input id="cohost_m_beds" type="number" min="0" value="'+fd('cohost_m_beds')+'" style="width:100%"></div>'+
+      '<div><label class="field-label">Bathrooms</label><input id="cohost_m_baths" type="number" min="0" step="0.5" value="'+fd('cohost_m_baths')+'" style="width:100%"></div>'+
+      '<div><label class="field-label">Listing Link</label><input id="cohost_m_link" type="url" value="'+fd('cohost_m_link')+'" placeholder="https://… (Zillow/Apartments/Hotpads)" style="width:100%"></div>'+
+      '<div><label class="field-label">Asking Rent / mo</label><input id="cohost_m_rent" type="number" min="0" value="'+fd('cohost_m_rent')+'" placeholder="2500" style="width:100%"></div>'+
     '</div>'+
     '<div style="display:flex;justify-content:space-between;gap:8px;margin-top:16px">'+
       '<button type="button" class="btn btn-secondary btn-sm" onclick="_cohostShowAddChoice()">← Back</button>'+
@@ -25365,6 +25613,7 @@ function saveCohostManual(){
   cohostRecords.unshift(r);
   if(typeof _afterPropertyCreate === 'function') _afterPropertyCreate(r);
   saveCohostData();
+  _clearFieldDrafts('cohostAdd_manual', COHOST_MANUAL_DRAFT_FIELD_IDS);
   closeAddModal();
   openCohostProfile(r.id);
 }
@@ -25408,15 +25657,19 @@ function deleteCohostRecord(id){
     }
   });
 }
+const COHOST_LINKS_DRAFT_FIELD_IDS = ['cohost_link_airbnb','cohost_link_vrbo','cohost_link_maps'];
 function openCohostLinksEditor(id){
   const r = getCohostById(id); if(!r) return;
   const L = r.links||{};
+  _fieldDraftCtx = id;
+  _fieldDraftIds = COHOST_LINKS_DRAFT_FIELD_IDS;
+  const fd = function(fieldId, fallback){ const dft = _getFieldDraft(_fieldDraftCtx, fieldId); return dft != null ? dft : fallback; };
   const modal = document.getElementById('detailModal'), panel = document.getElementById('detailPanel');
   panel.innerHTML = '<div class="modal-header"><h2>Edit Listing Links</h2><button class="modal-close" onclick="closeAddModal()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>'+
     '<div class="modal-body">'+
-      '<label class="field-label">Airbnb Link</label><input id="cohost_link_airbnb" type="url" value="'+esc(L.airbnb||'')+'" placeholder="https://airbnb.com/rooms/…" style="width:100%;margin-bottom:10px">'+
-      '<label class="field-label">VRBO Link</label><input id="cohost_link_vrbo" type="url" value="'+esc(L.vrbo||'')+'" placeholder="https://vrbo.com/…" style="width:100%;margin-bottom:10px">'+
-      '<label class="field-label">Google Maps Link</label><input id="cohost_link_maps" type="url" value="'+esc(L.maps||'')+'" placeholder="Auto from address if blank" style="width:100%;margin-bottom:4px">'+
+      '<label class="field-label">Airbnb Link</label><input id="cohost_link_airbnb" type="url" value="'+esc(fd('cohost_link_airbnb', L.airbnb||''))+'" placeholder="https://airbnb.com/rooms/…" style="width:100%;margin-bottom:10px">'+
+      '<label class="field-label">VRBO Link</label><input id="cohost_link_vrbo" type="url" value="'+esc(fd('cohost_link_vrbo', L.vrbo||''))+'" placeholder="https://vrbo.com/…" style="width:100%;margin-bottom:10px">'+
+      '<label class="field-label">Google Maps Link</label><input id="cohost_link_maps" type="url" value="'+esc(fd('cohost_link_maps', L.maps||''))+'" placeholder="Auto from address if blank" style="width:100%;margin-bottom:4px">'+
       '<div style="font-size:.7rem;color:var(--text3);margin-bottom:14px">Leave a link blank to grey it out. Maps auto-fills from the address.</div>'+
       '<div style="display:flex;justify-content:flex-end;gap:8px"><button class="btn btn-secondary" onclick="closeAddModal()">Cancel</button><button class="btn btn-primary" onclick="saveCohostLinks(\''+id+'\')">Save Links</button></div>'+
     '</div>';
@@ -25429,18 +25682,24 @@ function saveCohostLinks(id){
   r.links.airbnb = g('cohost_link_airbnb');
   r.links.vrbo = g('cohost_link_vrbo');
   r.links.maps = g('cohost_link_maps');
-  saveCohostData(); closeAddModal(); render();
+  saveCohostData();
+  _clearFieldDrafts(id, COHOST_LINKS_DRAFT_FIELD_IDS);
+  closeAddModal(); render();
 }
 // Contact editor (name / phone / email) — the person the operator coordinates
 // with. Saves onto the record AND into the app's standalone Contacts section.
+const COHOST_CONTACT_DRAFT_FIELD_IDS = ['cohost_c_name','cohost_c_phone','cohost_c_email'];
 function openCohostContactEditor(id){
   const r = getCohostById(id); if(!r) return;
+  _fieldDraftCtx = id;
+  _fieldDraftIds = COHOST_CONTACT_DRAFT_FIELD_IDS;
+  const fd = function(fieldId, fallback){ const dft = _getFieldDraft(_fieldDraftCtx, fieldId); return dft != null ? dft : fallback; };
   const modal = document.getElementById('detailModal'), panel = document.getElementById('detailPanel');
   panel.innerHTML = '<div class="modal-header"><h2>Contact</h2><button class="modal-close" onclick="closeAddModal()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>'+
     '<div class="modal-body">'+
-      '<label class="field-label">Contact Name</label><input id="cohost_c_name" type="text" value="'+esc(r.name||'')+'" placeholder="e.g. Sarah Johnson" style="width:100%;margin-bottom:10px">'+
-      '<label class="field-label">Phone</label><input id="cohost_c_phone" type="tel" value="'+esc(r.phone||'')+'" placeholder="(555) 123-4567" style="width:100%;margin-bottom:10px">'+
-      '<label class="field-label">Email</label><input id="cohost_c_email" type="email" value="'+esc(r.email||'')+'" placeholder="name@email.com" style="width:100%;margin-bottom:4px">'+
+      '<label class="field-label">Contact Name</label><input id="cohost_c_name" type="text" value="'+esc(fd('cohost_c_name', r.name||''))+'" placeholder="e.g. Sarah Johnson" style="width:100%;margin-bottom:10px">'+
+      '<label class="field-label">Phone</label><input id="cohost_c_phone" type="tel" value="'+esc(fd('cohost_c_phone', r.phone||''))+'" placeholder="(555) 123-4567" style="width:100%;margin-bottom:10px">'+
+      '<label class="field-label">Email</label><input id="cohost_c_email" type="email" value="'+esc(fd('cohost_c_email', r.email||''))+'" placeholder="name@email.com" style="width:100%;margin-bottom:4px">'+
       '<div style="font-size:.7rem;color:var(--text3);margin-bottom:14px">This contact is added to the app\'s Contacts section and linked to this property.</div>'+
       '<div style="display:flex;justify-content:flex-end;gap:8px"><button class="btn btn-secondary" onclick="closeAddModal()">Cancel</button><button class="btn btn-primary" onclick="saveCohostContact(\''+id+'\')">Save</button></div>'+
     '</div>';
@@ -25455,7 +25714,9 @@ function saveCohostContact(id){
   r.phone = ph.length===10 ? '('+ph.slice(0,3)+') '+ph.slice(3,6)+'-'+ph.slice(6) : g('cohost_c_phone');
   r.email = g('cohost_c_email');
   _cohostSyncContact(r);   // create/link/update the standalone contact
-  saveCohostData(); closeAddModal(); render();
+  saveCohostData();
+  _clearFieldDrafts(id, COHOST_CONTACT_DRAFT_FIELD_IDS);
+  closeAddModal(); render();
 }
 // Sync a co-host record's inline contact (name/phone/email) into the standalone
 // Contacts collection — dedupes against existing contacts, links both ways.
@@ -25931,16 +26192,22 @@ function _cohostDetailsTab(r){
 
 // Core-details editor (beds/baths/sqft/guests/rating/market/host/address) —
 // the fields not covered by the PROP_SECTIONS cards.
+const COHOST_CORE_DRAFT_FIELD_IDS = ['cohost_core_address','cohost_core_name','cohost_core_phone','cohost_core_email','cohost_core_beds','cohost_core_baths','cohost_core_sqft','cohost_core_avail','cohost_core_market','cohost_core_submarket','cohost_core_link'];
 function openCohostCoreEditor(id){
   const r = getCohostById(id); if(!r) return;
   const d = r.propertyDetails || {};
+  _fieldDraftCtx = id;
+  _fieldDraftIds = COHOST_CORE_DRAFT_FIELD_IDS;
   const modal = document.getElementById('detailModal'), panel = document.getElementById('detailPanel');
-  const fieldVal = function(v){ return esc(v==null?'':v); };
-  const inp = function(label, fid, val, type, step){ return '<div class="prop-field"><label>'+label+'</label><input type="'+(type||'text')+'" id="'+fid+'" value="'+fieldVal(val)+'"'+(step?' step="'+step+'"':'')+'></div>'; };
+  const fieldVal = function(v, fid){
+    const dft = fid ? _getFieldDraft(_fieldDraftCtx, fid) : null;
+    return esc(dft != null ? dft : (v==null?'':v));
+  };
+  const inp = function(label, fid, val, type, step){ return '<div class="prop-field"><label>'+label+'</label><input type="'+(type||'text')+'" id="'+fid+'" value="'+fieldVal(val, fid)+'"'+(step?' step="'+step+'"':'')+'></div>'; };
   const statusOpts = (typeof SELECTABLE_STATUSES!=='undefined'?SELECTABLE_STATUSES:[]).map(function(s){ return '<option value="'+esc(s)+'"'+(r.status===s?' selected':'')+'>'+esc(s)+'</option>'; }).join('');
   panel.innerHTML = '<div class="modal-header"><h2>Edit Contact &amp; Status</h2><button class="modal-close" onclick="closeAddModal()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>'+
     '<div class="modal-body">'+
-      '<div style="margin-bottom:12px"><label class="field-label">Property Address</label><input id="cohost_core_address" type="text" value="'+fieldVal(r.property)+'" style="width:100%"></div>'+
+      '<div style="margin-bottom:12px"><label class="field-label">Property Address</label><input id="cohost_core_address" type="text" value="'+fieldVal(r.property, 'cohost_core_address')+'" style="width:100%"></div>'+
       '<div class="prop-field-grid">'+
         inp('Contact Name','cohost_core_name', r.name)+
         inp('Phone','cohost_core_phone', r.phone, 'tel')+
@@ -25953,7 +26220,7 @@ function openCohostCoreEditor(id){
         inp('Market','cohost_core_market', d.market)+
         inp('Submarket','cohost_core_submarket', d.submarket)+
       '</div>'+
-      '<div style="margin-top:10px"><label class="field-label">Listing Link</label><input id="cohost_core_link" type="url" value="'+fieldVal(r.link)+'" style="width:100%"></div>'+
+      '<div style="margin-top:10px"><label class="field-label">Listing Link</label><input id="cohost_core_link" type="url" value="'+fieldVal(r.link, 'cohost_core_link')+'" style="width:100%"></div>'+
       '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px"><button class="btn btn-secondary" onclick="closeAddModal()">Cancel</button><button class="btn btn-primary" onclick="saveCohostCore(\''+id+'\')">Save Changes</button></div>'+
     '</div>';
   modal.classList.add('open');
@@ -25974,7 +26241,9 @@ function saveCohostCore(id){
   r.propertyDetails.market = g('cohost_core_market');
   r.propertyDetails.submarket = g('cohost_core_submarket');
   r.link = g('cohost_core_link');
-  saveCohostData(); closeAddModal(); render();
+  saveCohostData();
+  _clearFieldDrafts(id, COHOST_CORE_DRAFT_FIELD_IDS);
+  closeAddModal(); render();
 }
 
 /* ----- Projected ROI tab (PM calculator) ----- */
@@ -27136,7 +27405,8 @@ function renderOpsProfile(){
     '<div style="display:flex;justify-content:flex-end;margin-top:6px;width:100%">' +
       '<div class="ops-htabs" style="flex:1">' +
         OPS_SUBTABS.map(function(st){
-          return '<div class="ops-htab ' + (opsActiveSubtab === st.key ? 'active' : '') + '" data-subtab="' + st.key + '" onclick="setOpsSubtab(\'' + r.id + '\',\'' + st.key + '\')">' + st.icon + ' ' + st.label + '</div>';
+          const stIcon = st.key === 'property' ? propertyEmoji(r) : st.icon;
+          return '<div class="ops-htab ' + (opsActiveSubtab === st.key ? 'active' : '') + '" data-subtab="' + st.key + '" onclick="setOpsSubtab(\'' + r.id + '\',\'' + st.key + '\')">' + stIcon + ' ' + st.label + '</div>';
         }).join('') +
       '</div>' +
     '</div>' +
@@ -27422,23 +27692,99 @@ function calcComputeAll(r){
 // array of { id, label, rent, sqft, bedrooms, bathrooms, availableDate, commonSpaces, notes }.
 // Building-level rent/beds/baths/sqft/available-date don't apply to a
 // multi-unit building, so those live per-unit here instead of on the sticky header.
+let unitsViewMode = localStorage.getItem('rr_units_view') || 'card';
+function _setUnitsViewMode(mode){
+  unitsViewMode = mode;
+  try { localStorage.setItem('rr_units_view', mode); } catch(e){}
+  render();
+}
+const UNIT_ICON_HOME = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><path d="M9 22V12h6v10"/></svg>';
+const UNIT_ICON_BED = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 4v16"/><path d="M2 8h18a2 2 0 012 2v10"/><path d="M2 17h20"/><path d="M6 8V6a2 2 0 012-2h3a2 2 0 012 2v2"/></svg>';
+const UNIT_ICON_BATH = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6 6.5 3.5a1.5 1.5 0 00-2.7 1V6"/><path d="M4 6h16v6a6 6 0 01-6 6H10a6 6 0 01-6-6z"/><path d="M4 18v2"/><path d="M18 18v2"/></svg>';
+const UNIT_ICON_SQFT = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/></svg>';
+const UNIT_ICON_EDIT = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
+const UNIT_ICON_TRASH = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>';
 function _unitRangeFmt(vals, fmt){
   const nums = vals.filter(v => v !== '' && v != null && !isNaN(Number(v))).map(Number);
   if(!nums.length) return '—';
   const min = Math.min(...nums), max = Math.max(...nums);
   return min === max ? fmt(min) : fmt(min) + '–' + fmt(max);
 }
+function _unitAvailPill(u){
+  if(!u.availableDate) return '';
+  if(u.availableDate === 'now') return '<span class="status-pill unit-avail-pill ua-now">Available Now</span>';
+  return `<span class="status-pill unit-avail-pill ua-date">Avail ${fmtDate(u.availableDate)}</span>`;
+}
 function renderUnitRangeSummary(units){
+  const totalUnits = units.length;
+  const rentVals = units.map(u=>u.rent).filter(v => v !== '' && v != null && !isNaN(Number(v))).map(Number);
+  const totalMonthlyRent = rentVals.reduce((s,v)=>s+v, 0);
   const rentRange = _unitRangeFmt(units.map(u=>u.rent), n => '$'+n.toLocaleString());
   const bedsRange = _unitRangeFmt(units.map(u=>u.bedrooms), n => n===0?'Studio':String(n));
   const bathsRange = _unitRangeFmt(units.map(u=>u.bathrooms), n => String(n));
   const sqftRange = _unitRangeFmt(units.map(u=>u.sqft), n => n.toLocaleString());
-  return `<div class="cr-row" style="gap:20px;flex-wrap:wrap;margin-bottom:14px;padding:12px 14px;background:var(--surface2,rgba(148,163,184,.06));border:1px solid var(--border);border-radius:var(--radius)">
-    <div class="cr-field"><div class="cr-label">Rent Range</div><div class="cr-value ${rentRange==='—'?'empty':''}">${rentRange}${rentRange!=='—'?'/mo':''}</div></div>
-    <div class="cr-field"><div class="cr-label">Beds Range</div><div class="cr-value ${bedsRange==='—'?'empty':''}">${bedsRange}</div></div>
-    <div class="cr-field"><div class="cr-label">Baths Range</div><div class="cr-value ${bathsRange==='—'?'empty':''}">${bathsRange}</div></div>
-    <div class="cr-field"><div class="cr-label">Sq Ft Range</div><div class="cr-value ${sqftRange==='—'?'empty':''}">${sqftRange}</div></div>
+  return `<div class="comp-avg-bar" style="margin-bottom:14px">
+    <div class="comp-avg-item"><div class="avg-label">Total Units</div><div class="avg-value">${totalUnits}</div></div>
+    <div class="comp-avg-item"><div class="avg-label">Total Monthly Rent</div><div class="avg-value">${totalMonthlyRent > 0 ? fmtMoney(totalMonthlyRent) : '—'}</div></div>
+    <div class="comp-avg-item"><div class="avg-label">Rent Range</div><div class="avg-value">${rentRange}${rentRange!=='—'?'/mo':''}</div></div>
+    <div class="comp-avg-item"><div class="avg-label">Beds Range</div><div class="avg-value">${bedsRange}</div></div>
+    <div class="comp-avg-item"><div class="avg-label">Baths Range</div><div class="avg-value">${bathsRange}</div></div>
+    <div class="comp-avg-item"><div class="avg-label">Sq Ft Range</div><div class="avg-value">${sqftRange}</div></div>
   </div>`;
+}
+function renderUnitsCardView(r, units){
+  let h = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px">';
+  units.forEach(u => {
+    const rentStr = u.rent ? '$'+Number(u.rent).toLocaleString() : '';
+    const bedsStr = u.bedrooms===0||u.bedrooms==='0' ? 'Studio' : (u.bedrooms ? u.bedrooms+' bd' : '— bd');
+    let extra = '';
+    if(u.commonSpaces) extra += `<div class="uce-common">🛋️ ${esc(String(u.commonSpaces))} common space${Number(u.commonSpaces)===1?'':'s'}</div>`;
+    if(u.notes) extra += `<div class="uce-notes">${esc(u.notes)}</div>`;
+    h += `<div class="profile-card unit-card">
+      <div class="unit-card-top">
+        <div class="unit-card-icon">${UNIT_ICON_HOME}</div>
+        <div class="unit-card-title">
+          <div class="unit-card-label">${esc(u.label || 'Unit')}</div>
+          ${_unitAvailPill(u)}
+        </div>
+        <div style="display:flex;gap:4px;flex-shrink:0">
+          <button class="card-edit-btn" onclick="openAddUnitModal('${r.id}','${u.id}')" title="Edit unit">${UNIT_ICON_EDIT}</button>
+          <button class="card-edit-btn" onclick="deleteUnit('${r.id}','${u.id}')" title="Delete unit" style="color:var(--danger)">${UNIT_ICON_TRASH}</button>
+        </div>
+      </div>
+      <div class="unit-card-rent ${rentStr?'':'empty'}">${rentStr ? rentStr+'<span>/mo</span>' : 'No rent set'}</div>
+      <div class="unit-card-stats">
+        <div class="unit-stat">${UNIT_ICON_BED}<span>${bedsStr}</span></div>
+        <div class="unit-stat">${UNIT_ICON_BATH}<span>${u.bathrooms ? u.bathrooms+' ba' : '— ba'}</span></div>
+        <div class="unit-stat">${UNIT_ICON_SQFT}<span>${u.sqft ? Number(u.sqft).toLocaleString()+' sqft' : '— sqft'}</span></div>
+      </div>
+      ${extra ? `<div class="unit-card-extra">${extra}</div>` : ''}
+    </div>`;
+  });
+  h += '</div>';
+  return h;
+}
+function renderUnitsListView(r, units){
+  let h = '<div style="overflow-x:auto"><table><thead><tr>'
+    + '<th>Unit</th><th>Rent</th><th>Beds</th><th>Baths</th><th>Sq Ft</th><th>Available</th><th>Common Spaces</th><th></th>'
+    + '</tr></thead><tbody>';
+  units.forEach(u => {
+    h += `<tr class="clickable" onclick="openAddUnitModal('${r.id}','${u.id}')">
+      <td class="td-name">${esc(u.label || 'Unit')}</td>
+      <td>${u.rent ? '$'+Number(u.rent).toLocaleString()+'/mo' : '—'}</td>
+      <td>${u.bedrooms===0||u.bedrooms==='0'?'Studio':(u.bedrooms||'—')}</td>
+      <td>${u.bathrooms||'—'}</td>
+      <td>${u.sqft ? Number(u.sqft).toLocaleString() : '—'}</td>
+      <td>${u.availableDate==='now'?'Now':(u.availableDate?fmtDate(u.availableDate):'—')}</td>
+      <td>${u.commonSpaces||'—'}</td>
+      <td onclick="event.stopPropagation()" style="text-align:right;white-space:nowrap">
+        <button class="card-edit-btn" style="opacity:1;display:inline-flex" onclick="openAddUnitModal('${r.id}','${u.id}')" title="Edit unit">${UNIT_ICON_EDIT}</button>
+        <button class="card-edit-btn" style="opacity:1;display:inline-flex;color:var(--danger)" onclick="deleteUnit('${r.id}','${u.id}')" title="Delete unit">${UNIT_ICON_TRASH}</button>
+      </td>
+    </tr>`;
+  });
+  h += '</tbody></table></div>';
+  return h;
 }
 function renderUnitsTab(r){
   const units = r.units || [];
@@ -27446,7 +27792,13 @@ function renderUnitsTab(r){
   if(units.length > 0) h += renderUnitRangeSummary(units);
   h += '<div class="table-toolbar" style="margin-bottom:14px">';
   h += `<div style="font-size:.78rem;color:var(--text3)">${units.length === 0 ? 'No units yet' : units.length + (units.length === 1 ? ' unit' : ' units')}</div>`;
-  h += `<div style="margin-left:auto"><button class="btn btn-primary btn-sm" onclick="openAddUnitModal('${r.id}')" style="display:inline-flex;align-items:center;gap:4px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>Add Unit</button></div>`;
+  h += `<div style="margin-left:auto;display:flex;gap:8px;align-items:center">`;
+  h += `<div class="view-toggle">
+    <button class="${unitsViewMode==='list'?'active':''}" onclick="_setUnitsViewMode('list')">List</button>
+    <button class="${unitsViewMode==='card'?'active':''}" onclick="_setUnitsViewMode('card')">Card</button>
+  </div>`;
+  h += `<button class="btn btn-primary btn-sm" onclick="openAddUnitModal('${r.id}')" style="display:inline-flex;align-items:center;gap:4px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>Add Unit</button>`;
+  h += `</div>`;
   h += '</div>';
   if(units.length === 0){
     h += '<div style="padding:40px 20px;text-align:center;color:var(--text3)">'
@@ -27455,51 +27807,37 @@ function renderUnitsTab(r){
       + '<div style="font-size:.82rem;max-width:420px;margin:0 auto">Add each unit in this building — square footage, bedrooms/bathrooms, and common spaces — to capture how pricing differs between them.</div>'
       + '</div>';
   } else {
-    h += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px">';
-    units.forEach(u => {
-      h += `<div class="profile-card" style="padding:14px 16px">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;gap:8px">
-          <div style="font-weight:700;color:var(--text)">${esc(u.label || 'Unit')}</div>
-          <div style="display:flex;gap:4px;flex-shrink:0">
-            <button class="card-edit-btn" onclick="openAddUnitModal('${r.id}','${u.id}')" title="Edit unit"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
-            <button class="card-edit-btn" onclick="deleteUnit('${r.id}','${u.id}')" title="Delete unit" style="color:var(--danger)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>
-          </div>
-        </div>
-        <div class="cr-row" style="gap:14px;flex-wrap:wrap">
-          <div class="cr-field"><div class="cr-label">Rent</div><div class="cr-value ${u.rent?'':'empty'}">${u.rent ? '$'+Number(u.rent).toLocaleString()+'/mo' : '—'}</div></div>
-          <div class="cr-field"><div class="cr-label">Sq Ft</div><div class="cr-value ${u.sqft?'':'empty'}">${u.sqft ? Number(u.sqft).toLocaleString() : '—'}</div></div>
-          <div class="cr-field"><div class="cr-label">Beds</div><div class="cr-value ${u.bedrooms||u.bedrooms===0?'':'empty'}">${u.bedrooms===0||u.bedrooms==='0'?'Studio':(u.bedrooms||'—')}</div></div>
-          <div class="cr-field"><div class="cr-label">${u.bathrooms==='1'?'Bath':'Baths'}</div><div class="cr-value ${u.bathrooms?'':'empty'}">${u.bathrooms||'—'}</div></div>
-          <div class="cr-field"><div class="cr-label">Available</div><div class="cr-value ${u.availableDate?'':'empty'}">${u.availableDate==='now'?'Now':(u.availableDate?fmtDate(u.availableDate):'—')}</div></div>
-          <div class="cr-field"><div class="cr-label">Common Spaces</div><div class="cr-value ${u.commonSpaces?'':'empty'}">${u.commonSpaces||'—'}</div></div>
-        </div>
-        ${u.notes ? `<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:.8rem;color:var(--text2);white-space:pre-wrap">${esc(u.notes)}</div>` : ''}
-      </div>`;
-    });
-    h += '</div>';
+    h += unitsViewMode === 'list' ? renderUnitsListView(r, units) : renderUnitsCardView(r, units);
   }
   h += '</div>';
   return h;
 }
 
+const UNIT_MODAL_DRAFT_FIELD_IDS = ['unit_label','unit_rent','unit_sqft','unit_bedrooms','unit_bathrooms','unit_commonSpaces','unit_notes'];
 function openAddUnitModal(recordId, unitId){
   const r = records.find(x => x.id === recordId);
   if(!r) return;
   if(!r.units) r.units = [];
   const existing = unitId ? r.units.find(u => u.id === unitId) : null;
+  // Typed-but-unsaved text in this modal survives a refresh the same way a note
+  // editor's draft does (see _getFieldDraft above) — scoped to this exact
+  // record+unit so it can never leak into a different unit's modal.
+  _fieldDraftCtx = recordId + '_' + (unitId || 'new');
+  _fieldDraftIds = UNIT_MODAL_DRAFT_FIELD_IDS;
+  const fd = function(fieldId, fallback){ const d = _getFieldDraft(_fieldDraftCtx, fieldId); return d != null ? d : fallback; };
   const modal = document.getElementById('detailModal');
   const panel = document.getElementById('detailPanel');
   panel.innerHTML = `
     <div class="modal-header"><h2>${existing ? 'Edit Unit' : 'Add Unit'}</h2><button class="modal-close" onclick="document.getElementById('detailModal').classList.remove('open')"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>
     <div class="modal-body">
-      <div class="field-group"><label class="field-label">Unit Label / Number *</label><input id="unit_label" type="text" placeholder="e.g. Unit 101, 2B" value="${existing ? esc(existing.label||'') : ''}"></div>
+      <div class="field-group"><label class="field-label">Unit Label / Number *</label><input id="unit_label" type="text" placeholder="e.g. Unit 101, 2B" value="${esc(fd('unit_label', existing ? existing.label||'' : ''))}"></div>
       <div class="field-row" style="gap:8px">
-        <div class="field-group" style="flex:1"><label class="field-label">Monthly Rent</label><input id="unit_rent" type="number" min="0" placeholder="e.g. 1500" value="${existing && existing.rent != null ? existing.rent : ''}"></div>
-        <div class="field-group" style="flex:1"><label class="field-label">Sq Ft</label><input id="unit_sqft" type="number" min="0" value="${existing && existing.sqft != null ? existing.sqft : ''}"></div>
+        <div class="field-group" style="flex:1"><label class="field-label">Monthly Rent</label><input id="unit_rent" type="number" min="0" placeholder="e.g. 1500" value="${esc(fd('unit_rent', existing && existing.rent != null ? existing.rent : ''))}"></div>
+        <div class="field-group" style="flex:1"><label class="field-label">Sq Ft</label><input id="unit_sqft" type="number" min="0" value="${esc(fd('unit_sqft', existing && existing.sqft != null ? existing.sqft : ''))}"></div>
       </div>
       <div class="field-row" style="gap:8px">
-        <div class="field-group" style="flex:1"><label class="field-label">Bedrooms</label><input id="unit_bedrooms" type="number" min="0" step="1" value="${existing && existing.bedrooms != null ? existing.bedrooms : ''}"></div>
-        <div class="field-group" style="flex:1"><label class="field-label">Bathrooms</label><input id="unit_bathrooms" type="number" min="0" step="0.5" value="${existing && existing.bathrooms != null ? existing.bathrooms : ''}"></div>
+        <div class="field-group" style="flex:1"><label class="field-label">Bedrooms</label><input id="unit_bedrooms" type="number" min="0" step="1" value="${esc(fd('unit_bedrooms', existing && existing.bedrooms != null ? existing.bedrooms : ''))}"></div>
+        <div class="field-group" style="flex:1"><label class="field-label">Bathrooms</label><input id="unit_bathrooms" type="number" min="0" step="0.5" value="${esc(fd('unit_bathrooms', existing && existing.bathrooms != null ? existing.bathrooms : ''))}"></div>
       </div>
       <div class="field-group">
         <label class="field-label">Available Date</label>
@@ -27508,8 +27846,8 @@ function openAddUnitModal(recordId, unitId){
           <label style="display:flex;align-items:center;gap:4px;font-size:.78rem;font-weight:400;color:var(--text2);cursor:pointer;white-space:nowrap"><input type="checkbox" id="unit_avail_now" ${existing && existing.availableDate === 'now' ? 'checked' : ''} onchange="const el=document.getElementById('unit_availableDate');el.disabled=this.checked;if(this.checked)el.value='';"> Now</label>
         </div>
       </div>
-      <div class="field-group"><label class="field-label">Common Spaces</label><input id="unit_commonSpaces" type="number" min="0" step="1" placeholder="e.g. 1 (shared lounge, laundry room, etc.)" value="${existing && existing.commonSpaces != null ? existing.commonSpaces : ''}"></div>
-      <div class="field-group"><label class="field-label">Notes</label><textarea id="unit_notes" rows="3" placeholder="Any other differences affecting pricing — view, floor level, renovation status, etc.">${existing ? esc(existing.notes||'') : ''}</textarea></div>
+      <div class="field-group"><label class="field-label">Common Spaces</label><input id="unit_commonSpaces" type="number" min="0" step="1" placeholder="e.g. 1 (shared lounge, laundry room, etc.)" value="${esc(fd('unit_commonSpaces', existing && existing.commonSpaces != null ? existing.commonSpaces : ''))}"></div>
+      <div class="field-group"><label class="field-label">Notes</label><textarea id="unit_notes" rows="3" placeholder="Any other differences affecting pricing — view, floor level, renovation status, etc.">${esc(fd('unit_notes', existing ? existing.notes||'' : ''))}</textarea></div>
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:20px">
         <button class="btn btn-secondary" onclick="document.getElementById('detailModal').classList.remove('open')">Cancel</button>
         <button class="btn btn-primary" onclick="saveUnit('${recordId}','${unitId||''}')">${existing ? 'Save Changes' : 'Add Unit'}</button>
@@ -27545,6 +27883,7 @@ function saveUnit(recordId, unitId){
     r.units.push(Object.assign({ id: uid() }, data));
   }
   saveData();
+  _clearFieldDrafts(recordId + '_' + (unitId || 'new'), UNIT_MODAL_DRAFT_FIELD_IDS);
   document.getElementById('detailModal').classList.remove('open');
   render();
 }
@@ -27746,6 +28085,9 @@ function _propOpenAddIncome(recId, itemId){
   const existing = itemId ? (r.additionalIncome||[]).find(x => x.id === itemId) : null;
   const initial = existing || { name: '', type: 'monthly', amount: '' };
   const isEdit = !!existing;
+  _fieldDraftCtx = recId + '_' + (itemId || 'new');
+  _fieldDraftIds = ['incomeName','incomeAmount'];
+  const fd = function(fieldId, fallback){ const dft = _getFieldDraft(_fieldDraftCtx, fieldId); return dft != null ? dft : fallback; };
   const old = document.getElementById('incomeModal');
   if(old) old.remove();
   const overlay = document.createElement('div');
@@ -27763,7 +28105,7 @@ function _propOpenAddIncome(recId, itemId){
     <div style="padding:18px 20px;display:flex;flex-direction:column;gap:12px">
       <div>
         <label style="display:block;font-size:.7rem;color:var(--text3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">Income Name</label>
-        <input type="text" id="incomeName" value="${esc(initial.name||'')}" placeholder="e.g., Parking, Pet Fee, Non-Security Waiver" style="width:100%;padding:8px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.9rem">
+        <input type="text" id="incomeName" value="${esc(fd('incomeName', initial.name||''))}" placeholder="e.g., Parking, Pet Fee, Non-Security Waiver" style="width:100%;padding:8px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.9rem">
       </div>
       <div>
         <label style="display:block;font-size:.7rem;color:var(--text3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">Frequency</label>
@@ -27774,7 +28116,7 @@ function _propOpenAddIncome(recId, itemId){
       </div>
       <div>
         <label style="display:block;font-size:.7rem;color:var(--text3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px"><span id="incomeAmountLabel">${initialType==='weekly'?'Amount ($/wk)':'Amount ($/mo)'}</span></label>
-        <input type="number" step="0.01" min="0" id="incomeAmount" value="${initial.amount===''||initial.amount==null?'':initial.amount}" placeholder="0.00" style="width:100%;padding:8px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.9rem">
+        <input type="number" step="0.01" min="0" id="incomeAmount" value="${esc(fd('incomeAmount', initial.amount===''||initial.amount==null?'':initial.amount))}" placeholder="0.00" style="width:100%;padding:8px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.9rem">
         <div id="incomeHint" style="font-size:.7rem;color:var(--text3);margin-top:4px">${initialType==='weekly'?'Weekly amounts are converted to a monthly equivalent (× 52 ÷ 12) for NOI calculations.':'Income collected once per month.'}</div>
       </div>
     </div>
@@ -27832,6 +28174,7 @@ function _propSaveIncome(recId, itemId){
     });
   }
   saveData(r.id);
+  _clearFieldDrafts(recId + '_' + (itemId || 'new'), ['incomeName','incomeAmount']);
   overlay.remove();
   _rerenderExpensesTab();
   if(typeof _rerenderCalcTab === 'function') try { _rerenderCalcTab(); } catch(_){}
@@ -27860,6 +28203,9 @@ function _propOpenAddCustomExpense(recId, itemId){
   const existing = itemId ? (r.customExpenses||[]).find(x => x.id === itemId) : null;
   const initial = existing || { name: '', type: 'flat', amount: '' };
   const isEdit = !!existing;
+  _fieldDraftCtx = recId + '_' + (itemId || 'new');
+  _fieldDraftIds = ['customExpName','customExpAmount'];
+  const fd = function(fieldId, fallback){ const dft = _getFieldDraft(_fieldDraftCtx, fieldId); return dft != null ? dft : fallback; };
   const old = document.getElementById('customExpModal');
   if(old) old.remove();
   const overlay = document.createElement('div');
@@ -27876,7 +28222,7 @@ function _propOpenAddCustomExpense(recId, itemId){
     <div style="padding:18px 20px;display:flex;flex-direction:column;gap:12px">
       <div>
         <label style="display:block;font-size:.7rem;color:var(--text3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">Expense Name</label>
-        <input type="text" id="customExpName" value="${esc(initial.name||'')}" placeholder="e.g., Pool Service" style="width:100%;padding:8px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.9rem">
+        <input type="text" id="customExpName" value="${esc(fd('customExpName', initial.name||''))}" placeholder="e.g., Pool Service" style="width:100%;padding:8px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.9rem">
       </div>
       <div>
         <label style="display:block;font-size:.7rem;color:var(--text3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">Type</label>
@@ -27887,7 +28233,7 @@ function _propOpenAddCustomExpense(recId, itemId){
       </div>
       <div>
         <label style="display:block;font-size:.7rem;color:var(--text3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px"><span id="customExpAmountLabel">${initialType==='percent'?'Amount (% of projected revenue)':'Amount ($/mo)'}</span></label>
-        <input type="number" step="0.01" min="0" id="customExpAmount" value="${initial.amount===''||initial.amount==null?'':initial.amount}" placeholder="0.00" style="width:100%;padding:8px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.9rem">
+        <input type="number" step="0.01" min="0" id="customExpAmount" value="${esc(fd('customExpAmount', initial.amount===''||initial.amount==null?'':initial.amount))}" placeholder="0.00" style="width:100%;padding:8px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.9rem">
         <div id="customExpHint" style="font-size:.7rem;color:var(--text3);margin-top:4px">${initialType==='percent'?'Calculated as a percentage of your projected monthly revenue (same base as the Co-Host / PM Fee).':'Charged as a flat dollar amount per month.'}</div>
       </div>
     </div>
@@ -27948,6 +28294,7 @@ function _propSaveAddCustomExpense(recId, itemId){
     });
   }
   saveData(r.id);
+  _clearFieldDrafts(recId + '_' + (itemId || 'new'), ['customExpName','customExpAmount']);
   overlay.remove();
   _rerenderExpensesTab();
   if(typeof _rerenderCalcTab === 'function') try { _rerenderCalcTab(); } catch(_){}
@@ -28076,7 +28423,7 @@ function openCopyExpensesSearch(targetId){
       const sc = getCalc(r);
       const hasExp = EXPENSE_FIELDS.some(k => sc[k] > 0);
       const nameLine = (r.name ? highlightText(r.name, q) : '<span style="opacity:.4">No contact</span>') + (r.status ? ' · <span style="font-weight:600">'+esc(r.status)+'</span>' : '') + (hasExp ? '' : ' · <span style="color:var(--warning)">No expenses</span>');
-      html += '<div class="copy-exp-item" data-id="'+r.id+'" data-idx="'+i+'"><div class="copy-exp-item-icon">🏠</div><div class="copy-exp-item-main"><div class="copy-exp-item-title">'+highlightText(r.property || 'No address', q)+'</div><div class="copy-exp-item-sub">'+nameLine+'</div></div>'+(i===0?'<div class="copy-exp-item-hint">Shift+Enter</div>':'')+'</div>';
+      html += '<div class="copy-exp-item" data-id="'+r.id+'" data-idx="'+i+'"><div class="copy-exp-item-icon">'+propertyEmoji(r)+'</div><div class="copy-exp-item-main"><div class="copy-exp-item-title">'+highlightText(r.property || 'No address', q)+'</div><div class="copy-exp-item-sub">'+nameLine+'</div></div>'+(i===0?'<div class="copy-exp-item-hint">Shift+Enter</div>':'')+'</div>';
     });
     resultsBox.innerHTML = html;
     attachResultClicks();
@@ -29844,12 +30191,16 @@ function editConcessionWeeks(recId){
   if(!r) return;
   const an = getAnalysis(r);
   const current = an.concessionWeeks !== undefined ? parseFloat(an.concessionWeeks) : 6;
+  _fieldDraftCtx = recId;
+  _fieldDraftIds = ['concessionWeeksInput'];
+  const draft = _getFieldDraft(_fieldDraftCtx, 'concessionWeeksInput');
+  const startVal = draft != null ? draft : current;
   const existing = document.getElementById('concessionWeeksOverlay');
   if(existing) existing.remove();
   const overlay = document.createElement('div');
   overlay.className = 'multi-editor-overlay';
   overlay.id = 'concessionWeeksOverlay';
-  overlay.innerHTML = '<div class="multi-editor" style="max-width:400px"><div class="multi-editor-header"><h3>Rental Concession Weeks</h3><button class="modal-close" onclick="document.getElementById(\'concessionWeeksOverlay\').remove()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div><div class="multi-editor-body" style="padding:24px 20px"><input type="number" id="concessionWeeksInput" placeholder="Weeks of free rent" value="'+current+'" min="0" max="52" style="font-size:1rem;padding:10px 12px;margin-bottom:8px"><div style="font-size:.72rem;color:var(--text3);margin-bottom:16px">Recommended: 6–8 weeks · Enter to save</div><div style="display:flex;gap:10px;justify-content:flex-end"><button class="btn btn-secondary" onclick="document.getElementById(\'concessionWeeksOverlay\').remove()">Cancel</button><button class="btn btn-primary" onclick="saveConcessionWeeks(\''+recId+'\')">Save</button></div></div></div>';
+  overlay.innerHTML = '<div class="multi-editor" style="max-width:400px"><div class="multi-editor-header"><h3>Rental Concession Weeks</h3><button class="modal-close" onclick="document.getElementById(\'concessionWeeksOverlay\').remove()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div><div class="multi-editor-body" style="padding:24px 20px"><input type="number" id="concessionWeeksInput" placeholder="Weeks of free rent" value="'+startVal+'" min="0" max="52" style="font-size:1rem;padding:10px 12px;margin-bottom:8px"><div style="font-size:.72rem;color:var(--text3);margin-bottom:16px">Recommended: 6–8 weeks · Enter to save</div><div style="display:flex;gap:10px;justify-content:flex-end"><button class="btn btn-secondary" onclick="document.getElementById(\'concessionWeeksOverlay\').remove()">Cancel</button><button class="btn btn-primary" onclick="saveConcessionWeeks(\''+recId+'\')">Save</button></div></div></div>';
   document.body.appendChild(overlay);
   const inp = document.getElementById('concessionWeeksInput');
   inp.focus();
@@ -29862,6 +30213,7 @@ function saveConcessionWeeks(recId){
   const an = getAnalysis(r);
   an.concessionWeeks = Math.max(0, Math.min(12, val));
   saveData();
+  _clearFieldDrafts(recId, ['concessionWeeksInput']);
   document.getElementById('concessionWeeksOverlay')?.remove();
   render();
 }
@@ -30307,7 +30659,7 @@ function openCompNoteEditor(recId, idx){
     <div class="popup-body">
       ${comp.link ? '<div style="font-size:.78rem;color:var(--text3);margin-bottom:8px"><a href="'+esc(comp.link)+'" target="_blank" style="color:var(--primary)">View Listing</a></div>' : ''}
       ${buildRteToolbarHtml(editorId)}
-      <div class="rte-editor" contenteditable="true" id="${editorId}" data-placeholder="Add notes about this competitor..." style="min-height:180px;font-size:.9rem;padding:10px 12px">${comp.notes || ''}</div>
+      <div class="rte-editor" contenteditable="true" id="${editorId}" data-placeholder="Add notes about this competitor..." style="min-height:180px;font-size:.9rem;padding:10px 12px">${_getDraftHtml(editorId) || comp.notes || ''}</div>
     </div>
     <div class="popup-footer">
       <span class="hint">Shift+Enter to save</span>
@@ -30340,6 +30692,7 @@ function saveCompNotePopup(){
   const html = ed.innerHTML.trim();
   comps[idx].notes = html === '<br>' || html === '<div><br></div>' ? '' : html;
   saveData();
+  _clearDraftHtml(editorId);
   _compNoteCtx = null;
   document.getElementById('compNoteOverlay').classList.remove('open');
   render();
@@ -30377,6 +30730,10 @@ function showCleaningFeeInputModal(recId, currentVal){
   const r = records.find(x => x.id === recId);
   if(!r) return;
   const an = getAnalysis(r);
+  _fieldDraftCtx = recId;
+  _fieldDraftIds = ['cleaningFeeInput'];
+  const _cfDraft = _getFieldDraft(_fieldDraftCtx, 'cleaningFeeInput');
+  const startVal = _cfDraft != null ? _cfDraft : currentVal;
 
   const existing = document.getElementById('cleaningFeeInputOverlay');
   if(existing) existing.remove();
@@ -30390,7 +30747,7 @@ function showCleaningFeeInputModal(recId, currentVal){
       <button class="modal-close" onclick="document.getElementById('cleaningFeeInputOverlay').remove()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
     </div>
     <div class="multi-editor-body" style="padding:24px 20px">
-      <input type="number" id="cleaningFeeInput" placeholder="Enter amount" value="${currentVal}" style="font-size:1rem;padding:10px 12px;margin-bottom:16px">
+      <input type="number" id="cleaningFeeInput" placeholder="Enter amount" value="${startVal}" style="font-size:1rem;padding:10px 12px;margin-bottom:16px">
       <div style="display:flex;gap:10px;justify-content:flex-end">
         <button class="btn btn-secondary" onclick="document.getElementById('cleaningFeeInputOverlay').remove()">Cancel</button>
         <button class="btn btn-primary" onclick="(function(){
@@ -30403,6 +30760,7 @@ function showCleaningFeeInputModal(recId, currentVal){
             if(!r.details) r.details = {};
             r.details.analysis = an;
             saveData();
+            _clearFieldDrafts('${recId}', ['cleaningFeeInput']);
             render();
           }
           document.getElementById('cleaningFeeInputOverlay').remove();
@@ -30425,6 +30783,10 @@ function editAnalysisProfitReq(recId){
 function showProfitReqInputModal(recId, currentVal){
   const r = records.find(x => x.id === recId);
   if(!r) return;
+  _fieldDraftCtx = recId;
+  _fieldDraftIds = ['profitReqInput'];
+  const _prDraft = _getFieldDraft(_fieldDraftCtx, 'profitReqInput');
+  const startVal = _prDraft != null ? _prDraft : currentVal;
 
   const existing = document.getElementById('profitReqInputOverlay');
   if(existing) existing.remove();
@@ -30438,7 +30800,7 @@ function showProfitReqInputModal(recId, currentVal){
       <button class="modal-close" onclick="document.getElementById('profitReqInputOverlay').remove()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
     </div>
     <div class="multi-editor-body" style="padding:24px 20px">
-      <input type="number" id="profitReqInput" placeholder="Enter amount" value="${currentVal}" style="font-size:1rem;padding:10px 12px;margin-bottom:8px">
+      <input type="number" id="profitReqInput" placeholder="Enter amount" value="${startVal}" style="font-size:1rem;padding:10px 12px;margin-bottom:8px">
       <div style="font-size:.72rem;color:var(--text3);margin-bottom:16px">Recommended: $1,000/month · Shift+Enter to save</div>
       <div style="display:flex;gap:10px;justify-content:flex-end">
         <button class="btn btn-secondary" onclick="document.getElementById('profitReqInputOverlay').remove()">Cancel</button>
@@ -30479,6 +30841,7 @@ function saveProfitReq(recId, num){
   const an = getAnalysis(r);
   an.profitRequirement = num;
   saveData();
+  _clearFieldDrafts(recId, ['profitReqInput']);
   document.getElementById('profitReqInputOverlay')?.remove();
   render();
 }
@@ -30823,10 +31186,14 @@ async function selectAddress(el, recId){
 }
 
 /* ===== ADDRESS EDITOR POPUP ===== */
+const ADDRESS_EDITOR_DRAFT_FIELD_IDS = ['addrEdStreet','addrEdUnitNum','addrEdCity','addrEdState','addrEdZip'];
 function showAddressEditorPopup(recId){
   const r = records.find(x => x.id === recId);
   if(!r) return;
   const addr = r.addressParts || parseAddressParts(r.property);
+  _fieldDraftCtx = recId;
+  _fieldDraftIds = ADDRESS_EDITOR_DRAFT_FIELD_IDS;
+  const fd = function(fieldId, fallback){ const dft = _getFieldDraft(_fieldDraftCtx, fieldId); return dft != null ? dft : fallback; };
 
   // Parse existing unit into type + number (e.g. "Unit 4" → type="Unit", num="4")
   let unitType = '', unitNum = '';
@@ -30844,7 +31211,7 @@ function showAddressEditorPopup(recId){
     <div class="sp-desc">Update the property address shown in the profile header.</div>
     <div style="margin-bottom:12px;position:relative">
       <label style="display:block;font-size:.7rem;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px">Street Address</label>
-      <input type="text" id="addrEdStreet" value="${esc(addr.street || r.property)}" placeholder="Start typing an address..." style="font-size:.9rem;padding:7px 10px;width:100%" autocomplete="off" data-form-type="other">
+      <input type="text" id="addrEdStreet" value="${esc(fd('addrEdStreet', addr.street || r.property))}" placeholder="Start typing an address..." style="font-size:.9rem;padding:7px 10px;width:100%" autocomplete="off" data-form-type="other">
     </div>
     <div class="sp-grid">
       <div class="sp-field">
@@ -30861,19 +31228,19 @@ function showAddressEditorPopup(recId){
       </div>
       <div class="sp-field">
         <label>Unit Number</label>
-        <input type="text" id="addrEdUnitNum" value="${esc(unitNum)}" placeholder="${unitType ? unitType + ' number' : 'Unit number'}" style="${unitType||unitNum?'':'opacity:.5'}" autocomplete="off" data-form-type="other">
+        <input type="text" id="addrEdUnitNum" value="${esc(fd('addrEdUnitNum', unitNum))}" placeholder="${unitType ? unitType + ' number' : 'Unit number'}" style="${unitType||unitNum?'':'opacity:.5'}" autocomplete="off" data-form-type="other">
       </div>
       <div class="sp-field">
         <label>City</label>
-        <input type="text" id="addrEdCity" value="${esc(addr.city||'')}" placeholder="City" autocomplete="off" data-form-type="other">
+        <input type="text" id="addrEdCity" value="${esc(fd('addrEdCity', addr.city||''))}" placeholder="City" autocomplete="off" data-form-type="other">
       </div>
       <div class="sp-field">
         <label>State</label>
-        <input type="text" id="addrEdState" value="${esc(addr.state||'')}" placeholder="AZ" maxlength="2" style="text-transform:uppercase" autocomplete="off" data-form-type="other">
+        <input type="text" id="addrEdState" value="${esc(fd('addrEdState', addr.state||''))}" placeholder="AZ" maxlength="2" style="text-transform:uppercase" autocomplete="off" data-form-type="other">
       </div>
       <div class="sp-field">
         <label>ZIP Code</label>
-        <input type="text" id="addrEdZip" value="${esc(addr.zip||'')}" placeholder="85001" maxlength="10" autocomplete="off" data-form-type="other">
+        <input type="text" id="addrEdZip" value="${esc(fd('addrEdZip', addr.zip||''))}" placeholder="85001" maxlength="10" autocomplete="off" data-form-type="other">
       </div>
     </div>
     <div class="sp-actions">
@@ -30949,6 +31316,7 @@ function saveAddressEditor(recId){
 
   window._selectedAddrParts = null;
   saveData();
+  _clearFieldDrafts(recId, ADDRESS_EDITOR_DRAFT_FIELD_IDS);
   document.getElementById('addressEditorOverlay')?.remove();
   render();
 }
@@ -30985,10 +31353,14 @@ function showStatsEditWarning(recId){
   document.body.appendChild(overlay);
 }
 
+const STATS_EDITOR_DRAFT_FIELD_IDS = ['statsBeds','statsBaths','statsSqft','statsAvail'];
 function showStatsEditorPopup(recId){
   const r = records.find(x => x.id === recId);
   if(!r) return;
   const d = r.propertyDetails || {};
+  _fieldDraftCtx = recId;
+  _fieldDraftIds = STATS_EDITOR_DRAFT_FIELD_IDS;
+  const fd = function(fieldId, fallback){ const dft = _getFieldDraft(_fieldDraftCtx, fieldId); return dft != null ? dft : fallback; };
 
   const overlay = document.createElement('div');
   overlay.className = 'stats-popup-overlay';
@@ -30999,19 +31371,19 @@ function showStatsEditorPopup(recId){
     <div class="sp-grid">
       <div class="sp-field">
         <label>Bedrooms</label>
-        <input type="text" id="statsBeds" value="${esc(d.bedrooms||'')}" placeholder="e.g. 3">
+        <input type="text" id="statsBeds" value="${esc(fd('statsBeds', d.bedrooms||''))}" placeholder="e.g. 3">
       </div>
       <div class="sp-field">
         <label>Bathrooms</label>
-        <input type="text" id="statsBaths" value="${esc(d.bathrooms||'')}" placeholder="e.g. 2">
+        <input type="text" id="statsBaths" value="${esc(fd('statsBaths', d.bathrooms||''))}" placeholder="e.g. 2">
       </div>
       <div class="sp-field">
         <label>Square Feet</label>
-        <input type="number" id="statsSqft" value="${esc(d.sqft||'')}" placeholder="e.g. 1200">
+        <input type="number" id="statsSqft" value="${esc(fd('statsSqft', d.sqft||''))}" placeholder="e.g. 1200">
       </div>
       <div class="sp-field">
         <label>Date Available</label>
-        <input type="date" id="statsAvail" value="${esc(d.availableDate||'')}">
+        <input type="date" id="statsAvail" value="${esc(fd('statsAvail', d.availableDate||''))}">
       </div>
     </div>
     <div class="sp-actions">
@@ -31048,6 +31420,7 @@ function saveStatsEditor(recId){
   if(avail !== undefined) r.propertyDetails.availableDate = avail;
 
   saveData();
+  _clearFieldDrafts(recId, STATS_EDITOR_DRAFT_FIELD_IDS);
   document.getElementById('statsEditorOverlay')?.remove();
   render();
 }
@@ -31609,6 +31982,7 @@ function dismissAllOverlays(){
   document.querySelectorAll('.stats-popup-overlay,.multi-editor-overlay,.card-edit-popup,.note-img-popup-overlay').forEach(el => el.remove());
 }
 
+const CONTACT_CARD_DRAFT_FIELD_IDS = ['ce_buildingName','ce_address','ce_unit_num','ce_city','ce_state','ce_zip','ce_market','ce_submarket','ce_beds','ce_baths','ce_sqft','ce_numberOfUnits','ce_name','ce_phone','ce_email','ce_link'];
 function openCardEditor(recId, cardType, focusField){
   dismissAllOverlays();
   const r = records.find(x => x.id === recId);
@@ -31624,6 +31998,12 @@ function openCardEditor(recId, cardType, focusField){
 
   if(cardType === 'contact'){
     title = 'Edit Contact & Status';
+    // Typed-but-unsaved text survives a refresh, same guarantee as the Add Unit
+    // modal (see _getFieldDraft above) — singleton context since only one card
+    // editor is ever open at a time.
+    _fieldDraftCtx = recId;
+    _fieldDraftIds = CONTACT_CARD_DRAFT_FIELD_IDS;
+    var fd = function(fieldId, fallback){ const dft = _getFieldDraft(_fieldDraftCtx, fieldId); return dft != null ? dft : fallback; };
     // Parse existing unit into type + number
     const ceAddr = r.addressParts || parseAddressParts(r.property);
     let ceUnitType = '', ceUnitNum = '';
@@ -31634,8 +32014,8 @@ function openCardEditor(recId, cardType, focusField){
     }
     const isAvailNow = d.availableDate === 'now';
     fieldsHtml = `
-      ${r.recordType==='apartment' ? `<div class="prop-field" style="margin-bottom:6px"><label>Building Name</label><input type="text" id="ce_buildingName" value="${esc(r.buildingName||'')}" placeholder="e.g. The Grand at Riverside"></div>` : ''}
-      <div class="prop-field" style="margin-bottom:6px;position:relative"><label>Address</label><input type="text" id="ce_address" value="${esc(ceAddr.street || r.property)}" placeholder="Start typing an address..." autocomplete="off"></div>
+      ${r.recordType==='apartment' ? `<div class="prop-field" style="margin-bottom:6px"><label>Building Name</label><input type="text" id="ce_buildingName" value="${esc(fd('ce_buildingName', r.buildingName||''))}" placeholder="e.g. The Grand at Riverside"></div>` : ''}
+      <div class="prop-field" style="margin-bottom:6px;position:relative"><label>Address</label><input type="text" id="ce_address" value="${esc(fd('ce_address', ceAddr.street || r.property))}" placeholder="Start typing an address..." autocomplete="off"></div>
       <div class="prop-field-grid" style="margin-bottom:10px">
         <div class="prop-field"><label>Unit Type</label><select id="ce_unit_type" style="font-size:.9rem;padding:7px 10px;width:100%">
           <option value="">No unit</option>
@@ -31646,32 +32026,32 @@ function openCardEditor(recId, cardType, focusField){
           <option value="Ste" ${ceUnitType==='Ste'?'selected':''}>Ste</option>
           <option value="Bldg" ${ceUnitType==='Bldg'?'selected':''}>Bldg</option>
         </select></div>
-        <div class="prop-field"><label>Unit Number</label><input type="text" id="ce_unit_num" value="${esc(ceUnitNum)}" placeholder="${ceUnitType ? ceUnitType + ' number' : 'Unit number'}" style="${ceUnitType||ceUnitNum?'':'opacity:.5'}"></div>
-        <div class="prop-field"><label>City</label><input type="text" id="ce_city" value="${esc(ceAddr.city||'')}"></div>
-        <div class="prop-field"><label>State</label><input type="text" id="ce_state" value="${esc(ceAddr.state||'')}" maxlength="2" style="text-transform:uppercase"></div>
-        <div class="prop-field"><label>ZIP Code</label><input type="text" id="ce_zip" value="${esc(ceAddr.zip||'')}" maxlength="10"></div>
+        <div class="prop-field"><label>Unit Number</label><input type="text" id="ce_unit_num" value="${esc(fd('ce_unit_num', ceUnitNum))}" placeholder="${ceUnitType ? ceUnitType + ' number' : 'Unit number'}" style="${ceUnitType||ceUnitNum?'':'opacity:.5'}"></div>
+        <div class="prop-field"><label>City</label><input type="text" id="ce_city" value="${esc(fd('ce_city', ceAddr.city||''))}"></div>
+        <div class="prop-field"><label>State</label><input type="text" id="ce_state" value="${esc(fd('ce_state', ceAddr.state||''))}" maxlength="2" style="text-transform:uppercase"></div>
+        <div class="prop-field"><label>ZIP Code</label><input type="text" id="ce_zip" value="${esc(fd('ce_zip', ceAddr.zip||''))}" maxlength="10"></div>
       </div>
       <div style="display:flex;gap:8px;margin-bottom:8px">
-        <div class="prop-field" style="flex:1;min-width:0"><label>Market</label><input type="text" id="ce_market" value="${esc(d.market||'')}" style="font-size:.82rem;padding:5px 6px"></div>
-        <div class="prop-field" style="flex:1;min-width:0"><label>Submarket</label><input type="text" id="ce_submarket" value="${esc(d.submarket||'')}" style="font-size:.82rem;padding:5px 6px"></div>
+        <div class="prop-field" style="flex:1;min-width:0"><label>Market</label><input type="text" id="ce_market" value="${esc(fd('ce_market', d.market||''))}" style="font-size:.82rem;padding:5px 6px"></div>
+        <div class="prop-field" style="flex:1;min-width:0"><label>Submarket</label><input type="text" id="ce_submarket" value="${esc(fd('ce_submarket', d.submarket||''))}" style="font-size:.82rem;padding:5px 6px"></div>
       </div>
       <div style="display:flex;gap:8px;margin-bottom:8px">
-        <div class="prop-field" style="flex:1;min-width:0"><label>Beds</label><input type="number" id="ce_beds" value="${esc(d.bedrooms||'')}" placeholder="3" min="0" step="1" style="font-size:.82rem;padding:5px 6px"></div>
-        <div class="prop-field" style="flex:1;min-width:0"><label>Baths</label><input type="number" id="ce_baths" value="${esc(d.bathrooms||'')}" placeholder="2" min="0" step="0.5" style="font-size:.82rem;padding:5px 6px"></div>
-        <div class="prop-field" style="flex:1;min-width:0"><label>Sq Ft</label><input type="number" id="ce_sqft" value="${esc(d.sqft||'')}" placeholder="1200" min="0" style="font-size:.82rem;padding:5px 6px"></div>
-        ${r.recordType==='apartment' ? `<div class="prop-field" style="flex:1;min-width:0"><label>Number of Units</label><input type="number" id="ce_numberOfUnits" value="${esc(d.numberOfUnits||'')}" placeholder="24" min="0" step="1" style="font-size:.82rem;padding:5px 6px"></div>` : ''}
+        <div class="prop-field" style="flex:1;min-width:0"><label>Beds</label><input type="number" id="ce_beds" value="${esc(fd('ce_beds', d.bedrooms||''))}" placeholder="3" min="0" step="1" style="font-size:.82rem;padding:5px 6px"></div>
+        <div class="prop-field" style="flex:1;min-width:0"><label>Baths</label><input type="number" id="ce_baths" value="${esc(fd('ce_baths', d.bathrooms||''))}" placeholder="2" min="0" step="0.5" style="font-size:.82rem;padding:5px 6px"></div>
+        <div class="prop-field" style="flex:1;min-width:0"><label>Sq Ft</label><input type="number" id="ce_sqft" value="${esc(fd('ce_sqft', d.sqft||''))}" placeholder="1200" min="0" style="font-size:.82rem;padding:5px 6px"></div>
+        ${r.recordType==='apartment' ? `<div class="prop-field" style="flex:1;min-width:0"><label>Number of Units</label><input type="number" id="ce_numberOfUnits" value="${esc(fd('ce_numberOfUnits', d.numberOfUnits||''))}" placeholder="24" min="0" step="1" style="font-size:.82rem;padding:5px 6px"></div>` : ''}
       </div>
       <div class="prop-field-grid" style="margin-bottom:10px">
         <div class="prop-field"><label>Available Date</label><div style="display:flex;align-items:center;gap:8px"><div class="rr-dt-trigger${isAvailNow?' rr-dt-disabled':''}" id="dt_available" style="flex:1${isAvailNow?';opacity:.4;pointer-events:none':''}"><span class="rr-dt-icon">${CALENDAR_ICON}</span><span class="rr-dt-text empty">--/--/----</span><span class="rr-dt-clear" title="Clear">${CLEAR_X_ICON}</span></div><label style="display:flex;align-items:center;gap:4px;font-size:.78rem;font-weight:400;text-transform:none;letter-spacing:0;color:var(--text2);cursor:pointer;white-space:nowrap"><input type="checkbox" id="ce_avail_now" ${isAvailNow?'checked':''} onchange="const t=document.getElementById('dt_available');if(this.checked){t.style.opacity='.4';t.style.pointerEvents='none';t.classList.add('rr-dt-disabled');const s=window._dtPickers&&window._dtPickers['dt_available'];if(s){s.date='';updateDtTriggerText('dt_available')}}else{t.style.opacity='1';t.style.pointerEvents='';t.classList.remove('rr-dt-disabled')}"> Now</label></div></div>
       </div>
       <div class="prop-field-grid">
-        <div class="prop-field"><label>Contact Name</label><input type="text" id="ce_name" value="${esc(r.name)}"></div>
-        <div class="prop-field"><label>Phone</label><input type="tel" id="ce_phone" value="${esc(r.phone)}" maxlength="14" oninput="rrFormatPhoneInput(this)"><div class="ce-phone-error" id="ce_phone_error" style="display:none;color:var(--danger);font-size:.75rem;margin-top:2px">Phone must be 10 digits</div></div>
-        <div class="prop-field"><label>Email</label><input type="email" id="ce_email" value="${esc(r.email)}" oninput="validateEmailField()"><div class="ce-email-error" id="ce_email_error">Please enter a valid email address</div></div>
+        <div class="prop-field"><label>Contact Name</label><input type="text" id="ce_name" value="${esc(fd('ce_name', r.name))}"></div>
+        <div class="prop-field"><label>Phone</label><input type="tel" id="ce_phone" value="${esc(fd('ce_phone', r.phone))}" maxlength="14" oninput="rrFormatPhoneInput(this)"><div class="ce-phone-error" id="ce_phone_error" style="display:none;color:var(--danger);font-size:.75rem;margin-top:2px">Phone must be 10 digits</div></div>
+        <div class="prop-field"><label>Email</label><input type="email" id="ce_email" value="${esc(fd('ce_email', r.email))}" oninput="validateEmailField()"><div class="ce-email-error" id="ce_email_error">Please enter a valid email address</div></div>
         <div class="prop-field"><label>Status</label><select id="ce_status">${SELECTABLE_STATUSES.map(s=>`<option value="${s}" ${r.status===s?'selected':''}>${s}</option>`).join('')}</select></div>
         <div class="prop-field"><label>First Contacted</label><div class="rr-dt-trigger" id="dt_firstcontact"><span class="rr-dt-icon">${CALENDAR_ICON}</span><span class="rr-dt-text empty">--/--/---- --:--</span><span class="rr-dt-clear" title="Clear">${CLEAR_X_ICON}</span></div></div>
       </div>
-      <div class="prop-field" style="margin-top:10px"><label>Listing Link</label><input type="url" id="ce_link" value="${esc(r.link)}"></div>`;
+      <div class="prop-field" style="margin-top:10px"><label>Listing Link</label><input type="url" id="ce_link" value="${esc(fd('ce_link', r.link))}"></div>`;
     saveHandler = 'saveContactCard';
   }
 
@@ -31851,6 +32231,7 @@ function saveContactCard(recId){
   }
 
   saveData();
+  _clearFieldDrafts(recId, CONTACT_CARD_DRAFT_FIELD_IDS);
   document.getElementById('cardEditOverlay')?.remove();
   render();
 }
@@ -32152,12 +32533,16 @@ function showRentEditInput(recId){
   const r = records.find(x => x.id === recId);
   if(!r) return;
   const current = parseFloat(r.propertyDetails?.monthlyRent) || 0;
+  _fieldDraftCtx = recId;
+  _fieldDraftIds = ['rentEditInput'];
+  const draft = _getFieldDraft(_fieldDraftCtx, 'rentEditInput');
+  const startVal = draft != null ? draft : current;
   const existing = document.getElementById('rentEditOverlay');
   if(existing) existing.remove();
   const overlay = document.createElement('div');
   overlay.className = 'multi-editor-overlay';
   overlay.id = 'rentEditOverlay';
-  overlay.innerHTML = '<div class="multi-editor" style="max-width:400px"><div class="multi-editor-header"><h3>Update Monthly Rent</h3><button class="modal-close" onclick="document.getElementById(\'rentEditOverlay\').remove()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div><div class="multi-editor-body" style="padding:24px 20px"><input type="number" id="rentEditInput" placeholder="New rent amount" value="'+current+'" min="0" style="font-size:1rem;padding:10px 12px;margin-bottom:8px"><div style="font-size:.72rem;color:var(--text3);margin-bottom:16px">Enter the new listing rent · Shift+Enter to save</div><div style="display:flex;gap:10px;justify-content:flex-end"><button class="btn btn-secondary" style="padding:10px 20px" onclick="document.getElementById(\'rentEditOverlay\').remove()">Cancel</button><button class="btn btn-primary" style="padding:10px 20px" onclick="saveRentEdit(\''+recId+'\')">Save</button></div></div></div>';
+  overlay.innerHTML = '<div class="multi-editor" style="max-width:400px"><div class="multi-editor-header"><h3>Update Monthly Rent</h3><button class="modal-close" onclick="document.getElementById(\'rentEditOverlay\').remove()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div><div class="multi-editor-body" style="padding:24px 20px"><input type="number" id="rentEditInput" placeholder="New rent amount" value="'+startVal+'" min="0" style="font-size:1rem;padding:10px 12px;margin-bottom:8px"><div style="font-size:.72rem;color:var(--text3);margin-bottom:16px">Enter the new listing rent · Shift+Enter to save</div><div style="display:flex;gap:10px;justify-content:flex-end"><button class="btn btn-secondary" style="padding:10px 20px" onclick="document.getElementById(\'rentEditOverlay\').remove()">Cancel</button><button class="btn btn-primary" style="padding:10px 20px" onclick="saveRentEdit(\''+recId+'\')">Save</button></div></div></div>';
   document.body.appendChild(overlay);
   const inp = document.getElementById('rentEditInput');
   inp.focus();
@@ -32174,6 +32559,7 @@ function saveRentEdit(recId){
   r.propertyDetails.monthlyRent = val;
   r.monthlyRent = val;
   saveData();
+  _clearFieldDrafts(recId, ['rentEditInput']);
   document.getElementById('rentEditOverlay')?.remove();
   render();
 }
@@ -37276,7 +37662,16 @@ async function kbSeedStarter(){
   else showToast(summary + '. Review purple entries; toggle new ones Active to enable.', 'success', 7000);
 }
 
+const SETTINGS_HELP_DRAFT_FIELD_IDS = ['help_subject','help_details','fr_subject','fr_details','ae_market','ae_details'];
 function renderHelp(){
+  // All three lead-gen forms (Help, Feature Request, Ask an Expert) render
+  // together on this one page, so one shared context is enough — the field ids
+  // themselves are already unique per form (help_/fr_/ae_ prefixes), so nothing
+  // collides. Name/email are prefilled from the account and rarely hand-typed,
+  // so only Subject/Details (and Market) participate.
+  _fieldDraftCtx = 'settingsHelp';
+  _fieldDraftIds = SETTINGS_HELP_DRAFT_FIELD_IDS;
+  const fd = function(fieldId){ return _getFieldDraft(_fieldDraftCtx, fieldId) || ''; };
   return `<div class="settings-page" style="max-width:720px">
 
     <!-- GETTING STARTED -->
@@ -37373,8 +37768,8 @@ function renderHelp(){
             <option value="improvement">Improvement</option>
           </select>
         </div>
-        <div class="field-group" style="margin-bottom:10px"><label class="field-label">Subject</label><input type="text" id="help_subject" placeholder="Brief description of your question"></div>
-        <div class="field-group" style="margin-bottom:14px"><label class="field-label">Details</label><textarea id="help_details" rows="5" placeholder="Tell us more — what would you like to know? The more context you provide, the better we can help."></textarea></div>
+        <div class="field-group" style="margin-bottom:10px"><label class="field-label">Subject</label><input type="text" id="help_subject" value="${esc(fd('help_subject'))}" placeholder="Brief description of your question"></div>
+        <div class="field-group" style="margin-bottom:14px"><label class="field-label">Details</label><textarea id="help_details" rows="5" placeholder="Tell us more — what would you like to know? The more context you provide, the better we can help.">${esc(fd('help_details'))}</textarea></div>
         <div style="display:flex;align-items:center;gap:12px">
           <button class="btn btn-primary" onclick="submitHelpRequest()">Submit</button>
           <span id="helpSubmitMsg" style="font-size:.8rem;color:var(--success);display:none">✓ Submitted — thank you!</span>
@@ -37450,6 +37845,7 @@ async function submitHelpRequest(){
     if(resp.ok){
       document.getElementById('help_subject').value = '';
       document.getElementById('help_details').value = '';
+      _clearFieldDrafts('settingsHelp', ['help_subject','help_details']);
       if(msg){ msg.style.display = 'inline'; msg.textContent = '✓ Submitted — thank you!'; msg.style.color = 'var(--success)'; setTimeout(() => msg.style.display = 'none', 5000); }
     } else {
       const data = await resp.json().catch(() => ({}));
@@ -37528,8 +37924,8 @@ function renderFeatureRequest(){
             <option value="question">Question</option>
           </select>
         </div>
-        <div class="field-group" style="margin-bottom:10px"><label class="field-label">Subject</label><input type="text" id="fr_subject" placeholder="Brief description of your idea or issue"></div>
-        <div class="field-group" style="margin-bottom:14px"><label class="field-label">Details</label><textarea id="fr_details" rows="5" placeholder="Tell us more — what would this feature do? What problem does it solve? If reporting a bug, include steps to reproduce it."></textarea></div>
+        <div class="field-group" style="margin-bottom:10px"><label class="field-label">Subject</label><input type="text" id="fr_subject" value="${esc(fd('fr_subject'))}" placeholder="Brief description of your idea or issue"></div>
+        <div class="field-group" style="margin-bottom:14px"><label class="field-label">Details</label><textarea id="fr_details" rows="5" placeholder="Tell us more — what would this feature do? What problem does it solve? If reporting a bug, include steps to reproduce it.">${esc(fd('fr_details'))}</textarea></div>
         <div style="display:flex;align-items:center;gap:12px">
           <button class="btn btn-primary" onclick="submitFeatureRequest()">Submit</button>
           <span id="frSubmitMsg" style="font-size:.8rem;color:var(--success);display:none"></span>
@@ -37569,6 +37965,7 @@ async function submitFeatureRequest(){
     if(resp.ok){
       document.getElementById('fr_subject').value = '';
       document.getElementById('fr_details').value = '';
+      _clearFieldDrafts('settingsHelp', ['fr_subject','fr_details']);
       if(msg){ msg.style.display = 'inline'; msg.textContent = '✓ Submitted — thank you!'; msg.style.color = 'var(--success)'; setTimeout(() => msg.style.display = 'none', 5000); }
     } else {
       if(msg){ msg.style.display = 'inline'; msg.textContent = '⚠ Submission failed — please try again.'; msg.style.color = 'var(--danger)'; setTimeout(() => msg.style.display = 'none', 5000); }
@@ -37630,9 +38027,9 @@ function renderAskExpert(){
         </div>
         <div class="field-group" style="margin-bottom:10px">
           <label class="field-label">Your Market / City</label>
-          <input type="text" id="ae_market" placeholder="e.g. Austin, TX">
+          <input type="text" id="ae_market" value="${esc(fd('ae_market'))}" placeholder="e.g. Austin, TX">
         </div>
-        <div class="field-group" style="margin-bottom:14px"><label class="field-label">What do you need help with?</label><textarea id="ae_details" rows="5" placeholder="Describe your situation and the questions you'd like answered. The more detail you provide, the better we can match you with the right expert."></textarea></div>
+        <div class="field-group" style="margin-bottom:14px"><label class="field-label">What do you need help with?</label><textarea id="ae_details" rows="5" placeholder="Describe your situation and the questions you'd like answered. The more detail you provide, the better we can match you with the right expert.">${esc(fd('ae_details'))}</textarea></div>
         <div style="display:flex;align-items:center;gap:12px">
           <button class="btn btn-primary" onclick="submitAskExpert()">Request Consultation</button>
           <span id="aeSubmitMsg" style="font-size:.8rem;color:var(--success);display:none"></span>
@@ -37674,6 +38071,7 @@ async function submitAskExpert(){
     if(resp.ok){
       document.getElementById('ae_details').value = '';
       document.getElementById('ae_market').value = '';
+      _clearFieldDrafts('settingsHelp', ['ae_market','ae_details']);
       if(msg){ msg.style.display = 'inline'; msg.textContent = '✓ Request submitted — we\'ll be in touch soon!'; msg.style.color = 'var(--success)'; setTimeout(() => msg.style.display = 'none', 7000); }
     } else {
       if(msg){ msg.style.display = 'inline'; msg.textContent = '⚠ Submission failed — please try again.'; msg.style.color = 'var(--danger)'; setTimeout(() => msg.style.display = 'none', 5000); }
@@ -37687,6 +38085,9 @@ async function submitAskExpert(){
 
 function openEditProfile(){
   const u = currentUser || {};
+  _fieldDraftCtx = 'settingsEditProfile';
+  _fieldDraftIds = ['ep_name'];
+  const _epDraft = _getFieldDraft(_fieldDraftCtx, 'ep_name');
   const initials = (u.name||'U').split(' ').map(w=>w[0]).join('').toUpperCase().substring(0,2);
   const overlay = document.createElement('div');
   overlay.className = 'card-edit-popup';
@@ -37707,7 +38108,7 @@ function openEditProfile(){
       </div>
       <div id="epPhotoMsg" style="font-size:.7rem;margin:-10px 0 12px;display:none"></div>
       <div class="prop-field-grid">
-        <div class="prop-field"><label>Full Name</label><input type="text" id="ep_name" value="${esc(u.name||'')}"></div>
+        <div class="prop-field"><label>Full Name</label><input type="text" id="ep_name" value="${esc(_epDraft != null ? _epDraft : (u.name||''))}"></div>
         <div class="prop-field"><label>Email</label><input type="email" id="ep_email" value="${esc(u.email||'')}" disabled style="opacity:.6;cursor:not-allowed"></div>
       </div>
     </div>
@@ -37811,6 +38212,7 @@ async function saveEditProfile(){
     setRRCookie(user);
 
     window._epPendingPhoto = null;
+    _clearFieldDrafts('settingsEditProfile', ['ep_name']);
     document.getElementById('cardEditOverlay')?.remove();
     renderUserSection();
     render();
