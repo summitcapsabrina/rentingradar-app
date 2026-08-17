@@ -2469,6 +2469,111 @@ exports.backfillPropertyDataMirrors = functions
     });
   });
 
+// Stage 2 of the property-per-document migration plan (see the approved plan for the
+// full staging). This is the tool every later stage's "prove it before proceeding"
+// step runs against — compares the blob doc against the propertyRecords/cohostRecords
+// mirror for real drift, not just "does the migrated-at flag exist" the way the
+// backfill's own report does. Read-only, never writes anything.
+//
+// Deterministic stable-stringify so object key order never produces a false-positive
+// hash mismatch between two structurally-identical records.
+function _stableStringify(obj) {
+  if (obj === null || typeof obj !== "object") return JSON.stringify(obj);
+  if (Array.isArray(obj)) return "[" + obj.map(_stableStringify).join(",") + "]";
+  const keys = Object.keys(obj).sort();
+  return "{" + keys.map((k) => JSON.stringify(k) + ":" + _stableStringify(obj[k])).join(",") + "}";
+}
+function _recordHash(r) {
+  const crypto = require("crypto");
+  return crypto.createHash("sha256").update(_stableStringify(r)).digest("hex");
+}
+
+// GET params:
+//   ?uid=<uid>   — restrict to a single user (default: all users)
+exports.verifyPropertyDataMirrors = functions
+  .runWith({ timeoutSeconds: 300, memory: "512MB" })
+  .https.onRequest((req, res) => {
+    cors(req, res, async () => {
+      if (req.method === "OPTIONS") return res.status(200).end();
+      const authHeader = req.headers.authorization || "";
+      if (!authHeader.startsWith("Bearer ")) {
+        return res.status(401).json({ error: { message: "Bearer token required" } });
+      }
+      let callingUser;
+      try {
+        callingUser = await admin.auth().verifyIdToken(authHeader.slice(7));
+      } catch (err) {
+        return res.status(401).json({ error: { message: "Invalid auth token" } });
+      }
+      if (!callingUser.email || callingUser.email.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
+        return res.status(403).json({ error: { message: "Admin only" } });
+      }
+
+      const onlyUid = (req.query.uid || "").toString().trim() || null;
+
+      async function verifyOneStore(uid, blobDocId, mirrorCollectionName) {
+        const blobDoc = await db.collection("users").doc(uid).collection("properties").doc(blobDocId).get();
+        const blobRecords = blobDoc.exists ? JSON.parse(blobDoc.data().data || "[]") : [];
+        const blobMap = {};
+        blobRecords.forEach((r) => { if (r && r.id) blobMap[r.id] = r; });
+
+        const mirrorSnap = await db.collection("users").doc(uid).collection(mirrorCollectionName).get();
+        const mirrorMap = {};
+        mirrorSnap.forEach((doc) => { mirrorMap[doc.id] = doc.data(); });
+
+        const missingInMirror = [];
+        const missingInBlobUnexpected = []; // excludes soft-deleted mirror docs, which SHOULD be absent from the blob
+        const hashMismatch = [];
+
+        Object.keys(blobMap).forEach((id) => {
+          if (!mirrorMap[id]) { missingInMirror.push(id); return; }
+          if (_recordHash(blobMap[id]) !== _recordHash(mirrorMap[id])) hashMismatch.push(id);
+        });
+        Object.keys(mirrorMap).forEach((id) => {
+          if (blobMap[id]) return;
+          if (mirrorMap[id]._deletedAt) return; // expected: soft-deleted, correctly absent from the blob
+          missingInBlobUnexpected.push(id);
+        });
+
+        return {
+          blobCount: blobRecords.length,
+          mirrorCount: mirrorSnap.size,
+          missingInMirror,
+          missingInBlobUnexpected,
+          hashMismatch,
+          clean: missingInMirror.length === 0 && missingInBlobUnexpected.length === 0 && hashMismatch.length === 0,
+        };
+      }
+
+      try {
+        const usersSnap = onlyUid
+          ? { docs: [await db.collection("users").doc(onlyUid).get()].filter((d) => d.exists) }
+          : await db.collection("users").get();
+
+        const perUser = [];
+        let totalMismatches = 0;
+        for (const userDoc of usersSnap.docs) {
+          const uid = userDoc.id;
+          const userData = userDoc.data() || {};
+          const properties = await verifyOneStore(uid, "records", "propertyRecords");
+          const cohosting = await verifyOneStore(uid, "cohosting", "cohostRecords");
+          if (!properties.clean || !cohosting.clean) totalMismatches++;
+          perUser.push({ uid, email: userData.email || null, properties, cohosting });
+        }
+
+        res.status(200).json({
+          usersScanned: perUser.length,
+          usersWithMismatches: totalMismatches,
+          allClean: totalMismatches === 0,
+          perUser,
+        });
+      } catch (err) {
+        console.error("verifyPropertyDataMirrors failed:", err);
+        res.status(500).json({ error: { message: err.message } });
+      }
+    });
+  });
+
 // ============================================================
 // 9. ANALYSIS QUOTA LIMIT EMAIL — triggered from client when user
 //    exhausts their monthly analyses (Basic or Standard)
