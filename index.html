@@ -3557,6 +3557,100 @@ function _softDeleteRecordMirror(r, collectionName){
     .catch(e => console.error('[migration] ' + collectionName + ' soft-delete failed for', r.id, e));
 }
 
+// 2026-08-17: soft-deleted records were recoverable in Firestore but not
+// recoverable BY the user — restoring one meant asking an engineer to pull it
+// out of the database directly. This is that missing piece: list every
+// _deletedAt-marked doc in propertyRecords/cohostRecords (small per-user
+// collections, fetched whole and filtered client-side — no index needed) and
+// let the user put one back themselves.
+async function openRecentlyDeletedModal(){
+  const existing = document.getElementById('recentlyDeletedOverlay');
+  if(existing) existing.remove();
+  const overlay = document.createElement('div');
+  overlay.className = 'multi-editor-overlay';
+  overlay.id = 'recentlyDeletedOverlay';
+  overlay.innerHTML = `<div class="multi-editor" style="max-width:560px">
+    <div class="multi-editor-header">
+      <h3>Recently Deleted</h3>
+      <button class="modal-close" onclick="document.getElementById('recentlyDeletedOverlay').remove()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+    </div>
+    <div class="multi-editor-body" style="padding:12px 16px;max-height:60vh;overflow-y:auto" id="recentlyDeletedList">
+      <div style="text-align:center;color:var(--text3);padding:20px 0">Loading…</div>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', function(e){ if(e.target === overlay) overlay.remove(); });
+
+  const items = await _loadRecentlyDeletedItems();
+  const listEl = document.getElementById('recentlyDeletedList');
+  if(!listEl) return; // modal was closed while loading
+  if(items.length === 0){
+    listEl.innerHTML = '<div style="text-align:center;color:var(--text3);padding:20px 0">Nothing deleted recently.</div>';
+    return;
+  }
+  listEl.innerHTML = items.map(function(item){
+    const label = item.record.property || item.record.buildingName || item.record.name || 'Untitled property';
+    const when = fmtDateTime ? fmtDateTime(item.record._deletedAt) : item.record._deletedAt;
+    const kindLabel = item.collectionName === 'cohostRecords' ? 'Co-Hosting' : 'Prospecting';
+    return '<div class="settings-row" style="padding:10px 0">'
+      + '<div class="settings-row-left"><div class="sr-label">' + esc(label) + '</div>'
+      + '<div class="sr-desc">' + esc(kindLabel) + ' · Deleted ' + esc(when) + '</div></div>'
+      + '<div class="settings-row-right"><button class="btn btn-primary btn-sm" onclick="restoreDeletedRecord(\'' + item.record.id + '\',\'' + item.collectionName + '\')">Restore</button></div>'
+      + '</div>';
+  }).join('');
+}
+
+async function _loadRecentlyDeletedItems(){
+  if(!_currentUid || typeof db === 'undefined') return [];
+  const stores = [['propertyRecords', 'records'], ['cohostRecords', 'cohostRecords']];
+  const out = [];
+  for(const [collectionName] of stores){
+    try {
+      const snap = await db.collection('users').doc(_currentUid).collection(collectionName).get();
+      snap.forEach(function(doc){
+        const r = doc.data();
+        if(r && r._deletedAt) out.push({ record: r, collectionName: collectionName });
+      });
+    } catch(e){ console.error('[recently-deleted] load failed for', collectionName, e); }
+  }
+  out.sort(function(a, b){ return (b.record._deletedAt || '').localeCompare(a.record._deletedAt || ''); });
+  return out;
+}
+
+async function restoreDeletedRecord(id, collectionName){
+  if(!_currentUid || typeof db === 'undefined') return;
+  try {
+    const ref = db.collection('users').doc(_currentUid).collection(collectionName).doc(id);
+    const doc = await ref.get();
+    if(!doc.exists){ showToast('That record is no longer available to restore.', 'error', 3000); return; }
+    const restored = Object.assign({}, doc.data());
+    delete restored._deletedAt;
+    if(collectionName === 'cohostRecords'){
+      if(!cohostRecords.some(function(x){ return x.id === id; })){
+        cohostRecords.push(restored);
+        saveCohostData();
+      }
+    } else {
+      if(!records.some(function(x){ return x.id === id; })){
+        records.push(restored);
+        restored._updatedAt = Date.now();
+        _dirtyRecordIds.add(id);
+        saveData();
+      }
+    }
+    // Clear the deleted marker on the mirror itself so it drops out of this list;
+    // the mirror stays live and current going forward via the normal dual-write.
+    ref.update({ _deletedAt: firebase.firestore.FieldValue.delete() }).catch(function(e){ console.error('[recently-deleted] clear flag failed:', e); });
+    showToast('Restored "' + (restored.property || restored.buildingName || restored.name || 'property') + '"', 'success', 3000);
+    const row = document.querySelector('#recentlyDeletedList button[onclick="restoreDeletedRecord(\'' + id + '\',\'' + collectionName + '\')"]');
+    if(row) row.closest('.settings-row')?.remove();
+    render();
+  } catch(e){
+    console.error('[recently-deleted] restore failed:', e);
+    showToast('Restore failed — try again.', 'error', 3500);
+  }
+}
+
 // Stage B of the property data-safety migration — one-time backfill, called from
 // loadDataFromFirestore. Copies every record that existed *before* Stage A shipped
 // into the new per-record collection, so a future read-cutover has full history
@@ -33816,6 +33910,10 @@ function renderSettings(){
         <div class="settings-row">
           <div class="settings-row-left"><div class="sr-label">Properties in Database</div><div class="sr-desc">Total records stored locally</div></div>
           <div class="settings-row-right"><div class="settings-value" style="font-weight:600;color:var(--text)">${records.length}</div></div>
+        </div>
+        <div class="settings-row">
+          <div class="settings-row-left"><div class="sr-label">Recently Deleted</div><div class="sr-desc">Deleted properties are recoverable, not erased — restore one here</div></div>
+          <div class="settings-row-right"><button class="btn btn-secondary btn-sm" onclick="openRecentlyDeletedModal()">View</button></div>
         </div>
       </div>
     </div>
