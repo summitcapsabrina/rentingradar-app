@@ -3449,33 +3449,15 @@ window.addEventListener('pagehide', _flushPendingSave);
 // Separately: typed-but-not-yet-added text in a note/description editor (Activity
 // Log, property note, section notes, competitor notes) never enters `records`/
 // `cohostRecords` at all until the user clicks Add/Save, so it's invisible to
-// saveData()/saveCohostData() and can't be flushed like a pending write — the only
-// protection is warning before the refresh/close discards it. Track each
-// .rte-editor's content as of when it was first focused, so pre-filled editors
-// (e.g. Edit Note, competitor notes) don't false-positive when untouched.
-const _rteDraftInitial = new WeakMap();
-document.addEventListener('focusin', function(e){
-  const ed = e.target.closest && e.target.closest('.rte-editor');
-  if(ed && !_rteDraftInitial.has(ed)) _rteDraftInitial.set(ed, ed.innerHTML);
-});
-function _hasUnsavedRteDraft(){
-  const eds = document.querySelectorAll('.rte-editor');
-  for(let i = 0; i < eds.length; i++){
-    const ed = eds[i];
-    const initial = _rteDraftInitial.has(ed) ? _rteDraftInitial.get(ed) : '';
-    if(ed.innerHTML !== initial) return true;
-  }
-  return false;
-}
-
+// saveData()/saveCohostData() and can't be flushed like a pending write. Every
+// .rte-editor now mirrors its content to localStorage as the user types (see
+// _setDraftHtml below) and restores it on next render, so this text survives a
+// refresh/close without needing a warning dialog — the beforeunload warning below
+// is reserved for the one case where data can actually still be lost: a
+// records/cohostRecords write already debounced and not yet sent to Firestore.
 window.addEventListener('beforeunload', function(e){
   if(_saveTimeout || _cohostSaveTimeout){
     _flushPendingSave();
-    e.preventDefault();
-    e.returnValue = '';
-    return;
-  }
-  if(_hasUnsavedRteDraft()){
     e.preventDefault();
     e.returnValue = '';
   }
@@ -3486,9 +3468,10 @@ window.addEventListener('beforeunload', function(e){
 // is still gone. So mirror it to localStorage as they type, synchronously, well
 // before any Add/Save click — that's the only way a still-uncommitted note editor
 // (which saveData()/saveCohostData() don't know exists yet) survives an instant
-// refresh. Scoped to the new-note and edit-note editors specifically (stable ids
-// keyed by record/note id) since those are the reported loss path; each is
-// restored into its editor on next render and cleared once actually committed.
+// refresh. Scoped to every .rte-editor with a stable id keyed by record/note id
+// (new-note, edit-note, competitor-note, property-note) so none of them collide
+// across records; each is restored into its editor on next render and cleared
+// once actually committed.
 function _draftKey(editorId){ return 'rr_draft_' + editorId; }
 function _getDraftHtml(editorId){
   try { return localStorage.getItem(_draftKey(editorId)) || ''; } catch(e){ return ''; }
@@ -3502,7 +3485,7 @@ function _clearDraftHtml(editorId){
 const _draftSaveTimers = {};
 document.addEventListener('input', function(e){
   const ed = e.target.closest && e.target.closest('.rte-editor');
-  if(!ed || !ed.id || !/^(newNoteRte_|editNoteRte_|compNoteRte_)/.test(ed.id)) return;
+  if(!ed || !ed.id || !/^(newNoteRte_|editNoteRte_|compNoteRte_|propNoteEditorRte_)/.test(ed.id)) return;
   clearTimeout(_draftSaveTimers[ed.id]);
   _draftSaveTimers[ed.id] = setTimeout(function(){
     const html = ed.innerHTML;
@@ -9861,6 +9844,7 @@ function openPropertyNoteEditor(recId){
   const r = _findRec(recId);
   if(!r) return;
   const existing = r.propertyNote || null;
+  const editorId = 'propNoteEditorRte_'+recId;
   const overlay = document.createElement('div');
   overlay.className = 'multi-editor-overlay';
   overlay.id = 'propNoteEditorOverlay';
@@ -9870,8 +9854,8 @@ function openPropertyNoteEditor(recId){
       <button class="modal-close" onclick="document.getElementById('propNoteEditorOverlay').remove()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
     </div>
     <div class="multi-editor-body" style="padding:12px 16px">
-      ${buildRteToolbarHtml('propNoteEditorRte')}
-      <div class="rte-editor" contenteditable="true" id="propNoteEditorRte" data-placeholder="Add property note (listing details, rent specials, etc.)..." style="min-height:120px"></div>
+      ${buildRteToolbarHtml(editorId)}
+      <div class="rte-editor" contenteditable="true" id="${editorId}" data-placeholder="Add property note (listing details, rent specials, etc.)..." style="min-height:120px">${_getDraftHtml(editorId) || (existing ? (existing.html || esc(existing.text)) : '')}</div>
     </div>
     <div class="multi-editor-actions">
       <div class="me-hint">Shift + Enter to save</div>
@@ -9881,17 +9865,14 @@ function openPropertyNoteEditor(recId){
     </div>
   </div>`;
   document.body.appendChild(overlay);
-  const ed = document.getElementById('propNoteEditorRte');
-  if(ed && existing){
-    ed.innerHTML = existing.html || esc(existing.text);
-  }
   overlay.addEventListener('keydown', function(e){
     if(e.key === 'Escape') overlay.remove();
     if(e.shiftKey && e.key === 'Enter'){ e.preventDefault(); savePropertyNote(recId); }
   });
 }
 function savePropertyNote(recId){
-  const ed = document.getElementById('propNoteEditorRte');
+  const editorId = 'propNoteEditorRte_'+recId;
+  const ed = document.getElementById(editorId);
   if(!ed) return;
   const html = ed.innerHTML.trim();
   const text = ed.innerText.trim();
@@ -9899,6 +9880,7 @@ function savePropertyNote(recId){
   if(!r) return;
   if(!text){ r.propertyNote = null; }
   else { r.propertyNote = { text:text, html:html, date:new Date().toISOString(), source:'Manual' }; }
+  _clearDraftHtml(editorId);
   _saveRecFor(r, recId);
   document.getElementById('propNoteEditorOverlay')?.remove();
   render();
