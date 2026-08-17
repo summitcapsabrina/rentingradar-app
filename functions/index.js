@@ -2354,6 +2354,120 @@ exports.triggerCommissionReport = functions
   });
 });
 
+// ============================================================
+// 2026-08-17 property data-safety migration — server-side backfill.
+//
+// propertyRecordsMigratedAt / cohostRecordsMigratedAt were only ever set by
+// client-side code that runs when a user's own browser loads the app (see
+// _backfillPropertyRecordsCollection / _backfillCohostRecordsCollection in
+// index.html). That means coverage depends on users actually opening the app
+// since the fix shipped — checked it directly: 2 of 18 users had the
+// propertyRecords mirror, 1 of 18 had cohostRecords. This is the prerequisite
+// for any future per-document read-cutover (that mirror is the thing a
+// cutover would read from), so it needs to be complete for every user before
+// that's even worth planning, not something to wait on individual logins for.
+//
+// Strictly additive and idempotent, same guarantee as the client-side version
+// it mirrors: NEVER reads from or writes to properties/records or
+// properties/cohosting (the live blobs stay the untouched source of truth),
+// only writes to the propertyRecords/cohostRecords mirror subcollections and
+// sets the *MigratedAt flag. Skips any user who already has the flag. Per-user
+// errors are caught and reported, not thrown — one bad user doc can't abort
+// the run for the other 17.
+//
+// GET params:
+//   ?dryRun=1        — report what WOULD be backfilled, write nothing. Use this first.
+//   ?uid=<uid>        — restrict to a single user (for testing before the full run)
+exports.backfillPropertyDataMirrors = functions
+  .runWith({ timeoutSeconds: 540, memory: "512MB" })
+  .https.onRequest((req, res) => {
+    cors(req, res, async () => {
+      if (req.method === "OPTIONS") return res.status(200).end();
+      const authHeader = req.headers.authorization || "";
+      if (!authHeader.startsWith("Bearer ")) {
+        return res.status(401).json({ error: { message: "Bearer token required" } });
+      }
+      let callingUser;
+      try {
+        callingUser = await admin.auth().verifyIdToken(authHeader.slice(7));
+      } catch (err) {
+        return res.status(401).json({ error: { message: "Invalid auth token" } });
+      }
+      if (!callingUser.email || callingUser.email.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
+        return res.status(403).json({ error: { message: "Admin only" } });
+      }
+
+      const dryRun = req.query.dryRun === "1";
+      const onlyUid = (req.query.uid || "").toString().trim() || null;
+
+      const results = { dryRun, usersScanned: 0, propertyRecordsBackfilled: 0, cohostRecordsBackfilled: 0, skippedAlreadyMigrated: [], perUser: [], errors: [] };
+
+      try {
+        const usersSnap = onlyUid
+          ? { docs: [await db.collection("users").doc(onlyUid).get()].filter((d) => d.exists) }
+          : await db.collection("users").get();
+
+        for (const userDoc of usersSnap.docs) {
+          const uid = userDoc.id;
+          const userData = userDoc.data() || {};
+          results.usersScanned++;
+          const userResult = { uid, email: userData.email || null, propertyRecords: null, cohostRecords: null };
+
+          // --- properties/records → propertyRecords/{id} mirror ---
+          if (userData.propertyRecordsMigratedAt) {
+            userResult.propertyRecords = "already migrated at " + userData.propertyRecordsMigratedAt;
+          } else {
+            try {
+              const recordsDoc = await db.collection("users").doc(uid).collection("properties").doc("records").get();
+              const recs = recordsDoc.exists ? JSON.parse(recordsDoc.data().data || "[]") : [];
+              userResult.propertyRecords = "would backfill " + recs.length + " record(s)";
+              if (!dryRun) {
+                const col = db.collection("users").doc(uid).collection("propertyRecords");
+                for (const r of recs) {
+                  if (r && r.id) await col.doc(r.id).set(r);
+                }
+                await userDoc.ref.set({ propertyRecordsMigratedAt: new Date().toISOString() }, { merge: true });
+                userResult.propertyRecords = "backfilled " + recs.length + " record(s)";
+              }
+              results.propertyRecordsBackfilled += recs.length;
+            } catch (e) {
+              userResult.propertyRecords = "ERROR: " + e.message;
+              results.errors.push({ uid, store: "propertyRecords", error: e.message });
+            }
+          }
+
+          // --- properties/cohosting → cohostRecords/{id} mirror ---
+          if (userData.cohostRecordsMigratedAt) {
+            userResult.cohostRecords = "already migrated at " + userData.cohostRecordsMigratedAt;
+          } else {
+            try {
+              const cohostDoc = await db.collection("users").doc(uid).collection("properties").doc("cohosting").get();
+              const recs = cohostDoc.exists ? JSON.parse(cohostDoc.data().data || "[]") : [];
+              userResult.cohostRecords = "would backfill " + recs.length + " record(s)";
+              if (!dryRun) {
+                const col = db.collection("users").doc(uid).collection("cohostRecords");
+                for (const r of recs) {
+                  if (r && r.id) await col.doc(r.id).set(r);
+                }
+                await userDoc.ref.set({ cohostRecordsMigratedAt: new Date().toISOString() }, { merge: true });
+                userResult.cohostRecords = "backfilled " + recs.length + " record(s)";
+              }
+              results.cohostRecordsBackfilled += recs.length;
+            } catch (e) {
+              userResult.cohostRecords = "ERROR: " + e.message;
+              results.errors.push({ uid, store: "cohostRecords", error: e.message });
+            }
+          }
+
+          results.perUser.push(userResult);
+        }
+        res.status(200).json(results);
+      } catch (err) {
+        console.error("backfillPropertyDataMirrors failed:", err);
+        res.status(500).json({ error: { message: err.message }, partialResults: results });
+      }
+    });
+  });
 
 // ============================================================
 // 9. ANALYSIS QUOTA LIMIT EMAIL — triggered from client when user
@@ -3361,20 +3475,37 @@ function opsLimitForUserData(data) {
   return Infinity;                                    // pro / affiliate / admin / null → uncapped
 }
 
+// 2026-08-17: rewritten against the propertyRecords/{recordId} mirror instead of
+// the single blob doc. The old version read/wrote a top-level `records` array
+// field that never existed on the real blob shape (`{data: '<json string>',
+// updatedAt}`) — `after.records` was always undefined, so this function has been
+// a complete no-op on every write since it shipped. Confirmed via direct code
+// read, not assumed.
+//
+// LOG_ONLY: true for now — this is Stage 1 of the propertyRecords migration plan
+// (vault: property-per-document architecture). The mirror isn't yet what the
+// client reads from (that's Stage 4b), so a real revert-write here would only
+// change the mirror, not what the user actually sees, AND would make the
+// blob/mirror verification tool (Stage 2) report a false mismatch. Flip this to
+// false only after Stage 4b ships and the mirror is confirmed to be the client's
+// read source.
+const ENFORCE_OPS_CAP_LOG_ONLY = true;
+
 exports.enforceOperationsCap = functions.firestore
-  .document("users/{uid}/properties/records")
+  .document("users/{uid}/propertyRecords/{recordId}")
   .onWrite(async (change, context) => {
     const afterSnap = change.after;
-    if (!afterSnap.exists) return null;
+    if (!afterSnap.exists) return null; // deleted (hard or the doc simply gone)
     const after = afterSnap.data() || {};
-    const records = Array.isArray(after.records) ? after.records : null;
-    if (!records) return null;
+    const before = change.before.exists ? (change.before.data() || {}) : {};
 
-    const isOps = (r) => r && r.stage === "operations";
-    const afterOps = records.filter(isOps);
-    // Fast path: with the smallest cap being 1, anything <=1 can never violate —
-    // skip the user-doc read for the overwhelming majority of saves.
-    if (afterOps.length <= 1) return null;
+    // Only reacting to a record newly moving INTO Operations. A record already in
+    // Operations before this write triggers no further action here — this is what
+    // "only undo NEW additions, never force below what they already had" means at
+    // per-record granularity, mirroring the original blob version's grandfathering.
+    const wasOps = before.stage === "operations";
+    const isOpsNow = after.stage === "operations" && !after._deletedAt;
+    if (!isOpsNow || wasOps) return null;
 
     let userData = null;
     try {
@@ -3385,36 +3516,30 @@ exports.enforceOperationsCap = functions.firestore
       return null;
     }
     const limit = opsLimitForUserData(userData);
-    if (limit === Infinity || afterOps.length <= limit) return null;
+    if (limit === Infinity) return null;
 
-    // Grandfather: never force below what they already had — only undo NEW adds.
-    const before = change.before.exists ? (change.before.data() || {}) : {};
-    const beforeRecords = Array.isArray(before.records) ? before.records : [];
-    const beforeOps = beforeRecords.filter(isOps);
-    const allowed = Math.max(limit, beforeOps.length);
-    if (afterOps.length <= allowed) return null;
-
-    const beforeOpsIds = new Set(beforeOps.map((r) => r.id));
-    let toRevert = afterOps.length - allowed;
-    let reverted = 0;
-    const corrected = records.map((r) => Object.assign({}, r));
-    // Revert NEWLY-added ops first (ids not in Operations before), from the end
-    // of the array (newest), restoring their prior Prospecting status.
-    for (let i = corrected.length - 1; i >= 0 && toRevert > 0; i--) {
-      const r = corrected[i];
-      if (isOps(r) && !beforeOpsIds.has(r.id)) {
-        r.stage = "prospecting";
-        if (r._prevProspectingStatus) r.status = r._prevProspectingStatus;
-        else if (r.status === "Operating") r.status = "New";
-        r._opsCapReverted = true;
-        toRevert--;
-        reverted++;
-      }
-    }
-    if (reverted === 0) return null; // nothing safe to revert (all grandfathered)
+    let opsCount = 0;
     try {
-      await afterSnap.ref.set(Object.assign({}, after, { records: corrected }), { merge: false });
-      console.log(`[enforceOperationsCap] uid=${context.params.uid} reverted ${reverted} over-cap Operations addition(s) (limit=${limit}, was ${afterOps.length})`);
+      const snap = await db.collection("users").doc(context.params.uid).collection("propertyRecords")
+        .where("stage", "==", "operations").get();
+      opsCount = snap.size;
+    } catch (e) {
+      console.error("[enforceOperationsCap] ops count query failed", e.message);
+      return null;
+    }
+    if (opsCount <= limit) return null; // this move didn't push the count over the cap
+
+    const revertPayload = { stage: "prospecting", _opsCapReverted: true };
+    if (after._prevProspectingStatus) revertPayload.status = after._prevProspectingStatus;
+    else if (after.status === "Operating") revertPayload.status = "New";
+
+    if (ENFORCE_OPS_CAP_LOG_ONLY) {
+      console.log(`[enforceOperationsCap][LOG-ONLY] would revert uid=${context.params.uid} record=${context.params.recordId} (limit=${limit}, opsCount=${opsCount})`);
+      return null;
+    }
+    try {
+      await afterSnap.ref.set(revertPayload, { merge: true });
+      console.log(`[enforceOperationsCap] uid=${context.params.uid} reverted record=${context.params.recordId} over cap (limit=${limit}, opsCount was ${opsCount})`);
     } catch (e) {
       console.error("[enforceOperationsCap] revert write failed", e.message);
     }

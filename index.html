@@ -38797,6 +38797,18 @@ function performReset(){
   // Clear Firestore data
   if(_currentUid && typeof db !== 'undefined'){
     db.collection('users').doc(_currentUid).collection('properties').doc('records').delete().catch(e => console.error('Failed to delete Firestore data:', e));
+    // 2026-08-17: this used to leave every propertyRecords/{id} mirror doc behind —
+    // "Reset All Data" deleted the blob but the per-record backup (see
+    // _dualWriteDirtyRecords/_softDeleteRecordMirror) silently survived. Clear it too,
+    // so a reset is actually a full reset. One batch is plenty — well under the 500-op
+    // cap for any real account. Scoped to propertyRecords only, matching exactly what
+    // this button has always reset (Co-Hosting is untouched here, as it always has been).
+    db.collection('users').doc(_currentUid).collection('propertyRecords').get().then(function(snap){
+      if(snap.empty) return;
+      const batch = db.batch();
+      snap.forEach(function(doc){ batch.delete(doc.ref); });
+      return batch.commit();
+    }).catch(function(e){ console.error('Failed to clear propertyRecords mirror on reset:', e); });
   }
   try {
     localStorage.removeItem('arbflow_records');
