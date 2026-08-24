@@ -5544,7 +5544,11 @@ function openPropertyMeetingEditor(pid, meetingId){
   const r = _findRec(pid);
   if(!r) return;
   const existing = meetingId ? (r.meetings || []).find(x => x.id === meetingId) : null;
-  const defaultTitle = 'Meeting' + (r.property ? ' — ' + r.property : '');
+  // Multi Unit buildings identify by their name (e.g. "The Grand at Riverside"),
+  // not the street address, so the invite subject reads naturally — fall back
+  // to the address for single-unit properties or apartments without a name set.
+  const meetingPropLabel = (r.recordType === 'apartment' && r.buildingName && r.buildingName.trim()) ? r.buildingName.trim() : (r.property || '');
+  const defaultTitle = 'Meeting' + (meetingPropLabel ? ' — ' + meetingPropLabel : '');
   const draft = existing
     ? { title: existing.title || defaultTitle, date: existing.date || '', time: existing.time || '', note: existing.note || '', status: existing.status || 'upcoming', timezone: existing.timezone || getUserTimezone(), attendees: Array.isArray(existing.attendees) ? existing.attendees : [] }
     : { title: defaultTitle, date: '', time: '', note: '', status: 'upcoming', timezone: getUserTimezone(), attendees: [] };
@@ -6521,7 +6525,18 @@ function render(){
       area.innerHTML = renderCohostProfile();
       break;
     case 'notifications': area.innerHTML = renderNotifications(); break;
-    case 'profile': area.innerHTML = renderProfile(); break;
+    case 'profile': {
+      area.innerHTML = renderProfile();
+      // Re-sync the header title every render, not just on navigation — on a hard
+      // refresh the initial paint runs before Firestore data has loaded, so the
+      // one-time boot-time check (records still empty) always falls back to
+      // 'Single Unit'. render() re-runs once real data arrives, so fixing it here
+      // guarantees it reflects the actual recordType once records are populated.
+      const _hdrR = records.find(x => x.id === currentProfileId);
+      const _hdrEl = document.getElementById('headerTitle');
+      if(_hdrEl) _hdrEl.textContent = (_hdrR && _hdrR.recordType === 'apartment') ? 'Multi Unit' : 'Single Unit';
+      break;
+    }
     case 'pricing': area.innerHTML = renderPricing(); break;
     case 'settings': area.innerHTML = renderSettings(); setTimeout(checkAiEngineStatus, 100); break;
     case 'help': area.innerHTML = renderHelp(); break;
@@ -27970,9 +27985,22 @@ function getCalc(r){
   for(const [k,v] of Object.entries(CALC_DEFAULTS)){
     if(c[k] === undefined || c[k] === null) c[k] = v;
   }
-  // Always sync cleaning default with bedroom count unless user manually edited it
-  const br = parseInt((r.propertyDetails||{}).bedrooms) || 0;
-  const defaultCleaning = CLEANING_DEFAULTS[Math.min(br,6)] !== undefined ? CLEANING_DEFAULTS[Math.min(br,6)] : 650;
+  // Always sync cleaning default with bedroom count unless user manually edited it.
+  // Multi Unit buildings sum each unit's OWN bedroom-based default (a 1BR + two
+  // 2BRs = $500 + $650 + $650) rather than one flat rate for the whole building,
+  // since cleaning cost genuinely varies unit-to-unit by size.
+  let defaultCleaning;
+  if(r.recordType === 'apartment'){
+    const units = Array.isArray(r.units) ? r.units : [];
+    defaultCleaning = units.reduce((sum, u) => {
+      const ubr = parseInt(u.bedrooms) || 0;
+      const d = CLEANING_DEFAULTS[Math.min(ubr,6)] !== undefined ? CLEANING_DEFAULTS[Math.min(ubr,6)] : 650;
+      return sum + d;
+    }, 0);
+  } else {
+    const br = parseInt((r.propertyDetails||{}).bedrooms) || 0;
+    defaultCleaning = CLEANING_DEFAULTS[Math.min(br,6)] !== undefined ? CLEANING_DEFAULTS[Math.min(br,6)] : 650;
+  }
   if(!c._cleaningManual){
     c.cleaning = defaultCleaning;
   }
@@ -28036,11 +28064,44 @@ function cDisplay(value, opts={}){
 function calcComputeAll(r){
   const pd = r.propertyDetails || {};
   const c = getCalc(r);
-  const br = parseInt(pd.bedrooms) || 0;
-  const monthlyRent = parseFloat(pd.monthlyRent) || 0;
-  const furnishCost = (br * c.costPerBR) + (c.extraCommonSpaces * c.costPerExtraSpace);
-  const totalInvested = c.applicationFees + c.securityDeposit + c.firstMonthRent + c.lastMonthRent + c.additionalFee1 + c.additionalFee2 + furnishCost;
-  // Pull ADR and occupancy from Analysis comps (only comps with actual values)
+  const isApt = r.recordType === 'apartment';
+  const units = isApt && Array.isArray(r.units) ? r.units : [];
+  const unitsCount = units.length;
+  // Multi Unit buildings source bedroom / common-space counts from the Units tab
+  // — summed across every unit — rather than a single Property Details field,
+  // since a building's units differ in size. Single-unit (house) records keep
+  // using Property Details bedrooms + the manual Extra Common Spaces input.
+  const br = isApt ? units.reduce((s,u) => s + (parseInt(u.bedrooms) || 0), 0) : (parseInt(pd.bedrooms) || 0);
+  const totalCommonSpaces = isApt ? units.reduce((s,u) => s + (parseInt(u.commonSpaces) || 0), 0) : (parseFloat(c.extraCommonSpaces) || 0);
+  // Monthly Rent (what you pay the landlord) is a single Property Details field
+  // for houses. Multi Unit buildings don't expose that field at all — each unit
+  // in the Units tab carries its OWN rent, so the building's total obligation is
+  // the sum of every unit's rent (same "factor in every unit" pattern as above).
+  const monthlyRent = (isApt && unitsCount > 0)
+    ? units.reduce((s,u) => s + (parseFloat(u.rent) || 0), 0)
+    : (parseFloat(pd.monthlyRent) || 0);
+  // Furnishing cost is already whole-building for apartments (bedrooms and
+  // common spaces are already summed across all units above), so it is NOT
+  // multiplied again by unit count below.
+  const furnishCost = (br * c.costPerBR) + (totalCommonSpaces * c.costPerExtraSpace);
+  // Investment Details line items (app fees, deposits, first/last month rent,
+  // additional fees) are entered ONCE as a per-unit cost. For Multi Unit
+  // buildings that per-unit figure is multiplied by the number of units entered
+  // in the Units tab to get the building-wide total; furnishing cost is added on
+  // top since it's already whole-building. unitMult stays 1 for single-unit
+  // (house) records, so the formula collapses back to the original single total.
+  const unitMult = isApt ? unitsCount : 1;
+  const totalInvestedPerUnit = c.applicationFees + c.securityDeposit + c.firstMonthRent + c.lastMonthRent + c.additionalFee1 + c.additionalFee2;
+  const totalInvested = (totalInvestedPerUnit * unitMult) + furnishCost;
+  // Pull ADR and occupancy from Analysis comps (only comps with actual values).
+  // Multi Unit buildings match each unit in the Units tab to comps of the SAME
+  // bedroom count (a 1BR unit prices off 1BR comps, a 2BR unit off 2BR comps),
+  // then sum every unit's revenue for the building total — the same "factor in
+  // every unit" pattern used for expenses. A unit whose bedroom size has no
+  // comps of its own falls back to the blended average across all comps.
+  // avgDailyRate/estOccupancyRate/daysOccupied stay a single blended figure
+  // either way (rates don't sum across units the way totals do) — they're
+  // informational and drive the single-unit fallback below.
   const comps = (r.details && r.details.comps) ? r.details.comps : [];
   const compsWithRate = comps.filter(x => parseFloat(x.nightlyRate) > 0);
   const compsWithOcc = comps.filter(x => parseFloat(x.occupancy) > 0);
@@ -28051,18 +28112,34 @@ function calcComputeAll(r){
   const avgDailyRate = compAvgRate;
   const estOccupancyRate = compAvgOcc;
   const daysOccupied = compAvgDays > 0 ? compAvgDays : 365 * (estOccupancyRate / 100);
-  const annualRevenue = avgDailyRate * daysOccupied;
+  // Average rate/occupancy/days among comps matching a specific bedroom count,
+  // falling back to the blended average above when that size has no comps yet.
+  function _compStatsForBedrooms(bedroomCount){
+    const match = comps.filter(x => parseInt(x.bedrooms) === bedroomCount);
+    const mRate = match.filter(x => parseFloat(x.nightlyRate) > 0);
+    const mOcc = match.filter(x => parseFloat(x.occupancy) > 0);
+    const mDays = match.filter(x => parseFloat(x.daysAvailable) > 0);
+    const rate = mRate.length > 0 ? mRate.reduce((s,x)=>s+parseFloat(x.nightlyRate),0)/mRate.length : compAvgRate;
+    const occ = mOcc.length > 0 ? mOcc.reduce((s,x)=>s+parseFloat(x.occupancy),0)/mOcc.length : compAvgOcc;
+    const days = mDays.length > 0 ? mDays.reduce((s,x)=>s+parseFloat(x.daysAvailable),0)/mDays.length : compAvgDays;
+    return { rate, occ, days: days > 0 ? days : 365 * (occ / 100) };
+  }
+  const annualRevenue = (isApt && unitsCount > 0)
+    ? units.reduce((sum, u) => { const s = _compStatsForBedrooms(parseInt(u.bedrooms) || 0); return sum + (s.rate * s.days); }, 0)
+    : avgDailyRate * daysOccupied;
   const monthlyRevenue = annualRevenue / 12;
   const cleaning = c.cleaning;
   const coHostFee = monthlyRevenue * (c.coHostPct / 100);
   const airbnbFee = monthlyRevenue * 0.155;
   // User-defined custom expenses (per property). Each item is either a flat $/month
-  // or a percentage of monthly projected revenue (mirrors how Co-Host fee works).
+  // (per unit — scaled by unitMult like the fixed expense fields) or a percentage
+  // of monthly projected revenue (mirrors how Co-Host fee works, left unscaled
+  // since revenue itself isn't modeled building-wide).
   const customExpensesRaw = Array.isArray(r.customExpenses) ? r.customExpenses : [];
   const customExpensesTotal = customExpensesRaw.reduce((sum, ce) => {
     const amt = parseFloat(ce.amount) || 0;
     if(ce && ce.type === 'percent') return sum + (monthlyRevenue * amt / 100);
-    return sum + amt;
+    return sum + (amt * unitMult);
   }, 0);
   // User-defined additional income streams (per property). Each item is either
   // $/month or $/week; weekly amounts convert to monthly via 52/12 to annualize
@@ -28073,7 +28150,14 @@ function calcComputeAll(r){
     if(ai && ai.type === 'weekly') return sum + (amt * 52 / 12);
     return sum + amt; // 'monthly' (default), also covers legacy 'flat' / 'percent' types as monthly $
   }, 0);
-  const totalMonthlyExp = c.insurance + c.strFee + c.water + c.gas + c.electric + c.wifiTv + c.futureRepairs + c.incidentals + c.parking + cleaning + c.garbageRecycling + c.channelManager + c.cityPermit + coHostFee + airbnbFee + customExpensesTotal;
+  // Monthly Operating Expenses: the fixed dollar line items (insurance, utilities,
+  // permit, etc.) are per-unit costs, scaled by unitMult for the building total.
+  // Cleaning is excluded from that per-unit subtotal because getCalc() already
+  // computes it as a whole-building figure for apartments (each unit's own
+  // bedroom-based default, summed). Co-Host / AirBNB fees and percent-type custom
+  // expenses stay revenue-based and unscaled, same as customExpensesTotal above.
+  const totalMonthlyExpPerUnit = c.insurance + c.strFee + c.water + c.gas + c.electric + c.wifiTv + c.futureRepairs + c.incidentals + c.parking + c.garbageRecycling + c.channelManager + c.cityPermit;
+  const totalMonthlyExp = (totalMonthlyExpPerUnit * unitMult) + cleaning + coHostFee + airbnbFee + customExpensesTotal;
   const annualExp = totalMonthlyExp * 12;
   // NOI now includes additional monthly income streams (parking, pet fees, etc.) as
   // a parallel positive contributor to revenue.
@@ -28087,6 +28171,10 @@ function calcComputeAll(r){
   // Competes With comps earn SIMILAR → use as-is (×1.0)
   // Beats comps earn LESS than us → boost their revenue (×1.15)
   const DIRECTION_MULT = { loses: 0.85, competes: 1.0, beats: 1.15 };
+  // Plus optimistic/pessimistic ranges using shifted multipliers (declared here,
+  // ahead of _weightedAvg below, so both tables are available for every mode).
+  const OPTIMISTIC_MULT  = { loses: 0.95, competes: 1.10, beats: 1.25 };
+  const PESSIMISTIC_MULT = { loses: 0.75, competes: 0.90, beats: 1.05 };
 
   // Get each comp's revenue (from annualRevenue or rate×occ×days)
   function _compRevenue(cx){
@@ -28098,6 +28186,14 @@ function calcComputeAll(r){
       rev = rr * dd * (oo / 100);
     }
     return rev;
+  }
+  // Directionally-weighted average revenue across a set of comps (count-weighted,
+  // not $-weighted) — the same math used for both the whole-building fallback and
+  // each unit's own bedroom-matched comp subset below.
+  function _weightedAvg(compList, multTable){
+    if(!compList.length) return 0;
+    const sum = compList.reduce((s, cx) => s + (_compRevenue(cx) * (multTable[cx.rating || 'competes'] || 1.0)), 0);
+    return sum / compList.length;
   }
 
   // Filter comps that have revenue data
@@ -28118,39 +28214,51 @@ function calcComputeAll(r){
     marketPercentile = Math.round((beatsCount + 0.5 * competesCount) / totalSectionComps * 100);
   }
 
-  // Compute projected revenue — weighted by count AND adjusted by direction
-  // Plus optimistic/pessimistic ranges using shifted multipliers
-  const OPTIMISTIC_MULT  = { loses: 0.95, competes: 1.10, beats: 1.25 };
-  const PESSIMISTIC_MULT = { loses: 0.75, competes: 0.90, beats: 1.05 };
-
+  // Compute projected revenue — weighted by count AND adjusted by direction.
+  // For Multi Unit buildings, each unit gets its own bedroom-matched weighted
+  // average (same "factor in every unit" pattern as annualRevenue above),
+  // summed for the building total; a unit whose size has no comps of its own
+  // falls back to the whole-building weighted average. Houses (and apartments
+  // with no units yet) use that whole-building average directly, unchanged
+  // from the original single-listing behavior.
   let projectedRevenue = 0, optimisticRevenue = 0, pessimisticRevenue = 0;
   let hasProjectionData = false;
 
   if(hasEnoughComps){
-    let wSum = 0, oSum = 0, pSum = 0, totalWeight = 0;
-    compsWithRevData.forEach(cx => {
-      const rev = _compRevenue(cx);
-      const rating = cx.rating || 'competes';
-      wSum += rev * (DIRECTION_MULT[rating] || 1.0);
-      oSum += rev * (OPTIMISTIC_MULT[rating] || 1.0);
-      pSum += rev * (PESSIMISTIC_MULT[rating] || 1.0);
-      totalWeight += 1;
-    });
-    projectedRevenue = totalWeight > 0 ? Math.round(wSum / totalWeight) : 0;
-    optimisticRevenue = totalWeight > 0 ? Math.round(oSum / totalWeight) : 0;
-    pessimisticRevenue = totalWeight > 0 ? Math.round(pSum / totalWeight) : 0;
+    const overallW = _weightedAvg(compsWithRevData, DIRECTION_MULT);
+    const overallO = _weightedAvg(compsWithRevData, OPTIMISTIC_MULT);
+    const overallP = _weightedAvg(compsWithRevData, PESSIMISTIC_MULT);
+    if(isApt && unitsCount > 0){
+      let wSum = 0, oSum = 0, pSum = 0;
+      units.forEach(u => {
+        const ubr = parseInt(u.bedrooms) || 0;
+        const matched = compsWithRevData.filter(cx => parseInt(cx.bedrooms) === ubr);
+        wSum += matched.length ? _weightedAvg(matched, DIRECTION_MULT) : overallW;
+        oSum += matched.length ? _weightedAvg(matched, OPTIMISTIC_MULT) : overallO;
+        pSum += matched.length ? _weightedAvg(matched, PESSIMISTIC_MULT) : overallP;
+      });
+      projectedRevenue = Math.round(wSum);
+      optimisticRevenue = Math.round(oSum);
+      pessimisticRevenue = Math.round(pSum);
+    } else {
+      projectedRevenue = Math.round(overallW);
+      optimisticRevenue = Math.round(overallO);
+      pessimisticRevenue = Math.round(overallP);
+    }
     hasProjectionData = projectedRevenue > 0;
   }
 
-  // Helper: compute derived values for a given annual revenue
-  const fixedExp = c.insurance + c.strFee + c.water + c.gas + c.electric + c.wifiTv + c.futureRepairs + c.incidentals + c.parking + cleaning + c.garbageRecycling + c.channelManager + c.cityPermit;
+  // Helper: compute derived values for a given annual revenue. Mirrors
+  // totalMonthlyExp above (per-unit fixed items × unitMult + whole-building
+  // cleaning) so projection scenarios stay consistent with the headline figures.
+  const fixedExp = (totalMonthlyExpPerUnit * unitMult) + cleaning;
   // Recompute custom expenses against a specific monthly revenue (so percent-type
   // custom expenses scale correctly with each projection mode's revenue).
   function _customExpAtRev(mRev){
     return customExpensesRaw.reduce(function(sum, ce){
       const amt = parseFloat(ce.amount) || 0;
       if(ce && ce.type === 'percent') return sum + (mRev * amt / 100);
-      return sum + amt;
+      return sum + (amt * unitMult);
     }, 0);
   }
   function deriveFromRev(annRev){
@@ -28173,7 +28281,7 @@ function calcComputeAll(r){
   const projectedD = hasProjectionData ? deriveFromRev(projectedRevenue) : deriveFromRev(annualRevenue);
   const optimisticD = hasProjectionData ? deriveFromRev(optimisticRevenue) : null;
   const pessimisticD = hasProjectionData ? deriveFromRev(pessimisticRevenue) : null;
-  return { c, br, monthlyRent, furnishCost, totalInvested, avgDailyRate, estOccupancyRate, daysOccupied, annualRevenue, monthlyRevenue, cleaning, coHostFee, airbnbFee, customExpensesTotal, additionalIncomeTotal, totalMonthlyExp, annualExp, monthlyNOI, annualNOI, monthlyCF, annualCF, cocReturn, compsCount: comps.length, projectedRevenue, optimisticRevenue, pessimisticRevenue, hasProjectionData, projectedD, optimisticD, pessimisticD, positionScore, marketPercentile, losesCount: losesCount || 0, competesCount: competesCount || 0, beatsCount: beatsCount || 0 };
+  return { c, br, monthlyRent, furnishCost, totalInvested, avgDailyRate, estOccupancyRate, daysOccupied, annualRevenue, monthlyRevenue, cleaning, coHostFee, airbnbFee, customExpensesTotal, additionalIncomeTotal, totalMonthlyExp, annualExp, monthlyNOI, annualNOI, monthlyCF, annualCF, cocReturn, compsCount: comps.length, projectedRevenue, optimisticRevenue, pessimisticRevenue, hasProjectionData, projectedD, optimisticD, pessimisticD, positionScore, marketPercentile, losesCount: losesCount || 0, competesCount: competesCount || 0, beatsCount: beatsCount || 0, isApt, unitsCount, unitMult, totalCommonSpaces, totalInvestedPerUnit, totalMonthlyExpPerUnit };
 }
 
 /* ===== UNITS TAB (apartment records only) ===== */
@@ -28417,17 +28525,6 @@ function renderExpensesTab(r){
     '</div>';
   }
 
-  // Apartments compute off one rent/bedroom figure for the whole record, same as
-  // Houses — these numbers are a single-listing estimate, not a per-unit or
-  // building-wide roll-up across the Units tab. Flag that plainly rather than let
-  // a building-scale number read as authoritative.
-  if(r.recordType === 'apartment'){
-    h += '<div style="background:rgba(99,129,250,.08);border:1px solid rgba(99,129,250,.25);border-radius:8px;padding:12px 16px;margin-bottom:14px;display:flex;align-items:flex-start;gap:10px">' +
-      '<span style="font-size:1.1rem;line-height:1;flex-shrink:0">ℹ️</span>' +
-      '<div style="font-size:.82rem;color:var(--text2);line-height:1.5">These figures reflect a single-listing estimate — for multi-unit buildings, use the <strong style="color:var(--text)">Units</strong> tab to capture per-unit differences; building-wide roll-up isn\'t modeled here yet.</div>' +
-    '</div>';
-  }
-
   // Left panel: Additional Income Streams (top) + Investment Details (below)
   h += '<div class="calc-panel">';
   // ── Additional Income Streams (per-property) ──
@@ -28457,17 +28554,27 @@ function renderExpensesTab(r){
   h += '</div></div>';
   // ── Investment Details ──
   h += '<div class="calc-section"><div class="calc-section-header">Investment Details</div><div class="calc-section-body">';
-  h += cRow('Application Fees', cInput('applicationFees', c.applicationFees), {tip:'Fees paid to apply for the rental property — typically non-refundable and charged per application.'});
-  h += cRow('Security Deposit', cInput('securityDeposit', c.securityDeposit), {tip:'Refundable deposit held by the landlord to cover potential damages. Usually equal to one month\\x27s rent.'});
-  h += cRow('First Month Rent', cInput('firstMonthRent', c.firstMonthRent), {hint:'if required up front', tip:'Some landlords require the first month\\x27s rent upfront before move-in. Enter the amount if applicable.'});
-  h += cRow('Last Month Rent', cInput('lastMonthRent', c.lastMonthRent), {hint:'if required up front', tip:'Some landlords also require the last month\\x27s rent upfront. Enter the amount if applicable — leave at $0 if not required.'});
-  h += cRow('Additional Fee #1', cInput('additionalFee1', c.additionalFee1), {tip:'Any other upfront cost not covered above — pet deposits, key fees, move-in fees, etc.'});
-  h += cRow('Additional Fee #2', cInput('additionalFee2', c.additionalFee2), {tip:'A second additional upfront cost if needed.'});
-  h += cRow('Est. Cost Per Bedroom', cInput('costPerBR', c.costPerBR), {hint:'incl. common spaces', tip:'Estimated cost to furnish each bedroom plus the shared living areas (living room, kitchen, etc.). Multiplied by the number of bedrooms to calculate total furnishing cost.'});
-  h += cRow('# Extra Common Spaces', cInput('extraCommonSpaces', c.extraCommonSpaces, {noDollar:true}), {hint:'patios, bonus rooms', tip:'Additional spaces beyond the standard common areas that need furnishing — patios, bonus rooms, dens, lofts, etc.'});
+  h += cRow('Application Fees', cInput('applicationFees', c.applicationFees), {hint: v.isApt ? 'per unit' : null, tip: v.isApt ? 'Fees paid to apply for one unit — typically non-refundable and charged per application. Multiplied by the number of units below to get the building total.' : 'Fees paid to apply for the rental property — typically non-refundable and charged per application.'});
+  h += cRow('Security Deposit', cInput('securityDeposit', c.securityDeposit), {hint: v.isApt ? 'per unit' : null, tip: v.isApt ? 'Refundable deposit held by the landlord per unit to cover potential damages — usually one month\\x27s rent for that unit. Multiplied by the number of units below.' : 'Refundable deposit held by the landlord to cover potential damages. Usually equal to one month\\x27s rent.'});
+  h += cRow('First Month Rent', cInput('firstMonthRent', c.firstMonthRent), {hint: v.isApt ? 'per unit, if required up front' : 'if required up front', tip: v.isApt ? 'Some landlords require the first month\\x27s rent upfront before move-in, per unit. Multiplied by the number of units below.' : 'Some landlords require the first month\\x27s rent upfront before move-in. Enter the amount if applicable.'});
+  h += cRow('Last Month Rent', cInput('lastMonthRent', c.lastMonthRent), {hint: v.isApt ? 'per unit, if required up front' : 'if required up front', tip: v.isApt ? 'Some landlords also require the last month\\x27s rent upfront, per unit. Multiplied by the number of units below — leave at $0 if not required.' : 'Some landlords also require the last month\\x27s rent upfront. Enter the amount if applicable — leave at $0 if not required.'});
+  h += cRow('Additional Fee #1', cInput('additionalFee1', c.additionalFee1), {hint: v.isApt ? 'per unit' : null, tip: v.isApt ? 'Any other upfront cost per unit not covered above — pet deposits, key fees, move-in fees, etc. Multiplied by the number of units below.' : 'Any other upfront cost not covered above — pet deposits, key fees, move-in fees, etc.'});
+  h += cRow('Additional Fee #2', cInput('additionalFee2', c.additionalFee2), {hint: v.isApt ? 'per unit' : null, tip: v.isApt ? 'A second additional per-unit upfront cost if needed. Multiplied by the number of units below.' : 'A second additional upfront cost if needed.'});
+  h += cRow('Est. Cost Per Bedroom', cInput('costPerBR', c.costPerBR), {hint:'incl. common spaces', tip: v.isApt ? 'Estimated cost to furnish each bedroom plus the shared living areas. Multiplied by the total bedroom count across every unit in the Units tab ('+v.br+' bedroom'+(v.br===1?'':'s')+' right now) to get the whole-building furnishing cost.' : 'Estimated cost to furnish each bedroom plus the shared living areas (living room, kitchen, etc.). Multiplied by the number of bedrooms to calculate total furnishing cost.'});
+  if(v.isApt){
+    h += cRow('# Extra Common Spaces', cDisplay(String(v.totalCommonSpaces), {computed:true}), {hint:'from Units tab', tip:'Sum of the Common Spaces entered on each unit in the Units tab (patios, bonus rooms, dens, lofts, etc.) — edit it there, per unit.'});
+  } else {
+    h += cRow('# Extra Common Spaces', cInput('extraCommonSpaces', c.extraCommonSpaces, {noDollar:true}), {hint:'patios, bonus rooms', tip:'Additional spaces beyond the standard common areas that need furnishing — patios, bonus rooms, dens, lofts, etc.'});
+  }
   h += cRow('Cost Per Extra Space', cInput('costPerExtraSpace', c.costPerExtraSpace), {tip:'Estimated cost to furnish each extra common space listed above.'});
-  h += cRow('Est. Cost to Furnish', cDisplay(fmtAcct(v.furnishCost), {computed:true}), {tip:'Calculated automatically: (Cost Per Bedroom × Number of Bedrooms) + (Extra Common Spaces × Cost Per Extra Space).'});
-  h += cRow('Total Money Invested', cDisplay(fmtAcct(v.totalInvested), {computed:true}), {total:true, tip:'Sum of all upfront costs: Application Fees + Security Deposit + First Month Rent + Last Month Rent + Additional Fees + Furnishing Cost. This is your total capital outlay before generating any revenue.'});
+  h += cRow('Est. Cost to Furnish', cDisplay(fmtAcct(v.furnishCost), {computed:true}), {tip: v.isApt ? 'Calculated automatically: (Cost Per Bedroom × total bedrooms across all units) + (Extra Common Spaces × Cost Per Extra Space). Already a whole-building figure since it\\x27s driven by every unit\\x27s bedroom count.' : 'Calculated automatically: (Cost Per Bedroom × Number of Bedrooms) + (Extra Common Spaces × Cost Per Extra Space).'});
+  if(v.isApt){
+    h += cRow('Total Money Invested Per Unit', cDisplay(fmtAcct(v.totalInvestedPerUnit), {computed:true}), {tip:'Sum of the per-unit upfront costs above: Application Fees + Security Deposit + First Month Rent + Last Month Rent + Additional Fees. Furnishing cost is not included here since it\\x27s already a whole-building figure (see below).'});
+    h += '<div class="calc-row" style="padding:1px 0 7px"><div class="calc-label" style="color:var(--text3);font-size:.78rem;font-style:italic">× '+v.unitsCount+' unit'+(v.unitsCount===1?'':'s')+' (from the Units tab)</div></div>';
+    h += cRow('Total Money Invested (All Units)', cDisplay(fmtAcct(v.totalInvested), {computed:true}), {total:true, tip:'(Total Money Invested Per Unit × number of units) + Est. Cost to Furnish. This is your total capital outlay for the whole building before generating any revenue.'});
+  } else {
+    h += cRow('Total Money Invested', cDisplay(fmtAcct(v.totalInvested), {computed:true}), {total:true, tip:'Sum of all upfront costs: Application Fees + Security Deposit + First Month Rent + Last Month Rent + Additional Fees + Furnishing Cost. This is your total capital outlay before generating any revenue.'});
+  }
   h += '</div></div>';
   h += '</div>';
 
@@ -28492,30 +28599,48 @@ function renderExpensesTab(r){
       +  '</div>';
   }
   customExpenses.forEach(function(ce){
-    h += _propRenderCustomExpenseRow(r.id, ce, v.monthlyRevenue, _expLocked);
+    h += _propRenderCustomExpenseRow(r.id, ce, v.monthlyRevenue, _expLocked, v.unitMult);
   });
-  h += cRow('Insurance', cInput('insurance', c.insurance), {tip:'Monthly short-term rental insurance premium. Standard homeowner\\x27s or renter\\x27s insurance typically doesn\\x27t cover STR activity — consider specialized STR insurance.'});
-  h += cRow('STR Fee', cInput('strFee', c.strFee), {hint:'to landlord, if any', tip:'Some landlords charge a monthly fee for allowing short-term rental use of their property. Enter the amount here if applicable.'});
-  h += cRow('Water', cInput('water', c.water), {tip:'Monthly water and sewer bill. May be included in rent for some properties — check your lease terms.'});
-  h += cRow('Gas', cInput('gas', c.gas), {tip:'Monthly natural gas bill for heating, cooking, or hot water.'});
-  h += cRow('Electric', cInput('electric', c.electric), {tip:'Monthly electricity bill. Can vary significantly by season, climate, and property size.'});
-  h += cRow('Wifi + TV/Cable', cInput('wifiTv', c.wifiTv), {tip:'Monthly internet and television service. Reliable high-speed wifi is essential for guest satisfaction and reviews.'});
-  h += cRow('Future Repairs', cInput('futureRepairs', c.futureRepairs), {tip:'Monthly reserve set aside for future maintenance and repairs — furniture replacement, appliance issues, wear and tear. A common rule of thumb is $100–$300/month depending on property size.'});
-  h += cRow('Incidentals', cInput('incidentals', c.incidentals), {hint:'soap, coffee, etc.', tip:'Recurring consumable supplies for guests — toiletries, coffee, paper towels, trash bags, cleaning supplies, and other hospitality essentials.'});
-  h += cRow('Parking', cInput('parking', c.parking), {tip:'Monthly parking cost if not included in rent — garage rental, reserved spot fee, or parking permit.'});
-  h += cRow('Cleaning (Monthly)', '<div class="calc-val"><div class="calc-editable" onclick="calcEditCell(this)" data-calc-field="cleaning" data-calc-raw="'+v.cleaning+'" data-calc-cleaning="1">'+(v.cleaning ? '$'+v.cleaning.toLocaleString('en-US',{minimumFractionDigits:v.cleaning%1!==0?2:0,maximumFractionDigits:2}) : '<span style="color:var(--text3)">$0</span>')+'</div></div>', {hint:'auto-set by BR count', tip:'Estimated monthly cleaning cost. Auto-defaults based on bedroom count (1BR: $500, 2BR: $650, 3BR: $900, 4BR+: $1,200). You can override this value manually.'});
-  h += cRow('Garbage / Recycling', cInput('garbageRecycling', c.garbageRecycling), {tip:'Monthly waste removal and recycling service fee if not included in rent or HOA.'});
-  h += cRow('Channel Manager', cInput('channelManager', c.channelManager), {hint:'Hospitable, Guesty', tip:'Monthly subscription for channel management software (Hospitable, Guesty, OwnerRez, etc.) used to sync listings across multiple platforms.'});
-  h += cRow('City Permit', cInput('cityPermit', c.cityPermit, {step:'0.01'}), {hint:'annual ÷ 12', tip:'Monthly cost of your STR operating permit or business license. If you pay annually, divide the total by 12 and enter the monthly amount here.'});
+  h += cRow('Insurance', cInput('insurance', c.insurance), {hint: v.isApt ? 'per unit' : null, tip: v.isApt ? 'Monthly short-term rental insurance premium per unit. Multiplied by the number of units below. Standard homeowner\\x27s or renter\\x27s insurance typically doesn\\x27t cover STR activity — consider specialized STR insurance.' : 'Monthly short-term rental insurance premium. Standard homeowner\\x27s or renter\\x27s insurance typically doesn\\x27t cover STR activity — consider specialized STR insurance.'});
+  h += cRow('STR Fee', cInput('strFee', c.strFee), {hint: v.isApt ? 'per unit, to landlord if any' : 'to landlord, if any', tip: v.isApt ? 'Some landlords charge a monthly fee per unit for allowing short-term rental use. Multiplied by the number of units below.' : 'Some landlords charge a monthly fee for allowing short-term rental use of their property. Enter the amount here if applicable.'});
+  h += cRow('Water', cInput('water', c.water), {hint: v.isApt ? 'per unit' : null, tip: v.isApt ? 'Monthly water and sewer bill per unit. Multiplied by the number of units below — may be included in rent for some units.' : 'Monthly water and sewer bill. May be included in rent for some properties — check your lease terms.'});
+  h += cRow('Gas', cInput('gas', c.gas), {hint: v.isApt ? 'per unit' : null, tip: v.isApt ? 'Monthly natural gas bill per unit. Multiplied by the number of units below.' : 'Monthly natural gas bill for heating, cooking, or hot water.'});
+  h += cRow('Electric', cInput('electric', c.electric), {hint: v.isApt ? 'per unit' : null, tip: v.isApt ? 'Monthly electricity bill per unit. Multiplied by the number of units below.' : 'Monthly electricity bill. Can vary significantly by season, climate, and property size.'});
+  h += cRow('Wifi + TV/Cable', cInput('wifiTv', c.wifiTv), {hint: v.isApt ? 'per unit' : null, tip: v.isApt ? 'Monthly internet and television service per unit. Multiplied by the number of units below.' : 'Monthly internet and television service. Reliable high-speed wifi is essential for guest satisfaction and reviews.'});
+  h += cRow('Future Repairs', cInput('futureRepairs', c.futureRepairs), {hint: v.isApt ? 'per unit' : null, tip: v.isApt ? 'Monthly reserve per unit set aside for future maintenance and repairs. Multiplied by the number of units below.' : 'Monthly reserve set aside for future maintenance and repairs — furniture replacement, appliance issues, wear and tear. A common rule of thumb is $100–$300/month depending on property size.'});
+  h += cRow('Incidentals', cInput('incidentals', c.incidentals), {hint: v.isApt ? 'per unit — soap, coffee, etc.' : 'soap, coffee, etc.', tip: v.isApt ? 'Recurring consumable supplies for guests, per unit. Multiplied by the number of units below.' : 'Recurring consumable supplies for guests — toiletries, coffee, paper towels, trash bags, cleaning supplies, and other hospitality essentials.'});
+  h += cRow('Parking', cInput('parking', c.parking), {hint: v.isApt ? 'per unit' : null, tip: v.isApt ? 'Monthly parking cost per unit if not included in rent. Multiplied by the number of units below.' : 'Monthly parking cost if not included in rent — garage rental, reserved spot fee, or parking permit.'});
+  h += cRow('Cleaning (Monthly)', '<div class="calc-val"><div class="calc-editable" onclick="calcEditCell(this)" data-calc-field="cleaning" data-calc-raw="'+v.cleaning+'" data-calc-cleaning="1">'+(v.cleaning ? '$'+v.cleaning.toLocaleString('en-US',{minimumFractionDigits:v.cleaning%1!==0?2:0,maximumFractionDigits:2}) : '<span style="color:var(--text3)">$0</span>')+'</div></div>', {hint: v.isApt ? 'auto-set, summed across units' : 'auto-set by BR count', tip: v.isApt ? 'Estimated monthly cleaning cost for the whole building — each unit\\x27s own bedroom count is auto-defaulted (1BR: $500, 2BR: $650, 3BR: $900, 4BR+: $1,200) and summed. You can override the total manually.' : 'Estimated monthly cleaning cost. Auto-defaults based on bedroom count (1BR: $500, 2BR: $650, 3BR: $900, 4BR+: $1,200). You can override this value manually.'});
+  h += cRow('Garbage / Recycling', cInput('garbageRecycling', c.garbageRecycling), {hint: v.isApt ? 'per unit' : null, tip: v.isApt ? 'Monthly waste removal and recycling fee per unit. Multiplied by the number of units below.' : 'Monthly waste removal and recycling service fee if not included in rent or HOA.'});
+  h += cRow('Channel Manager', cInput('channelManager', c.channelManager), {hint: v.isApt ? 'per unit — Hospitable, Guesty' : 'Hospitable, Guesty', tip: v.isApt ? 'Monthly channel management software cost per unit. Multiplied by the number of units below.' : 'Monthly subscription for channel management software (Hospitable, Guesty, OwnerRez, etc.) used to sync listings across multiple platforms.'});
+  h += cRow('City Permit', cInput('cityPermit', c.cityPermit, {step:'0.01'}), {hint: v.isApt ? 'per unit, annual ÷ 12' : 'annual ÷ 12', tip: v.isApt ? 'Monthly cost of your STR operating permit per unit. Multiplied by the number of units below. If you pay annually, divide by 12 first.' : 'Monthly cost of your STR operating permit or business license. If you pay annually, divide the total by 12 and enter the monthly amount here.'});
   h += cRow('Co-Host / PM Fee (%)', cInput('coHostPct', c.coHostPct, {step:'1',min:0,max:100,pct:true}), {tip:'Percentage of revenue paid to a co-host or property manager. Typically ranges from 10%–25% depending on the level of service provided.'});
   h += cRow('Co-Host / PM Fee', cDisplay(fmtAcct2(v.coHostFee), {computed:true}), {tip:'Calculated automatically from Co-Host / PM Fee (%) applied to your projected revenue.'});
   h += cRow('AirBNB Service Fee', cDisplay(fmtAcct2(v.airbnbFee), {computed:true}), {hint:'15.5% of revenue', tip:'Airbnb\\x27s host service fee, deducted from your payouts by the platform.\\n\\nFormula: (Avg Nightly Rate × Avg Days/Year Occupied) ÷ 12 × 15.5%\\n\\nThese values come from your competitor analysis.'});
-  h += cRow('Total Monthly Expenses', cDisplay(fmtAcct2(v.totalMonthlyExp), {computed:true}), {total:true, tip:'Sum of all monthly operating expenses listed above. Note: Rent is not included here — it is automatically factored in on the Competitor Analysis and Projected ROI tabs when calculating net profit and deal temperature.'});
+  if(v.isApt){
+    h += cRow('Total Monthly Expenses Per Unit', cDisplay(fmtAcct2(v.totalMonthlyExpPerUnit), {computed:true}), {tip:'Sum of the per-unit monthly expense rates above (Insurance, STR Fee, Water, Gas, Electric, Wifi, Future Repairs, Incidentals, Parking, Garbage/Recycling, Channel Manager, City Permit). Cleaning, Co-Host/PM Fee, and AirBNB Service Fee are already whole-building or revenue-based figures, so they\\x27re not part of this per-unit rate.'});
+    h += '<div class="calc-row" style="padding:1px 0 7px"><div class="calc-label" style="color:var(--text3);font-size:.78rem;font-style:italic">× '+v.unitsCount+' unit'+(v.unitsCount===1?'':'s')+' (from the Units tab)</div></div>';
+    h += cRow('Total Monthly Expenses (All Units)', cDisplay(fmtAcct2(v.totalMonthlyExp), {computed:true}), {total:true, tip:'(Total Monthly Expenses Per Unit × number of units) + Cleaning + Co-Host/PM Fee + AirBNB Service Fee + any custom expenses. Note: Rent is not included here — it is automatically factored in on the Competitor Analysis and Projected ROI tabs when calculating net profit and deal temperature.'});
+  } else {
+    h += cRow('Total Monthly Expenses', cDisplay(fmtAcct2(v.totalMonthlyExp), {computed:true}), {total:true, tip:'Sum of all monthly operating expenses listed above. Note: Rent is not included here — it is automatically factored in on the Competitor Analysis and Projected ROI tabs when calculating net profit and deal temperature.'});
+  }
   h += cRow('Annual Operating Expenses', cDisplay(fmtAcct(Math.round(v.annualExp)), {muted:true}), {tip:'Total Monthly Expenses × 12. Rent is not included in this figure — it is automatically accounted for in the Competitor Analysis and Projected ROI tabs.'});
   h += '</div></div>';
   h += '</div>';
 
   h += '</div>';
+
+  // Expenses, rent, and revenue are all rolled up building-wide using the Units
+  // tab: per-unit costs × unit count, furnishing/cleaning summed by bedroom
+  // count, Monthly Rent summed from every unit's own rent, and projected
+  // revenue matching each unit to comps of the same bedroom size (falling back
+  // to the blended comp average for any size with no comps of its own).
+  // Rendered below both columns (not as a grid child above them) so it doesn't
+  // skew the two panels apart.
+  if(r.recordType === 'apartment'){
+    h += '<div style="text-align:center;margin-top:16px;font-size:.82rem;color:var(--text3);line-height:1.5">Investment Details, Monthly Operating Expenses, and Projected ROI all roll up building-wide using the <strong style="color:var(--text2)">Units</strong> tab — '+v.unitsCount+' unit'+(v.unitsCount===1?'':'s')+' right now (per-unit costs × unit count, furnishing/cleaning/revenue summed by each unit\'s own bedroom count).</div>';
+  }
+
   return h;
 }
 
@@ -28524,13 +28649,18 @@ function renderExpensesTab(r){
 // percent = % of projected monthly revenue (matches Co-Host fee pattern).
 // Displayed like the fixed expense rows (name + hint on the left, computed $ on
 // the right) with small edit/delete icons after the value. Edit reopens the modal.
-function _propRenderCustomExpenseRow(recId, ce, monthlyRevenue, locked){
+function _propRenderCustomExpenseRow(recId, ce, monthlyRevenue, locked, unitMult){
   const isPct = ce.type === 'percent';
   const amt = parseFloat(ce.amount) || 0;
-  const computedDollar = isPct ? (monthlyRevenue * amt / 100) : amt;
-  // Hint only shown for percentage rows (so the user sees what the % translates to);
-  // flat rows are self-explanatory — the dollar amount on the right says it all.
-  const hint = isPct ? '<span class="calc-label-hint">'+esc(amt + '% of projected revenue')+'</span>' : '';
+  const mult = unitMult || 1;
+  // Flat expenses are a per-unit cost, scaled by unit count (mirrors the fixed
+  // Monthly Operating Expense fields); percent-of-revenue rows stay unscaled
+  // since revenue itself isn't modeled building-wide.
+  const computedDollar = isPct ? (monthlyRevenue * amt / 100) : (amt * mult);
+  // Hint shown for percentage rows (so the user sees what the % translates to)
+  // and for flat rows on Multi Unit properties (so the ×units math is visible).
+  const hint = isPct ? '<span class="calc-label-hint">'+esc(amt + '% of projected revenue')+'</span>'
+    : (mult > 1 ? '<span class="calc-label-hint">'+esc(fmtAcct2(amt).trim() + '/unit × ' + mult)+'</span>' : '');
   const actions = locked ? '' :
     '<button onclick="_propOpenAddCustomExpense(\''+recId+'\',\''+ce.id+'\')" title="Edit" style="background:none;border:none;color:var(--text3);cursor:pointer;padding:2px 4px;margin-left:6px;vertical-align:middle"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 113 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>'
     + '<button onclick="_propDeleteCustomExpense(\''+recId+'\',\''+ce.id+'\')" title="Delete" style="background:none;border:none;color:var(--text3);cursor:pointer;padding:2px 4px;vertical-align:middle"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>';
@@ -29894,6 +30024,30 @@ function renderNegotiationTab(r){
     h += '</div>';
 
     h += '<div style="font-size:.8rem;color:var(--text2);margin-top:8px;font-weight:600;text-align:center">Click rent amount above, or drag dial <span style="color:var(--text3);font-weight:400">· Projection only</span></div>';
+
+    // Multi Unit: the dial moves ONE total, but that total is the sum of every
+    // unit's own rent. Show what the same % change looks like applied evenly to
+    // each unit, so there's a concrete per-unit target to negotiate toward — this
+    // is a read-only projection, same as the dial itself; it doesn't touch the
+    // Units tab. Lives in its own id'd div so _liveUpdateConcessionsPanel can
+    // refresh it live while dragging, same as the Concessions panel.
+    if(r.recordType === 'apartment' && Array.isArray(r.units) && r.units.length){
+      const pct = _raRent > 0 ? (dialRent / _raRent) : 1;
+      const pctLabel = Math.abs(dialRent - _raRent) < 0.5 ? 'at asking' : ((pct < 1 ? '−' : '+') + Math.round(Math.abs(pct - 1) * 100) + '% per unit');
+      h += '<div id="rentUnitBreakdown_'+r.id+'" style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border);text-align:left">';
+      h += '<div style="font-size:.72rem;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;font-weight:700;margin-bottom:4px;text-align:center">Per-Unit Target ('+pctLabel+')</div>';
+      h += '<div style="max-height:64px;overflow-y:auto">';
+      r.units.forEach(u => {
+        const baseRent = parseFloat(u.rent) || 0;
+        const impliedRent = Math.round(baseRent * pct);
+        h += '<div style="display:flex;justify-content:space-between;gap:8px;font-size:.78rem;padding:1px 2px">'
+          + '<span style="color:var(--text2)">'+esc(u.label || 'Unit')+'</span>'
+          + '<span style="font-weight:600;white-space:nowrap">'+(baseRent ? fmtMoney(impliedRent) : '<span style="color:var(--text3);font-weight:400">no rent set</span>')+'</span>'
+          + '</div>';
+      });
+      h += '</div>';
+      h += '</div>';
+    }
   }
   h += '</div>'; // end left half
 
@@ -30440,6 +30594,9 @@ function renderAnalysisTab(r){
     const estRevenue = revComps.length > 0 ? Math.round(revComps.reduce((s,x)=>s+parseFloat(x.annualRevenue),0)/revComps.length) : 0;
     h += '<div class="comp-avg-item"><div class="avg-label">Average Revenue</div><div class="avg-value">'+(estRevenue > 0 ? fmtMoney(estRevenue) : '—')+'</div></div>';
     h += '</div>';
+    if(r.recordType === 'apartment'){
+      h += '<div style="font-size:.8rem;color:var(--text3);line-height:1.5;margin:-6px 0 14px">Tag each comp\\x27s <strong style="color:var(--text2)">Bd</strong> (bedrooms) field with its unit size — Projected ROI matches each unit in the <strong style="color:var(--text2)">Units</strong> tab to comps of the same bedroom count, falling back to this blended average for any size with no comps of its own.</div>';
+    }
   }
 
   // ── Three Color-Coded Sections ──
@@ -30868,20 +31025,29 @@ function _quickUpdateRentDial(recId, rent){
 // re-render the negotiation tab to a detached element (it reads _rentDialPreview for
 // the live rent) and graft just the panel's fresh HTML in — this leaves the dial SVG
 // and its in-progress drag handlers untouched, and reuses the exact same render path
-// (no duplicated concession/break-even math).
+// (no duplicated concession/break-even math). Also grafts the Multi Unit
+// per-unit rent breakdown (if present) from the same off-screen render, so it
+// tracks the dial live too instead of only updating on release.
 function _liveUpdateConcessionsPanel(recId){
   const r = records.find(x => x.id === recId);
   if(!r) return;
   const livePanel = document.getElementById('concessionsPanel_'+recId);
-  if(!livePanel) return;
+  const liveBreakdown = document.getElementById('rentUnitBreakdown_'+recId);
+  if(!livePanel && !liveBreakdown) return;
   try {
     const tmp = document.createElement('div');
     tmp.innerHTML = renderNegotiationTab(r);
     // renderNegotiationTab schedules a dial re-init; cancel it so the off-screen render
     // doesn't double-bind drag handlers onto the live dial mid-drag.
     clearTimeout(window._rentDialInitTimer);
-    const fresh = tmp.querySelector('#concessionsPanel_'+recId);
-    if(fresh) livePanel.innerHTML = fresh.innerHTML;
+    if(livePanel){
+      const fresh = tmp.querySelector('#concessionsPanel_'+recId);
+      if(fresh) livePanel.innerHTML = fresh.innerHTML;
+    }
+    if(liveBreakdown){
+      const freshBreakdown = tmp.querySelector('#rentUnitBreakdown_'+recId);
+      if(freshBreakdown) liveBreakdown.innerHTML = freshBreakdown.innerHTML;
+    }
   } catch(e){ /* ignore transient calc errors mid-drag */ }
 }
 function setRentDialIncrement(recId, val){
@@ -30898,7 +31064,9 @@ function adjustRentDial(recId, direction){
   if(!r) return;
   const an = getAnalysis(r);
   const incr = parseFloat(an.rentDialIncrement) || 50;
-  const currentRent = parseFloat(r.propertyDetails?.monthlyRent) || 0;
+  // Multi Unit buildings have no single Property Details rent field — use the
+  // same building-wide total (sum of every unit's rent) that drives the dial.
+  const currentRent = calcComputeAll(r).monthlyRent;
   const previewRent = _rentDialPreview[recId] !== undefined ? _rentDialPreview[recId] : currentRent;
   const newRent = Math.max(0, Math.min(currentRent, previewRent + direction * incr));
   _rentDialPreview[recId] = newRent;
@@ -30911,7 +31079,9 @@ function adjustRentDial(recId, direction){
 function openRentDialInput(recId){
   const r = records.find(x => x.id === recId);
   if(!r) return;
-  const currentRent = parseFloat(r.propertyDetails?.monthlyRent) || 0;
+  // Multi Unit buildings have no single Property Details rent field — use the
+  // same building-wide total (sum of every unit's rent) that drives the dial.
+  const currentRent = calcComputeAll(r).monthlyRent;
   const previewRent = _rentDialPreview[recId] !== undefined ? _rentDialPreview[recId] : currentRent;
   const existing = document.getElementById('rentDialInputOverlay');
   if(existing) existing.remove();
@@ -30941,7 +31111,9 @@ function openRentDialInput(recId){
 function saveRentDialInput(recId){
   const r = records.find(x => x.id === recId);
   if(!r) return;
-  const currentRent = parseFloat(r.propertyDetails?.monthlyRent) || 0;
+  // Multi Unit buildings have no single Property Details rent field — use the
+  // same building-wide total (sum of every unit's rent) that drives the dial.
+  const currentRent = calcComputeAll(r).monthlyRent;
   const val = parseFloat(document.getElementById('rentDialInputVal')?.value);
   if(isNaN(val) || val < 0) return;
   if(val > currentRent) return; // blocked
@@ -39174,10 +39346,10 @@ async function exportPropertyProfile(recId){
   const propInfoRows = [
     ['Address', r.property || ''],
     ['Listing Link', r.link || ''],
-    ['# of Bedrooms', pd.bedrooms || ''],
+    ['# of Bedrooms', v.br || ''],
     ['# of Bathrooms', pd.bathrooms || ''],
     ['Square Footage (or S-XL)', pd.sqft ? parseInt(pd.sqft).toLocaleString() : ''],
-    ['Asking Rent / Price', pd.monthlyRent ? '$' + Math.round(parseFloat(pd.monthlyRent)).toLocaleString() : ''],
+    ['Asking Rent / Price', v.monthlyRent ? '$' + Math.round(v.monthlyRent).toLocaleString() : ''],
     ['Design / Amenities', _buildDesignAmenities(pd)],
     ['Notes', r.propertyNote ? cleanHtml(r.propertyNote.html || r.propertyNote.text || '') : '']
   ];
@@ -39515,7 +39687,7 @@ async function exportPropertyProfile(recId){
   ws2.getRow(17).height = 16.5;
   ws2.getCell('B17').value = '# of Bedrooms';
   ws2.getCell('B17').font = calFont; ws2.getCell('B17').alignment = { horizontal:'right', vertical:'center', wrapText:true }; ws2.getCell('B17').border = borderAllGrey;
-  ws2.getCell('C17').value = parseInt(pd.bedrooms) || 0;
+  ws2.getCell('C17').value = v.br;
   ws2.getCell('C17').font = calFont; ws2.getCell('C17').fill = inputFill; ws2.getCell('C17').alignment = { vertical:'center' }; ws2.getCell('C17').border = borderAllGrey;
 
   // Payback row: Initial Investment
@@ -39546,7 +39718,7 @@ async function exportPropertyProfile(recId){
   ws2.getRow(21).height = 16.5;
   ws2.getCell('B21').value = '# of Extra Common Spaces (Patios, Bonus Rooms, etc)';
   ws2.getCell('B21').font = calFont; ws2.getCell('B21').alignment = { horizontal:'right', vertical:'center', wrapText:true }; ws2.getCell('B21').border = borderAllGrey;
-  ws2.getCell('C21').value = c.extraCommonSpaces || 0;
+  ws2.getCell('C21').value = v.totalCommonSpaces;
   ws2.getCell('C21').font = calFont; ws2.getCell('C21').fill = inputFill; ws2.getCell('C21').alignment = { vertical:'center' }; ws2.getCell('C21').border = borderAllGrey;
 
   ws2.getCell('E21').value = 'Total Cash Flows'; ws2.getCell('E21').font = calFont; ws2.getCell('E21').alignment = { horizontal:'right', vertical:'center', wrapText:true }; ws2.getCell('E21').border = borderAllGrey;
