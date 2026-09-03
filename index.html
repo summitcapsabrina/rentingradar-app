@@ -1381,7 +1381,7 @@ h1 .hero-edit-input{font-size:1.35rem}
 .co-rev-revert{display:inline-flex;align-items:center;gap:3px;font-size:.7rem;font-weight:700;color:var(--warning);background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.45);border-radius:12px;padding:2px 9px;cursor:pointer;transition:all .15s;white-space:nowrap;line-height:1.4}
 .co-rev-revert:hover{background:rgba(245,158,11,.22)}
 /* Revenue by Unit: compact per-unit allocation sliders inside the Revenue Target card */
-.ua-slider{height:5px!important}
+.ua-slider{height:5px!important;background:repeating-linear-gradient(90deg,var(--text3) 0,var(--text3) 1.5px,transparent 1.5px,transparent 25%),rgba(148,163,184,.25)!important}
 .ua-slider::-webkit-slider-thumb{width:13px;height:13px}
 .ua-slider::-moz-range-thumb{width:12px;height:12px}
 /* Co-Hosting sticky-header minimize/expand toggle */
@@ -31188,11 +31188,16 @@ function renderNegotiationTab(r){
       _ubList.forEach((u, i) => {
         const pct = _ubPcts[i];
         const amt = Math.round(_rtVal * pct / 100);
+        // Diagnostic detail on the label — which comps drove this unit's natural share,
+        // so two units that look identical (same beds/baths) but land on different
+        // splits can be checked at a glance instead of guessed at.
+        const _uaTierLabel = u.tier === 'own' ? 'own comps' : u.tier === 'sametype' ? 'same-type comps' : 'whole-building blend';
+        const _uaTip = esc(u.label)+' · '+esc(u.typeLabel)+'\n'+u.matchedCompCount+' matched comp'+(u.matchedCompCount===1?'':'s')+' ('+_uaTierLabel+')';
         h += '<div style="display:flex;align-items:center;gap:8px">';
-        h += '<div style="width:96px;flex-shrink:0;font-size:.72rem;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(u.label)+' · '+esc(u.typeLabel)+'">'+esc(u.label)+'</div>';
+        h += '<div style="width:96px;flex-shrink:0;font-size:.72rem;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:help" title="'+_uaTip+'">'+esc(u.label)+'</div>';
         h += '<input type="range" class="co-rev-slider ua-slider" data-unit-id="'+u.id+'" id="uaSlider_'+r.id+'_'+u.id+'" min="0" max="100" step="1" value="'+pct.toFixed(1)+'" oninput="unitAllocPreview(\''+r.id+'\',\''+u.id+'\',this.value)" onchange="unitAllocCommit(\''+r.id+'\',\''+u.id+'\',this.value)">';
         h += '<div style="width:36px;flex-shrink:0;text-align:right;font-size:.7rem;font-weight:700;color:var(--text2)" id="uaPct_'+r.id+'_'+u.id+'">'+Math.round(pct)+'%</div>';
-        h += '<div style="width:78px;flex-shrink:0;text-align:right;font-size:.72rem;font-weight:600;color:var(--text)" id="uaAmt_'+r.id+'_'+u.id+'">'+fmtMoney(amt)+'</div>';
+        h += '<div style="width:78px;flex-shrink:0;text-align:right;font-size:.72rem;font-weight:600;color:var(--text);cursor:pointer;border-bottom:1px dashed var(--border)" id="uaAmt_'+r.id+'_'+u.id+'" onclick="openUnitAllocAmtInput(this,\''+r.id+'\',\''+u.id+'\')" title="Click to type an exact amount">'+fmtMoney(amt)+'</div>';
         h += '</div>';
       });
       h += '</div>';
@@ -32863,6 +32868,41 @@ function unitAllocCommit(recId, unitId, val){
 function resetUnitAlloc(recId){
   delete _unitAllocPreview[recId];
   if(typeof _rerenderCalcTab === 'function') try { _rerenderCalcTab(); } catch(_){}
+}
+
+// Click a unit's dollar amount to type an exact figure — the other units rebalance
+// proportionally off whatever's left of the current Revenue Target total, same math
+// as dragging that unit's own slider to the equivalent percentage.
+function openUnitAllocAmtInput(el, recId, unitId){
+  if(el.querySelector('input')) return;
+  const total = _unitAllocTotal(recId);
+  const pcts = _unitAllocReadDom(recId);
+  const current = Math.round(total * (pcts[unitId] || 0) / 100);
+  el.innerHTML = '';
+  const input = document.createElement('input');
+  input.type = 'text'; input.inputMode = 'numeric'; input.className = 'co-rev-input';
+  input.style.cssText = 'width:74px;font-size:.72rem;padding:1px 4px';
+  input.value = current;
+  el.appendChild(input);
+  input.focus();
+  input.select();
+  let done = false;
+  const restore = function(){ if(done) return; done = true; if(typeof _rerenderCalcTab === 'function') try { _rerenderCalcTab(); } catch(_){} };
+  input.addEventListener('keydown', function(e){
+    if(e.key === 'Enter'){
+      e.preventDefault();
+      const num = Math.round(parseFloat((input.value || '').replace(/[^0-9.]/g,'')));
+      if(isNaN(num) || num < 0){ restore(); return; }
+      done = true;
+      const clamped = Math.max(0, Math.min(total, num));
+      const newPct = total > 0 ? (clamped / total * 100) : 0;
+      const freshPcts = _unitAllocReadDom(recId);
+      _rebalanceUnitAlloc(freshPcts, unitId, newPct);
+      _unitAllocPreview[recId] = freshPcts;
+      if(typeof _rerenderCalcTab === 'function') try { _rerenderCalcTab(); } catch(_){}
+    } else if(e.key === 'Escape'){ e.preventDefault(); restore(); }
+  });
+  input.addEventListener('blur', restore);
 }
 
 // ── Concession Weeks +/- adjustment ──
