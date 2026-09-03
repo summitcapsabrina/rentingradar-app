@@ -30792,33 +30792,38 @@ function renderCalculatorTab(r){
     pynHtml += '</div>';
   }
 
-  pynRow('Annual Revenue', col => {
+  const pynScope = v.isApt ? ' (Total)' : '';
+  pynRow('Annual Revenue'+pynScope, col => {
     if(!col.hasData) return noDataHtml;
     return '<span class="calc-display" style="color:var(--text);font-weight:600">'+fmtAcct(col.rev)+'</span>';
-  }, {tip:'Your competitors\\x27 revenue, weighted by how you rated each one (Loses To / Competes With / Beats), then scaled by this column\\x27s adjuster shown under the Pessimistic / Realistic / Optimistic headers above (L = Loses To, C = Competes With, B = Beats multiplier).\\n\\nPessimistic: L×0.75, C×0.90, B×1.05\\nRealistic: L×0.85, C×1.00, B×1.15\\nOptimistic: L×0.95, C×1.10, B×1.25'});
-  pynRow('Annual Expenses', col => {
+  }, {tip:'Your competitors\\x27 revenue, weighted by how you rated each one (Loses To / Competes With / Beats), then scaled by this column\\x27s adjuster shown under the Pessimistic / Realistic / Optimistic headers above (L = Loses To, C = Competes With, B = Beats multiplier).\\n\\nPessimistic: L×0.75, C×0.90, B×1.05\\nRealistic: L×0.85, C×1.00, B×1.15\\nOptimistic: L×0.95, C×1.10, B×1.25'+(v.isApt?'\\n\\nTotal across all included units.':'')});
+  pynRow('Annual Expenses'+pynScope, col => {
     if(!col.hasData) return noDataHtml;
     return '<span class="calc-display" style="color:var(--text);font-weight:600">-'+fmtMoney(col.exp)+'</span>';
   }, {
-    tip:'Your fixed costs (same in every column) plus Co-Host/PM fee % and AirBnB service fee % (both set on the Income & Expenses tab), calculated on THIS column\\x27s Annual Revenue above.\\n\\nThere\\x27s no separate expense adjuster — expenses move only because each column starts from a different revenue number.',
+    tip:'Your fixed costs (same in every column) plus Co-Host/PM fee % and AirBnB service fee % (both set on the Income & Expenses tab), calculated on THIS column\\x27s Annual Revenue above.\\n\\nThere\\x27s no separate expense adjuster — expenses move only because each column starts from a different revenue number.'+(v.isApt?'\\n\\nTotal across all included units.':''),
     onEdit: "setProfileTab('expenses')",
     editTitle: 'Edit on Income & Expenses tab',
   });
-  pynRow('Annual Rent', col => {
+  pynRow('Annual Rent'+pynScope, col => {
     return '<span class="calc-display" style="color:var(--text);font-weight:600">-'+fmtMoney(projAnnualRent)+'</span>';
-  }, {
+  }, v.isApt ? {
+    tip:'Sum of every included unit\\x27s own monthly rent × 12. Each unit has its own rent — edit it from the Units tab.',
+    onEdit: "setProfileTab('units')",
+    editTitle: 'Edit on Units tab',
+  } : {
     tip:'Your monthly rent × 12 — set in the Property Details tab or the property header.',
     onEdit: "openRentHistoryPopup('"+r.id+"')",
     editTitle: 'Edit rent',
   });
-  pynRow('Projected Yearly Net', col => {
+  pynRow('Projected Yearly Net'+pynScope, col => {
     if(!col.hasData) return noDataHtml;
     return fmtNet(col.net, '/yr');
-  }, {total:true, tip:'Annual Revenue minus Annual Expenses minus Annual Rent'});
-  pynRow('Monthly Net', col => {
+  }, {total:true, tip:'Annual Revenue minus Annual Expenses minus Annual Rent'+(v.isApt?' — total across all included units.':'')});
+  pynRow('Monthly Net'+pynScope, col => {
     if(!col.hasData) return noDataHtml;
     return fmtNetLight(col.monthlyNet, '/mo');
-  }, {tip:'Projected Yearly Net divided by 12'});
+  }, {tip:'Projected Yearly Net divided by 12'+(v.isApt?' — total across all included units.':'')});
 
   // Competitive Position Adjustment row + Adjusted Monthly Net row
   // Store adjusted values on each col for use in deal temp later
@@ -30845,12 +30850,12 @@ function renderCalculatorTab(r){
     pynHtml += '</div>';
     pynHtml += '</div>';
   }
-  pynRow('Adjusted Monthly Net', col => {
+  pynRow('Adjusted Monthly Net'+pynScope, col => {
     if(!col.hasData) return noDataHtml;
     const adj = col.adjustedMonthlyNet;
     if(adj >= 0) return '<span style="color:var(--num-success);font-weight:700">'+fmtMoney(adj)+'/mo</span>';
     return '<span style="color:var(--num-danger);font-weight:700">-$'+Math.abs(adj).toLocaleString()+'/mo</span>';
-  }, {total:true, tip:'Monthly Net × Position Adjustment ('+confidencePct+'%).\\n\\nThis is your confidence-adjusted take-home estimate — it reflects both your projected income/expenses and your competitive standing. This number drives the Deal Temperature recommendation below.'});
+  }, {total:true, tip:'Monthly Net × Position Adjustment ('+confidencePct+'%).\\n\\nThis is your confidence-adjusted take-home estimate — it reflects both your projected income/expenses and your competitive standing. This number drives the Deal Temperature recommendation below.'+(v.isApt?'\\n\\nTotal across all included units.':'')});
 
   pynHtml += '</div></div>';
 
