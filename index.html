@@ -1380,6 +1380,10 @@ h1 .hero-edit-input{font-size:1.35rem}
 .co-rev-input{width:120px;font-size:1.3rem;font-weight:800;text-align:center;padding:2px 6px;border:1px solid var(--primary);border-radius:6px;background:var(--surface);color:var(--text);font-family:inherit;box-sizing:border-box;outline:none;box-shadow:0 0 0 2px rgba(99,129,250,.15);-moz-appearance:textfield}
 .co-rev-revert{display:inline-flex;align-items:center;gap:3px;font-size:.7rem;font-weight:700;color:var(--warning);background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.45);border-radius:12px;padding:2px 9px;cursor:pointer;transition:all .15s;white-space:nowrap;line-height:1.4}
 .co-rev-revert:hover{background:rgba(245,158,11,.22)}
+/* Revenue by Unit: compact per-unit allocation sliders inside the Revenue Target card */
+.ua-slider{height:5px!important}
+.ua-slider::-webkit-slider-thumb{width:13px;height:13px}
+.ua-slider::-moz-range-thumb{width:12px;height:12px}
 /* Co-Hosting sticky-header minimize/expand toggle */
 .cohost-hero-toggle{display:inline-flex;align-items:center;justify-content:center;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:4px 7px;font-size:.74rem;font-weight:600;color:var(--text2);cursor:pointer;transition:all .15s;white-space:nowrap;flex-shrink:0}
 .cohost-hero-toggle:hover{border-color:var(--primary);color:var(--primary);background:var(--primary-light)}
@@ -28134,9 +28138,10 @@ function setProfileTab(tab){
 function setCalcProjMode(mode){
   calcProjMode = mode;
   // Clicking a scenario button snaps the Revenue Target slider to that scenario's exact
-  // revenue — clearing any custom drag/typed override so it isn't left stale.
+  // revenue, and Revenue by Unit back to its natural comp-based split — clearing any
+  // custom drag/typed overrides so neither is left stale.
   const r = records.find(x => x.id === currentProfileId);
-  if(r) delete _revTargetPreview[r.id];
+  if(r){ delete _revTargetPreview[r.id]; delete _unitAllocPreview[r.id]; }
   render();
 }
 
@@ -31162,6 +31167,40 @@ function renderNegotiationTab(r){
     h += '<div style="position:absolute;right:0;top:0;font-size:.62rem;color:var(--text3);text-align:right"><div style="font-weight:600">'+fmtMoney(_rtMax)+'</div>+25%</div>';
     h += '</div>';
     h += '</div>';
+
+    // ── Revenue by Unit: what-if split of the total above across units ──
+    // Display-only — it never touches each unit's real comp-based revenue, expenses,
+    // or NOI (those still live in the By Unit table above). Defaults to each unit's
+    // own natural comp-based share of the total; dragging rebalances the rest so the
+    // split always sums to 100%.
+    const _ubList = (v.unitBreakdown || []).filter(u => u.hasRevenueData);
+    if(v.isApt && v.unitsCount > 1 && _ubList.length > 1){
+      const _ubNaturalSum = _ubList.reduce((s,u) => s + (u.annualRevenue || 0), 0);
+      const _ubSavedAlloc = _unitAllocPreview[r.id];
+      const _ubPcts = _ubList.map(u => {
+        if(_ubSavedAlloc && _ubSavedAlloc[u.id] !== undefined) return _ubSavedAlloc[u.id];
+        return _ubNaturalSum > 0 ? (u.annualRevenue || 0) / _ubNaturalSum * 100 : (100 / _ubList.length);
+      });
+
+      h += '<div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">';
+      h += '<div style="font-size:.72rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;text-align:center;display:flex;align-items:center;justify-content:center;gap:5px;cursor:help"'+tipAttrs('Revenue by Unit','A what-if split of the Revenue Target above across your units, handy when the mix (e.g. 2BR vs 1BR) earns unevenly. Defaults to each unit\\x27s own comp-based share; drag to rebalance and the other units auto-adjust to keep the total at 100%.\\n\\nThis is a display-only lens. It doesn\\x27t change each unit\\x27s actual revenue, expenses, or NOI shown in the By Unit table above.',true)+'>Revenue by Unit<span class="nft-hint-q">?</span></div>';
+      h += '<div id="unitAllocRows_'+r.id+'" style="margin-top:8px;display:flex;flex-direction:column;gap:7px">';
+      _ubList.forEach((u, i) => {
+        const pct = _ubPcts[i];
+        const amt = Math.round(_rtVal * pct / 100);
+        h += '<div style="display:flex;align-items:center;gap:8px">';
+        h += '<div style="width:96px;flex-shrink:0;font-size:.72rem;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(u.label)+' · '+esc(u.typeLabel)+'">'+esc(u.label)+'</div>';
+        h += '<input type="range" class="co-rev-slider ua-slider" data-unit-id="'+u.id+'" id="uaSlider_'+r.id+'_'+u.id+'" min="0" max="100" step="1" value="'+pct.toFixed(1)+'" oninput="unitAllocPreview(\''+r.id+'\',\''+u.id+'\',this.value)" onchange="unitAllocCommit(\''+r.id+'\',\''+u.id+'\',this.value)">';
+        h += '<div style="width:36px;flex-shrink:0;text-align:right;font-size:.7rem;font-weight:700;color:var(--text2)" id="uaPct_'+r.id+'_'+u.id+'">'+Math.round(pct)+'%</div>';
+        h += '<div style="width:78px;flex-shrink:0;text-align:right;font-size:.72rem;font-weight:600;color:var(--text)" id="uaAmt_'+r.id+'_'+u.id+'">'+fmtMoney(amt)+'</div>';
+        h += '</div>';
+      });
+      h += '</div>';
+      if(_ubSavedAlloc){
+        h += '<div style="text-align:center;margin-top:8px"><button class="co-rev-revert" onclick="resetUnitAlloc(\''+r.id+'\')">↩ reset to comp-based split</button></div>';
+      }
+      h += '</div>';
+    }
   }
   h += '</div></div>';
 
@@ -32697,6 +32736,15 @@ function _quickUpdateRevTarget(recId, rev){
     const pct = real > 0 ? Math.round((rev - real) / real * 100) : 0;
     delta.textContent = pct === 0 ? 'Matches your Realistic projection' : (pct > 0 ? '+' : '') + pct + '% vs. Realistic';
   }
+  // Keep Revenue by Unit's dollar amounts (not percentages) in step with the total
+  // while the Revenue Target slider itself is being dragged.
+  const wrap = document.getElementById('unitAllocRows_'+recId);
+  if(wrap){
+    wrap.querySelectorAll('.ua-slider').forEach(function(el){
+      const amtEl = document.getElementById('uaAmt_'+recId+'_'+el.dataset.unitId);
+      if(amtEl) amtEl.textContent = fmtMoney(Math.round(rev * (parseFloat(el.value) || 0) / 100));
+    });
+  }
 }
 
 // ── Revenue Target: click-to-type input ──
@@ -32740,6 +32788,80 @@ function saveRevTargetInput(recId){
   if(isNaN(val) || val < rangeMin || val > rangeMax) return; // blocked
   _revTargetPreview[recId] = Math.round(val);
   document.getElementById('revTargetInputOverlay')?.remove();
+  if(typeof _rerenderCalcTab === 'function') try { _rerenderCalcTab(); } catch(_){}
+}
+
+// ── Revenue by Unit: what-if allocation sliders inside the Revenue Target card.
+// Ephemeral like _revTargetPreview (not saved to the record) — purely a display lens,
+// each unit's real comp-based revenue/expenses/NOI elsewhere is untouched. Reads/writes
+// the live slider DOM directly during drag (no calcComputeAll re-run per frame), same
+// cheap-update approach as the rent dial. ──
+let _unitAllocPreview = {}; // { recId: { unitId: pct, ... } } — set once the user drags or resets
+
+function _unitAllocReadDom(recId){
+  const wrap = document.getElementById('unitAllocRows_'+recId);
+  const out = {};
+  if(!wrap) return out;
+  wrap.querySelectorAll('.ua-slider').forEach(function(el){ out[el.dataset.unitId] = parseFloat(el.value) || 0; });
+  return out;
+}
+function _unitAllocTotal(recId){
+  const slider = document.getElementById('revTargetSlider_'+recId);
+  if(slider) return parseFloat(slider.value) || 0;
+  const cfg = document.getElementById('revTargetConfig_'+recId);
+  return cfg ? (parseFloat(cfg.dataset.r) || 0) : 0;
+}
+// Proportionally pulls every OTHER unit's percentage down/up so the set always sums to
+// 100 — if the others are all at 0 (nothing left to pull from), splits the remainder
+// evenly across them instead.
+function _rebalanceUnitAlloc(pcts, changedId, newVal){
+  newVal = Math.max(0, Math.min(100, newVal));
+  const ids = Object.keys(pcts);
+  const old = pcts[changedId] !== undefined ? pcts[changedId] : 0;
+  const delta = newVal - old;
+  const others = ids.filter(function(id){ return id !== changedId; });
+  const othersSum = others.reduce(function(s,id){ return s + pcts[id]; }, 0);
+  if(others.length){
+    if(othersSum > 0.0001){
+      others.forEach(function(id){ pcts[id] = Math.max(0, pcts[id] - delta * (pcts[id] / othersSum)); });
+    } else {
+      const rem = 100 - newVal;
+      others.forEach(function(id){ pcts[id] = rem / others.length; });
+    }
+  }
+  pcts[changedId] = newVal;
+  // Fix rounding drift so the row percentages sum to exactly 100.
+  const sum = ids.reduce(function(s,id){ return s + pcts[id]; }, 0);
+  if(others.length && Math.abs(sum - 100) > 0.01) pcts[others[others.length - 1]] += (100 - sum);
+  return pcts;
+}
+function _unitAllocWriteDom(recId, pcts, total){
+  const wrap = document.getElementById('unitAllocRows_'+recId);
+  if(!wrap) return;
+  wrap.querySelectorAll('.ua-slider').forEach(function(el){
+    const id = el.dataset.unitId;
+    const pct = pcts[id] || 0;
+    if(el !== document.activeElement) el.value = pct;
+    const pctEl = document.getElementById('uaPct_'+recId+'_'+id);
+    const amtEl = document.getElementById('uaAmt_'+recId+'_'+id);
+    if(pctEl) pctEl.textContent = Math.round(pct)+'%';
+    if(amtEl) amtEl.textContent = fmtMoney(Math.round(total * pct / 100));
+  });
+}
+function unitAllocPreview(recId, unitId, val){
+  const pcts = _unitAllocReadDom(recId);
+  _rebalanceUnitAlloc(pcts, unitId, parseFloat(val));
+  _unitAllocPreview[recId] = pcts;
+  _unitAllocWriteDom(recId, pcts, _unitAllocTotal(recId));
+}
+function unitAllocCommit(recId, unitId, val){
+  const pcts = _unitAllocReadDom(recId);
+  _rebalanceUnitAlloc(pcts, unitId, parseFloat(val));
+  _unitAllocPreview[recId] = pcts;
+  if(typeof _rerenderCalcTab === 'function') try { _rerenderCalcTab(); } catch(_){}
+}
+function resetUnitAlloc(recId){
+  delete _unitAllocPreview[recId];
   if(typeof _rerenderCalcTab === 'function') try { _rerenderCalcTab(); } catch(_){}
 }
 
