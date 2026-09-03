@@ -30763,21 +30763,15 @@ function renderCalculatorTab(r){
   });
 
   const pynTitle = v.isApt ? 'Total Projected Yearly Net' : 'Projected Yearly Net';
-  pynHtml += '<div class="calc-section"' + (insufficientComps ? ' style="opacity:.5"' : '') + '><div class="calc-section-header"'+tipAttrs(pynTitle,'Estimated annual profit across three scenarios. Each column uses different directional multipliers applied to your competitor data, then discounted by your competitive position. Select a column to drive the KPIs, Deal Temperature, and Payback Period. These are projections only — actual results may differ.'+(v.isApt?' Every row below is a total across all included units.':''))+'>'+pynTitle+'</div>';
+  pynHtml += '<div class="calc-section"' + (insufficientComps ? ' style="opacity:.5"' : '') + '><div class="calc-section-header"'+tipAttrs(pynTitle,'Estimated annual profit across three scenarios. Each column uses different directional multipliers applied to your competitor data, then discounted by your competitive position. Select a column to drive the KPIs, Deal Temperature, and Payback Period. These are projections only — actual results may differ.\\n\\nPessimistic: Loses To ×0.75, Competes ×0.90, Beats ×1.05\\nRealistic: Loses To ×0.85, Competes ×1.00, Beats ×1.15\\nOptimistic: Loses To ×0.95, Competes ×1.10, Beats ×1.25'+(v.isApt?'\\n\\nEvery row below is a total across all included units.':''))+'>'+pynTitle+'</div>';
 
   // Clickable column headers — selecting a column drives KPIs, Deal Temp, and Payback
   pynHtml += '<div class="pyn-col-headers">';
   pynHtml += '<div class="pyn-label-spacer"></div>';
-  const colTitles = { optimistic: 'Best-case: Loses To ×0.95, Competes ×1.10, Beats ×1.25 applied to competitor revenue. Click to use for KPIs and Deal Temperature.', realistic: 'Weighted estimate: Loses To ×0.85, Competes ×1.00, Beats ×1.15 applied to competitor revenue. Click to use for KPIs and Deal Temperature.', pessimistic: 'Conservative: Loses To ×0.75, Competes ×0.90, Beats ×1.05 applied to competitor revenue. Click to use for KPIs and Deal Temperature.' };
-  // Short form of the same multipliers, shown under each column label so the
-  // "adjuster" driving Annual Revenue is visible without a hover — matches
-  // the Loses/Competes/Beats language from Competitor Analysis.
-  const colMultShort = { optimistic: 'L.95 C1.10 B1.25', realistic: 'L.85 C1.00 B1.15', pessimistic: 'L.75 C.90 B1.05' };
   cols.forEach(col => {
     const isActive = col.key === calcProjMode;
     pynHtml += '<div class="pyn-col-header'+(isActive?' pyn-col-active':'')+'" style="--col-color:'+col.color+';cursor:pointer" onclick="setCalcProjMode(\''+col.key+'\')">';
     pynHtml += '<span class="pyn-col-label">'+col.label+'</span>';
-    pynHtml += '<div style="font-size:.56rem;color:var(--text3);letter-spacing:.2px;white-space:nowrap;margin-top:1px">'+colMultShort[col.key]+'</div>';
     if(isActive) pynHtml += '<div class="pyn-col-indicator"></div>';
     pynHtml += '</div>';
   });
@@ -31157,10 +31151,8 @@ function renderNegotiationTab(r){
     // multiplier tables, but the rent dial applies the same defensive ordering).
     if(_rtR < _rtP) _rtR = _rtP;
     if(_rtO < _rtR) _rtO = _rtR;
-    const _rtExtLow = Math.round((_rtR - _rtP) * 0.25);
-    const _rtExtHigh = Math.round((_rtO - _rtR) * 0.25);
-    const _rtMin = Math.max(0, _rtP - _rtExtLow);
-    const _rtMax = _rtO + _rtExtHigh;
+    const _rtMin = Math.max(0, Math.round(_rtP * 0.75));
+    const _rtMax = Math.round(_rtO * 1.25);
     const _rtSpan = (_rtMax - _rtMin) || 1;
     const _rtStep = Math.max(1, Math.round(_rtSpan / 200));
     const _rtVal = Math.max(_rtMin, Math.min(_rtMax, _pynRev));
