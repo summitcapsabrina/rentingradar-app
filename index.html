@@ -30301,6 +30301,20 @@ function selectCopySource(sourceId, targetId){
 
 function ordinal(n){ const s = ['th','st','nd','rd']; const v = n % 100; return n + (s[(v-20)%10]||s[v]||s[0]); }
 
+// Multi Unit buildings have no single rent field — each unit carries its own,
+// edited on the Units tab. Confirm before navigating away from Projected ROI
+// rather than jumping straight there, since the click starts on a pencil icon
+// next to a dollar amount that looks directly editable.
+function promptEditRentOnUnitsTab(){
+  showAppConfirm('Each unit in a Multi Unit building has its own monthly rent. To change rent, go to the <strong>Units</strong> tab and edit the unit directly.', {
+    title: 'Edit Rent',
+    icon: '🏘️',
+    confirmText: 'Go to Units tab',
+    cancelText: 'Cancel',
+    onConfirm: () => setProfileTab('units'),
+  });
+}
+
 function renderCalculatorTab(r){
   const pd = r.propertyDetails || {};
   const v = calcComputeAll(r);
@@ -30809,7 +30823,7 @@ function renderCalculatorTab(r){
     return '<span class="calc-display" style="color:var(--text);font-weight:600">-'+fmtMoney(projAnnualRent)+'</span>';
   }, v.isApt ? {
     tip:'Sum of every included unit\\x27s own monthly rent × 12. Each unit has its own rent — edit it from the Units tab.',
-    onEdit: "setProfileTab('units')",
+    onEdit: "promptEditRentOnUnitsTab()",
     editTitle: 'Edit on Units tab',
   } : {
     tip:'Your monthly rent × 12 — set in the Property Details tab or the property header.',
