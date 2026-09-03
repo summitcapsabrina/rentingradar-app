@@ -30748,7 +30748,8 @@ function renderCalculatorTab(r){
     col.monthlyNet = col.hasData ? Math.round(col.net / 12) : 0;
   });
 
-  pynHtml += '<div class="calc-section"' + (insufficientComps ? ' style="opacity:.5"' : '') + '><div class="calc-section-header"'+tipAttrs('Projected Yearly Net','Estimated annual profit across three scenarios. Each column uses different directional multipliers applied to your competitor data, then discounted by your competitive position. Select a column to drive the KPIs, Deal Temperature, and Payback Period. These are projections only — actual results may differ.')+'>Projected Yearly Net</div>';
+  const pynTitle = v.isApt ? 'Total Projected Yearly Net' : 'Projected Yearly Net';
+  pynHtml += '<div class="calc-section"' + (insufficientComps ? ' style="opacity:.5"' : '') + '><div class="calc-section-header"'+tipAttrs(pynTitle,'Estimated annual profit across three scenarios. Each column uses different directional multipliers applied to your competitor data, then discounted by your competitive position. Select a column to drive the KPIs, Deal Temperature, and Payback Period. These are projections only — actual results may differ.'+(v.isApt?' Every row below is a total across all included units.':''))+'>'+pynTitle+'</div>';
 
   // Clickable column headers — selecting a column drives KPIs, Deal Temp, and Payback
   pynHtml += '<div class="pyn-col-headers">';
@@ -30792,12 +30793,11 @@ function renderCalculatorTab(r){
     pynHtml += '</div>';
   }
 
-  const pynScope = v.isApt ? ' (Total)' : '';
-  pynRow('Annual Revenue'+pynScope, col => {
+  pynRow('Annual Revenue', col => {
     if(!col.hasData) return noDataHtml;
     return '<span class="calc-display" style="color:var(--text);font-weight:600">'+fmtAcct(col.rev)+'</span>';
   }, {tip:'Your competitors\\x27 revenue, weighted by how you rated each one (Loses To / Competes With / Beats), then scaled by this column\\x27s adjuster shown under the Pessimistic / Realistic / Optimistic headers above (L = Loses To, C = Competes With, B = Beats multiplier).\\n\\nPessimistic: L×0.75, C×0.90, B×1.05\\nRealistic: L×0.85, C×1.00, B×1.15\\nOptimistic: L×0.95, C×1.10, B×1.25'+(v.isApt?'\\n\\nTotal across all included units.':'')});
-  pynRow('Annual Expenses'+pynScope, col => {
+  pynRow('Annual Expenses', col => {
     if(!col.hasData) return noDataHtml;
     return '<span class="calc-display" style="color:var(--text);font-weight:600">-'+fmtMoney(col.exp)+'</span>';
   }, {
@@ -30805,7 +30805,7 @@ function renderCalculatorTab(r){
     onEdit: "setProfileTab('expenses')",
     editTitle: 'Edit on Income & Expenses tab',
   });
-  pynRow('Annual Rent'+pynScope, col => {
+  pynRow('Annual Rent', col => {
     return '<span class="calc-display" style="color:var(--text);font-weight:600">-'+fmtMoney(projAnnualRent)+'</span>';
   }, v.isApt ? {
     tip:'Sum of every included unit\\x27s own monthly rent × 12. Each unit has its own rent — edit it from the Units tab.',
@@ -30816,11 +30816,11 @@ function renderCalculatorTab(r){
     onEdit: "openRentHistoryPopup('"+r.id+"')",
     editTitle: 'Edit rent',
   });
-  pynRow('Projected Yearly Net'+pynScope, col => {
+  pynRow('Projected Yearly Net', col => {
     if(!col.hasData) return noDataHtml;
     return fmtNet(col.net, '/yr');
   }, {total:true, tip:'Annual Revenue minus Annual Expenses minus Annual Rent'+(v.isApt?' — total across all included units.':'')});
-  pynRow('Monthly Net'+pynScope, col => {
+  pynRow('Monthly Net', col => {
     if(!col.hasData) return noDataHtml;
     return fmtNetLight(col.monthlyNet, '/mo');
   }, {tip:'Projected Yearly Net divided by 12'+(v.isApt?' — total across all included units.':'')});
@@ -30850,7 +30850,7 @@ function renderCalculatorTab(r){
     pynHtml += '</div>';
     pynHtml += '</div>';
   }
-  pynRow('Adjusted Monthly Net'+pynScope, col => {
+  pynRow('Adjusted Monthly Net', col => {
     if(!col.hasData) return noDataHtml;
     const adj = col.adjustedMonthlyNet;
     if(adj >= 0) return '<span style="color:var(--num-success);font-weight:700">'+fmtMoney(adj)+'/mo</span>';
