@@ -78,7 +78,7 @@ admin:    { name:'Admin',    monthly:0,     yearly:0,      maxProperties:Infinit
 ## Important Conventions
 - **Label spelling**: "AirBNB" (not "Airbnb") in user-facing UI labels and line items.
 - **Phone numbers**: Validated to exactly 10 digits, auto-formatted as `(XXX) XXX-XXXX`, input type="tel" with maxlength="14".
-- **Service Fee calculation**: `avgDailyRate × daysOccupied ÷ 12 × 15.5%` where `daysOccupied` comes from comp average `daysAvailable` (NOT `365 × occupancy%`).
+- **Service Fee calculation**: `avgDailyRate × daysOccupied ÷ 12 × AirBNB Service Fee %` where `daysOccupied` comes from comp average `daysAvailable` (NOT `365 × occupancy%`). The fee % defaults to 15.5 (`CALC_DEFAULTS.airbnbFeePct`) but is user-editable per unit/property on the Income & Expenses tab, same pattern as `coHostPct`.
 - **Average Revenue display**: Uses actual `annualRevenue` field averaged from comps, not re-derived from rate × days × occupancy.
 - **Position Score formula**: `(-1 × loses + 0 × competes + 1 × beats) ÷ total comps` → range -1.0 to +1.0
 - **Market Percentile formula**: `(beats + 0.5 × competes) ÷ total comps × 100`

@@ -55,6 +55,14 @@ service firebase.storage {
         (request.auth.uid == uid || request.auth.token.email == "help@rentingradar.com");
     }
 
+    // Unit floorplan photos — Units tab on Multi Unit buildings. Scoped to UID
+    // because unit data lives inside the per-user properties blob (records doc),
+    // same reasoning as noteImages: keeps the photo out of that doc's 1 MiB cap.
+    match /unitFloorplans/{uid}/{recId}/{unitId}/{file} {
+      allow read, write: if request.auth != null &&
+        (request.auth.uid == uid || request.auth.token.email == "help@rentingradar.com");
+    }
+
     // Chat attachments (images/files exchanged in the support chat). Scoped by
     // conversationId so both the conversation owner AND any admin (replying as
     // support) can read & write to the same folder without permission gymnastics.
