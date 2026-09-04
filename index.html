@@ -30901,7 +30901,7 @@ function renderCalculatorTab(r){
   // negotiation alongside expenses + ROI, keeping Rental Concessions and the Rent
   // Adjustment dial in lock-step. Pro-gate preserved via tierGateHtml fallback.
   h += '<div style="margin-top:24px;padding-top:20px;border-top:2px solid var(--border)">';
-  h += '<div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:14px"><span style="font-size:1.1rem">🤝</span><h3 style="margin:0;font-size:1rem;font-weight:700;color:var(--text)">Negotiation Tools</h3></div>';
+  h += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px"><span style="font-size:1.1rem">🤝</span><h3 style="margin:0;font-size:1rem;font-weight:700;color:var(--text)">Negotiation Tools</h3></div>';
   if(requireTier('pro','')){
     h += renderNegotiationTab(r);
   } else {
@@ -31044,31 +31044,38 @@ function renderNegotiationTab(r){
     const _rtMin = Math.max(0, Math.round(_rtP * 0.75));
     const _rtMax = Math.round(_rtO * 1.25);
     const _rtSpan = (_rtMax - _rtMin) || 1;
-    const _rtStep = Math.max(1, Math.round(_rtSpan / 200));
     const _rtVal = Math.max(_rtMin, Math.min(_rtMax, _pynRev));
     const _rtPct = x => Math.max(0, Math.min(100, (x - _rtMin) / _rtSpan * 100));
     const _rtPctP = _rtPct(_rtP), _rtPctR = _rtPct(_rtR), _rtPctO = _rtPct(_rtO);
     const _rtDiffPct = _rtR > 0 ? Math.round((_rtVal - _rtR) / _rtR * 100) : 0;
-    // Display-only positions for the Pessimistic/Optimistic markers (and the matching
-    // gradient stops below): the true percentages above are correct for the slider's
-    // actual min/max/value math, but when Pessimistic and Optimistic sit close to
-    // Realistic in dollar terms they land visually bunched near the middle of the
-    // track. Push their MARKER position further from Realistic by a fixed multiplier
-    // — the dollar figures shown next to them (_rtP/_rtO) never change, only where
-    // the label sits along the bar.
+    // Display positions for the Pessimistic/Optimistic markers (and the matching
+    // gradient stops below): the true percentages above are correct for a plain
+    // linear scale, but when Pessimistic and Optimistic sit close to Realistic in
+    // dollar terms they land visually bunched near the middle of the track. Push
+    // their MARKER position further from Realistic by a fixed multiplier — the
+    // dollar figures shown next to them (_rtP/_rtO) never change, and the edges
+    // (_rtMin/_rtMax) stay put too, but everything between now sits on a warped
+    // scale: see _rtBp below, which the slider ITSELF drags along (not just the
+    // labels), so dragging to a marker lands exactly on that dollar figure and the
+    // value moves faster per pixel outside the P–O zone, slower inside it.
     const _rtSpreadMult = 1.8;
     const _rtDispPctP = Math.max(4, _rtPctR - (_rtPctR - _rtPctP) * _rtSpreadMult);
     const _rtDispPctO = Math.min(96, _rtPctR + (_rtPctO - _rtPctR) * _rtSpreadMult);
+    const _rtBp = [
+      {pos:0, val:_rtMin}, {pos:_rtDispPctP, val:_rtP}, {pos:_rtPctR, val:_rtR},
+      {pos:_rtDispPctO, val:_rtO}, {pos:100, val:_rtMax}
+    ];
+    const _rtSliderPos = Math.round(_revTargetValToPos(_rtBp, _rtVal) * 100);
 
     h += '<div style="text-align:center;margin:8px 0 2px">';
     h += '<span class="co-rev-value" id="revTargetValTop_'+r.id+'" onclick="openRevTargetInput(\''+r.id+'\')" title="Click to type an exact revenue">'+fmtMoney(_rtVal)+'/yr</span>';
     h += '</div>';
     h += '<div id="revTargetDelta_'+r.id+'" style="text-align:center;font-size:.68rem;color:var(--text3);margin-bottom:10px">'+(_rtDiffPct===0?'Matches your Realistic projection':(_rtDiffPct>0?'+':'')+_rtDiffPct+'% vs. Realistic')+'</div>';
 
-    h += '<div id="revTargetConfig_'+r.id+'" data-min="'+_rtMin+'" data-max="'+_rtMax+'" data-p="'+_rtP+'" data-r="'+_rtR+'" data-o="'+_rtO+'" style="display:none"></div>';
+    h += '<div id="revTargetConfig_'+r.id+'" data-min="'+_rtMin+'" data-max="'+_rtMax+'" data-p="'+_rtP+'" data-r="'+_rtR+'" data-o="'+_rtO+'" data-pctp="'+_rtDispPctP.toFixed(4)+'" data-pctr="'+_rtPctR.toFixed(4)+'" data-pcto="'+_rtDispPctO.toFixed(4)+'" style="display:none"></div>';
 
     h += '<div style="position:relative;padding:0 2px">';
-    h += '<input type="range" class="co-rev-slider" id="revTargetSlider_'+r.id+'" min="'+_rtMin+'" max="'+_rtMax+'" step="'+_rtStep+'" value="'+_rtVal+'" style="background:linear-gradient(90deg, #000000 0%, #ef4444 '+_rtDispPctP.toFixed(2)+'%, #3b82f6 '+_rtPctR.toFixed(2)+'%, #10b981 '+_rtDispPctO.toFixed(2)+'%, #d4af37 100%)" oninput="revTargetPreview(\''+r.id+'\',this.value)" onchange="revTargetCommit(\''+r.id+'\',this.value)">';
+    h += '<input type="range" class="co-rev-slider" id="revTargetSlider_'+r.id+'" min="0" max="10000" step="1" value="'+_rtSliderPos+'" style="background:linear-gradient(90deg, #000000 0%, #ef4444 '+_rtDispPctP.toFixed(2)+'%, #3b82f6 '+_rtPctR.toFixed(2)+'%, #10b981 '+_rtDispPctO.toFixed(2)+'%, #d4af37 100%)" oninput="revTargetPreview(\''+r.id+'\',_revTargetSliderToVal(\''+r.id+'\',this.value))" onchange="revTargetCommit(\''+r.id+'\',_revTargetSliderToVal(\''+r.id+'\',this.value))">';
 
     h += '<div style="position:relative;height:34px;margin-top:4px">';
     h += '<div style="position:absolute;left:0;top:0;font-size:.62rem;color:var(--text3);text-align:left"><div style="font-weight:600">'+fmtMoney(_rtMin)+'</div>-25%</div>';
@@ -32606,6 +32613,58 @@ function saveRentDialInput(recId){
 let _revTargetPreview = {}; // { recId: previewAnnualRevenue }
 let _revTargetRaf = null;
 
+// The slider itself drags along a warped (piecewise-linear) scale, not a plain
+// linear one — Pessimistic/Optimistic sit spread further from Realistic than a
+// straight percentage would place them (see _rtDispPctP/_rtDispPctO in
+// renderNegotiationTab), so dragging to a marker lands exactly on that dollar
+// figure instead of overshooting/undershooting it. bp is an array of
+// {pos (0-100), val} breakpoints, ascending in both pos and val.
+function _revTargetPosToVal(bp, pos){
+  pos = Math.max(0, Math.min(100, pos));
+  for(let i=0;i<bp.length-1;i++){
+    const a=bp[i], b=bp[i+1];
+    if(pos <= b.pos || i===bp.length-2){
+      if(b.pos===a.pos) return a.val;
+      const t=(pos-a.pos)/(b.pos-a.pos);
+      return a.val + t*(b.val-a.val);
+    }
+  }
+  return bp[bp.length-1].val;
+}
+function _revTargetValToPos(bp, val){
+  const minV = bp[0].val, maxV = bp[bp.length-1].val;
+  val = Math.max(minV, Math.min(maxV, val));
+  for(let i=0;i<bp.length-1;i++){
+    const a=bp[i], b=bp[i+1];
+    if(val <= b.val || i===bp.length-2){
+      if(b.val===a.val) return a.pos;
+      const t=(val-a.val)/(b.val-a.val);
+      return a.pos + t*(b.pos-a.pos);
+    }
+  }
+  return bp[bp.length-1].pos;
+}
+function _revTargetBpFromDom(recId){
+  const cfg = document.getElementById('revTargetConfig_'+recId);
+  if(!cfg) return null;
+  return [
+    {pos:0, val:parseFloat(cfg.dataset.min)},
+    {pos:parseFloat(cfg.dataset.pctp), val:parseFloat(cfg.dataset.p)},
+    {pos:parseFloat(cfg.dataset.pctr), val:parseFloat(cfg.dataset.r)},
+    {pos:parseFloat(cfg.dataset.pcto), val:parseFloat(cfg.dataset.o)},
+    {pos:100, val:parseFloat(cfg.dataset.max)}
+  ];
+}
+// The native <input type=range> runs 0-10000 (a plain 0.00%-100.00% position, not
+// a dollar amount) so its physical thumb travel can follow the warped scale above
+// — this converts a raw slider reading back into the actual annual revenue dollar
+// figure everything else in Negotiation Tools expects.
+function _revTargetSliderToVal(recId, rawSliderValue){
+  const bp = _revTargetBpFromDom(recId);
+  if(!bp) return 0;
+  return Math.round(_revTargetPosToVal(bp, parseFloat(rawSliderValue)/100));
+}
+
 function revTargetPreview(recId, val){
   const num = Math.round(parseFloat(val));
   if(!isFinite(num)) return;
@@ -32712,7 +32771,7 @@ function _unitAllocReadDom(recId){
 }
 function _unitAllocTotal(recId){
   const slider = document.getElementById('revTargetSlider_'+recId);
-  if(slider) return parseFloat(slider.value) || 0;
+  if(slider) return _revTargetSliderToVal(recId, slider.value) || 0;
   const cfg = document.getElementById('revTargetConfig_'+recId);
   return cfg ? (parseFloat(cfg.dataset.r) || 0) : 0;
 }
