@@ -30901,7 +30901,7 @@ function renderCalculatorTab(r){
   // negotiation alongside expenses + ROI, keeping Rental Concessions and the Rent
   // Adjustment dial in lock-step. Pro-gate preserved via tierGateHtml fallback.
   h += '<div style="margin-top:24px;padding-top:20px;border-top:2px solid var(--border)">';
-  h += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px"><span style="font-size:1.1rem">🤝</span><h3 style="margin:0;font-size:1rem;font-weight:700;color:var(--text)">Negotiation Tools</h3></div>';
+  h += '<div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:14px"><span style="font-size:1.1rem">🤝</span><h3 style="margin:0;font-size:1rem;font-weight:700;color:var(--text)">Negotiation Tools</h3></div>';
   if(requireTier('pro','')){
     h += renderNegotiationTab(r);
   } else {
@@ -31049,6 +31049,16 @@ function renderNegotiationTab(r){
     const _rtPct = x => Math.max(0, Math.min(100, (x - _rtMin) / _rtSpan * 100));
     const _rtPctP = _rtPct(_rtP), _rtPctR = _rtPct(_rtR), _rtPctO = _rtPct(_rtO);
     const _rtDiffPct = _rtR > 0 ? Math.round((_rtVal - _rtR) / _rtR * 100) : 0;
+    // Display-only positions for the Pessimistic/Optimistic markers (and the matching
+    // gradient stops below): the true percentages above are correct for the slider's
+    // actual min/max/value math, but when Pessimistic and Optimistic sit close to
+    // Realistic in dollar terms they land visually bunched near the middle of the
+    // track. Push their MARKER position further from Realistic by a fixed multiplier
+    // — the dollar figures shown next to them (_rtP/_rtO) never change, only where
+    // the label sits along the bar.
+    const _rtSpreadMult = 1.8;
+    const _rtDispPctP = Math.max(4, _rtPctR - (_rtPctR - _rtPctP) * _rtSpreadMult);
+    const _rtDispPctO = Math.min(96, _rtPctR + (_rtPctO - _rtPctR) * _rtSpreadMult);
 
     h += '<div style="text-align:center;margin:8px 0 2px">';
     h += '<span class="co-rev-value" id="revTargetValTop_'+r.id+'" onclick="openRevTargetInput(\''+r.id+'\')" title="Click to type an exact revenue">'+fmtMoney(_rtVal)+'/yr</span>';
@@ -31058,13 +31068,13 @@ function renderNegotiationTab(r){
     h += '<div id="revTargetConfig_'+r.id+'" data-min="'+_rtMin+'" data-max="'+_rtMax+'" data-p="'+_rtP+'" data-r="'+_rtR+'" data-o="'+_rtO+'" style="display:none"></div>';
 
     h += '<div style="position:relative;padding:0 2px">';
-    h += '<input type="range" class="co-rev-slider" id="revTargetSlider_'+r.id+'" min="'+_rtMin+'" max="'+_rtMax+'" step="'+_rtStep+'" value="'+_rtVal+'" style="background:linear-gradient(90deg, #000000 0%, #ef4444 '+_rtPctP.toFixed(2)+'%, #3b82f6 '+_rtPctR.toFixed(2)+'%, #10b981 '+_rtPctO.toFixed(2)+'%, #d4af37 100%)" oninput="revTargetPreview(\''+r.id+'\',this.value)" onchange="revTargetCommit(\''+r.id+'\',this.value)">';
+    h += '<input type="range" class="co-rev-slider" id="revTargetSlider_'+r.id+'" min="'+_rtMin+'" max="'+_rtMax+'" step="'+_rtStep+'" value="'+_rtVal+'" style="background:linear-gradient(90deg, #000000 0%, #ef4444 '+_rtDispPctP.toFixed(2)+'%, #3b82f6 '+_rtPctR.toFixed(2)+'%, #10b981 '+_rtDispPctO.toFixed(2)+'%, #d4af37 100%)" oninput="revTargetPreview(\''+r.id+'\',this.value)" onchange="revTargetCommit(\''+r.id+'\',this.value)">';
 
     h += '<div style="position:relative;height:34px;margin-top:4px">';
     h += '<div style="position:absolute;left:0;top:0;font-size:.62rem;color:var(--text3);text-align:left"><div style="font-weight:600">'+fmtMoney(_rtMin)+'</div>-25%</div>';
-    h += '<div style="position:absolute;left:'+_rtPctP.toFixed(2)+'%;top:0;transform:translateX(-50%);text-align:center;cursor:pointer" onclick="setCalcProjMode(\'pessimistic\')" title="Set revenue to Pessimistic"><div style="font-size:.66rem;font-weight:700;color:var(--num-danger)">Pessimistic</div><div style="font-size:.62rem;color:var(--text3)">'+fmtMoney(_rtP)+'</div></div>';
+    h += '<div style="position:absolute;left:'+_rtDispPctP.toFixed(2)+'%;top:0;transform:translateX(-50%);text-align:center;cursor:pointer" onclick="setCalcProjMode(\'pessimistic\')" title="Set revenue to Pessimistic"><div style="font-size:.66rem;font-weight:700;color:var(--num-danger)">Pessimistic</div><div style="font-size:.62rem;color:var(--text3)">'+fmtMoney(_rtP)+'</div></div>';
     h += '<div style="position:absolute;left:'+_rtPctR.toFixed(2)+'%;top:0;transform:translateX(-50%);text-align:center;cursor:pointer" onclick="setCalcProjMode(\'realistic\')" title="Set revenue to Realistic"><div style="font-size:.66rem;font-weight:700;color:var(--num-computed)">Realistic</div><div style="font-size:.62rem;color:var(--text3)">'+fmtMoney(_rtR)+'</div></div>';
-    h += '<div style="position:absolute;left:'+_rtPctO.toFixed(2)+'%;top:0;transform:translateX(-50%);text-align:center;cursor:pointer" onclick="setCalcProjMode(\'optimistic\')" title="Set revenue to Optimistic"><div style="font-size:.66rem;font-weight:700;color:var(--num-success)">Optimistic</div><div style="font-size:.62rem;color:var(--text3)">'+fmtMoney(_rtO)+'</div></div>';
+    h += '<div style="position:absolute;left:'+_rtDispPctO.toFixed(2)+'%;top:0;transform:translateX(-50%);text-align:center;cursor:pointer" onclick="setCalcProjMode(\'optimistic\')" title="Set revenue to Optimistic"><div style="font-size:.66rem;font-weight:700;color:var(--num-success)">Optimistic</div><div style="font-size:.62rem;color:var(--text3)">'+fmtMoney(_rtO)+'</div></div>';
     h += '<div style="position:absolute;right:0;top:0;font-size:.62rem;color:var(--text3);text-align:right"><div style="font-weight:600">'+fmtMoney(_rtMax)+'</div>+25%</div>';
     h += '</div>';
     h += '</div>';
