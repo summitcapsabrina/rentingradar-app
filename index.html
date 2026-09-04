@@ -30393,6 +30393,7 @@ function renderCalculatorTab(r){
   // ══════ SECTION VARIABLES ══════
   let kpiHtml = '';
   let pynHtml = '';
+  let cushionHtml = '';
   let dealHtml = '';
   let paybackHtml = '';
 
@@ -30695,11 +30696,57 @@ function renderCalculatorTab(r){
 
   pynHtml += '</div></div>';
 
+  const selectedCol = cols.find(c => c.key === calcProjMode) || cols[1];
+
+  // ─────────────────────────────────────────
+  // SECTION 4.5: Rent Cushion
+  // ─────────────────────────────────────────
+  // How much more rent this deal could absorb (at the selected scenario)
+  // before Monthly Net hits $0 — the same breakeven-rent math the Negotiation
+  // Tools rent dial uses (_rentForTarget(0) there), computed here directly
+  // from `cols` so it's visible on every tier, not just Pro.
+  {
+    const hasCushionData = !insufficientComps && selectedCol.hasData;
+    const breakevenAnnualRev = hasCushionData ? (selectedCol.rev + projAnnualIncome - selectedCol.exp) : 0;
+    const breakevenRent = hasCushionData ? Math.max(0, Math.round(breakevenAnnualRev / 12)) : 0;
+    const cushion = hasCushionData ? Math.round(breakevenRent - v.monthlyRent) : 0;
+    const cushionColor = cushion >= 0 ? 'var(--num-success)' : 'var(--num-danger)';
+    const cushionLabel = cushion >= 0
+      ? fmtMoney(cushion) + '/mo of cushion before this goes negative'
+      : fmtMoney(Math.abs(cushion)) + '/mo over breakeven already';
+
+    cushionHtml += '<div class="calc-section"'+(hasCushionData?'':' style="opacity:.5"')+'><div class="calc-section-header"'+tipAttrs('Rent Cushion','How much more rent this deal could absorb before Monthly Net hits $0, at the selected projection.\\n\\nFormula: Breakeven Rent − Current Rent, where Breakeven Rent is the rent that would make Annual Revenue + Additional Income − Annual Expenses − Annual Rent = 0.\\n\\nUses the same math as the Rent Adjustment dial in Negotiation Tools below.')+'>Rent Cushion</div><div class="calc-section-body" style="padding:10px 14px">';
+
+    if(!hasCushionData){
+      cushionHtml += '<div style="text-align:center;padding:14px 0;color:var(--text3);font-size:.82rem;font-style:italic">'+compsReqMsgShort+' to calculate</div>';
+    } else {
+      cushionHtml += '<div style="display:flex;justify-content:space-between;font-size:.8rem;margin-bottom:10px">';
+      cushionHtml += '<div><div style="color:var(--text3);font-size:.68rem;text-transform:uppercase;letter-spacing:.3px">Paying Now</div><div style="font-weight:700;color:var(--text)">'+fmtMoney(v.monthlyRent)+'<span style="font-weight:400;color:var(--text3)">/mo</span></div></div>';
+      cushionHtml += '<div style="text-align:right"><div style="color:var(--text3);font-size:.68rem;text-transform:uppercase;letter-spacing:.3px">Breakeven Rent</div><div style="font-weight:700;color:var(--text)">'+fmtMoney(breakevenRent)+'<span style="font-weight:400;color:var(--text3)">/mo</span></div></div>';
+      cushionHtml += '</div>';
+
+      const barMax = Math.max(v.monthlyRent, breakevenRent, 1) * 1.1;
+      const curPct = Math.min(100, (v.monthlyRent / barMax) * 100).toFixed(1);
+      const bePct = Math.min(100, (breakevenRent / barMax) * 100).toFixed(1);
+      const loPct = Math.min(parseFloat(curPct), parseFloat(bePct));
+      const hiPct = Math.max(parseFloat(curPct), parseFloat(bePct));
+
+      cushionHtml += '<div style="position:relative;height:10px;border-radius:5px;background:var(--bg);overflow:hidden;margin-bottom:6px">';
+      cushionHtml += '<div style="position:absolute;left:'+loPct+'%;width:'+(hiPct-loPct)+'%;height:100%;background:'+cushionColor+';opacity:.35"></div>';
+      cushionHtml += '<div style="position:absolute;left:'+curPct+'%;top:-3px;width:2px;height:16px;background:var(--text);transform:translateX(-1px)" title="Current rent"></div>';
+      cushionHtml += '<div style="position:absolute;left:'+bePct+'%;top:-3px;width:2px;height:16px;background:'+cushionColor+';transform:translateX(-1px)" title="Breakeven rent"></div>';
+      cushionHtml += '</div>';
+      cushionHtml += '<div style="display:flex;justify-content:space-between;font-size:.6rem;color:var(--text3);margin-bottom:12px"><span>$0</span><span>current rent · breakeven rent</span></div>';
+
+      cushionHtml += '<div style="text-align:center;font-size:.85rem;font-weight:700;color:'+cushionColor+'">'+cushionLabel+'</div>';
+    }
+    cushionHtml += '</div></div>';
+  }
+
   // ─────────────────────────────────────────
   // SECTION 5: Deal Temperature
   // ─────────────────────────────────────────
 
-  const selectedCol = cols.find(c => c.key === calcProjMode) || cols[1];
   const dealMonthlyNet = selectedCol.hasData ? selectedCol.monthlyNet : 0;
   // Pull Profit Req from Analysis tab (default $1,000/mo) to calibrate deal temperature
   const _dtAn = getAnalysis(r);
@@ -30800,9 +30847,10 @@ function renderCalculatorTab(r){
   }
 
   // ══════ ASSEMBLE PANELS ══════
-  // LEFT PANEL: KPIs
+  // LEFT PANEL: KPIs + Rent Cushion
   h += '<div class="calc-panel">';
   h += kpiHtml;
+  h += cushionHtml;
   h += '</div>';
 
   // RIGHT PANEL: PYN + Deal Temperature
