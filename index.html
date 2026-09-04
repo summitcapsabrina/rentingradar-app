@@ -1443,8 +1443,8 @@ h1 .hero-edit-input{font-size:1.35rem}
 .calc-pct input{width:100%}
 /* Summary boxes on right panel */
 .calc-kpi-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px}
-.calc-kpi-grid-left .calc-kpi{padding:12px 10px}
-.calc-kpi{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 16px;text-align:center}
+.calc-kpi-grid-left .calc-kpi{padding:14px 10px}
+.calc-kpi{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 16px;text-align:center;display:flex;flex-direction:column;justify-content:center}
 .calc-kpi .kpi-label{font-size:.75rem;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);font-weight:600;margin-bottom:6px;display:flex;flex-direction:column;align-items:center;gap:3px}
 .kpi-proj-tag{font-size:.58rem;font-weight:700;letter-spacing:.5px;text-transform:uppercase;padding:1px 8px;border:1px solid;border-radius:10px;line-height:1.5;opacity:.85}
 .calc-kpi .kpi-monthly{font-size:1.25rem;font-weight:700;color:var(--text);line-height:1.4}
@@ -1452,6 +1452,9 @@ h1 .hero-edit-input{font-size:1.35rem}
 .calc-kpi .kpi-annual{font-size:.78rem;color:var(--text3);margin-top:6px}
 .calc-kpi.positive .kpi-monthly{color:var(--num-success)}
 .calc-kpi.negative .kpi-monthly{color:var(--num-danger)}
+.kpi-ring-wrap{display:flex;justify-content:center;margin:2px 0}
+.kpi-progress-track{width:100%;height:6px;border-radius:3px;background:var(--bg);overflow:hidden;margin:9px 0 2px}
+.kpi-progress-fill{height:100%;border-radius:3px;transition:width .3s}
 /* Payback table */
 .payback-chart{display:flex;flex-direction:column;gap:4px}
 .payback-row{display:flex;align-items:center;gap:6px;height:22px}
@@ -30343,22 +30346,33 @@ function renderCalculatorTab(r){
   const kpiMonthlyCF = _pynMonthlyNet;
   const kpiAnnualCF = kpiMonthlyCF * 12;
   const kpiCoC = v.totalInvested > 0 ? (kpiAnnualCF / v.totalInvested * 100) : 0;
+  const kpiCoCColor = kpiCoC < 10 ? '#ef4444' : kpiCoC < 20 ? '#f59e0b' : '#10b981';
   // Profit Margin — what share of every dollar coming in (revenue + additional
   // income) survives as profit. Different question from CoC Return, which
   // measures return on invested capital rather than margin on income.
   const kpiMarginIncome = _pynRev + _pynAnnualIncome;
   const kpiMarginPct = v.hasProjectionData && kpiMarginIncome > 0 ? (_pynNet / kpiMarginIncome * 100) : 0;
   const kpiMarginColor = kpiMarginPct < 15 ? '#ef4444' : kpiMarginPct < 30 ? '#f59e0b' : '#10b981';
-  // Rent Cushion — how much more rent this deal could absorb before Monthly
-  // Net hits $0, at the selected scenario. Same breakeven-rent math the
-  // Negotiation Tools rent dial uses (_rentForTarget(0) there).
-  const kpiBreakevenRent = Math.max(0, Math.round((kpiMarginIncome - _pynExp) / 12));
-  const kpiRentCushion = Math.round(kpiBreakevenRent - v.monthlyRent);
-  const kpiCushionColor = kpiRentCushion >= 0 ? '#10b981' : '#ef4444';
+  // Occupancy Cushion — how far assumed occupancy could drop, at the current
+  // nightly rate, before Monthly Net hits $0. A different lever than Cash
+  // Flow (which is just this same breakeven restated in dollars) — occupancy
+  // is the thing that actually swings season to season, rent doesn't.
+  // deriveFromRev(annualRevenue) is linear in its input (every cost term is
+  // either fixed or a flat % of revenue), so two sample points give the exact
+  // breakeven revenue by interpolation — no iterative solving needed.
+  const _occEvalRev = 100000;
+  const _occCfAtZero = v.hasProjectionData ? v.deriveFromRev(0).annualCF : 0;
+  const _occCfAtEval = v.hasProjectionData ? v.deriveFromRev(_occEvalRev).annualCF : 0;
+  const _occSlope = (_occCfAtEval - _occCfAtZero) / _occEvalRev;
+  const kpiBreakevenRevenue = (v.hasProjectionData && _occSlope !== 0) ? Math.max(0, -_occCfAtZero / _occSlope) : 0;
+  const kpiCurOccPct = v.estOccupancyRate || 0;
+  const kpiBreakevenOccPct = (v.hasProjectionData && _pynRev > 0) ? kpiCurOccPct * (kpiBreakevenRevenue / _pynRev) : 0;
+  const kpiOccCushionColor = kpiCurOccPct >= kpiBreakevenOccPct ? '#10b981' : '#ef4444';
   // Color Cash Flow & CoC using deal temperature bands based on profit requirement
   const _kpiPR = parseFloat((r.details && r.details.analysis && r.details.analysis.profitRequirement) || 0) || defaultProfitReq(r);
   const _kpiPRHalf = Math.round(_kpiPR * 0.5);
   const _dtColor = kpiMonthlyCF >= _kpiPR ? '#10b981' : kpiMonthlyCF >= _kpiPRHalf ? '#3b82f6' : kpiMonthlyCF > 0 ? '#f59e0b' : '#ef4444';
+  const kpiCFProgressPct = _kpiPR > 0 ? Math.max(0, Math.min(100, (kpiMonthlyCF / _kpiPR) * 100)) : 0;
   const cfClass = '';
   const cocClass = '';
   const modeLabels = { optimistic: 'Optimistic', realistic: 'Realistic', pessimistic: 'Pessimistic' };
@@ -30412,6 +30426,30 @@ function renderCalculatorTab(r){
   // SECTION 2: KPI Cards
   // ─────────────────────────────────────────
 
+  // Small radial progress ring, shared by the three ring-based cards below.
+  // `pct` is the raw value shown as text (can be negative or exceed the
+  // ring's 100% cap); the ring itself only ever fills 0-100%. `markerPct`,
+  // when given, draws a short tick at that position — used by Occupancy
+  // Cushion to mark the breakeven threshold against the filled value.
+  function kpiRing(pct, color, markerPct, labelOverride){
+    const r = 30, cx = 40, cy = 40, circumference = 2 * Math.PI * r;
+    const ringPct = Math.max(0, Math.min(100, pct));
+    const dashOffset = circumference * (1 - ringPct / 100);
+    let s = '<svg viewBox="0 0 80 80" style="width:72px;height:72px">';
+    s += '<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="var(--bg)" stroke-width="8"/>';
+    s += '<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="'+color+'" stroke-width="8" stroke-linecap="round" stroke-dasharray="'+circumference.toFixed(1)+'" stroke-dashoffset="'+dashOffset.toFixed(1)+'" transform="rotate(-90 '+cx+' '+cy+')"/>';
+    if(markerPct != null){
+      const mp = Math.max(0, Math.min(100, markerPct));
+      const angle = (mp / 100) * 2 * Math.PI - Math.PI / 2;
+      const mx1 = cx + Math.cos(angle) * (r - 6), my1 = cy + Math.sin(angle) * (r - 6);
+      const mx2 = cx + Math.cos(angle) * (r + 6), my2 = cy + Math.sin(angle) * (r + 6);
+      s += '<line x1="'+mx1.toFixed(1)+'" y1="'+my1.toFixed(1)+'" x2="'+mx2.toFixed(1)+'" y2="'+my2.toFixed(1)+'" stroke="var(--text)" stroke-width="2.5" stroke-linecap="round"/>';
+    }
+    s += '<text x="'+cx+'" y="'+(cy+6)+'" text-anchor="middle" font-size="18" font-weight="800" fill="var(--text)">'+(labelOverride != null ? labelOverride : Math.round(pct)+'%')+'</text>';
+    s += '</svg>';
+    return s;
+  }
+
   // KPI Cards
   kpiHtml += '<div class="calc-kpi-grid calc-kpi-grid-left"' + (insufficientComps ? ' style="opacity:.5"' : '') + '>';
   kpiHtml += '<div class="calc-kpi"'+tipAttrs('Net Operating Income','Projected revenue minus all operating expenses (co-host, Airbnb fees, cleaning, utilities, etc.). Does not include rent.')+'><div class="kpi-label">Net Operating Income'+projTagHtml+'</div><div class="kpi-monthly">'+(insufficientComps ? '<span style="color:var(--text3)">$—<span class="kpi-per">/mo</span></span>' : fmtMoney(Math.round(kpiNOI))+'<span class="kpi-per">/mo</span>')+'</div><div class="kpi-annual">'+(insufficientComps ? '<span style="color:var(--text3);font-size:.7rem">$—/yr</span>' : fmtMoney(Math.round(kpiAnnualNOI))+'/yr')+'</div></div>';
@@ -30426,10 +30464,10 @@ function renderCalculatorTab(r){
   // honor only the first one (silently dropping cursor:help).
   const _prDefaultNote = _kpiDefaultPR > 1000 ? 'Default $1,000/mo per unit ('+v.unitsCount+' units = '+fmtMoney(_kpiDefaultPR)+'/mo). Click the pencil to edit.' : 'Default $1,000/mo. Click the pencil to edit.';
   kpiHtml += '<div class="calc-kpi"'+tipAttrs('Profit Requirement','Your minimum desired monthly net profit. Drives Deal Temperature, the rent dial color bands, and Required Revenue.\\n\\nDoes NOT change NOI, Cash Flow, CoC, or Payback — just labels whether they\\x27re good enough.\\n\\n'+_prDefaultNote)+'><div class="kpi-label">Profit Requirement<div class="kpi-proj-tag" style="'+_prPillColor+'">'+_prPillLabel+'</div></div><div class="kpi-monthly">'+fmtMoney(_kpiProfitReq)+'<span class="kpi-per">/mo</span> <span onclick="event.stopPropagation();editAnalysisProfitReq(\''+r.id+'\')" title="Edit profit requirement" style="font-size:.65rem;opacity:.45;margin-left:2px;cursor:pointer;padding:2px 4px;border-radius:3px" onmouseover="this.style.opacity=1;this.style.background=\'var(--bg2)\'" onmouseout="this.style.opacity=.45;this.style.background=\'transparent\'">✏️</span></div><div class="kpi-annual">'+fmtMoney(_kpiProfitReq*12)+'/yr</div></div>';
-  kpiHtml += '<div class="calc-kpi"'+tipAttrs('Cash Flow','Net Operating Income minus rent.\\n\\nThis is your estimated take-home profit after all expenses and rent.')+'><div class="kpi-label">Cash Flow'+projTagHtml+'</div><div class="kpi-monthly" style="'+(insufficientComps?'':'color:'+_dtColor)+'">'+(insufficientComps ? '<span style="color:var(--text3)">$—<span class="kpi-per">/mo</span></span>' : fmtMoney(Math.round(kpiMonthlyCF))+'<span class="kpi-per">/mo</span>')+'</div><div class="kpi-annual">'+(insufficientComps ? '<span style="color:var(--text3);font-size:.7rem">$—/yr</span>' : fmtMoney(Math.round(kpiAnnualCF))+'/yr')+'</div></div>';
-  kpiHtml += '<div class="calc-kpi"'+tipAttrs('Cash on Cash Return','Annual cash flow ÷ total investment × 100.\\n\\nA higher percentage means your investment pays for itself faster.')+'><div class="kpi-label">Cash on Cash Return'+projTagHtml+'</div><div class="kpi-monthly" style="'+(insufficientComps?'':'color:'+_dtColor)+'">'+(insufficientComps ? '<span style="color:var(--text3)">—%</span>' : kpiCoC.toFixed(1)+'%')+'</div><div class="kpi-annual">'+(insufficientComps ? '<span style="color:var(--text3);font-size:.7rem">$— invested</span>' : fmtMoney(Math.round(v.totalInvested))+' invested')+'</div></div>';
-  kpiHtml += '<div class="calc-kpi"'+tipAttrs('Profit Margin','What share of every dollar coming in (revenue + additional income) survives as profit, at the selected projection.\\n\\nFormula: Net ÷ (Revenue + Additional Income) × 100.\\n\\nDifferent from Cash on Cash Return, which measures return on your invested capital — this measures margin on your income.')+'><div class="kpi-label">Profit Margin'+projTagHtml+'</div><div class="kpi-monthly" style="'+(insufficientComps?'':'color:'+kpiMarginColor)+'">'+(insufficientComps ? '<span style="color:var(--text3)">—%</span>' : Math.round(kpiMarginPct)+'%')+'</div><div class="kpi-annual">'+(insufficientComps ? '<span style="color:var(--text3);font-size:.7rem">$— net</span>' : fmtMoney(Math.round(_pynNet/12))+'/mo net')+'</div></div>';
-  kpiHtml += '<div class="calc-kpi"'+tipAttrs('Rent Cushion','How much more rent this deal could absorb before Monthly Net hits $0, at the selected projection.\\n\\nFormula: Breakeven Rent − Current Rent, where Breakeven Rent is the rent that would make Revenue + Additional Income − Expenses − Rent = 0.\\n\\nUses the same math as the Rent Adjustment dial in Negotiation Tools below.')+'><div class="kpi-label">Rent Cushion'+projTagHtml+'</div><div class="kpi-monthly" style="'+(insufficientComps?'':'color:'+kpiCushionColor)+'">'+(insufficientComps ? '<span style="color:var(--text3)">$—<span class="kpi-per">/mo</span></span>' : fmtMoney(kpiRentCushion)+'<span class="kpi-per">/mo</span>')+'</div><div class="kpi-annual">'+(insufficientComps ? '<span style="color:var(--text3);font-size:.7rem">breakeven $—</span>' : 'breakeven '+fmtMoney(kpiBreakevenRent)+'/mo')+'</div></div>';
+  kpiHtml += '<div class="calc-kpi"'+tipAttrs('Cash Flow','Net Operating Income minus rent.\\n\\nThis is your estimated take-home profit after all expenses and rent. The bar below shows progress toward your Profit Requirement target.')+'><div class="kpi-label">Cash Flow'+projTagHtml+'</div><div class="kpi-monthly" style="'+(insufficientComps?'':'color:'+_dtColor)+'">'+(insufficientComps ? '<span style="color:var(--text3)">$—<span class="kpi-per">/mo</span></span>' : fmtMoney(Math.round(kpiMonthlyCF))+'<span class="kpi-per">/mo</span>')+'</div><div class="kpi-progress-track"><div class="kpi-progress-fill" style="width:'+(insufficientComps?0:kpiCFProgressPct)+'%;background:'+(insufficientComps?'var(--border)':_dtColor)+'"></div></div><div class="kpi-annual">'+(insufficientComps ? '<span style="color:var(--text3);font-size:.7rem">$—/yr</span>' : Math.round(kpiCFProgressPct)+'% of '+fmtMoney(_kpiPR)+'/mo target')+'</div></div>';
+  kpiHtml += '<div class="calc-kpi"'+tipAttrs('Cash on Cash Return','Annual cash flow ÷ total investment × 100.\\n\\nA higher percentage means your investment pays for itself faster.')+'><div class="kpi-label">Cash on Cash Return'+projTagHtml+'</div><div class="kpi-ring-wrap">'+(insufficientComps ? kpiRing(0,'var(--border)',null,'—') : kpiRing(kpiCoC, kpiCoCColor))+'</div><div class="kpi-annual">'+(insufficientComps ? '<span style="color:var(--text3);font-size:.7rem">$— invested</span>' : fmtMoney(Math.round(v.totalInvested))+' invested')+'</div></div>';
+  kpiHtml += '<div class="calc-kpi"'+tipAttrs('Profit Margin','What share of every dollar coming in (revenue + additional income) survives as profit, at the selected projection.\\n\\nFormula: Net ÷ (Revenue + Additional Income) × 100.\\n\\nDifferent from Cash on Cash Return, which measures return on your invested capital — this measures margin on your income.')+'><div class="kpi-label">Profit Margin'+projTagHtml+'</div><div class="kpi-ring-wrap">'+(insufficientComps ? kpiRing(0,'var(--border)',null,'—') : kpiRing(kpiMarginPct, kpiMarginColor))+'</div><div class="kpi-annual">'+(insufficientComps ? '<span style="color:var(--text3);font-size:.7rem">$— net</span>' : fmtMoney(Math.round(_pynNet/12))+'/mo net')+'</div></div>';
+  kpiHtml += '<div class="calc-kpi"'+tipAttrs('Occupancy Cushion','How far your assumed occupancy could drop, at your current nightly rate, before Monthly Net hits $0, at the selected projection.\\n\\nThe ring shows your assumed occupancy; the tick marks the breakeven occupancy where profit hits zero.\\n\\nA different lever than Cash Flow — occupancy swings with the market and season, rent doesn\\x27t.')+'><div class="kpi-label">Occupancy Cushion'+projTagHtml+'</div><div class="kpi-ring-wrap">'+(insufficientComps ? kpiRing(0,'var(--border)',null,'—') : kpiRing(kpiCurOccPct, kpiOccCushionColor, kpiBreakevenOccPct))+'</div><div class="kpi-annual">'+(insufficientComps ? '<span style="color:var(--text3);font-size:.7rem">breakeven —%</span>' : 'breakeven '+Math.round(kpiBreakevenOccPct)+'%')+'</div></div>';
   kpiHtml += '</div>';
 
   // ─────────────────────────────────────────
