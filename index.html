@@ -28646,7 +28646,7 @@ function calcComputeAll(r){
   const projectedD = hasProjectionData ? deriveFromRev(projectedRevenue) : deriveFromRev(annualRevenue);
   const optimisticD = hasProjectionData ? deriveFromRev(optimisticRevenue) : null;
   const pessimisticD = hasProjectionData ? deriveFromRev(pessimisticRevenue) : null;
-  return { c, br, monthlyRent, furnishCost, totalInvested, avgDailyRate, estOccupancyRate, daysOccupied, annualRevenue, monthlyRevenue, cleaning, coHostFee, airbnbFee, customExpensesTotal, additionalIncomeTotal, totalMonthlyExp, annualExp, monthlyNOI, annualNOI, monthlyCF, annualCF, cocReturn, compsCount: comps.length, comps, projectedRevenue, optimisticRevenue, pessimisticRevenue, hasProjectionData, projectedD, optimisticD, pessimisticD, deriveFromRev, isApt, unitsCount, unitMult, totalCommonSpaces, totalInvestedPerUnit, totalMonthlyExpPerUnit, unitBreakdown, unitsMissingOwnComps };
+  return { c, br, monthlyRent, furnishCost, totalInvested, avgDailyRate, estOccupancyRate, daysOccupied, annualRevenue, monthlyRevenue, cleaning, coHostFee, airbnbFee, customExpensesTotal, additionalIncomeTotal, totalMonthlyExp, annualExp, monthlyNOI, annualNOI, monthlyCF, annualCF, cocReturn, compsCount: comps.length, projectedRevenue, optimisticRevenue, pessimisticRevenue, hasProjectionData, projectedD, optimisticD, pessimisticD, deriveFromRev, isApt, unitsCount, unitMult, totalCommonSpaces, totalInvestedPerUnit, totalMonthlyExpPerUnit, unitBreakdown, unitsMissingOwnComps };
 }
 
 // Shared "not enough comps yet" copy for the Projected ROI tab and its
@@ -30393,7 +30393,7 @@ function renderCalculatorTab(r){
   // ══════ SECTION VARIABLES ══════
   let kpiHtml = '';
   let pynHtml = '';
-  let compSpreadHtml = '';
+  let sideVisualHtml = '';
   let dealHtml = '';
   let paybackHtml = '';
 
@@ -30699,77 +30699,36 @@ function renderCalculatorTab(r){
   const selectedCol = cols.find(c => c.key === calcProjMode) || cols[1];
 
   // ─────────────────────────────────────────
-  // SECTION 4.5: Comp Rate Spread
+  // SECTION 4.5: Profit Margin
   // ─────────────────────────────────────────
-  // A beeswarm of every comp's nightly rate — each dot is one comp; vertical
-  // position only exists to keep dots from overlapping, horizontal position
-  // (rate) is the only thing that means anything. The diamond marks the
-  // average rate that actually drives this property's revenue projection
-  // (v.avgDailyRate), so you can see the real spread behind that one number
-  // instead of just the number itself.
+  // A radial ring showing Net Profit as a % of total income (comp revenue +
+  // additional income), at the selected scenario — never shown anywhere else
+  // on this tab. The KPIs show dollar Cash Flow and CoC% (return on invested
+  // capital); this shows what share of every dollar coming in survives as
+  // profit, which is a different question.
   {
-    const swarmComps = (v.comps || []).filter(cx => parseFloat(cx.nightlyRate) > 0);
-    compSpreadHtml += '<div class="calc-section"'+(insufficientComps?' style="opacity:.5"':'')+'><div class="calc-section-header"'+tipAttrs('Comp Rate Spread','Every comparable\\x27s nightly rate, plotted as its own dot.\\n\\nVertical position only avoids overlap — horizontal position (rate) is all that means anything.\\n\\nThe diamond marks the average rate that drives this property\\x27s revenue projection.')+'>Comp Rate Spread</div><div class="calc-section-body" style="padding:10px 14px">';
+    const hasMarginData = !insufficientComps && selectedCol.hasData;
+    const marginTotalIncome = hasMarginData ? (selectedCol.rev + projAnnualIncome) : 0;
+    const marginPct = hasMarginData && marginTotalIncome > 0 ? (selectedCol.net / marginTotalIncome * 100) : 0;
+    const marginColor = !hasMarginData ? 'var(--text3)' : marginPct < 15 ? 'var(--num-danger)' : marginPct < 30 ? 'var(--num-warning)' : 'var(--num-success)';
+    const marginRingPct = Math.max(0, Math.min(100, marginPct));
 
-    if(insufficientComps || swarmComps.length < 2){
-      compSpreadHtml += '<div style="text-align:center;padding:18px 0;color:var(--text3);font-size:.82rem;font-style:italic">'+(insufficientComps ? compsReqMsgShort+' to calculate' : 'Not enough comps with a nightly rate yet')+'</div>';
+    sideVisualHtml += '<div class="calc-section"'+(hasMarginData?'':' style="opacity:.5"')+'><div class="calc-section-header"'+tipAttrs('Profit Margin','What share of every dollar coming in survives as profit, at the selected projection.\\n\\nFormula: Net ÷ (Revenue + Additional Income) × 100.\\n\\nDifferent from Cash on Cash Return, which measures return on your invested capital — this measures margin on your income.')+'>Profit Margin</div><div class="calc-section-body" style="padding:12px 14px;text-align:center">';
+
+    if(!hasMarginData){
+      sideVisualHtml += '<div style="padding:22px 0;color:var(--text3);font-size:.82rem;font-style:italic">'+compsReqMsgShort+' to calculate</div>';
     } else {
-      const rates = swarmComps.map(cx => parseFloat(cx.nightlyRate));
-      let rMin = Math.min.apply(null, rates), rMax = Math.max.apply(null, rates);
-      if(rMax === rMin){ rMin -= 10; rMax += 10; } // degenerate: every comp has the same rate — pad so it's not glued to an edge
-      const rangePad = (rMax - rMin) * 0.12;
-      rMin = Math.max(0, rMin - rangePad);
-      rMax = rMax + rangePad;
-      const rangeSpan = (rMax - rMin) || 1;
-      const svgW = 400, svgH = 84, padX = 18, centerY = 38, laneGap = 10, dotR = 4;
-      function xFor(rate){ return padX + ((rate - rMin) / rangeSpan) * (svgW - padX * 2); }
-      // Lane 0 sits on the center line; each lane after that alternates
-      // above/below, stepping outward — a symmetric swarm instead of a
-      // one-directional stack.
-      function laneY(laneIdx){
-        if(laneIdx === 0) return centerY;
-        const half = Math.ceil(laneIdx / 2);
-        const sign = laneIdx % 2 === 1 ? -1 : 1;
-        return centerY + sign * half * laneGap;
-      }
-
-      // Greedy collision avoidance: place each dot (sorted by rate) into the
-      // first lane where it doesn't land within 2*dotR of another dot
-      // already in that lane.
-      const sortedRates = rates.slice().sort((a,b) => a - b);
-      const lanesX = [];
-      const dots = sortedRates.map(rate => {
-        const x = xFor(rate);
-        let laneIdx = 0;
-        while(lanesX[laneIdx] && lanesX[laneIdx].some(px => Math.abs(px - x) < dotR * 2 + 1)) laneIdx++;
-        if(!lanesX[laneIdx]) lanesX[laneIdx] = [];
-        lanesX[laneIdx].push(x);
-        return { x, y: laneY(laneIdx) };
-      });
-
-      const avgRate = Math.max(rMin, Math.min(rMax, v.avgDailyRate));
-      const avgX = xFor(avgRate);
-
-      compSpreadHtml += '<div style="padding:0 2px">';
-      compSpreadHtml += '<svg viewBox="0 0 '+svgW+' '+svgH+'" style="width:100%;display:block;overflow:visible">';
-      compSpreadHtml += '<line x1="'+padX+'" y1="'+centerY+'" x2="'+(svgW-padX)+'" y2="'+centerY+'" stroke="var(--border)" stroke-width="1"/>';
-      // Average marker drawn first so the comp dots sit visually on top of it.
-      compSpreadHtml += '<line x1="'+avgX.toFixed(1)+'" y1="6" x2="'+avgX.toFixed(1)+'" y2="'+(svgH-14)+'" stroke="var(--primary)" stroke-width="1.5" stroke-dasharray="3,2" opacity=".65"/>';
-      compSpreadHtml += '<rect x="'+(avgX-4.5).toFixed(1)+'" y="1.5" width="9" height="9" transform="rotate(45 '+avgX.toFixed(1)+' 6)" fill="var(--primary)" stroke="var(--surface)" stroke-width="1"/>';
-      dots.forEach(d => {
-        compSpreadHtml += '<circle cx="'+d.x.toFixed(1)+'" cy="'+d.y.toFixed(1)+'" r="'+dotR+'" fill="var(--num-computed)" opacity=".82" stroke="var(--surface)" stroke-width="1"/>';
-      });
-      compSpreadHtml += '</svg>';
-      compSpreadHtml += '</div>';
-
-      compSpreadHtml += '<div style="display:flex;justify-content:space-between;font-size:.62rem;color:var(--text3);margin:2px 2px 4px">';
-      compSpreadHtml += '<span>$'+Math.round(rMin)+'</span>';
-      compSpreadHtml += '<span style="color:var(--primary);font-weight:700">◆ avg $'+Math.round(v.avgDailyRate)+'</span>';
-      compSpreadHtml += '<span>$'+Math.round(rMax)+'</span>';
-      compSpreadHtml += '</div>';
-      compSpreadHtml += '<div style="text-align:center;font-size:.68rem;color:var(--text3)">'+swarmComps.length+' comp'+(swarmComps.length===1?'':'s')+' with rate data</div>';
+      const ringR = 42, ringCx = 50, ringCy = 50, circumference = 2 * Math.PI * ringR;
+      const dashOffset = circumference * (1 - marginRingPct / 100);
+      sideVisualHtml += '<svg viewBox="0 0 100 100" style="width:120px;height:120px;margin:0 auto;display:block">';
+      sideVisualHtml += '<circle cx="'+ringCx+'" cy="'+ringCy+'" r="'+ringR+'" fill="none" stroke="var(--bg)" stroke-width="11"/>';
+      sideVisualHtml += '<circle cx="'+ringCx+'" cy="'+ringCy+'" r="'+ringR+'" fill="none" stroke="'+marginColor+'" stroke-width="11" stroke-linecap="round" stroke-dasharray="'+circumference.toFixed(1)+'" stroke-dashoffset="'+dashOffset.toFixed(1)+'" transform="rotate(-90 '+ringCx+' '+ringCy+')"/>';
+      sideVisualHtml += '<text x="'+ringCx+'" y="'+(ringCy-3)+'" text-anchor="middle" font-size="22" font-weight="800" fill="var(--text)">'+Math.round(marginPct)+'%</text>';
+      sideVisualHtml += '<text x="'+ringCx+'" y="'+(ringCy+16)+'" text-anchor="middle" font-size="8" fill="var(--text3)" letter-spacing=".5">MARGIN</text>';
+      sideVisualHtml += '</svg>';
+      sideVisualHtml += '<div style="font-size:.68rem;color:var(--text3);margin-top:2px">'+fmtMoney(Math.round(selectedCol.net/12))+'/mo net of '+fmtMoney(Math.round(marginTotalIncome/12))+'/mo income</div>';
     }
-    compSpreadHtml += '</div></div>';
+    sideVisualHtml += '</div></div>';
   }
 
   // ─────────────────────────────────────────
@@ -30876,10 +30835,10 @@ function renderCalculatorTab(r){
   }
 
   // ══════ ASSEMBLE PANELS ══════
-  // LEFT PANEL: KPIs + Comp Rate Spread
+  // LEFT PANEL: KPIs + Profit Margin
   h += '<div class="calc-panel">';
   h += kpiHtml;
-  h += compSpreadHtml;
+  h += sideVisualHtml;
   h += '</div>';
 
   // RIGHT PANEL: PYN + Deal Temperature
