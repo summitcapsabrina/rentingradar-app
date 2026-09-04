@@ -1519,11 +1519,10 @@ h1 .hero-edit-input{font-size:1.35rem}
 .an-section{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:14px}
 .an-section-hdr{font-size:.88rem;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:.5px;padding:10px 14px;background:rgba(99,129,250,.06);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px}
 .an-section-body{padding:12px 14px}
-.an-top-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;align-items:stretch}
+.an-top-grid{display:grid;grid-template-columns:1fr;gap:14px;margin-bottom:14px;align-items:stretch}
 .an-top-grid .an-section{display:flex;flex-direction:column;margin-bottom:0}
 .an-top-grid .an-section-body{flex:1;display:flex;flex-direction:column;justify-content:stretch}
 .an-top-grid .an-req-bar{flex:1}
-@media(max-width:900px){.an-top-grid{grid-template-columns:1fr}}
 .an-field-row{display:flex;gap:8px;margin-bottom:8px;align-items:flex-start}
 .an-field-label{font-size:.78rem;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;min-width:76px;padding-top:4px;flex-shrink:0}
 .an-field-val{font-size:.92rem;color:var(--text);flex:1}
@@ -1602,14 +1601,8 @@ h1 .hero-edit-input{font-size:1.35rem}
 .comp-section{border-radius:var(--radius);overflow:hidden;margin-bottom:16px;border:1px solid var(--border)}
 .comp-section-hdr{font-size:.84rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:8px}
 .comp-section-hdr .comp-section-count{font-size:.72rem;font-weight:500;opacity:.7;text-transform:none;letter-spacing:0}
-.comp-section.loses-to .comp-section-hdr{background:rgba(239,68,68,.08);color:#ef4444;border-bottom:1px solid rgba(239,68,68,.2)}
-.comp-section.competes-with .comp-section-hdr{background:rgba(99,129,250,.08);color:var(--primary);border-bottom:1px solid rgba(99,129,250,.2)}
-.comp-section.beats .comp-section-hdr{background:rgba(16,185,129,.08);color:#10b981;border-bottom:1px solid rgba(16,185,129,.2)}
+.comp-section.all-comps .comp-section-hdr{background:rgba(99,129,250,.08);color:var(--primary);border-bottom:1px solid rgba(99,129,250,.2)}
 .comp-section-body{padding:10px 14px}
-.comp-rating-badge{display:inline-block;font-size:.72rem;font-weight:600;padding:2px 10px;border-radius:10px;text-transform:uppercase;letter-spacing:.3px}
-.comp-rating-badge.loses{background:rgba(239,68,68,.12);color:#ef4444}
-.comp-rating-badge.competes{background:rgba(99,129,250,.12);color:var(--primary)}
-.comp-rating-badge.beats{background:rgba(16,185,129,.12);color:#10b981}
 .comp-section .comp-table{margin-bottom:0}
 .comp-section .comp-add-row{margin:10px 14px 10px}
 .comp-section-empty{text-align:center;padding:20px 16px;color:var(--text3);font-size:.85rem}
@@ -7935,9 +7928,7 @@ function getDealTempInfo(r){
   try {
     const v = calcComputeAll(r);
     if(!v || v.compsCount < 3 || !v.projectedD || !v.hasProjectionData) return null;
-    const confidence = 0.55 + 0.45 * ((v.positionScore + 1) / 2);
-    const confidencePct = Math.round(confidence * 100);
-    const monthlyNet = Math.round(v.projectedD.monthlyCF * confidencePct / 100);
+    const monthlyNet = Math.round(v.projectedD.monthlyCF);
     const an = getAnalysis(r);
     const profitReq = parseFloat(an.profitRequirement) || defaultProfitReq(r);
     const halfReq = Math.round(profitReq * 0.5);
@@ -14276,12 +14267,10 @@ const TE_BASELINE = {
     { chapter:1, image:'05-property-profile.webp', title:'Activity Log', desc:'Log <b>calls</b>, <b>texts</b>, <b>emails</b>, and <b>notes</b> with the <b>Activity Log</b>. Every interaction is timestamped so you have a full history of every property conversation.', highlight:{x:57.38,y:29.97,w:41.36,h:56.02}, tier:'basic' },
     { chapter:1, image:'09-expenses.webp', title:'Expenses Tab', desc:'The <b>Expenses</b> tab breaks your costs into two panels: <b>Investment Details</b> on the left (application fees, deposits, furnishing, move-in costs) and <b>Monthly Operating Expenses</b> on the right (insurance, Wi-Fi, utilities, cleaning, platform fees). Edit any line item to match your actual numbers.', highlight:null, tier:'basic' },
     { chapter:1, image:'09-expenses.webp', title:'Copy from Property', desc:'Use <b>Copy from Property</b> to pull expenses from another property in the same <b>submarket</b> that has similar utilities and cost structures. This saves time when evaluating multiple deals in the same area — no need to re-enter recurring costs like <b>Wi-Fi</b>, <b>insurance</b>, or <b>cleaning fees</b> from scratch.', highlight:{x:77.79,y:28.04,w:12.12,h:5.14}, tier:'basic' },
-    { chapter:2, image:'06-competitor-analysis.webp', title:'Competitor Analysis Tab', desc:'The <b>Competitors</b> tab lets you benchmark your property against nearby listings. Properties are sorted into three categories based on how they compare to yours.', highlight:null, tier:'basic' },
+    { chapter:2, image:'06-competitor-analysis.webp', title:'Competitor Analysis Tab', desc:'The <b>Competitors</b> tab lets you benchmark your property against nearby, genuinely comparable listings.', highlight:null, tier:'basic' },
     { chapter:2, image:'06-competitor-analysis.webp', title:'Add Competitors', desc:'Click <b>+ Add Competitor</b> to manually add a comparable listing with detailed metrics like <b>nightly rate</b>, <b>rating</b>, and <b>reviews</b>.', highlight:{x:85.02,y:61.82,w:11.97,h:4.97}, tier:'basic' },
     { chapter:2, image:'06-competitor-analysis.webp', title:'Competitor Details', desc:'Each competitor entry shows <b>nightly rate</b>, <b>bedroom count</b>, <b>rating</b>, <b>reviews</b>, and a link to the original listing. Add <b>notes</b> to track any observations.', highlight:{x:14.84,y:45.26,w:85.16,h:54.74}, tier:'basic' },
-    { chapter:2, image:'06-competitor-analysis.webp', title:'Competitor Strength', desc:'Competitors are organized into <b>Loses To</b> (better than yours), <b>Competes With</b> (similar), and <b>Beats</b> (yours is better). This gives you a clear competitive position.', highlight:{x:56.75,y:21.62,w:42.27,h:19.69}, tier:'basic' },
     { chapter:3, image:'07-projected-roi.webp', title:'Projected ROI Tab', desc:'The <b>Projected ROI</b> tab is your financial command center. See <b>monthly cash flow</b> projections, <b>break-even timelines</b>, and key investment metrics at a glance.', highlight:null, tier:'basic' },
-    { chapter:3, image:'07-projected-roi.webp', title:'Competitive Position Score', desc:'RentingRadar calculates a <b>Competitive Position</b> percentage that shows where your property stands in the local market. Higher is better.', highlight:{x:14.89,y:46.64,w:34.20,h:23.37}, tier:'basic' },
     { chapter:3, image:'07-projected-roi.webp', title:'ROI KPI Cards', desc:'Four key metrics give you an at-a-glance financial snapshot. <b>Net Operating Income</b> shows your revenue minus expenses. <b>Profit Requirement</b> is your adjustable target — drag it to set the minimum monthly profit you need from the deal, and every other metric recalculates around it. <b>Cash Flow</b> is what remains after all costs including debt service. <b>Cash on Cash Return</b> measures your annual return as a percentage of the cash you invested. Each card reflects the active projection mode and updates in real time.', highlight:{x:14.89,y:22.36,w:34.20,h:24.56}, tier:'basic' },
     { chapter:3, image:'07-projected-roi.webp', title:'Projection Modes', desc:'Switch between <b>Pessimistic</b>, <b>Realistic</b>, and <b>Optimistic</b> projection modes to formulate an understanding of the capability of your investment under different scenarios.', highlight:{x:74.72,y:27.23,w:22.68,h:2.76}, tier:'basic' },
     { chapter:3, image:'07-projected-roi.webp', title:'Deal Temperature', desc:'The <b>Deal Temperature</b> gauge rates your property from <b>Cold</b> to <b>Hot</b> based on all available data — financials, competition, and market conditions. Use it as a quick go/no-go indicator.', highlight:{x:48.88,y:50.23,w:50.56,h:21.16}, tier:'basic' },
@@ -28438,6 +28427,12 @@ function calcComputeAll(r){
         typeKey: _unitTypeKey(u), typeLabel: _unitTypeLabel(u), rent: parseFloat(u.rent) || 0,
         investedPerUnit: investedThisUnit, oneTimeFees: oneTimeThisUnit, furnish: furnishThisUnit,
         fixedExp: fixedExpThisUnit, cleaning: cleaningThisUnit, customExpense: customExpThisUnit, additionalIncome: additionalIncomeThisUnit,
+        // This unit's own fee rates + the flat/percent split of its custom expenses
+        // (at its natural comp-based revenue) — lets Negotiation Tools re-derive this
+        // unit's expenses at a what-if revenue via _unitDeriveFromRev, instead of only
+        // ever reading its expenses at the natural revenue above.
+        coHostPct: uc.coHostPct, airbnbFeePct: uc.airbnbFeePct,
+        customExpFlat: customExpFlatThisUnit, customExpPct: customExpPctThisUnit,
         simpleMonthlyRevenue: monthlyRevThisUnit,
         totalInvested: investedThisUnit + furnishThisUnit + oneTimeThisUnit,
         tier: s.tier, matchedCompCount: s.matchedCount
@@ -28514,15 +28509,13 @@ function calcComputeAll(r){
   // editable, so this re-derives a single blended rate for the whole-building
   // scenario projections below.
   const effectiveAirbnbFeePct = monthlyRevenue > 0 ? (airbnbFee / monthlyRevenue * 100) : 0;
-  // === Single Weighted Projection with Directional Multipliers ===
-  // Loses To comps earn MORE than us → discount their revenue (×0.85)
-  // Competes With comps earn SIMILAR → use as-is (×1.0)
-  // Beats comps earn LESS than us → boost their revenue (×1.15)
-  const DIRECTION_MULT = { loses: 0.85, competes: 1.0, beats: 1.15 };
-  // Plus optimistic/pessimistic ranges using shifted multipliers (declared here,
-  // ahead of _weightedAvg below, so both tables are available for every mode).
-  const OPTIMISTIC_MULT  = { loses: 0.95, competes: 1.10, beats: 1.25 };
-  const PESSIMISTIC_MULT = { loses: 0.75, competes: 0.90, beats: 1.05 };
+  // === Single Weighted Average Projection ===
+  // Pessimistic/Realistic/Optimistic scale every comp's revenue by the same
+  // flat multiplier per scenario — Competitor Analysis only holds properties
+  // that are genuinely comparable, so there's no per-comp direction to weight.
+  const REALISTIC_MULT = 1.0;
+  const OPTIMISTIC_MULT = 1.10;
+  const PESSIMISTIC_MULT = 0.90;
 
   // Get each comp's revenue (from annualRevenue or rate×occ×days)
   function _compRevenue(cx){
@@ -28535,12 +28528,12 @@ function calcComputeAll(r){
     }
     return rev;
   }
-  // Directionally-weighted average revenue across a set of comps (count-weighted,
-  // not $-weighted) — the same math used for both the whole-building fallback and
-  // each unit's own comp subset below.
-  function _weightedAvg(compList, multTable){
+  // Average revenue across a set of comps (count-weighted, not $-weighted),
+  // scaled by the given scenario multiplier — the same math used for both the
+  // whole-building fallback and each unit's own comp subset below.
+  function _weightedAvg(compList, mult){
     if(!compList.length) return 0;
-    const sum = compList.reduce((s, cx) => s + (_compRevenue(cx) * (multTable[cx.rating || 'competes'] || 1.0)), 0);
+    const sum = compList.reduce((s, cx) => s + (_compRevenue(cx) * mult), 0);
     return sum / compList.length;
   }
 
@@ -28561,20 +28554,6 @@ function calcComputeAll(r){
     : [];
   const hasEnoughComps = compsWithRevData.length >= 3 && unitsMissingOwnComps.length === 0;
 
-  // Section counts (for position scoring)
-  const losesCount = comps.filter(c => c.rating === 'loses').length;
-  const competesCount = comps.filter(c => c.rating === 'competes').length;
-  const beatsCount = comps.filter(c => c.rating === 'beats').length;
-  const totalSectionComps = losesCount + competesCount + beatsCount;
-
-  // Position score & percentile
-  let positionScore = 0;
-  let marketPercentile = 50;
-  if(totalSectionComps > 0){
-    positionScore = (-1 * losesCount + 0 * competesCount + 1 * beatsCount) / totalSectionComps;
-    marketPercentile = Math.round((beatsCount + 0.5 * competesCount) / totalSectionComps * 100);
-  }
-
   // Compute projected revenue — weighted by count AND adjusted by direction.
   // For Multi Unit buildings, each unit gets its own comp-matched weighted
   // average (3-tier fallback: own comps → same-type other units' comps →
@@ -28586,7 +28565,7 @@ function calcComputeAll(r){
 
   if(isApt && unitsCount > 0){
     if(hasEnoughComps){
-      const overallW = _weightedAvg(compsWithRevData, DIRECTION_MULT);
+      const overallW = _weightedAvg(compsWithRevData, REALISTIC_MULT);
       const overallO = _weightedAvg(compsWithRevData, OPTIMISTIC_MULT);
       const overallP = _weightedAvg(compsWithRevData, PESSIMISTIC_MULT);
       let wSum = 0, oSum = 0, pSum = 0;
@@ -28597,7 +28576,7 @@ function calcComputeAll(r){
           matched = _sameTypeOtherUnitsComps(u).filter(cx => _compRevenue(cx) > 0);
           tier = matched.length ? 'sametype' : 'blended';
         }
-        const uW = matched.length ? _weightedAvg(matched, DIRECTION_MULT) : overallW;
+        const uW = matched.length ? _weightedAvg(matched, REALISTIC_MULT) : overallW;
         const uO = matched.length ? _weightedAvg(matched, OPTIMISTIC_MULT) : overallO;
         const uP = matched.length ? _weightedAvg(matched, PESSIMISTIC_MULT) : overallP;
         wSum += uW; oSum += uO; pSum += uP;
@@ -28625,7 +28604,7 @@ function calcComputeAll(r){
     });
     unitBreakdown.sort((a,b) => a.bedrooms - b.bedrooms || a.bathrooms - b.bathrooms || (a.label||'').localeCompare(b.label||''));
   } else if(hasEnoughComps){
-    const overallW = _weightedAvg(compsWithRevData, DIRECTION_MULT);
+    const overallW = _weightedAvg(compsWithRevData, REALISTIC_MULT);
     const overallO = _weightedAvg(compsWithRevData, OPTIMISTIC_MULT);
     const overallP = _weightedAvg(compsWithRevData, PESSIMISTIC_MULT);
     projectedRevenue = Math.round(overallW);
@@ -28667,7 +28646,7 @@ function calcComputeAll(r){
   const projectedD = hasProjectionData ? deriveFromRev(projectedRevenue) : deriveFromRev(annualRevenue);
   const optimisticD = hasProjectionData ? deriveFromRev(optimisticRevenue) : null;
   const pessimisticD = hasProjectionData ? deriveFromRev(pessimisticRevenue) : null;
-  return { c, br, monthlyRent, furnishCost, totalInvested, avgDailyRate, estOccupancyRate, daysOccupied, annualRevenue, monthlyRevenue, cleaning, coHostFee, airbnbFee, customExpensesTotal, additionalIncomeTotal, totalMonthlyExp, annualExp, monthlyNOI, annualNOI, monthlyCF, annualCF, cocReturn, compsCount: comps.length, projectedRevenue, optimisticRevenue, pessimisticRevenue, hasProjectionData, projectedD, optimisticD, pessimisticD, deriveFromRev, positionScore, marketPercentile, losesCount: losesCount || 0, competesCount: competesCount || 0, beatsCount: beatsCount || 0, isApt, unitsCount, unitMult, totalCommonSpaces, totalInvestedPerUnit, totalMonthlyExpPerUnit, unitBreakdown, unitsMissingOwnComps };
+  return { c, br, monthlyRent, furnishCost, totalInvested, avgDailyRate, estOccupancyRate, daysOccupied, annualRevenue, monthlyRevenue, cleaning, coHostFee, airbnbFee, customExpensesTotal, additionalIncomeTotal, totalMonthlyExp, annualExp, monthlyNOI, annualNOI, monthlyCF, annualCF, cocReturn, compsCount: comps.length, projectedRevenue, optimisticRevenue, pessimisticRevenue, hasProjectionData, projectedD, optimisticD, pessimisticD, deriveFromRev, isApt, unitsCount, unitMult, totalCommonSpaces, totalInvestedPerUnit, totalMonthlyExpPerUnit, unitBreakdown, unitsMissingOwnComps };
 }
 
 // Shared "not enough comps yet" copy for the Projected ROI tab and its
@@ -28681,22 +28660,43 @@ function _compsReqMessage(v, short){
   return 'Add comps for ' + missing.map(u => esc(u.label) + ' (' + u.count + '/3)').join(', ');
 }
 
-// Shared "what revenue is actually driving the numbers right now" resolver — used by
-// the Projected ROI KPIs/Payback/Deal Temperature AND the Negotiation Tools Revenue
-// Target slider, so both read from one place. Falls back to the selected Pessimistic /
-// Realistic / Optimistic column's revenue; when the Revenue Target slider has been
-// dragged to a custom figure, _revTargetPreview overrides it here (re-deriving expenses
-// from that revenue via calcComputeAll's deriveFromRev) so every downstream number stays
-// consistent with a single revenue input.
-function _activeScenarioRevExp(r, v){
-  if(!v.hasProjectionData) return { rev: 0, exp: 0, isOverridden: false };
+// The Projected ROI tab's own KPIs/Payback Period/Deal Temperature always read the
+// selected Pessimistic / Realistic / Optimistic column, full stop — never the
+// Negotiation Tools Revenue Target slider. Negotiation Tools is a what-if sandbox
+// downstream of these numbers, not a driver of them.
+function _baseScenarioRevExp(v){
+  if(!v.hasProjectionData) return { rev: 0, exp: 0 };
   const modeRevMap = { optimistic: v.optimisticRevenue, realistic: v.projectedRevenue, pessimistic: v.pessimisticRevenue };
   const modeDMap = { optimistic: v.optimisticD, realistic: v.projectedD, pessimistic: v.pessimisticD };
-  const baseRev = Math.round(modeRevMap[calcProjMode]);
+  return { rev: Math.round(modeRevMap[calcProjMode]), exp: Math.round(modeDMap[calcProjMode].annualExp) };
+}
+
+// Negotiation Tools' own "what revenue is driving the numbers in this section right
+// now" resolver. Falls back to the same base scenario as above; when the Revenue
+// Target slider has been dragged to a custom figure, _revTargetPreview overrides it
+// here (re-deriving expenses from that revenue via calcComputeAll's deriveFromRev).
+// Scoped entirely to Negotiation Tools (Rent Adjustment, Rental Concessions, its own
+// Revenue Target/Payback display) — must never feed the Projected ROI tab above it;
+// use _baseScenarioRevExp there instead.
+function _activeScenarioRevExp(r, v){
+  if(!v.hasProjectionData) return { rev: 0, exp: 0, isOverridden: false };
+  const base = _baseScenarioRevExp(v);
   const override = _revTargetPreview[r.id];
-  if(override === undefined) return { rev: baseRev, exp: Math.round(modeDMap[calcProjMode].annualExp), isOverridden: false };
+  if(override === undefined) return { rev: base.rev, exp: base.exp, isOverridden: false };
   const rev = Math.round(override);
   return { rev, exp: Math.round(v.deriveFromRev(rev).annualExp), isOverridden: true };
+}
+
+// Per-unit equivalent of calcComputeAll's deriveFromRev — re-derives ONE unit's own
+// monthly expenses (its own fixed costs + co-host % + AirBnB fee % + custom expenses,
+// never the building's blended rate) at a given what-if monthly revenue. Used by the
+// Negotiation Tools By Unit breakdown so each unit's Monthly Net reflects its own real
+// expense structure against its share of the Revenue Target, not a naive proportional
+// split of the building's total expenses.
+function _unitDeriveFromRev(u, mRev){
+  const pctRateAtNatural = u.simpleMonthlyRevenue > 0 ? ((u.customExpPct || 0) / u.simpleMonthlyRevenue) : 0;
+  const ce = (u.customExpFlat || 0) + mRev * pctRateAtNatural;
+  return u.fixedExp + u.cleaning + mRev * ((u.coHostPct || 0) / 100) + mRev * ((u.airbnbFeePct || 0) / 100) + ce;
 }
 
 /* ===== UNITS TAB (apartment records only) ===== */
@@ -30327,22 +30327,20 @@ function renderCalculatorTab(r){
   // KPIs driven by user-selected projection mode (optimistic/realistic/pessimistic)
   const modeMap = { optimistic: v.optimisticD, realistic: v.projectedD, pessimistic: v.pessimisticD };
   const selectedD = v.hasProjectionData && modeMap[calcProjMode] ? modeMap[calcProjMode] : (v.hasProjectionData ? v.projectedD : { monthlyNOI: v.monthlyNOI, annualNOI: v.annualNOI, monthlyCF: v.monthlyCF, annualCF: v.annualCF, cocReturn: v.cocReturn });
-  // Confidence factor — used for Payback Period adjustment and deal temp
-  const confidence = 0.55 + 0.45 * ((v.positionScore + 1) / 2);
-  const confidencePct = Math.round(confidence * 100);
-  const cpColor = confidencePct >= 80 ? '#10b981' : confidencePct >= 65 ? '#f59e0b' : '#ef4444';
   const kpiNOI = selectedD.monthlyNOI;
   const kpiAnnualNOI = selectedD.annualNOI;
-  // Cash Flow and CoC — use same rounding path as PYN Adjusted Monthly Net to ensure exact match
+  // Cash Flow and CoC — use same rounding path as PYN Adjusted Monthly Net to ensure exact match.
+  // Always the base selected scenario here — the Negotiation Tools Revenue Target slider
+  // must never bleed back up into this tab's KPIs/Payback Period/Deal Temperature.
   const _pynAnnualRent = Math.round(v.monthlyRent * 12);
-  const _actRev = _activeScenarioRevExp(r, v);
+  const _actRev = _baseScenarioRevExp(v);
   const _pynRev = _actRev.rev;
   const _pynExp = _actRev.exp;
   // Annualize the monthly additional income so it stacks with the annualized revenue.
   const _pynAnnualIncome = Math.round((v.additionalIncomeTotal || 0) * 12);
   const _pynNet = v.hasProjectionData ? (_pynRev + _pynAnnualIncome - _pynExp - _pynAnnualRent) : 0;
   const _pynMonthlyNet = v.hasProjectionData ? Math.round(_pynNet / 12) : Math.round(selectedD.monthlyCF);
-  const kpiMonthlyCF = Math.round(_pynMonthlyNet * confidencePct / 100);
+  const kpiMonthlyCF = _pynMonthlyNet;
   const kpiAnnualCF = kpiMonthlyCF * 12;
   const kpiCoC = v.totalInvested > 0 ? (kpiAnnualCF / v.totalInvested * 100) : 0;
   // Color Cash Flow & CoC using deal temperature bands based on profit requirement
@@ -30394,147 +30392,9 @@ function renderCalculatorTab(r){
 
   // ══════ SECTION VARIABLES ══════
   let kpiHtml = '';
-  let cpHtml = '';
   let pynHtml = '';
   let dealHtml = '';
   let paybackHtml = '';
-
-  // ─────────────────────────────────────────
-  // SECTION 1: Competitive Position
-  // ─────────────────────────────────────────
-
-  // ── Section: Competitive Position ──
-  {
-    const ps = insufficientComps ? 0 : v.positionScore;
-    const mp = insufficientComps ? 0 : v.marketPercentile;
-    const psPct = insufficientComps ? '50.0' : ((ps + 1) / 2 * 100).toFixed(1);
-    const psColor = insufficientComps ? 'var(--text3)' : (ps >= 0.3 ? 'var(--num-success)' : ps >= -0.3 ? 'var(--num-warning)' : 'var(--num-danger)');
-    const psLabel = insufficientComps ? '—' : (ps >= 0.5 ? 'Strong' : ps >= 0.15 ? 'Favorable' : ps >= -0.15 ? 'Neutral' : ps >= -0.5 ? 'Challenging' : 'Weak');
-    const psDisplay = insufficientComps ? '—' : (ps >= 0 ? '+' : '') + ps.toFixed(2);
-    const mpDisplay = insufficientComps ? '—' : ordinal(mp) + ' percentile in market';
-
-    cpHtml += '<div class="calc-section"'+(insufficientComps?' style="opacity:.5"':'')+'><div class="calc-section-header"'+tipAttrs('Competitive Position','How your property stacks up against the competitors you\\x27ve categorized as Loses To, Competes With, and Beats.\\n\\nThree related metrics are derived from your comp distribution:\\n\\n• Position Score — a raw ranking from -1.0 to +1.0\\n• Market Percentile — estimated % of the market you outperform\\n• Position Adjustment — a confidence multiplier (55%–100%) applied to your projected cash flow')+'>Competitive Position</div><div class="calc-section-body" style="padding:10px 14px">';
-
-    // Position summary
-    cpHtml += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">';
-    cpHtml += '<div><div style="font-size:1rem;font-weight:800;color:'+psColor+';cursor:help"'+tipAttrs('Position Rating','A plain-language label derived from your Position Score:\\n\\n• Strong (+0.50 to +1.00) — you beat most comps\\n• Favorable (+0.15 to +0.50)\\n• Neutral (-0.15 to +0.15) — roughly even\\n• Challenging (-0.50 to -0.15)\\n• Weak (-1.00 to -0.50) — you lose to most comps\\n\\nExample: 5 comps (1 Loses To, 2 Competes, 2 Beats) → Score = (-1 + 0 + 0 + 1 + 1) ÷ 5 = +0.20 → Favorable',true)+'>'+psLabel+'</div>';
-    cpHtml += '<div style="font-size:.72rem;color:var(--text3);margin-top:2px;cursor:help"'+tipAttrs('Market Percentile','Estimated percentage of the market your property outperforms.\\n\\nFormula: (beats + 0.5 × competes) ÷ total comps × 100\\n\\nExample: 5 comps (1 Loses To, 2 Competes, 2 Beats)\\n→ (2 + 0.5 × 2) ÷ 5 × 100 = 60th percentile\\n\\nThis gives you an intuitive read — "I\\x27m better than roughly 60% of the market."',true)+'>'+mpDisplay+'</div></div>';
-    cpHtml += '<div style="text-align:right"><div style="font-size:.68rem;color:var(--text3);text-transform:uppercase;letter-spacing:.3px;cursor:help"'+tipAttrs('Position Score','A number from -1.0 (worst) to +1.0 (best) summarizing your competitive standing.\\n\\nFormula: (-1 × loses + 0 × competes + +1 × beats) ÷ total comps\\n\\nExample: 5 comps (1 Loses To, 2 Competes, 2 Beats)\\n→ (-1 + 0 + 0 + 1 + 1) ÷ 5 = +0.20\\n\\nThis score drives both the Market Percentile and Position Adjustment.',true)+'>Position Score</div>';
-    cpHtml += '<div style="font-size:1.1rem;font-weight:700;color:'+psColor+'">'+psDisplay+'</div></div>';
-    cpHtml += '</div>';
-
-    // Bell curve visual — spans full card width with comfortable padding
-    // SVG uses viewBox so it scales responsively
-    const bellW = 400, bellH = 58, padX = 16;
-    const curveW = bellW - padX * 2;
-
-    cpHtml += '<div style="margin-bottom:2px;padding:0 4px;position:relative">';
-    cpHtml += '<svg viewBox="0 0 '+bellW+' '+bellH+'" style="width:100%;display:block">';
-
-    if(insufficientComps){
-      // Grey gradient for insufficient data
-      const bellGradId = 'bellGrad_grey_' + r.id;
-      cpHtml += '<defs><linearGradient id="'+bellGradId+'" x1="0%" y1="0%" x2="100%" y2="0%">';
-      cpHtml += '<stop offset="0%" stop-color="rgba(148,163,184,.08)" stop-opacity="1"/>';
-      cpHtml += '<stop offset="50%" stop-color="rgba(148,163,184,.08)" stop-opacity="1"/>';
-      cpHtml += '<stop offset="100%" stop-color="rgba(148,163,184,.08)" stop-opacity="1"/>';
-      cpHtml += '</linearGradient></defs>';
-      // Generate bell curve points
-      const bellPts = [];
-      for(let i = 0; i <= 50; i++){
-        const t = i / 50;
-        const x = padX + t * curveW;
-        const gauss = Math.exp(-Math.pow(t - 0.5, 2) / (2 * 0.22 * 0.22));
-        const y = bellH - 6 - gauss * (bellH - 16);
-        bellPts.push(x.toFixed(1)+','+y.toFixed(1));
-      }
-      const curvePath = 'M'+padX+','+( bellH - 6)+' L'+bellPts.join(' L')+' L'+(bellW - padX)+','+(bellH - 6)+' Z';
-      const curveLinePath = 'M'+bellPts.join(' L');
-      cpHtml += '<path d="'+curvePath+'" fill="url(#'+bellGradId+')"/>';
-      cpHtml += '<path d="'+curveLinePath+'" fill="none" stroke="rgba(148,163,184,.1)" stroke-width="1.5"/>';
-    } else {
-      // Normal gradient for sufficient data
-      const bellGradId = 'bellGrad_' + r.id;
-      cpHtml += '<defs><linearGradient id="'+bellGradId+'" x1="0%" y1="0%" x2="100%" y2="0%">';
-      cpHtml += '<stop offset="0%" stop-color="#ef4444" stop-opacity="0.25"/>';
-      cpHtml += '<stop offset="50%" stop-color="#f59e0b" stop-opacity="0.25"/>';
-      cpHtml += '<stop offset="100%" stop-color="#10b981" stop-opacity="0.25"/>';
-      cpHtml += '</linearGradient></defs>';
-      // Generate bell curve points
-      const bellPts = [];
-      for(let i = 0; i <= 50; i++){
-        const t = i / 50;
-        const x = padX + t * curveW;
-        const gauss = Math.exp(-Math.pow(t - 0.5, 2) / (2 * 0.22 * 0.22));
-        const y = bellH - 6 - gauss * (bellH - 16);
-        bellPts.push(x.toFixed(1)+','+y.toFixed(1));
-      }
-      const curvePath = 'M'+padX+','+( bellH - 6)+' L'+bellPts.join(' L')+' L'+(bellW - padX)+','+(bellH - 6)+' Z';
-      const curveLinePath = 'M'+bellPts.join(' L');
-      const markerX = (padX + parseFloat(psPct) / 100 * curveW).toFixed(1);
-      const markerT = parseFloat(psPct) / 100;
-      const markerGauss = Math.exp(-Math.pow(markerT - 0.5, 2) / (2 * 0.22 * 0.22));
-      const markerY = (bellH - 6 - markerGauss * (bellH - 16)).toFixed(1);
-
-      cpHtml += '<path d="'+curvePath+'" fill="url(#'+bellGradId+')"/>';
-      cpHtml += '<path d="'+curveLinePath+'" fill="none" stroke="rgba(255,255,255,.15)" stroke-width="1.5"/>';
-      cpHtml += '<line x1="'+markerX+'" y1="'+(bellH - 6)+'" x2="'+markerX+'" y2="'+markerY+'" stroke="'+psColor+'" stroke-width="2" stroke-dasharray="3,2" opacity=".7"/>';
-      cpHtml += '<circle cx="'+markerX+'" cy="'+markerY+'" r="6" fill="'+psColor+'" stroke="var(--surface)" stroke-width="2.5" filter="drop-shadow(0 1px 3px rgba(0,0,0,.4))"/>';
-    }
-
-    cpHtml += '</svg>';
-    if(insufficientComps){
-      cpHtml += '<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;pointer-events:none">';
-      cpHtml += '<div style="color:var(--text3);font-size:.75rem;font-style:italic">'+compsReqMsgShort+'</div>';
-      cpHtml += '</div>';
-    }
-    cpHtml += '</div>';
-
-    // Labels under bell curve
-    cpHtml += '<div style="display:flex;justify-content:space-between;font-size:.62rem;color:var(--text3);margin-bottom:8px;padding:0 8px">';
-    cpHtml += '<span>Loses to all</span><span>Competes</span><span>Beats all</span>';
-    cpHtml += '</div>';
-
-    // Comp distribution breakdown
-    cpHtml += '<div style="display:flex;gap:0;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">';
-    if(insufficientComps){
-      cpHtml += '<div style="flex:1;text-align:center;padding:6px 6px;border-right:1px solid var(--border)">';
-      cpHtml += '<div style="font-size:.6rem;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:.3px">Loses To</div>';
-      cpHtml += '<div style="font-size:.9rem;font-weight:700;color:var(--text3)">—</div>';
-      cpHtml += '<div style="font-size:.58rem;color:var(--text3)">—</div>';
-      cpHtml += '</div>';
-      cpHtml += '<div style="flex:1;text-align:center;padding:6px 6px;border-right:1px solid var(--border)">';
-      cpHtml += '<div style="font-size:.6rem;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:.3px">Competes</div>';
-      cpHtml += '<div style="font-size:.9rem;font-weight:700;color:var(--text3)">—</div>';
-      cpHtml += '<div style="font-size:.58rem;color:var(--text3)">—</div>';
-      cpHtml += '</div>';
-      cpHtml += '<div style="flex:1;text-align:center;padding:6px 6px">';
-      cpHtml += '<div style="font-size:.6rem;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:.3px">Beats</div>';
-      cpHtml += '<div style="font-size:.9rem;font-weight:700;color:var(--text3)">—</div>';
-      cpHtml += '<div style="font-size:.58rem;color:var(--text3)">—</div>';
-      cpHtml += '</div>';
-    } else {
-      const total = v.losesCount + v.competesCount + v.beatsCount;
-      cpHtml += '<div style="flex:1;text-align:center;padding:6px 6px;border-right:1px solid var(--border)">';
-      cpHtml += '<div style="font-size:.6rem;color:#ef4444;font-weight:600;text-transform:uppercase;letter-spacing:.3px">Loses To</div>';
-      cpHtml += '<div style="font-size:.9rem;font-weight:700;color:#ef4444">'+v.losesCount+'</div>';
-      cpHtml += '<div style="font-size:.58rem;color:var(--text3)">'+Math.round(v.losesCount/total*100)+'%</div>';
-      cpHtml += '</div>';
-      cpHtml += '<div style="flex:1;text-align:center;padding:6px 6px;border-right:1px solid var(--border)">';
-      cpHtml += '<div style="font-size:.6rem;color:var(--primary);font-weight:600;text-transform:uppercase;letter-spacing:.3px">Competes</div>';
-      cpHtml += '<div style="font-size:.9rem;font-weight:700;color:var(--primary)">'+v.competesCount+'</div>';
-      cpHtml += '<div style="font-size:.58rem;color:var(--text3)">'+Math.round(v.competesCount/total*100)+'%</div>';
-      cpHtml += '</div>';
-      cpHtml += '<div style="flex:1;text-align:center;padding:6px 6px">';
-      cpHtml += '<div style="font-size:.6rem;color:#10b981;font-weight:600;text-transform:uppercase;letter-spacing:.3px">Beats</div>';
-      cpHtml += '<div style="font-size:.9rem;font-weight:700;color:#10b981">'+v.beatsCount+'</div>';
-      cpHtml += '<div style="font-size:.58rem;color:var(--text3)">'+Math.round(v.beatsCount/total*100)+'%</div>';
-      cpHtml += '</div>';
-    }
-    cpHtml += '</div>';
-
-    cpHtml += '</div></div>';
-  }
 
   // ─────────────────────────────────────────
   // SECTION 2: KPI Cards
@@ -30554,8 +30414,8 @@ function renderCalculatorTab(r){
   // honor only the first one (silently dropping cursor:help).
   const _prDefaultNote = _kpiDefaultPR > 1000 ? 'Default $1,000/mo per unit ('+v.unitsCount+' units = '+fmtMoney(_kpiDefaultPR)+'/mo). Click the pencil to edit.' : 'Default $1,000/mo. Click the pencil to edit.';
   kpiHtml += '<div class="calc-kpi"'+tipAttrs('Profit Requirement','Your minimum desired monthly net profit. Drives Deal Temperature, the rent dial color bands, and Required Revenue.\\n\\nDoes NOT change NOI, Cash Flow, CoC, or Payback — just labels whether they\\x27re good enough.\\n\\n'+_prDefaultNote)+'><div class="kpi-label">Profit Requirement<div class="kpi-proj-tag" style="'+_prPillColor+'">'+_prPillLabel+'</div></div><div class="kpi-monthly">'+fmtMoney(_kpiProfitReq)+'<span class="kpi-per">/mo</span> <span onclick="event.stopPropagation();editAnalysisProfitReq(\''+r.id+'\')" title="Edit profit requirement" style="font-size:.65rem;opacity:.45;margin-left:2px;cursor:pointer;padding:2px 4px;border-radius:3px" onmouseover="this.style.opacity=1;this.style.background=\'var(--bg2)\'" onmouseout="this.style.opacity=.45;this.style.background=\'transparent\'">✏️</span></div><div class="kpi-annual">'+fmtMoney(_kpiProfitReq*12)+'/yr</div></div>';
-  kpiHtml += '<div class="calc-kpi"'+tipAttrs('Cash Flow','Net Operating Income minus rent, then multiplied by your Position Adjustment ('+confidencePct+'%).\\n\\nThis is your estimated take-home profit after all expenses, rent, and a confidence discount based on how you stack up against competitors.')+'><div class="kpi-label">Cash Flow'+projTagHtml+'</div><div class="kpi-monthly" style="'+(insufficientComps?'':'color:'+_dtColor)+'">'+(insufficientComps ? '<span style="color:var(--text3)">$—<span class="kpi-per">/mo</span></span>' : fmtMoney(Math.round(kpiMonthlyCF))+'<span class="kpi-per">/mo</span>')+'</div><div class="kpi-annual">'+(insufficientComps ? '<span style="color:var(--text3);font-size:.7rem">$—/yr</span>' : fmtMoney(Math.round(kpiAnnualCF))+'/yr')+'</div></div>';
-  kpiHtml += '<div class="calc-kpi"'+tipAttrs('Cash on Cash Return','Adjusted annual cash flow ÷ total investment × 100.\\n\\nUses the confidence-discounted cash flow (Position Adjustment = '+confidencePct+'%) so the return reflects your competitive standing. A higher percentage means your investment pays for itself faster.')+'><div class="kpi-label">Cash on Cash Return'+projTagHtml+'</div><div class="kpi-monthly" style="'+(insufficientComps?'':'color:'+_dtColor)+'">'+(insufficientComps ? '<span style="color:var(--text3)">—%</span>' : kpiCoC.toFixed(1)+'%')+'</div><div class="kpi-annual">'+(insufficientComps ? '<span style="color:var(--text3);font-size:.7rem">$— invested</span>' : fmtMoney(Math.round(v.totalInvested))+' invested')+'</div></div>';
+  kpiHtml += '<div class="calc-kpi"'+tipAttrs('Cash Flow','Net Operating Income minus rent.\\n\\nThis is your estimated take-home profit after all expenses and rent.')+'><div class="kpi-label">Cash Flow'+projTagHtml+'</div><div class="kpi-monthly" style="'+(insufficientComps?'':'color:'+_dtColor)+'">'+(insufficientComps ? '<span style="color:var(--text3)">$—<span class="kpi-per">/mo</span></span>' : fmtMoney(Math.round(kpiMonthlyCF))+'<span class="kpi-per">/mo</span>')+'</div><div class="kpi-annual">'+(insufficientComps ? '<span style="color:var(--text3);font-size:.7rem">$—/yr</span>' : fmtMoney(Math.round(kpiAnnualCF))+'/yr')+'</div></div>';
+  kpiHtml += '<div class="calc-kpi"'+tipAttrs('Cash on Cash Return','Annual cash flow ÷ total investment × 100.\\n\\nA higher percentage means your investment pays for itself faster.')+'><div class="kpi-label">Cash on Cash Return'+projTagHtml+'</div><div class="kpi-monthly" style="'+(insufficientComps?'':'color:'+_dtColor)+'">'+(insufficientComps ? '<span style="color:var(--text3)">—%</span>' : kpiCoC.toFixed(1)+'%')+'</div><div class="kpi-annual">'+(insufficientComps ? '<span style="color:var(--text3);font-size:.7rem">$— invested</span>' : fmtMoney(Math.round(v.totalInvested))+' invested')+'</div></div>';
   kpiHtml += '</div>';
 
   // ─────────────────────────────────────────
@@ -30600,7 +30460,7 @@ function renderCalculatorTab(r){
     paybackColor = 'var(--num-danger)';
   }
 
-  paybackHtml += '<div class="calc-section"'+(insufficientComps?' style="opacity:.5"':'')+'><div class="calc-section-header"'+tipAttrs('Payback Period','Estimated time for your cumulative cash flow to recover your total upfront investment. Uses the selected projection mode\\x27s annual cash flow, discounted by the Position Adjustment ('+confidencePct+'%). Actual results may vary.') +'>Payback Period</div><div class="calc-section-body" style="padding:8px 10px">';
+  paybackHtml += '<div class="calc-section"'+(insufficientComps?' style="opacity:.5"':'')+'><div class="calc-section-header"'+tipAttrs('Payback Period','Estimated time for your cumulative cash flow to recover your total upfront investment. Uses the selected projection mode\\x27s annual cash flow. Actual results may vary.') +'>Payback Period</div><div class="calc-section-body" style="padding:8px 10px">';
   if(insufficientComps){
     paybackHtml += '<div style="opacity:.5">';
     paybackHtml += '<div style="text-align:center;margin-bottom:10px">';
@@ -30763,7 +30623,7 @@ function renderCalculatorTab(r){
   });
 
   const pynTitle = v.isApt ? 'Total Projected Yearly Net' : 'Projected Yearly Net';
-  pynHtml += '<div class="calc-section"' + (insufficientComps ? ' style="opacity:.5"' : '') + '><div class="calc-section-header"'+tipAttrs(pynTitle,'Estimated annual profit across three scenarios. Each column uses different directional multipliers applied to your competitor data, then discounted by your competitive position. Select a column to drive the KPIs, Deal Temperature, and Payback Period. These are projections only — actual results may differ.\\n\\nPessimistic: Loses To ×0.75, Competes ×0.90, Beats ×1.05\\nRealistic: Loses To ×0.85, Competes ×1.00, Beats ×1.15\\nOptimistic: Loses To ×0.95, Competes ×1.10, Beats ×1.25'+(v.isApt?'\\n\\nEvery row below is a total across all included units.':''))+'>'+pynTitle+'</div>';
+  pynHtml += '<div class="calc-section"' + (insufficientComps ? ' style="opacity:.5"' : '') + '><div class="calc-section-header"'+tipAttrs(pynTitle,'Estimated annual profit across three scenarios, each scaling your comps\\x27 revenue by a different multiplier. Select a column to drive the KPIs, Deal Temperature, and Payback Period. These are projections only — actual results may differ.\\n\\nPessimistic ×0.90, Realistic ×1.00, Optimistic ×1.10'+(v.isApt?'\\n\\nEvery row below is a total across all included units.':''))+'>'+pynTitle+'</div>';
 
   // Clickable column headers — selecting a column drives KPIs, Deal Temp, and Payback
   pynHtml += '<div class="pyn-col-headers">';
@@ -30804,7 +30664,7 @@ function renderCalculatorTab(r){
   pynRow('Annual Revenue', col => {
     if(!col.hasData) return noDataHtml;
     return '<span class="calc-display" style="color:var(--text);font-weight:600">'+fmtAcct(col.rev)+'</span>';
-  }, {tip:'Your competitors\\x27 revenue, weighted by how you rated each one (Loses To / Competes With / Beats), then scaled by this column\\x27s adjuster shown under the Pessimistic / Realistic / Optimistic headers above (L = Loses To, C = Competes With, B = Beats multiplier).\\n\\nPessimistic: L×0.75, C×0.90, B×1.05\\nRealistic: L×0.85, C×1.00, B×1.15\\nOptimistic: L×0.95, C×1.10, B×1.25'+(v.isApt?'\\n\\nTotal across all included units.':'')});
+  }, {tip:'Your competitors\\x27 average revenue, scaled by this column\\x27s multiplier (Pessimistic ×0.90, Realistic ×1.00, Optimistic ×1.10).'+(v.isApt?'\\n\\nTotal across all included units.':'')});
   pynRow('Annual Expenses', col => {
     if(!col.hasData) return noDataHtml;
     return '<span class="calc-display" style="color:var(--text);font-weight:600">-'+fmtMoney(col.exp)+'</span>';
@@ -30830,40 +30690,8 @@ function renderCalculatorTab(r){
   }, {total:true, tip:'Annual Revenue minus Annual Expenses minus Annual Rent'+(v.isApt?' — total across all included units.':'')});
   pynRow('Monthly Net', col => {
     if(!col.hasData) return noDataHtml;
-    return fmtNetLight(col.monthlyNet, '/mo');
-  }, {tip:'Projected Yearly Net divided by 12'+(v.isApt?' — total across all included units.':'')});
-
-  // Competitive Position Adjustment row + Adjusted Monthly Net row
-  // Store adjusted values on each col for use in deal temp later
-  cols.forEach(col => {
-    col.adjustedMonthlyNet = col.hasData ? Math.round(col.monthlyNet * confidencePct / 100) : 0;
-  });
-
-  // Position Adjustment is driven solely by Position Score (Competitor Analysis),
-  // not by which scenario column is selected — so it's the same number under
-  // every column. Render it as one spanning cell instead of three identical
-  // ones, which previously made the three scenarios look undifferentiated.
-  {
-    const paTip = 'A confidence multiplier applied to your Monthly Net, based on your Position Score ('+v.positionScore.toFixed(2)+').\\n\\nFormula: 55 + (Position Score + 1) ÷ 2 × 45\\n\\nRanges from 55% (Score = -1.0, loses to all) to 100% (Score = +1.0, beats all). A Score of 0 gives ~77.5%.\\n\\nThis is the same across Pessimistic, Realistic, and Optimistic because it reflects your competitive standing, not a scenario assumption — only Annual Revenue/Expenses differ by column.';
-    const paTipA = tipAttrs('Position Adjustment', paTip, true);
-    pynHtml += '<div class="calc-row">';
-    pynHtml += '<div class="calc-label"><span class="tip-label"'+paTipA+'>Position Adjustment</span></div>';
-    pynHtml += '<div class="pyn-val-span" style="flex:0 0 332px;text-align:center">';
-    if(!hasProj){
-      pynHtml += noDataHtml;
-    } else {
-      pynHtml += '<span style="font-weight:700;color:'+cpColor+'">'+confidencePct+'%</span>';
-      pynHtml += '<span style="color:var(--text3);font-size:.68rem;margin-left:6px">applied equally to every scenario above</span>';
-    }
-    pynHtml += '</div>';
-    pynHtml += '</div>';
-  }
-  pynRow('Adjusted Monthly Net', col => {
-    if(!col.hasData) return noDataHtml;
-    const adj = col.adjustedMonthlyNet;
-    if(adj >= 0) return '<span style="color:var(--num-success);font-weight:700">'+fmtMoney(adj)+'/mo</span>';
-    return '<span style="color:var(--num-danger);font-weight:700">-$'+Math.abs(adj).toLocaleString()+'/mo</span>';
-  }, {total:true, tip:'Monthly Net × Position Adjustment ('+confidencePct+'%).\\n\\nThis is your confidence-adjusted take-home estimate — it reflects both your projected income/expenses and your competitive standing. This number drives the Deal Temperature recommendation below.'+(v.isApt?'\\n\\nTotal across all included units.':'')});
+    return fmtNet(col.monthlyNet, '/mo');
+  }, {total:true, tip:'Projected Yearly Net divided by 12. This number drives the Deal Temperature recommendation below.'+(v.isApt?'\\n\\nTotal across all included units.':'')});
 
   pynHtml += '</div></div>';
 
@@ -30872,21 +30700,20 @@ function renderCalculatorTab(r){
   // ─────────────────────────────────────────
 
   const selectedCol = cols.find(c => c.key === calcProjMode) || cols[1];
-  const rawMonthlyNet = selectedCol.hasData ? selectedCol.monthlyNet : 0;
-  const dealMonthlyNet = selectedCol.hasData ? selectedCol.adjustedMonthlyNet : 0;
+  const dealMonthlyNet = selectedCol.hasData ? selectedCol.monthlyNet : 0;
   // Pull Profit Req from Analysis tab (default $1,000/mo) to calibrate deal temperature
   const _dtAn = getAnalysis(r);
   const _dtDefaultPR = defaultProfitReq(r);
   const _dtProfitReq = parseFloat(_dtAn.profitRequirement) || _dtDefaultPR;
   const _dtHalf = Math.round(_dtProfitReq * 0.5);
   const dealTemp = insufficientComps ? null : (dealMonthlyNet >= _dtProfitReq ? 'slam-dunk' : dealMonthlyNet >= _dtHalf ? 'potential' : dealMonthlyNet > 0 ? 'risky' : 'no-go');
-  const dealSource = insufficientComps ? compsReqMsg : confidencePct + '% confidence · ' + ordinal(v.marketPercentile) + ' percentile in market';
+  const dealSource = insufficientComps ? compsReqMsg : modeLabel + ' projection · ' + fmtMoney(dealMonthlyNet) + '/mo net';
   const _profReqNote = _dtProfitReq !== _dtDefaultPR ? ' Calibrated to your '+fmtMoney(_dtProfitReq)+'/mo profit requirement (adjustable in the Competitor Analysis tab).' : ' Calibrated to the default '+fmtMoney(_dtDefaultPR)+'/mo profit requirement'+(v.isApt && v.unitsCount > 1 ? ' ($1,000/mo × '+v.unitsCount+' units)' : '')+' — adjust this in the Competitor Analysis tab under Required Revenue to recalibrate these thresholds.';
   const temps = [
-    { key:'no-go', label:'No-Go', icon:'🚫', color:'#ef4444', desc:'This deal likely loses money after accounting for competitive position.', hint:'After factoring in your competitive positioning against nearby competitors, this property may not be able to cover its operating costs — every month held could increase cumulative losses and tie up capital that might be better deployed elsewhere.'+_profReqNote },
+    { key:'no-go', label:'No-Go', icon:'🚫', color:'#ef4444', desc:'This deal likely loses money at the projected numbers.', hint:'At the selected projection, this property may not be able to cover its operating costs — every month held could increase cumulative losses and tie up capital that might be better deployed elsewhere.'+_profReqNote },
     { key:'risky', label:'Risky', icon:'⚠️', color:'#f59e0b', desc:'Thin margins that may leave little room for unexpected costs or vacancies.', hint:'While potentially profitable, margins this thin suggest that a single slow month, unexpected repair, or seasonal vacancy could push the deal into negative territory — consider proceeding only with a strong contingency reserve.'+_profReqNote },
     { key:'potential', label:'Potential', icon:'🔥', color:'#3b82f6', desc:'Solid estimated returns with reasonable margin of safety.', hint:'This property may generate healthy cash flow with enough cushion to help absorb typical vacancy gaps and maintenance surprises, while still potentially delivering a meaningful return on invested capital.'+_profReqNote },
-    { key:'slam-dunk', label:'Slam-Dunk', icon:'🏆', color:'#10b981', desc:'Potentially strong returns even after competitive position discount.', hint:'Even after discounting for competitive pressure, this deal may deliver strong monthly cash flow — the kind of margin that should help accelerate payback, could fund portfolio growth, and might better withstand market downturns.'+_profReqNote }
+    { key:'slam-dunk', label:'Slam-Dunk', icon:'🏆', color:'#10b981', desc:'Potentially strong returns at the projected numbers.', hint:'At the selected projection, this deal may deliver strong monthly cash flow — the kind of margin that should help accelerate payback, could fund portfolio growth, and might better withstand market downturns.'+_profReqNote }
   ];
   dealHtml += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:10px' + (insufficientComps ? ';opacity:.5' : '') + '">';
   temps.forEach(t => {
@@ -31044,8 +30871,6 @@ function renderNegotiationTab(r){
   // Recompute the necessary values from the calculator
   const modeMap = { optimistic: v.optimisticD, realistic: v.projectedD, pessimistic: v.pessimisticD };
   const selectedD = v.hasProjectionData && modeMap[calcProjMode] ? modeMap[calcProjMode] : (v.hasProjectionData ? v.projectedD : { monthlyNOI: v.monthlyNOI, annualNOI: v.annualNOI, monthlyCF: v.monthlyCF, annualCF: v.annualCF, cocReturn: v.cocReturn });
-  const confidence = 0.55 + 0.45 * ((v.positionScore + 1) / 2);
-  const confidencePct = Math.round(confidence * 100);
   const _pynAnnualRent = Math.round(v.monthlyRent * 12);
   const _actRev = _activeScenarioRevExp(r, v);
   const _pynRev = _actRev.rev;
@@ -31054,7 +30879,7 @@ function renderNegotiationTab(r){
   const _pynAnnualIncome = Math.round((v.additionalIncomeTotal || 0) * 12);
   const _pynNet = v.hasProjectionData ? (_pynRev + _pynAnnualIncome - _pynExp - _pynAnnualRent) : 0;
   const _pynMonthlyNet = v.hasProjectionData ? Math.round(_pynNet / 12) : Math.round(selectedD.monthlyCF);
-  const kpiMonthlyCF = Math.round(_pynMonthlyNet * confidencePct / 100);
+  const kpiMonthlyCF = _pynMonthlyNet;
   const kpiAnnualCF = kpiMonthlyCF * 12;
   const inv = v.totalInvested;
   const acf = kpiAnnualCF;
@@ -31079,12 +30904,14 @@ function renderNegotiationTab(r){
   const _raAcf = acf;
   const _raInv = inv;
   const _raCF = kpiMonthlyCF;
-  const _raConfPct = confidencePct;
   const _raHasData = !insufficientComps && v.hasProjectionData;
   // Rev/exp come from _actRev (see _pynRev/_pynExp above) so a dragged Revenue Target
   // overrides the plain scenario column here too — the dial and Rental Concessions
   // below read _raSelectedCol.rev/.exp, not the raw cols array.
   const _raSelectedCol = Object.assign({}, cols.find(c => c.key === calcProjMode) || cols[1], { rev: _pynRev, exp: _pynExp });
+  // Hoisted so both the Projected Yearly Net summary (further up the render) and the
+  // Rent Adjustment dial below can read the same in-progress dial value.
+  const dialRent = _rentDialPreview[r.id] !== undefined ? _rentDialPreview[r.id] : _raRent;
 
   let h = '';
 
@@ -31092,16 +30919,25 @@ function renderNegotiationTab(r){
   function _dtColorFor(mn){ return mn >= _raPR ? '#10b981' : mn >= _raPRHalf ? '#3b82f6' : mn > 0 ? '#f59e0b' : '#ef4444'; }
   function _dtLabelFor(mn){ return mn >= _raPR ? 'Slam-Dunk' : mn >= _raPRHalf ? 'Potential' : mn > 0 ? 'Risky' : 'No-Go'; }
   function _dtIconFor(mn){ return mn >= _raPR ? '🏆' : mn >= _raPRHalf ? '🔥' : mn > 0 ? '⚠️' : '🚫'; }
+  // Same color/red-green formatters as the Total Projected Yearly Net table above
+  // (those live inside renderCalculatorTab's closure, out of reach here).
+  function fmtNet(val, suffix){
+    if(val >= 0) return '<span style="color:var(--num-success);font-weight:700">'+fmtMoney(val)+suffix+'</span>';
+    return '<span style="color:var(--num-danger);font-weight:700">-$'+Math.abs(val).toLocaleString()+suffix+'</span>';
+  }
+  function fmtNetLight(val, suffix){
+    if(val >= 0) return '<span style="color:var(--num-success)">'+fmtMoney(val)+suffix+'</span>';
+    return '<span style="color:var(--num-danger)">-$'+Math.abs(val).toLocaleString()+suffix+'</span>';
+  }
 
-  // Helper: compute adjusted monthly net for a given rent (includes income streams)
+  // Helper: compute monthly net for a given rent (includes income streams)
   const _raAnnualIncome = Math.round((v.additionalIncomeTotal || 0) * 12);
   function _calcAdjNet(rent){
     if(!_raHasData) return 0;
     const col = _raSelectedCol;
     const annualRent = Math.round(rent * 12);
     const net = col.rev + _raAnnualIncome - col.exp - annualRent;
-    const monthlyNet = Math.round(net / 12);
-    return Math.round(monthlyNet * _raConfPct / 100);
+    return Math.round(net / 12);
   }
 
   // Helper: compute payback years for given investment + annual CF
@@ -31136,10 +30972,12 @@ function renderNegotiationTab(r){
 
   // ── Revenue Target: horizontal slider spanning the full width ──
   // Lets you pick any annual revenue — not just the three scenario columns above — and
-  // see it flow through the same calc engine as everything else (KPIs, Payback Period,
-  // Deal Temperature, Rent Adjustment, Rental Concessions). See _activeScenarioRevExp.
+  // see it flow through this section's own calc engine (Rent Adjustment, Rental
+  // Concessions, the Deal Temp readout below). Scoped entirely to Negotiation Tools —
+  // does NOT feed back into the Projected ROI tab's KPIs/Payback Period/Deal
+  // Temperature above. See _activeScenarioRevExp vs _baseScenarioRevExp.
   h += '<div class="calc-section" style="margin-top:0"><div class="calc-section-body" style="padding:14px 16px 16px">';
-  h += '<div class="nft-title-row" style="font-size:.82rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;display:flex;align-items:center;justify-content:center;gap:5px;cursor:help"'+tipAttrs('Revenue Target','Drag to explore what happens at a specific annual revenue — the number driving your KPIs, Payback Period, Deal Temperature, Rent Adjustment, and Rental Concessions below.\\n\\nThe three colored stops mark your Pessimistic, Realistic, and Optimistic projections from Projected Yearly Net above. The outer 25% on each side lets you stress-test beyond them.\\n\\nClick Pessimistic, Realistic, or Optimistic (here or above) to snap back to that exact projection.',true)+'>Revenue Target<span class="nft-hint-q">?</span></div>';
+  h += '<div class="nft-title-row" style="font-size:.82rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;display:flex;align-items:center;justify-content:center;gap:5px;cursor:help"'+tipAttrs('Revenue Target','Drag to explore what happens at a specific annual revenue — the number driving Rent Adjustment, Rental Concessions, and the Deal Temp readout below. It\\x27s a what-if sandbox: it does not change the KPIs, Payback Period, or Deal Temperature on the Projected ROI tab above.\\n\\nThe three colored stops mark your Pessimistic, Realistic, and Optimistic projections from Projected Yearly Net above. The outer 25% on each side lets you stress-test beyond them.\\n\\nClick Pessimistic, Realistic, or Optimistic (here or above) to snap back to that exact projection.',true)+'>Revenue Target<span class="nft-hint-q">?</span></div>';
 
   if(!_raHasData){
     h += '<div style="color:var(--text3);font-size:.9rem;padding:14px 0;text-align:center">'+_compsReqMessage(v)+' to use the revenue target</div>';
@@ -31168,7 +31006,7 @@ function renderNegotiationTab(r){
     h += '<div id="revTargetConfig_'+r.id+'" data-min="'+_rtMin+'" data-max="'+_rtMax+'" data-p="'+_rtP+'" data-r="'+_rtR+'" data-o="'+_rtO+'" style="display:none"></div>';
 
     h += '<div style="position:relative;padding:0 2px">';
-    h += '<input type="range" class="co-rev-slider" id="revTargetSlider_'+r.id+'" min="'+_rtMin+'" max="'+_rtMax+'" step="'+_rtStep+'" value="'+_rtVal+'" style="background:linear-gradient(90deg, rgba(148,163,184,.3) 0%, rgba(148,163,184,.3) '+_rtPctP.toFixed(2)+'%, #ef4444 '+_rtPctP.toFixed(2)+'%, #3b82f6 '+_rtPctR.toFixed(2)+'%, #10b981 '+_rtPctO.toFixed(2)+'%, rgba(148,163,184,.3) '+_rtPctO.toFixed(2)+'%, rgba(148,163,184,.3) 100%)" oninput="revTargetPreview(\''+r.id+'\',this.value)" onchange="revTargetCommit(\''+r.id+'\',this.value)">';
+    h += '<input type="range" class="co-rev-slider" id="revTargetSlider_'+r.id+'" min="'+_rtMin+'" max="'+_rtMax+'" step="'+_rtStep+'" value="'+_rtVal+'" style="background:linear-gradient(90deg, #000000 0%, #ef4444 '+_rtPctP.toFixed(2)+'%, #3b82f6 '+_rtPctR.toFixed(2)+'%, #10b981 '+_rtPctO.toFixed(2)+'%, #d4af37 100%)" oninput="revTargetPreview(\''+r.id+'\',this.value)" onchange="revTargetCommit(\''+r.id+'\',this.value)">';
 
     h += '<div style="position:relative;height:34px;margin-top:4px">';
     h += '<div style="position:absolute;left:0;top:0;font-size:.62rem;color:var(--text3);text-align:left"><div style="font-weight:600">'+fmtMoney(_rtMin)+'</div>-25%</div>';
@@ -31179,44 +31017,102 @@ function renderNegotiationTab(r){
     h += '</div>';
     h += '</div>';
 
-    // ── Revenue by Unit: what-if split of the total above across units ──
-    // Display-only — it never touches each unit's real comp-based revenue, expenses,
-    // or NOI (those still live in the By Unit table above). Defaults to each unit's
-    // own natural comp-based share of the total; dragging rebalances the rest so the
-    // split always sums to 100%.
+    // ── Projected Yearly Net: Negotiation Tools' own live version of the Total
+    // Projected Yearly Net table above, but reflecting THIS section's Revenue
+    // Target + Rent Adjustment instead of a fixed Pessimistic/Realistic/Optimistic
+    // column — so Monthly Net visibly moves as either control is dragged. Rental
+    // Concessions are deliberately excluded: they're a one-time upfront rent
+    // waiver that shifts the break-even date (see the Concessions panel's own
+    // "X mo faster" readout for that), not a recurring change to Monthly Net.
+    // Total always renders; By Unit (Revenue by Unit's old sliders, now paired
+    // with each unit's own computed Expenses/Rent/Net) is available as a toggle
+    // for Multi Unit buildings — display-only, same as before, it never touches
+    // each unit's real comp-based revenue/expenses/NOI in the By Unit table above.
     const _ubList = (v.unitBreakdown || []).filter(u => u.hasRevenueData);
-    if(v.isApt && v.unitsCount > 1 && _ubList.length > 1){
+    const _ubEligible = v.isApt && v.unitsCount > 1 && _ubList.length > 1;
+    let _ubPcts = [];
+    if(_ubEligible){
       const _ubNaturalSum = _ubList.reduce((s,u) => s + (u.annualRevenue || 0), 0);
       const _ubSavedAlloc = _unitAllocPreview[r.id];
-      const _ubPcts = _ubList.map(u => {
+      _ubPcts = _ubList.map(u => {
         if(_ubSavedAlloc && _ubSavedAlloc[u.id] !== undefined) return _ubSavedAlloc[u.id];
         return _ubNaturalSum > 0 ? (u.annualRevenue || 0) / _ubNaturalSum * 100 : (100 / _ubList.length);
       });
+    }
+    const _negView = (_negSummaryView[r.id] === 'byUnit' && _ubEligible) ? 'byUnit' : 'total';
+    // Same % change the dial applied to the building-wide rent total, applied evenly
+    // to each unit's own rent — matches the "Per-Unit Target" logic under the dial below.
+    const _pctRentDial = _raRent > 0 ? (dialRent / _raRent) : 1;
 
-      h += '<div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">';
-      h += '<div style="font-size:.72rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;text-align:center;display:flex;align-items:center;justify-content:center;gap:5px;cursor:help"'+tipAttrs('Revenue by Unit','A what-if split of the Revenue Target above across your units, handy when the mix (e.g. 2BR vs 1BR) earns unevenly. Defaults to each unit\\x27s own comp-based share; drag to rebalance and the other units auto-adjust to keep the total at 100%.\\n\\nThis is a display-only lens. It doesn\\x27t change each unit\\x27s actual revenue, expenses, or NOI shown in the By Unit table above.',true)+'>Revenue by Unit<span class="nft-hint-q">?</span></div>';
-      h += '<div id="unitAllocRows_'+r.id+'" style="margin-top:8px;display:flex;flex-direction:column;gap:7px">';
+    h += '<div id="negSummaryPanel_'+r.id+'" style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">';
+    h += '<div style="display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">';
+    h += '<div style="font-size:.72rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;display:inline-flex;align-items:center;gap:5px;cursor:help"'+tipAttrs('Projected Yearly Net','The same calculations as Total Projected Yearly Net above, but using this section\\x27s Revenue Target and Rent Adjustment instead of a fixed Pessimistic/Realistic/Optimistic column \\u2014 so Monthly Net updates live as you drag either control.\\n\\nRental Concessions are not included here \\u2014 they\\x27re a one-time upfront savings that moves your break-even date, not a recurring change to Monthly Net.',true)+'>Projected Yearly Net<span class="nft-hint-q">?</span></div>';
+    if(_ubEligible){
+      h += '<div style="display:inline-flex;border-radius:14px;overflow:hidden;border:1px solid var(--border)">';
+      ['total','byUnit'].forEach(mode => {
+        const active = _negView === mode;
+        h += '<div onclick="setNegSummaryView(\''+r.id+'\',\''+mode+'\')" style="padding:4px 14px;font-size:.72rem;font-weight:700;cursor:pointer;transition:background .15s,color .15s;'+(active ? 'background:var(--primary);color:#fff' : 'color:var(--text2)')+'">'+(mode==='total'?'Total':'By Unit')+'</div>';
+      });
+      h += '</div>';
+    }
+    h += '</div>';
+
+    // Single-column row renderer — same visual language as the Total table's pynRow,
+    // just without the 3-column layout since there's exactly one live number here.
+    function _negRow(label, valHtml, opts){
+      const isTotal = opts && opts.total;
+      return '<div class="calc-row'+(isTotal?' total-row':'')+'"><div class="calc-label">'+label+'</div><div class="calc-val">'+valHtml+'</div></div>';
+    }
+
+    if(_negView === 'byUnit'){
+      h += '<div id="unitAllocRows_'+r.id+'" style="display:flex;flex-direction:column;gap:16px">';
       _ubList.forEach((u, i) => {
         const pct = _ubPcts[i];
-        const amt = Math.round(_rtVal * pct / 100);
+        const annualRevAlloc = Math.round(_pynRev * pct / 100);
+        const monthlyRevAlloc = annualRevAlloc / 12;
+        // This unit's own co-host %/AirBNB fee %/fixed costs (not the building's
+        // blended rate) applied to its share of the Revenue Target above.
+        const monthlyExpAlloc = _unitDeriveFromRev(u, monthlyRevAlloc);
+        const annualExpAlloc = Math.round(monthlyExpAlloc * 12);
+        const adjRent = Math.round((u.rent || 0) * _pctRentDial);
+        const annualRentAlloc = adjRent * 12;
+        const annualIncomeAlloc = Math.round((u.additionalIncome || 0) * 12);
+        const yearlyNetAlloc = annualRevAlloc + annualIncomeAlloc - annualExpAlloc - annualRentAlloc;
+        const monthlyNetAlloc = Math.round(yearlyNetAlloc / 12);
         // Diagnostic detail on the label — which comps drove this unit's natural share,
         // so two units that look identical (same beds/baths) but land on different
         // splits can be checked at a glance instead of guessed at.
         const _uaTierLabel = u.tier === 'own' ? 'own comps' : u.tier === 'sametype' ? 'same-type comps' : 'whole-building blend';
         const _uaTip = esc(u.label)+' · '+esc(u.typeLabel)+'\n'+u.matchedCompCount+' matched comp'+(u.matchedCompCount===1?'':'s')+' ('+_uaTierLabel+')';
-        h += '<div style="display:flex;align-items:center;gap:8px">';
+        h += '<div>';
+        h += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">';
         h += '<div style="width:96px;flex-shrink:0;font-size:.72rem;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:help" title="'+_uaTip+'">'+esc(u.label)+'</div>';
         h += '<input type="range" class="co-rev-slider ua-slider" data-unit-id="'+u.id+'" id="uaSlider_'+r.id+'_'+u.id+'" min="0" max="100" step="1" value="'+pct.toFixed(1)+'" oninput="unitAllocPreview(\''+r.id+'\',\''+u.id+'\',this.value)" onchange="unitAllocCommit(\''+r.id+'\',\''+u.id+'\',this.value)">';
         h += '<div style="width:36px;flex-shrink:0;text-align:right;font-size:.7rem;font-weight:700;color:var(--text2)" id="uaPct_'+r.id+'_'+u.id+'">'+Math.round(pct)+'%</div>';
-        h += '<div style="width:78px;flex-shrink:0;text-align:right;font-size:.72rem;font-weight:600;color:var(--text);cursor:pointer;border-bottom:1px dashed var(--border)" id="uaAmt_'+r.id+'_'+u.id+'" onclick="openUnitAllocAmtInput(this,\''+r.id+'\',\''+u.id+'\')" title="Click to type an exact amount">'+fmtMoney(amt)+'</div>';
+        h += '<div style="width:78px;flex-shrink:0;text-align:right;font-size:.72rem;font-weight:600;color:var(--text);cursor:pointer;border-bottom:1px dashed var(--border)" id="uaAmt_'+r.id+'_'+u.id+'" onclick="openUnitAllocAmtInput(this,\''+r.id+'\',\''+u.id+'\')" title="Click to type an exact amount">'+fmtMoney(annualRevAlloc)+'</div>';
+        h += '</div>';
+        h += _negRow('Annual Expenses', '<span class="calc-display" style="color:var(--text);font-weight:600">-'+fmtMoney(annualExpAlloc)+'</span>');
+        h += _negRow('Annual Rent', '<span class="calc-display" style="color:var(--text);font-weight:600">-'+fmtMoney(annualRentAlloc)+'</span>');
+        h += _negRow('Monthly Net', fmtNet(monthlyNetAlloc, '/mo'), {total:true});
         h += '</div>';
       });
       h += '</div>';
+      const _ubSavedAlloc = _unitAllocPreview[r.id];
       if(_ubSavedAlloc){
-        h += '<div style="text-align:center;margin-top:8px"><button class="co-rev-revert" onclick="resetUnitAlloc(\''+r.id+'\')">↩ reset to comp-based split</button></div>';
+        h += '<div style="text-align:center;margin-top:10px"><button class="co-rev-revert" onclick="resetUnitAlloc(\''+r.id+'\')">↩ reset to comp-based split</button></div>';
       }
-      h += '</div>';
+      h += '<div style="font-size:.66rem;color:var(--text3);text-align:center;margin-top:10px">Each unit uses its own co-host/AirBNB fee rates and fixed costs, so these won\\x27t sum to exactly the Total view (which uses one blended building-wide rate).</div>';
+    } else {
+      const _negRent = Math.round(dialRent * 12);
+      const _negNet = _pynRev + _raAnnualIncome - _pynExp - _negRent;
+      const _negMonthlyNet = Math.round(_negNet / 12);
+      h += _negRow('Annual Revenue', '<span class="calc-display" style="color:var(--text);font-weight:600">'+fmtAcct(_pynRev)+'</span>');
+      h += _negRow('Annual Expenses', '<span class="calc-display" style="color:var(--text);font-weight:600">-'+fmtMoney(_pynExp)+'</span>');
+      h += _negRow('Annual Rent', '<span class="calc-display" style="color:var(--text);font-weight:600">-'+fmtMoney(_negRent)+'</span>');
+      h += _negRow('Projected Yearly Net', fmtNet(_negNet, '/yr'), {total:true});
+      h += _negRow('Monthly Net', fmtNet(_negMonthlyNet, '/mo'), {total:true});
     }
+    h += '</div>'; // end negSummaryPanel
   }
   h += '</div></div>';
 
@@ -31247,9 +31143,8 @@ function renderNegotiationTab(r){
     // income is logged (otherwise the dial's color bands ignore income).
     function _rentForTarget(target){
       const col = _raSelectedCol;
-      if(!col || !col.rev || _raConfPct <= 0) return 0;
-      const rawMonthly = target * 100 / _raConfPct;
-      const rent = (col.rev + _raAnnualIncome - col.exp - rawMonthly * 12) / 12;
+      if(!col || !col.rev) return 0;
+      const rent = (col.rev + _raAnnualIncome - col.exp - target * 12) / 12;
       if(!isFinite(rent) || isNaN(rent)) return 0;
       return Math.max(0, Math.round(rent));
     }
@@ -31271,8 +31166,7 @@ function renderNegotiationTab(r){
     const rentDialMax = _raRent;
     const rentDialRange = rentDialMax - rentDialMin || 1;
 
-    // Current dial state
-    const dialRent = _rentDialPreview[r.id] !== undefined ? _rentDialPreview[r.id] : _raRent;
+    // Current dial state (dialRent is hoisted near the top of this function)
     const adjNetDial = _calcAdjNet(dialRent);
     const dtColDial = _dtColorFor(adjNetDial);
     const dtLblDial = _dtLabelFor(adjNetDial);
@@ -31287,7 +31181,7 @@ function renderNegotiationTab(r){
 
     // Store dial config for drag handler
     const _rdCol = _raSelectedCol;
-    h += '<div id="rentDialConfig_'+r.id+'" data-min="'+rentDialMin+'" data-max="'+rentDialMax+'" data-cx="'+dCx+'" data-cy="'+dCy+'" data-r="'+dR+'" data-w="'+dW+'" data-rev="'+_rdCol.rev+'" data-exp="'+_rdCol.exp+'" data-income="'+_raAnnualIncome+'" data-conf="'+_raConfPct+'" data-currentrent="'+_raRent+'" style="display:none"></div>';
+    h += '<div id="rentDialConfig_'+r.id+'" data-min="'+rentDialMin+'" data-max="'+rentDialMax+'" data-cx="'+dCx+'" data-cy="'+dCy+'" data-r="'+dR+'" data-w="'+dW+'" data-rev="'+_rdCol.rev+'" data-exp="'+_rdCol.exp+'" data-income="'+_raAnnualIncome+'" data-currentrent="'+_raRent+'" style="display:none"></div>';
 
     h += '<svg id="rentDial_'+r.id+'" viewBox="0 0 '+dW+' '+dH+'" style="display:block;width:100%;margin:0 auto;cursor:pointer;touch-action:none">';
     // Drop-shadow filter for the draggable needle — telegraphs interactivity.
@@ -32075,53 +31969,11 @@ function renderAnalysisTab(r){
   const hasProj = v.hasProjectionData;
   const insuffComps = v.compsCount < 3;
 
-  // Filter comps by rating for section tables below. flatIdx indexes directly
-  // into whatever array `comps` currently is — the active unit's own list
-  // when one is selected (so edit/delete handlers hit the right unit), or the
-  // read-only unioned view on "All Units" (flatIdx unused there — see readOnlyComps).
-  const losesComps = [];
-  const competesComps = [];
-  const beatsComps = [];
-  comps.forEach((c, i) => {
-    const entry = { comp: c, flatIdx: i };
-    if(c.rating === 'loses') losesComps.push(entry);
-    else if(c.rating === 'beats') beatsComps.push(entry);
-    else competesComps.push(entry); // default
-  });
-
-  // Right: Comp Strength Breakdown
-  const totalComps = visibleComps.length;
-  const losesN = losesComps.length;
-  const competesN = competesComps.length;
-  const beatsN = beatsComps.length;
-  const winRate = totalComps > 0 ? Math.round((beatsN / totalComps) * 100) : 0;
-  const competeRate = totalComps > 0 ? Math.round((competesN / totalComps) * 100) : 0;
-  const loseRate = totalComps > 0 ? Math.round((losesN / totalComps) * 100) : 0;
-
-  h += '<div class="an-section"><div class="an-section-hdr"'+tipAttrs('Competitor Strength','A breakdown of how your property compares to your saved competitors. Categorize each competitor as Loses To, Competes With, or Beats to build your competitive profile. The stacked bar shows the distribution and overall strength of your position in the market.')+'>Competitor Strength</div><div class="an-section-body" style="padding:0;display:flex;flex-direction:column">';
-
-  if(totalComps === 0){
-    h += '<div style="flex:1;display:flex;align-items:center;justify-content:center;padding:18px 14px"><div style="color:var(--text3);font-size:.82rem;text-align:center">Add competitors to see your competitive strength</div></div>';
-  } else {
-    h += '<div class="an-req-bar" style="border:none;border-radius:0;margin:0;flex:1">';
-    h += '<div class="an-req-item"><div class="req-label" style="color:#ef4444">Loses To</div><div class="req-val" style="color:#ef4444;font-size:1.3rem">'+losesN+'</div><div class="req-annual">'+loseRate+'%</div></div>';
-    h += '<div class="an-req-item"><div class="req-label" style="color:var(--primary)">Competes With</div><div class="req-val" style="color:var(--primary);font-size:1.3rem">'+competesN+'</div><div class="req-annual">'+competeRate+'%</div></div>';
-    h += '<div class="an-req-item"><div class="req-label" style="color:#10b981">Beats</div><div class="req-val" style="color:#10b981;font-size:1.3rem">'+beatsN+'</div><div class="req-annual">'+winRate+'%</div></div>';
-    h += '</div>';
-
-    // Stacked bar
-    const lPct = totalComps > 0 ? (losesN / totalComps * 100) : 0;
-    const cPct = totalComps > 0 ? (competesN / totalComps * 100) : 0;
-    const bPct = totalComps > 0 ? (beatsN / totalComps * 100) : 0;
-    h += '<div style="padding:0 14px 12px">';
-    h += '<div style="display:flex;height:8px;border-radius:4px;overflow:hidden;background:var(--bg)">';
-    if(lPct > 0) h += '<div style="width:'+lPct+'%;background:#ef4444;transition:width .3s"></div>';
-    if(cPct > 0) h += '<div style="width:'+cPct+'%;background:var(--primary);transition:width .3s"></div>';
-    if(bPct > 0) h += '<div style="width:'+bPct+'%;background:#10b981;transition:width .3s"></div>';
-    h += '</div></div>';
-  }
-
-  h += '</div></div>';
+  // flatIdx indexes directly into whatever array `comps` currently is — the
+  // active unit's own list when one is selected (so edit/delete handlers hit
+  // the right unit), or the read-only unioned view on "All Units" (flatIdx
+  // unused there — see readOnlyComps).
+  const allComps = comps.map((c, i) => ({ comp: c, flatIdx: i }));
 
   h += '</div>'; // end an-top-grid
 
@@ -32147,9 +31999,9 @@ function renderAnalysisTab(r){
     }
   }
 
-  // ── Three Color-Coded Sections ──
-  // Helper to render a comp section
-  function renderCompSection(recId, entries, sectionClass, label, icon, color, category) {
+  // ── Competitors Section ──
+  // Helper to render the comp section
+  function renderCompSection(recId, entries, sectionClass, label, icon, color) {
     const count = entries.length;
     let html = '<div class="comp-section '+sectionClass+'">';
     html += '<div class="comp-section-hdr" style="color:'+color+'">';
@@ -32159,10 +32011,10 @@ function renderAnalysisTab(r){
     html += '<div class="comp-section-body">';
 
     if(entries.length === 0){
-      html += '<div class="comp-section-empty">No competitors in this category yet.</div>';
+      html += '<div class="comp-section-empty">No competitors added yet.</div>';
     } else {
       html += '<div class="comp-table-wrap"><table class="comp-table">';
-      html += '<thead><tr><th>#</th>' + (readOnlyComps ? '<th style="min-width:90px">Unit(s)</th>' : '') + '<th>Revenue</th><th>Days</th><th>Occupancy</th><th>Rate</th><th style="min-width:52px">Guests</th><th style="min-width:68px">Bedrooms</th><th style="min-width:46px">Beds</th><th style="min-width:50px">Baths</th><th>Host</th><th>Rating</th><th class="comp-notes-cell">Notes</th><th>Link</th><th></th></tr></thead>';
+      html += '<thead><tr><th>#</th>' + (readOnlyComps ? '<th style="min-width:90px">Unit(s)</th>' : '') + '<th>Revenue</th><th>Days</th><th>Occupancy</th><th>Rate</th><th style="min-width:52px">Guests</th><th style="min-width:68px">Bedrooms</th><th style="min-width:46px">Beds</th><th style="min-width:50px">Baths</th><th>Host</th><th class="comp-notes-cell">Notes</th><th>Link</th><th></th></tr></thead>';
       html += '<tbody>';
 
       entries.forEach((entry, displayIdx) => {
@@ -32197,10 +32049,6 @@ function renderAnalysisTab(r){
         html += readOnlyComps
           ? '<td>'+(comp.host ? esc(comp.host) : '<span class="comp-placeholder">—</span>')+'</td>'
           : '<td><div class="comp-editable" onclick="compEditCell(this)" data-field="host" data-rec="'+recId+'" data-idx="'+i+'" data-raw="'+esc(comp.host||'')+'" data-type="text">'+(comp.host ? esc(comp.host) : '<span class="comp-placeholder">—</span>')+'</div></td>';
-        // Rating is now a non-editable badge
-        const badgeClass = 'comp-rating-badge '+category;
-        const badgeLabel = category === 'loses' ? 'Loses' : category === 'beats' ? 'Beats' : 'Competes';
-        html += '<td><span class="'+badgeClass+'">'+badgeLabel+'</span></td>';
         const notePreview = comp.notes ? (comp.notes.replace(/<[^>]+>/g,' ').substring(0,30) + (comp.notes.length > 30 ? '...' : '')) : '';
         html += readOnlyComps
           ? '<td class="comp-notes-cell"><div class="comp-notes-preview">'+(notePreview || '<span style="color:var(--text3)">—</span>')+'</div></td>'
@@ -32217,8 +32065,8 @@ function renderAnalysisTab(r){
     // house — is being edited; "All Units" has no single list to add into)
     if(count < 10 && !readOnlyComps){
       html += '<div class="comp-add-row">';
-      html += '<input type="text" id="compLinkInput_'+category+'" placeholder="Paste AirDNA link here..." onkeydown="if(event.key===\'Enter\'){event.preventDefault();addComp(\''+recId+'\', \''+category+'\')}" />';
-      html += '<button id="compAddBtn_'+category+'" onclick="addComp(\''+recId+'\', \''+category+'\')"><span class="comp-add-label">+ Add Competitor</span></button>';
+      html += '<input type="text" id="compLinkInput" placeholder="Paste AirDNA link here..." onkeydown="if(event.key===\'Enter\'){event.preventDefault();addComp(\''+recId+'\')}" />';
+      html += '<button id="compAddBtn" onclick="addComp(\''+recId+'\')"><span class="comp-add-label">+ Add Competitor</span></button>';
       html += '</div>';
       html += '<div style="text-align:right;font-size:.68rem;color:var(--text3);margin-top:4px">Enter to add</div>';
     } else if(readOnlyComps){
@@ -32229,9 +32077,7 @@ function renderAnalysisTab(r){
     return html;
   }
 
-  h += renderCompSection(r.id, losesComps, 'loses-to', 'Loses To', '⬇️', '#ef4444', 'loses');
-  h += renderCompSection(r.id, competesComps, 'competes-with', 'Competes With', '⚔️', 'var(--primary)', 'competes');
-  h += renderCompSection(r.id, beatsComps, 'beats', 'Beats', '⬆️', '#10b981', 'beats');
+  h += renderCompSection(r.id, allComps, 'all-comps', 'Competitors', '📋', 'var(--primary)');
 
   return h;
 }
@@ -32272,10 +32118,10 @@ function _dedupeAllUnitsComps(r, units){
   return out;
 }
 
-function addComp(recId, category){
+function addComp(recId){
   const r = records.find(x => x.id === recId);
   if(!r) return;
-  const input = document.getElementById('compLinkInput_' + category);
+  const input = document.getElementById('compLinkInput');
   const link = input?.value?.trim();
   if(!link){ showAppAlert('Please paste an AirDNA link', {title: 'Validation', icon: '⚠️'}); return }
 
@@ -32291,11 +32137,8 @@ function addComp(recId, category){
   // scrapes the metrics (and underlying Airbnb link), and delivers
   // the result via window.postMessage → handleExtensionComp.
   if(typeof rrScrapeViaExtension === 'function'){
-    // Remember which category/record this import belongs to so
-    // handleExtensionComp can route it correctly.
-    window._rrPendingCompCategory = category;
     if(input){ input.disabled = true; input.placeholder = 'Importing from AirDNA…'; }
-    var addBtn = document.getElementById('compAddBtn_' + category);
+    var addBtn = document.getElementById('compAddBtn');
     if(addBtn){ addBtn.disabled = true; addBtn.innerHTML = '<span class="comp-add-spinner"></span>'; }
     rrScrapeViaExtension(link, 'airdna').then((res) => {
       if(input){ input.disabled = false; input.placeholder = 'Paste AirDNA link here...'; }
@@ -32312,9 +32155,8 @@ function addComp(recId, category){
         }
         return;
       }
-      // Response includes data — tag it for routing and hand off
+      // Response includes data — hand off
       const data = res.data || {};
-      data.rating = category;
       data.airdnaUrl = data.airdnaUrl || link;
       if(typeof handleExtensionComp === 'function') handleExtensionComp(data);
       if(input){ input.value = ''; }
@@ -32328,57 +32170,27 @@ function addComp(recId, category){
 
   const comps = _analysisTargetComps(r);
   if(!comps){ showAppAlert('Select a specific unit tab in Competitor Analysis first, then add a competitor for that unit.', { title: 'Choose a unit', icon: 'ℹ️' }); return; }
-  const sectionCount = comps.filter(c => c.rating === category).length;
-  if(sectionCount >= 10){ showAppAlert('Maximum 10 competitors per section', {title: 'Limit Reached', icon: '📊'}); return }
+  if(comps.length >= 10){ showAppAlert('Maximum 10 competitors reached', {title: 'Limit Reached', icon: '📊'}); return }
 
   // Check for duplicate link
   const normalizedNew = _normalizeCompLink(link);
-  const ratingLabels = { loses:'Loses To', competes:'Competes With', beats:'Beats' };
-  const dupeInSame = comps.find(c => c.rating === category && _normalizeCompLink(c.link) === normalizedNew);
-  const dupeInOther = comps.find(c => c.rating !== category && _normalizeCompLink(c.link) === normalizedNew);
-
-  if(dupeInSame){
-    // Same category duplicate — alert and clear input
+  const dupe = comps.find(c => _normalizeCompLink(c.link) === normalizedNew);
+  if(dupe){
     if(input) input.value = '';
-    showAppAlert('This property has already been added to the <strong>' + (ratingLabels[category] || category) + '</strong> section.', { title: 'Duplicate Competitor', icon: '⚠️' });
+    showAppAlert('This property has already been added as a competitor.', { title: 'Duplicate Competitor', icon: '⚠️' });
     return;
   }
 
-  if(dupeInOther){
-    // Different category duplicate — let user choose to remove or override
-    const existingCat = ratingLabels[dupeInOther.rating] || dupeInOther.rating;
-    const newCat = ratingLabels[category] || category;
-    showAppConfirm('This property is already in the <strong>' + existingCat + '</strong> section. Would you like to move it to <strong>' + newCat + '</strong>, or keep it in both?', {
-      title: 'Duplicate Competitor Found',
-      icon: '⚠️',
-      confirmText: 'Move to ' + newCat,
-      cancelText: 'Keep in Both',
-      onConfirm: () => {
-        // Remove from old category
-        const dupeIdx = comps.indexOf(dupeInOther);
-        if(dupeIdx >= 0) comps.splice(dupeIdx, 1);
-        // Add to new category
-        _doAddComp(r, comps, link, category, input);
-      },
-      onCancel: () => {
-        // Keep in both — add to new category as well
-        _doAddComp(r, comps, link, category, input);
-      }
-    });
-    return;
-  }
-
-  // No duplicate — add normally
-  _doAddComp(r, comps, link, category, input);
+  _doAddComp(r, comps, link, input);
 }
 
-function _doAddComp(r, comps, link, category, input){
+function _doAddComp(r, comps, link, input){
   const shortLink = link.replace(/\?.*$/,'').replace(/https?:\/\/(www\.)?airbnb\.com\/rooms\//,'').substring(0,18)+'...';
   comps.push({
     link: link, linkShort: shortLink,
     annualRevenue:0, daysAvailable:0, occupancy:0, nightlyRate:0,
     guests:0, bedrooms:0, beds:0, bathrooms:0, host:'',
-    rating: category, notes:''
+    rating: 'competes', notes:''
   });
   if(input) input.value = '';
   saveData();
@@ -32601,15 +32413,14 @@ function _quickUpdateRentDial(recId, rent){
   const dtLbl = function(mn){ return mn >= pr ? 'Slam-Dunk' : mn >= prHalf ? 'Potential' : mn > 0 ? 'Risky' : 'No-Go'; };
   const dtIco = function(mn){ return mn >= pr ? '🏆' : mn >= prHalf ? '🔥' : mn > 0 ? '⚠️' : '🚫'; };
 
-  // We need col.rev, col.exp, confPct, income — stored in cfg dataset by the dial renderer
+  // We need col.rev, col.exp, income — stored in cfg dataset by the dial renderer
   const rev = parseFloat(cfg.dataset.rev) || 0;
   const exp = parseFloat(cfg.dataset.exp) || 0;
   const inc = parseFloat(cfg.dataset.income) || 0;
-  const confPct = parseFloat(cfg.dataset.conf) || 100;
   const annualRent = Math.round(rent * 12);
   const net = rev + inc - exp - annualRent;
   const monthlyNet = Math.round(net / 12);
-  const adjNet = Math.round(monthlyNet * confPct / 100);
+  const adjNet = monthlyNet;
 
   const color = dtCol(adjNet);
   const label = dtLbl(adjNet);
@@ -32619,20 +32430,23 @@ function _quickUpdateRentDial(recId, rent){
     + '<div style="font-size:.95rem;font-weight:700;color:'+color+'">'+icon+' '+label+' · $'+adjNet.toLocaleString()+'/mo net</div>';
 }
 
-// Live-refresh ONLY the Rental Concessions / Break-Even panel while the rent dial is
-// being dragged, so it recalculates in real time instead of waiting for release. We
-// re-render the negotiation tab to a detached element (it reads _rentDialPreview for
-// the live rent) and graft just the panel's fresh HTML in — this leaves the dial SVG
-// and its in-progress drag handlers untouched, and reuses the exact same render path
-// (no duplicated concession/break-even math). Also grafts the Multi Unit
-// per-unit rent breakdown (if present) from the same off-screen render, so it
-// tracks the dial live too instead of only updating on release.
+// Live-refresh ONLY the Rental Concessions / Break-Even panel (and the Projected
+// Yearly Net summary above it) while the rent dial or Revenue Target slider is being
+// dragged, so they recalculate in real time instead of waiting for release. We
+// re-render the negotiation tab to a detached element (it reads _rentDialPreview /
+// _revTargetPreview for the live values) and graft just the panels' fresh HTML in —
+// this leaves the dial SVG and its in-progress drag handlers untouched, and reuses
+// the exact same render path (no duplicated math). Safe to graft negSummaryPanel
+// even in By Unit mode: its allocation sliders are a DIFFERENT control than the one
+// currently being dragged (you can only drag one range input with one pointer), so
+// this never clobbers an in-progress drag the way grafting the dial itself would.
 function _liveUpdateConcessionsPanel(recId){
   const r = records.find(x => x.id === recId);
   if(!r) return;
   const livePanel = document.getElementById('concessionsPanel_'+recId);
   const liveBreakdown = document.getElementById('rentUnitBreakdown_'+recId);
-  if(!livePanel && !liveBreakdown) return;
+  const liveSummary = document.getElementById('negSummaryPanel_'+recId);
+  if(!livePanel && !liveBreakdown && !liveSummary) return;
   try {
     const tmp = document.createElement('div');
     tmp.innerHTML = renderNegotiationTab(r);
@@ -32646,6 +32460,10 @@ function _liveUpdateConcessionsPanel(recId){
     if(liveBreakdown){
       const freshBreakdown = tmp.querySelector('#rentUnitBreakdown_'+recId);
       if(freshBreakdown) liveBreakdown.innerHTML = freshBreakdown.innerHTML;
+    }
+    if(liveSummary){
+      const freshSummary = tmp.querySelector('#negSummaryPanel_'+recId);
+      if(freshSummary) liveSummary.innerHTML = freshSummary.innerHTML;
     }
   } catch(e){ /* ignore transient calc errors mid-drag */ }
 }
@@ -32813,6 +32631,15 @@ function saveRevTargetInput(recId){
 // the live slider DOM directly during drag (no calcComputeAll re-run per frame), same
 // cheap-update approach as the rent dial. ──
 let _unitAllocPreview = {}; // { recId: { unitId: pct, ... } } — set once the user drags or resets
+
+// Negotiation Tools' Projected Yearly Net summary: 'total' (default) or 'byUnit'.
+// Just a view toggle, not persisted — resets to 'total' on reload like every other
+// Negotiation Tools preview state.
+let _negSummaryView = {}; // { recId: 'total' | 'byUnit' }
+function setNegSummaryView(recId, mode){
+  _negSummaryView[recId] = mode;
+  if(typeof _rerenderCalcTab === 'function') try { _rerenderCalcTab(); } catch(_){}
+}
 
 function _unitAllocReadDom(recId){
   const wrap = document.getElementById('unitAllocRows_'+recId);
@@ -33058,7 +32885,6 @@ function compEditCell(el, skipBlurSave){
       _saveActiveCompEdit();
 
       // Find all editable cells in the current section's table
-      const sectionEl = el.closest('.comp-section');
       const table = el.closest('table');
       if(!table) { _rerenderAnalysisTab(); return; }
       const allEditables = Array.from(table.querySelectorAll('.comp-editable'));
@@ -33069,18 +32895,9 @@ function compEditCell(el, skipBlurSave){
       if(nextIdx >= 0 && nextIdx < allEditables.length){
         // Re-render first so cells get fresh values, then open the next cell
         _rerenderAnalysisTab();
-        // After re-render, find the same cell in the same section's table and open it
+        // After re-render, find the (single) comp table and open it there
         requestAnimationFrame(() => {
-          let newTable = null;
-          if(sectionEl){
-            const sectionClass = Array.from(sectionEl.classList).find(c => c.match(/loses-to|competes-with|beats/));
-            if(sectionClass){
-              const matchingSection = document.querySelector('.comp-section.' + sectionClass);
-              if(matchingSection) newTable = matchingSection.querySelector('.comp-table');
-            }
-          } else {
-            newTable = document.querySelector('.comp-table');
-          }
+          const newTable = document.querySelector('.comp-table');
           if(!newTable) return;
           const newEditables = Array.from(newTable.querySelectorAll('.comp-editable'));
           if(newEditables[nextIdx]){
@@ -39712,10 +39529,7 @@ var _KB_STARTER_ENTRIES = [
   { question: "What are comps?", answer: "Comps (comparables) are nearby short-term rentals you measure a property against to gauge its revenue potential. You add them in the Competitor Analysis tab on the Houses/Apartments side, or the Market Potential tab on the Co-Hosting side.", tags: ["analysis", "comps", "cohosting"] },
   { question: "What does the deal recommendation mean?", answer: "It's a quick read on how strong a deal looks, based on your comps and projected returns — a shortcut for deciding which properties are worth pursuing.", tags: ["analysis", "deal-temperature", "recommendation"] },
   { question: "How is the AirBNB Service Fee calculated?", answer: "It's a percentage of revenue, defaulting to 15.5%. You can edit that percentage on the Income & Expenses tab (per unit for Multi Unit buildings), so it stays accurate if Airbnb's fee for your listing is different.", tags: ["math", "airbnb", "service-fee"] },
-  { question: "How is my Position Score calculated?", answer: "Formula: (−1 × loses + 0 × competes + +1 × beats) ÷ total comps, giving a number from −1.0 (worst) to +1.0 (best). Example: 5 comps (1 Loses To, 2 Competes, 2 Beats) → (−1 + 0 + 0 + 1 + 1) ÷ 5 = +0.20. It drives your Market Percentile and Position Adjustment.", tags: ["math", "position-score"] },
-  { question: "What is Market Percentile in the analysis?", answer: "The estimated percentage of the market your property outperforms: (beats + 0.5 × competes) ÷ total comps × 100. Example: 5 comps (1 Loses To, 2 Competes, 2 Beats) → (2 + 0.5 × 2) ÷ 5 × 100 = 60th percentile. 50 is average for the market.", tags: ["math", "market-percentile"] },
-  { question: "What is the Position Adjustment range?", answer: "55% to 100%, scaled by your Position Score. Formula: 55 + ((positionScore + 1) ÷ 2) × 45. It scales your projection to your competitive standing.", tags: ["math", "position-adjustment"] },
-  { question: "What does Cash Flow mean on the projection?", answer: "Cash Flow = Net Operating Income minus rent, then multiplied by your Position Adjustment (the 55–100% confidence multiplier) — so it's your confidence-discounted monthly cash flow, before tax.", tags: ["math", "cash-flow"] },
+  { question: "What does Cash Flow mean on the projection?", answer: "Cash Flow = Net Operating Income minus rent — your projected monthly take-home after all expenses and rent, before tax.", tags: ["math", "cash-flow"] },
   { question: "What does Average Revenue mean on the analysis?", answer: "It's the actual annual revenue averaged from your comp properties — not a figure recalculated from rate × days × occupancy.", tags: ["math", "revenue", "comps"] },
   { question: "What is NOI?", answer: "Net Operating Income — revenue minus operating expenses (before rent and financing). It's a measure of how much the property earns on its own.", tags: ["math", "noi"] },
   { question: "What is an analysis, and is it limited?", answer: "The monthly analysis limit applies to the Houses/Apartments side. Are you asking about Houses/Apartments, or about Co-Hosting? Tell me which and I'll give you the exact details for that side.", tags: ["analysis", "limits", "billing", "cohosting", "disambiguation"] },
@@ -39723,13 +39537,13 @@ var _KB_STARTER_ENTRIES = [
   // ---- Property analysis sections: Property Details · Income & Expenses · Competitor Analysis · Projected ROI ----
   { question: "What are the sections or tabs of a property?", answer: "A property's tabs are different on each side of RentingRadar — Houses/Apartments and Co-Hosting each have their own set (Apartments also adds a Units tab for defining individual units). Which one are you asking about? Let me know and I'll list that side's tabs.", tags: ["analysis", "property-details", "tabs", "cohosting", "overview", "disambiguation"] },
   { question: "What are the Property Details and Income & Expenses tabs?", answer: "Property Details is where you capture the property's specifics, and Income & Expenses is where you enter the expected income and operating costs. Both feed into your Projected ROI alongside your Competitor Analysis.", tags: ["property-details", "income-expenses", "analysis"] },
-  { question: "What is the Competitor Analysis tab?", answer: "It's where you build a property's comparison set: you add nearby comparable short-term rentals and, for each one, decide whether the property you're analyzing beats, competes with, or loses to it. Once you've entered at least 3 competitors, it unlocks your Projected ROI.", tags: ["competitor-analysis", "comps", "projected-roi", "analysis"] },
+  { question: "What is the Competitor Analysis tab?", answer: "It's where you build a property's comparison set: you add nearby short-term rentals that are genuinely comparable to the property you're analyzing. Once you've entered at least 3 competitors, it unlocks your Projected ROI.", tags: ["competitor-analysis", "comps", "projected-roi", "analysis"] },
   { question: "What is the Projected ROI tab?", answer: "Projected ROI estimates how a property could perform — projecting revenue, expenses, and cash flow across pessimistic, realistic, and optimistic scenarios — based on your Property Details, Income & Expenses, and the competitors you assessed. It unlocks once you've entered at least 3 competitors in Competitor Analysis.", tags: ["projected-roi", "competitor-analysis", "analysis", "projections"] },
   { question: "Why is my Competitor Analysis or Projected ROI empty or not working?", answer: "Both the Competitor Analysis and Projected ROI tabs come to life once you've entered at least 3 competitors in the Competitor Analysis tab. If either looks empty or inactive, add 3 or more comparable properties there and assess each one — that unlocks the full analysis.", tags: ["competitor-analysis", "projected-roi", "troubleshooting", "unlock", "analysis"] },
   { question: "How many competitors or comps do I need to add?", answer: "At least 3 in either section. On the Houses/Apartments side, 3 competitors in the Competitor Analysis tab unlock your Projected ROI; on the Co-Hosting side, 3 comparables in Market Potential unlock the revenue dial and break-even. More comps make the projection more accurate.", tags: ["competitor-analysis", "market-potential", "comps", "unlock", "cohosting"] },
-  { question: "How do I use the Competitor Analysis tab?", answer: "Add comparable properties, and for each one decide whether the property you're analyzing beats, competes with, or loses to it. That assessment is yours to make — please take your time and judge each competitor honestly, since these calls directly shape your Projected ROI.", tags: ["competitor-analysis", "comps", "beats-competes-loses", "analysis"] },
-  { question: "How do I decide if my property beats, competes with, or loses to a competitor?", answer: "That's your educated judgment based on how your property stacks up — location, size, amenities, condition, and overall appeal. Beats = yours is the stronger listing, Competes = they're roughly even, Loses = the competitor is stronger. It's worth taking your time here; thoughtful, honest assessments make your Projected ROI far more reliable.", tags: ["competitor-analysis", "beats-competes-loses", "comps", "analysis"] },
-  { question: "How can I make my Projected ROI more accurate?", answer: "Add more competitors and assess each one carefully. The more comparable properties you enter in Competitor Analysis — and the more honestly you judge each as a beat, compete, or loss — the more accurate your Projected ROI.", tags: ["projected-roi", "competitor-analysis", "comps", "accuracy", "analysis"] },
+  { question: "How do I use the Competitor Analysis tab?", answer: "Add comparable properties — similar location, size, and amenities to the one you're analyzing. Picking genuinely comparable listings (not ones clearly above or below it) is what makes your Projected ROI reliable.", tags: ["competitor-analysis", "comps", "analysis"] },
+  { question: "What makes a good comp?", answer: "A comp should be genuinely comparable to the property you're analyzing — similar location, size, condition, and amenities. Avoid listings that are clearly nicer or clearly weaker; the closer the match, the more reliable your Projected ROI.", tags: ["competitor-analysis", "comps", "analysis"] },
+  { question: "How can I make my Projected ROI more accurate?", answer: "Add more competitors that are genuinely comparable to the property — similar location, size, condition, and amenities. The more accurate and comparable your comps, the more reliable your Projected ROI.", tags: ["projected-roi", "competitor-analysis", "comps", "accuracy", "analysis"] },
 
   // ---- Negotiation tools ----
   { question: "How do I figure out what rent to offer the landlord?", answer: "Use the rent dial in the Negotiation Tools tab — drag it to watch your NOI and cash flow shift at different rent prices, then target a rent that keeps you comfortably cash-flow positive.", tags: ["negotiation", "rent-dial"] },
@@ -39739,7 +39553,6 @@ var _KB_STARTER_ENTRIES = [
   { question: "Does a concession change my monthly cash flow?", answer: "No. A concession is a one-time upfront benefit — it lowers your effective investment so you break even faster, but it does NOT change your steady-state monthly cash flow or NOI. Your ongoing numbers stay the same; you just start from a better position.", tags: ["negotiation", "rental-concession", "cash-flow", "break-even"] },
   { question: "What does the With / Without Concessions comparison show?", answer: "Two break-even timelines side by side: 'Without' uses your full upfront investment, 'With' subtracts the rent you negotiated free. The difference is how much sooner you recover your money. The break-even chart plots both lines so you can see the gap the concession creates.", tags: ["negotiation", "rental-concession", "break-even", "payback"] },
   { question: "What does 'X mo faster · Saves $Y' mean in the concessions panel?", answer: "$Y is the rent waived — the dollar value of the free weeks (monthly rent × free weeks ÷ 4). 'X mo faster' is roughly how much sooner you reach break-even because that amount comes off your upfront investment instead of having to be earned back over time.", tags: ["negotiation", "rental-concession", "free-rent", "break-even"] },
-  { question: "What Position Score should I target?", answer: "Anything above 0 means you beat more comps than you lose to. Above +0.5 is a strong position.", tags: ["negotiation", "position-score"] },
 
   // ---- Operations ----
   { question: "What's the difference between the Houses/Apartments section and Operations?", answer: "Houses and Apartments are for deals you're still evaluating. Operations is for properties you're actively managing — each gets tasks, meetings, expenses, maintenance, contracts, reviews, purchases, and contacts.", tags: ["operations", "arbitrage", "overview"] },
@@ -39801,15 +39614,12 @@ var _KB_STARTER_ENTRIES = [
   { question: "Something looks broken or isn't working", answer: "I'm sorry about that! What were you trying to do when it broke?", tags: ["troubleshooting", "bug"] },
 
   // ---- Metrics & analysis (derived from the in-app tooltips — verified) ----
-  { question: "What is the Position Rating?", answer: "A plain-language label for your Position Score: Strong (+0.50 to +1.00, you beat most comps), Favorable (+0.15 to +0.50), Neutral (−0.15 to +0.15, roughly even), Challenging (−0.50 to −0.15), and Weak (−1.00 to −0.50, you lose to most comps). Example: 5 comps (1 Loses To, 2 Competes, 2 Beats) → +0.20 → Favorable.", tags: ["analysis", "position-rating", "metric"] },
-  { question: "What is Cash on Cash Return?", answer: "Your adjusted annual cash flow ÷ total investment × 100. It uses the confidence-discounted cash flow (after the Position Adjustment), so it reflects your competitive standing — not just raw numbers.", tags: ["analysis", "cash-on-cash", "roi", "metric"] },
-  { question: "What is the Payback Period?", answer: "The estimated time for your cumulative cash flow to recover your total upfront investment. It uses the selected projection mode's annual cash flow, discounted by your Position Adjustment.", tags: ["analysis", "payback", "metric"] },
+  { question: "What is Cash on Cash Return?", answer: "Your annual cash flow ÷ total investment × 100. A higher percentage means your investment pays for itself faster.", tags: ["analysis", "cash-on-cash", "roi", "metric"] },
+  { question: "What is the Payback Period?", answer: "The estimated time for your cumulative cash flow to recover your total upfront investment. It uses the selected projection mode's annual cash flow.", tags: ["analysis", "payback", "metric"] },
   { question: "What is the Profit Requirement?", answer: "Your minimum desired monthly net profit (default $1,000/mo — click the pencil to edit). For Multi Unit buildings, the default scales with each included unit — $1,000/mo per unit, so a 3-unit building defaults to $3,000/mo. It drives the Deal Temperature, the rent dial's color bands, and Required Revenue. It does NOT change NOI, Cash Flow, Cash-on-Cash, or Payback — it just labels whether those are good enough for you.", tags: ["analysis", "profit-requirement", "metric"] },
   { question: "What is Required Revenue?", answer: "The minimum revenue needed to cover rent, expenses, and your profit requirement: Rent + Expenses + Profit Requirement. If your projected revenue is at or above it, the deal pencils.", tags: ["analysis", "required-revenue", "metric"] },
   { question: "What is the Deal Temperature?", answer: "A Cold-to-Hot gauge that rates a property using all available data — financials, competition, and market conditions. Use it as a quick go/no-go read on a deal.", tags: ["analysis", "deal-temperature", "metric"] },
-  { question: "What do the Pessimistic, Realistic, and Optimistic projection modes mean?", answer: "They're three earnings scenarios. Each applies different directional multipliers to your competitor data, then discounts the result by your competitive position. Pick a mode to drive the KPIs, Deal Temperature, and Payback Period. They're projections only — actual results may differ.", tags: ["analysis", "projections", "roi"] },
-  { question: "What is the Competitive Position?", answer: "How your property stacks up against the comps you've tagged Loses To, Competes With, and Beats. It drives three metrics: Position Score (−1.0 to +1.0), Market Percentile (% of the market you outperform), and the Position Adjustment (a 55–100% confidence multiplier on your projected cash flow).", tags: ["analysis", "competitive-position", "metric"] },
-  { question: "What is Competitor Strength?", answer: "A breakdown of how your property compares to your saved competitors, shown as a stacked bar across Loses To, Competes With, and Beats — a clear read on your overall position in the market.", tags: ["analysis", "competitor-strength", "comps"] },
+  { question: "What do the Pessimistic, Realistic, and Optimistic projection modes mean?", answer: "They're three revenue scenarios, each scaling your comps' average revenue by a different multiplier (Pessimistic ×0.90, Realistic ×1.00, Optimistic ×1.10). Pick a mode to drive the KPIs, Deal Temperature, and Payback Period. They're projections only — actual results may differ.", tags: ["analysis", "projections", "roi"] },
   { question: "What is the Rent Adjustment dial?", answer: "A projection tool for exploring what rent would make a deal work — click the rent amount (✏️) to type an exact number, or drag the dial. Cash flow, ROI, and Deal Temperature update in real time. It does NOT change the actual rent.", tags: ["negotiation", "rent-dial"] },
   { question: "What are the four ROI KPI cards?", answer: "On the Projected ROI tab: Net Operating Income (revenue minus operating expenses, before rent), Cash Flow, Cash on Cash Return, and Payback Period — your at-a-glance financial snapshot for a deal.", tags: ["analysis", "roi", "kpi"] },
 
@@ -40182,7 +39992,7 @@ function renderHelp(){
         ${renderHelpAccordion('What are the different pipeline categories?',
           '<strong>New Leads</strong> — Properties you\'re tracking but haven\'t contacted yet (New, No Contact).<br><strong>In Outreach</strong> — Active communication (Messaged, Left Voicemail, Follow Up).<br><strong>Qualified</strong> — Promising prospects (Interested, Meeting).<br><strong>Closed/Lost</strong> — No longer pursuing (HOA Issues, Not Good Fit, Not Interested, Un-Listed).')}
         ${renderHelpAccordion('How does the ROI calculator work?',
-          'Open any property profile and go to the <strong>Projected ROI</strong> tab. Enter the monthly rent, furnishing costs, and expected nightly rate. The calculator projects annual revenue, expenses, net operating income, and cash-on-cash return. Add at least 3 competitors in the <strong>Analysis</strong> tab — categorized as Loses To, Competes With, or Beats — to get a weighted revenue projection and deal temperature recommendation.')}
+          'Open any property profile and go to the <strong>Projected ROI</strong> tab. Enter the monthly rent, furnishing costs, and expected nightly rate. The calculator projects annual revenue, expenses, net operating income, and cash-on-cash return. Add at least 3 genuinely comparable competitors in the <strong>Analysis</strong> tab to get a revenue projection and deal temperature recommendation.')}
         ${renderHelpAccordion('Can I import properties from a spreadsheet?',
           'Yes — in <strong>Prospecting</strong>, open the import option (the <strong>+ / Import</strong> menu). RentingRadar supports <strong>CSV</strong>, <strong>Monday.com XLSX</strong> (it auto-detects sub-tabs like VA Schedule, Maintenance, Cases, Reviews, and Purchases), and <strong>Custom XLSX</strong> where you map your own columns. Include a header row. Every import is logged in <strong>Import History</strong>, and you can undo within 24 hours.')}
         ${renderHelpAccordion('What\'s the difference between the plans?',
@@ -42092,8 +41902,8 @@ async function exportPropertyProfile(recId){
 // throwaway "wrapper" record that keeps recordType:'apartment' (so getCalc/
 // getComps still resolve this unit's REAL stored per-unit data by id) but
 // with r.units limited to just this one unit — that gives back a full
-// single-property-shaped `v` (positionScore, optimistic/pessimistic revenue,
-// payback-ready totalInvested, etc.) computed from exactly this unit's own
+// single-property-shaped `v` (optimistic/pessimistic revenue, payback-ready
+// totalInvested, etc.) computed from exactly this unit's own
 // numbers, with the building's shared common-space cost zeroed out so it
 // isn't attributed in full to every unit's sheet. Every nested object handed
 // to the wrapper is a deep-ish clone — getCalc()/calcComputeAll() mutate
@@ -42194,18 +42004,12 @@ function _buildWhyNarrative(r, v, comps, hasProj, realisticRev, optimisticRev, p
   const avgRate = rateComps.length > 0 ? rateComps.reduce(function(s,x){return s+parseFloat(x.nightlyRate);},0)/rateComps.length : 0;
   const occComps = comps.filter(function(x){ return parseFloat(x.occupancy) > 0; });
   const avgOcc = occComps.length > 0 ? occComps.reduce(function(s,x){return s+parseFloat(x.occupancy);},0)/occComps.length : 0;
-  const losesN = v.losesCount || 0;
-  const competesN = v.competesCount || 0;
-  const beatsN = v.beatsCount || 0;
-  const total = losesN + competesN + beatsN;
-  const posLabel = v.positionScore >= 0.5 ? 'strong' : v.positionScore >= 0.15 ? 'favorable' : v.positionScore >= -0.15 ? 'neutral' : v.positionScore >= -0.5 ? 'challenging' : 'weak';
 
-  let text = 'Revenue projections are derived from ' + total + ' comparable properties analyzed in the local market.';
+  let text = 'Revenue projections are derived from ' + comps.length + ' comparable properties analyzed in the local market.';
   text += ' The average nightly rate across comparables is $' + avgRate.toFixed(2) + ' with an average occupancy rate of ' + Math.round(avgOcc) + '%.';
-  text += ' This property\'s competitive position is rated as ' + posLabel + ' (score: ' + (v.positionScore >= 0 ? '+' : '') + v.positionScore.toFixed(2) + '), where it beats ' + beatsN + ', competes with ' + competesN + ', and loses to ' + losesN + ' comparable' + (losesN !== 1 ? 's' : '') + '.';
-  text += '\n\nDefinite (Realistic) projection of $' + realisticRev.toLocaleString() + '/yr applies weighted directional multipliers (Loses ×0.85, Competes ×1.00, Beats ×1.15) to competitor revenue data.';
-  text += ' Best-Case (Optimistic) of $' + optimisticRev.toLocaleString() + '/yr uses higher multipliers (×0.95/×1.10/×1.25) reflecting stronger-than-expected performance.';
-  text += ' Worst-Case (Pessimistic) of $' + pessimisticRev.toLocaleString() + '/yr uses conservative multipliers (×0.75/×0.90/×1.05) accounting for underperformance risk.';
+  text += '\n\nDefinite (Realistic) projection of $' + realisticRev.toLocaleString() + '/yr uses comparables\' average revenue as-is.';
+  text += ' Best-Case (Optimistic) of $' + optimisticRev.toLocaleString() + '/yr scales it up 10%, reflecting stronger-than-expected performance.';
+  text += ' Worst-Case (Pessimistic) of $' + pessimisticRev.toLocaleString() + '/yr scales it down 10%, accounting for underperformance risk.';
   if(br) text += ' The property has ' + br + ' bedroom' + (br !== 1 ? 's' : '') + (pd.bathrooms ? ' and ' + pd.bathrooms + ' bathroom' + (parseFloat(pd.bathrooms) !== 1 ? 's' : '') : '') + '.';
   if(pd.monthlyRent) text += ' At an asking rent of $' + Math.round(parseFloat(pd.monthlyRent)).toLocaleString() + '/mo, the spread between projected revenue and total costs will determine deal viability.';
   return text;
