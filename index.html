@@ -30343,6 +30343,18 @@ function renderCalculatorTab(r){
   const kpiMonthlyCF = _pynMonthlyNet;
   const kpiAnnualCF = kpiMonthlyCF * 12;
   const kpiCoC = v.totalInvested > 0 ? (kpiAnnualCF / v.totalInvested * 100) : 0;
+  // Profit Margin — what share of every dollar coming in (revenue + additional
+  // income) survives as profit. Different question from CoC Return, which
+  // measures return on invested capital rather than margin on income.
+  const kpiMarginIncome = _pynRev + _pynAnnualIncome;
+  const kpiMarginPct = v.hasProjectionData && kpiMarginIncome > 0 ? (_pynNet / kpiMarginIncome * 100) : 0;
+  const kpiMarginColor = kpiMarginPct < 15 ? '#ef4444' : kpiMarginPct < 30 ? '#f59e0b' : '#10b981';
+  // Rent Cushion — how much more rent this deal could absorb before Monthly
+  // Net hits $0, at the selected scenario. Same breakeven-rent math the
+  // Negotiation Tools rent dial uses (_rentForTarget(0) there).
+  const kpiBreakevenRent = Math.max(0, Math.round((kpiMarginIncome - _pynExp) / 12));
+  const kpiRentCushion = Math.round(kpiBreakevenRent - v.monthlyRent);
+  const kpiCushionColor = kpiRentCushion >= 0 ? '#10b981' : '#ef4444';
   // Color Cash Flow & CoC using deal temperature bands based on profit requirement
   const _kpiPR = parseFloat((r.details && r.details.analysis && r.details.analysis.profitRequirement) || 0) || defaultProfitReq(r);
   const _kpiPRHalf = Math.round(_kpiPR * 0.5);
@@ -30393,7 +30405,6 @@ function renderCalculatorTab(r){
   // ══════ SECTION VARIABLES ══════
   let kpiHtml = '';
   let pynHtml = '';
-  let sideVisualHtml = '';
   let dealHtml = '';
   let paybackHtml = '';
 
@@ -30417,6 +30428,8 @@ function renderCalculatorTab(r){
   kpiHtml += '<div class="calc-kpi"'+tipAttrs('Profit Requirement','Your minimum desired monthly net profit. Drives Deal Temperature, the rent dial color bands, and Required Revenue.\\n\\nDoes NOT change NOI, Cash Flow, CoC, or Payback — just labels whether they\\x27re good enough.\\n\\n'+_prDefaultNote)+'><div class="kpi-label">Profit Requirement<div class="kpi-proj-tag" style="'+_prPillColor+'">'+_prPillLabel+'</div></div><div class="kpi-monthly">'+fmtMoney(_kpiProfitReq)+'<span class="kpi-per">/mo</span> <span onclick="event.stopPropagation();editAnalysisProfitReq(\''+r.id+'\')" title="Edit profit requirement" style="font-size:.65rem;opacity:.45;margin-left:2px;cursor:pointer;padding:2px 4px;border-radius:3px" onmouseover="this.style.opacity=1;this.style.background=\'var(--bg2)\'" onmouseout="this.style.opacity=.45;this.style.background=\'transparent\'">✏️</span></div><div class="kpi-annual">'+fmtMoney(_kpiProfitReq*12)+'/yr</div></div>';
   kpiHtml += '<div class="calc-kpi"'+tipAttrs('Cash Flow','Net Operating Income minus rent.\\n\\nThis is your estimated take-home profit after all expenses and rent.')+'><div class="kpi-label">Cash Flow'+projTagHtml+'</div><div class="kpi-monthly" style="'+(insufficientComps?'':'color:'+_dtColor)+'">'+(insufficientComps ? '<span style="color:var(--text3)">$—<span class="kpi-per">/mo</span></span>' : fmtMoney(Math.round(kpiMonthlyCF))+'<span class="kpi-per">/mo</span>')+'</div><div class="kpi-annual">'+(insufficientComps ? '<span style="color:var(--text3);font-size:.7rem">$—/yr</span>' : fmtMoney(Math.round(kpiAnnualCF))+'/yr')+'</div></div>';
   kpiHtml += '<div class="calc-kpi"'+tipAttrs('Cash on Cash Return','Annual cash flow ÷ total investment × 100.\\n\\nA higher percentage means your investment pays for itself faster.')+'><div class="kpi-label">Cash on Cash Return'+projTagHtml+'</div><div class="kpi-monthly" style="'+(insufficientComps?'':'color:'+_dtColor)+'">'+(insufficientComps ? '<span style="color:var(--text3)">—%</span>' : kpiCoC.toFixed(1)+'%')+'</div><div class="kpi-annual">'+(insufficientComps ? '<span style="color:var(--text3);font-size:.7rem">$— invested</span>' : fmtMoney(Math.round(v.totalInvested))+' invested')+'</div></div>';
+  kpiHtml += '<div class="calc-kpi"'+tipAttrs('Profit Margin','What share of every dollar coming in (revenue + additional income) survives as profit, at the selected projection.\\n\\nFormula: Net ÷ (Revenue + Additional Income) × 100.\\n\\nDifferent from Cash on Cash Return, which measures return on your invested capital — this measures margin on your income.')+'><div class="kpi-label">Profit Margin'+projTagHtml+'</div><div class="kpi-monthly" style="'+(insufficientComps?'':'color:'+kpiMarginColor)+'">'+(insufficientComps ? '<span style="color:var(--text3)">—%</span>' : Math.round(kpiMarginPct)+'%')+'</div><div class="kpi-annual">'+(insufficientComps ? '<span style="color:var(--text3);font-size:.7rem">$— net</span>' : fmtMoney(Math.round(_pynNet/12))+'/mo net')+'</div></div>';
+  kpiHtml += '<div class="calc-kpi"'+tipAttrs('Rent Cushion','How much more rent this deal could absorb before Monthly Net hits $0, at the selected projection.\\n\\nFormula: Breakeven Rent − Current Rent, where Breakeven Rent is the rent that would make Revenue + Additional Income − Expenses − Rent = 0.\\n\\nUses the same math as the Rent Adjustment dial in Negotiation Tools below.')+'><div class="kpi-label">Rent Cushion'+projTagHtml+'</div><div class="kpi-monthly" style="'+(insufficientComps?'':'color:'+kpiCushionColor)+'">'+(insufficientComps ? '<span style="color:var(--text3)">$—<span class="kpi-per">/mo</span></span>' : fmtMoney(kpiRentCushion)+'<span class="kpi-per">/mo</span>')+'</div><div class="kpi-annual">'+(insufficientComps ? '<span style="color:var(--text3);font-size:.7rem">breakeven $—</span>' : 'breakeven '+fmtMoney(kpiBreakevenRent)+'/mo')+'</div></div>';
   kpiHtml += '</div>';
 
   // ─────────────────────────────────────────
@@ -30699,39 +30712,6 @@ function renderCalculatorTab(r){
   const selectedCol = cols.find(c => c.key === calcProjMode) || cols[1];
 
   // ─────────────────────────────────────────
-  // SECTION 4.5: Profit Margin
-  // ─────────────────────────────────────────
-  // A radial ring showing Net Profit as a % of total income (comp revenue +
-  // additional income), at the selected scenario — never shown anywhere else
-  // on this tab. The KPIs show dollar Cash Flow and CoC% (return on invested
-  // capital); this shows what share of every dollar coming in survives as
-  // profit, which is a different question.
-  {
-    const hasMarginData = !insufficientComps && selectedCol.hasData;
-    const marginTotalIncome = hasMarginData ? (selectedCol.rev + projAnnualIncome) : 0;
-    const marginPct = hasMarginData && marginTotalIncome > 0 ? (selectedCol.net / marginTotalIncome * 100) : 0;
-    const marginColor = !hasMarginData ? 'var(--text3)' : marginPct < 15 ? 'var(--num-danger)' : marginPct < 30 ? 'var(--num-warning)' : 'var(--num-success)';
-    const marginRingPct = Math.max(0, Math.min(100, marginPct));
-
-    sideVisualHtml += '<div class="calc-section"'+(hasMarginData?'':' style="opacity:.5"')+'><div class="calc-section-header"'+tipAttrs('Profit Margin','What share of every dollar coming in survives as profit, at the selected projection.\\n\\nFormula: Net ÷ (Revenue + Additional Income) × 100.\\n\\nDifferent from Cash on Cash Return, which measures return on your invested capital — this measures margin on your income.')+'>Profit Margin</div><div class="calc-section-body" style="padding:12px 14px;text-align:center">';
-
-    if(!hasMarginData){
-      sideVisualHtml += '<div style="padding:22px 0;color:var(--text3);font-size:.82rem;font-style:italic">'+compsReqMsgShort+' to calculate</div>';
-    } else {
-      const ringR = 42, ringCx = 50, ringCy = 50, circumference = 2 * Math.PI * ringR;
-      const dashOffset = circumference * (1 - marginRingPct / 100);
-      sideVisualHtml += '<svg viewBox="0 0 100 100" style="width:120px;height:120px;margin:0 auto;display:block">';
-      sideVisualHtml += '<circle cx="'+ringCx+'" cy="'+ringCy+'" r="'+ringR+'" fill="none" stroke="var(--bg)" stroke-width="11"/>';
-      sideVisualHtml += '<circle cx="'+ringCx+'" cy="'+ringCy+'" r="'+ringR+'" fill="none" stroke="'+marginColor+'" stroke-width="11" stroke-linecap="round" stroke-dasharray="'+circumference.toFixed(1)+'" stroke-dashoffset="'+dashOffset.toFixed(1)+'" transform="rotate(-90 '+ringCx+' '+ringCy+')"/>';
-      sideVisualHtml += '<text x="'+ringCx+'" y="'+(ringCy-3)+'" text-anchor="middle" font-size="22" font-weight="800" fill="var(--text)">'+Math.round(marginPct)+'%</text>';
-      sideVisualHtml += '<text x="'+ringCx+'" y="'+(ringCy+16)+'" text-anchor="middle" font-size="8" fill="var(--text3)" letter-spacing=".5">MARGIN</text>';
-      sideVisualHtml += '</svg>';
-      sideVisualHtml += '<div style="font-size:.68rem;color:var(--text3);margin-top:2px">'+fmtMoney(Math.round(selectedCol.net/12))+'/mo net of '+fmtMoney(Math.round(marginTotalIncome/12))+'/mo income</div>';
-    }
-    sideVisualHtml += '</div></div>';
-  }
-
-  // ─────────────────────────────────────────
   // SECTION 5: Deal Temperature
   // ─────────────────────────────────────────
 
@@ -30835,10 +30815,9 @@ function renderCalculatorTab(r){
   }
 
   // ══════ ASSEMBLE PANELS ══════
-  // LEFT PANEL: KPIs + Profit Margin
+  // LEFT PANEL: KPIs
   h += '<div class="calc-panel">';
   h += kpiHtml;
-  h += sideVisualHtml;
   h += '</div>';
 
   // RIGHT PANEL: PYN + Deal Temperature
