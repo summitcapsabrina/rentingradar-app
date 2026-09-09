@@ -28147,7 +28147,7 @@ const CALC_DEFAULTS = {
   insurance:0, strFee:0, water:0, gas:0, electric:0,
   wifiTv:0, futureRepairs:0, incidentals:0, parking:0, petRent:0, storage:0,
   garbageRecycling:0, channelManager:0, cityPermit:0,
-  coHostPct:0, airbnbFeePct:15.5, avgLengthOfStay:3
+  coHostPct:0, airbnbFeePct:15.5, avgLengthOfStay:3, cleaningPerTurn:0
 };
 const CLEANING_DEFAULTS = {0:500, 1:500, 2:650, 3:900, 4:1200, 5:1200, 6:1200};
 
@@ -28379,13 +28379,19 @@ function calcComputeAll(r){
       const furnishBr = ubr === 0 ? 1 : ubr; // studio treated as 1BR for cost-per-bedroom purposes
       const furnishThisUnit = furnishBr * uc.costPerBR;
       const fixedExpThisUnit = uc.insurance + uc.strFee + uc.water + uc.gas + uc.electric + uc.wifiTv + uc.futureRepairs + uc.incidentals + uc.parking + uc.petRent + uc.storage + uc.garbageRecycling + uc.channelManager + uc.cityPermit;
-      const cleaningThisUnit = uc.cleaning;
 
       // Simple (non-direction-weighted) revenue estimate for this unit, same
       // method used for the always-available headline KPIs below — the more
       // sophisticated direction-weighted projection (wSum) is computed later,
       // once we know whether there's enough comp data for it.
       const s = _compStatsForUnit(u);
+      // Cleaning is either the bedroom-based/manual flat $/mo from getCalc (the
+      // default), or, when cleaningMode is 'perTurn', a $/turn rate run through
+      // the same turns-per-month math as Additional Income's Per Turn streams —
+      // the parallel factor to a per-turn Cleaning Fee charged to guests.
+      const cleaningThisUnit = uc.cleaningMode === 'perTurn'
+        ? _incomeStreamMonthly({ type:'perTurn', amount: uc.cleaningPerTurn }, s.occ, uc.avgLengthOfStay)
+        : uc.cleaning;
       const annualRevThisUnit = s.rate * s.days;
       const monthlyRevThisUnit = annualRevThisUnit / 12;
       const coHostFeeThisUnit = monthlyRevThisUnit * (uc.coHostPct / 100);
@@ -28462,7 +28468,12 @@ function calcComputeAll(r){
     oneTimeFeesTotal = (appFeesOneTime?c.applicationFees:0) + (fee1OneTime?c.additionalFee1:0) + (fee2OneTime?c.additionalFee2:0) + (petFeeOneTime?c.petFee:0);
     totalInvested = (totalInvestedPerUnit * unitMult) + furnishCost + oneTimeFeesTotal;
     annualRevenue = avgDailyRate * daysOccupied;
-    cleaning = c.cleaning;
+    // Cleaning is either the bedroom-based/manual flat $/mo from getCalc (the
+    // default), or, when cleaningMode is 'perTurn', a $/turn rate run through
+    // the same turns-per-month math as Additional Income's Per Turn streams.
+    cleaning = c.cleaningMode === 'perTurn'
+      ? _incomeStreamMonthly({ type:'perTurn', amount: c.cleaningPerTurn }, estOccupancyRate, c.avgLengthOfStay)
+      : c.cleaning;
     const houseMonthlyRevenue = annualRevenue / 12;
     coHostFee = houseMonthlyRevenue * (c.coHostPct / 100);
     airbnbFee = houseMonthlyRevenue * (c.airbnbFeePct / 100);
@@ -29541,7 +29552,23 @@ function _renderExpensesEditable(r, v, c, activeUnit, unitEntry, _expLocked){
   h += cRow('Parking', cInput('parking', c.parking), {tip: 'Monthly parking cost for this unit if not included in rent — garage rental, reserved spot fee, or permit.'});
   h += cRow('Pet Rent', cInput('petRent', c.petRent), {hint: 'if charged', tip: 'Recurring monthly pet rent for this unit, if applicable.'});
   h += cRow('Storage', cInput('storage', c.storage), {tip: 'Monthly cost of any offsite or onsite storage unit rented for this unit\\x27s furniture, supplies, or seasonal items.'});
-  h += cRow('Cleaning (Monthly)', '<div class="calc-val"><div class="calc-editable" onclick="calcEditCell(this)" data-calc-field="cleaning" data-calc-raw="'+c.cleaning+'" data-calc-cleaning="1">'+(c.cleaning ? '$'+c.cleaning.toLocaleString('en-US',{minimumFractionDigits:c.cleaning%1!==0?2:0,maximumFractionDigits:2}) : '<span style="color:var(--text3)">$0</span>')+'</div></div>', {hint: 'auto-set by bedroom count', tip: 'Estimated monthly cleaning cost for this unit — auto-defaulted from its bedroom count (Studio/1BR: $500, 2BR: $650, 3BR: $900, 4BR+: $1,200). You can override it.'});
+  {
+    const cleaningMode = c.cleaningMode === 'perTurn' ? 'perTurn' : 'auto';
+    const cleaningModeBtn = function(mode, label){
+      const active = mode === cleaningMode;
+      return '<button type="button" onclick="_setCleaningMode(\''+mode+'\')" style="background:'+(active?'#10b981':'transparent')+';color:'+(active?'#fff':'var(--text3)')+';border:1px solid '+(active?'#10b981':'var(--border)')+';border-radius:6px;padding:4px 10px;font-size:.78rem;cursor:pointer;font-weight:600">'+label+'</button>';
+    };
+    h += cRow('Cleaning Basis', '<div style="display:flex;gap:6px;justify-content:flex-end">'+cleaningModeBtn('auto','By Bedrooms')+cleaningModeBtn('perTurn','Per Turn')+'</div>', {tip:'How this '+(isApt?'unit\\x27s':'property\\x27s')+' monthly cleaning cost is calculated. "By Bedrooms" auto-sets a flat $/mo from bedroom count (click the amount below to override it manually). "Per Turn" instead charges a $ amount every time a guest checks out \\u2014 the same Turns/month math as an Additional Income Per Turn stream, using the Avg. Length of Stay set above in Additional Income Streams. Useful as the parallel factor to a per-turn Cleaning Fee you charge guests.'});
+    if(cleaningMode === 'perTurn'){
+      const alosForCleaning = parseFloat(c.avgLengthOfStay) || 0;
+      const turnsPerMoForCleaning = alosForCleaning > 0 ? ((occPctForIncome||0)/100*_INCOME_DAYS_PER_MONTH)/alosForCleaning : 0;
+      const cleaningMonthlyComputed = _incomeStreamMonthly({ type:'perTurn', amount: c.cleaningPerTurn }, occPctForIncome, c.avgLengthOfStay);
+      h += cRow('Cleaning ($ per Turn)', cInput('cleaningPerTurn', c.cleaningPerTurn), {hint: alosForCleaning>0 ? fmtNum(turnsPerMoForCleaning)+' turns/mo' : 'set Avg. Length of Stay above', tip:'What you pay your cleaner per turnover (checkout). Multiplied by '+(alosForCleaning>0?fmtNum(turnsPerMoForCleaning)+' estimated turns/month':'estimated turns/month')+' (from Avg. Length of Stay, set in Additional Income Streams above) to get the monthly cost below.'});
+      h += cRow('Cleaning (Monthly)', cDisplay(fmtAcct2(cleaningMonthlyComputed), {computed:true}), {tip:'Computed automatically: Cleaning ($ per Turn) × Turns/month.'});
+    } else {
+      h += cRow('Cleaning (Monthly)', '<div class="calc-val"><div class="calc-editable" onclick="calcEditCell(this)" data-calc-field="cleaning" data-calc-raw="'+c.cleaning+'" data-calc-cleaning="1">'+(c.cleaning ? '$'+c.cleaning.toLocaleString('en-US',{minimumFractionDigits:c.cleaning%1!==0?2:0,maximumFractionDigits:2}) : '<span style="color:var(--text3)">$0</span>')+'</div></div>', {hint: 'auto-set by bedroom count', tip: 'Estimated monthly cleaning cost for this unit — auto-defaulted from its bedroom count (Studio/1BR: $500, 2BR: $650, 3BR: $900, 4BR+: $1,200). You can override it.'});
+    }
+  }
   h += cRow('Garbage / Recycling', cInput('garbageRecycling', c.garbageRecycling), {tip: 'Monthly waste removal and recycling fee for this unit, if not included in rent or HOA.'});
   h += cRow('Channel Manager', cInput('channelManager', c.channelManager), {hint: 'Hospitable, Guesty', tip: 'Monthly channel management software cost allocated to this unit (Hospitable, Guesty, OwnerRez, etc.).'});
   h += cRow('City Permit', cInput('cityPermit', c.cityPermit, {step:'0.01'}), {hint: 'annual ÷ 12', tip: 'Monthly cost of this unit\\x27s STR operating permit. If you pay annually, divide by 12 first.'});
@@ -29554,7 +29581,11 @@ function _renderExpensesEditable(r, v, c, activeUnit, unitEntry, _expLocked){
   const fixedExpForUnit = c.insurance + c.strFee + c.water + c.gas + c.electric + c.wifiTv + c.futureRepairs + c.incidentals + c.parking + c.petRent + c.storage + c.garbageRecycling + c.channelManager + c.cityPermit;
   const customExpForUnit = (unitEntry && unitEntry.customExpense) || 0;
   if(isApt){
-    const totalExpForUnit = fixedExpForUnit + c.cleaning + coHostFeeForUnit + airbnbFeeForUnit + customExpForUnit;
+    // unitEntry.cleaning (not c.cleaning) since that's the value calcComputeAll
+    // actually used — the raw flat $/mo when Cleaning Basis is "By Bedrooms",
+    // or the computed $/turn × turns/month total when it's "Per Turn".
+    const cleaningForUnitTotal = unitEntry ? unitEntry.cleaning : c.cleaning;
+    const totalExpForUnit = fixedExpForUnit + cleaningForUnitTotal + coHostFeeForUnit + airbnbFeeForUnit + customExpForUnit;
     h += cRow('Fixed Expenses', cDisplay(fmtAcct2(fixedExpForUnit), {computed:true}), {tip:'Sum of the fixed monthly expense fields above (Insurance, STR Fee, Water, Gas, Electric, Wifi, Future Repairs, Incidentals, Parking, Pet Rent, Storage, Garbage/Recycling, Channel Manager, City Permit) for this unit.'});
     h += cRow('Total Monthly Expenses', cDisplay(fmtAcct2(totalExpForUnit), {computed:true}), {total:true, tip:'Fixed Expenses + Cleaning + Custom Expenses + Co-Host/PM Fee + AirBNB Service Fee, for this unit only. Rent is shown separately above and not included in this subtotal — it\\x27s automatically factored in on the Competitor Analysis and Projected ROI tabs.'});
     h += cRow('Total Monthly Cost (incl. Rent)', cDisplay(fmtAcct2(totalExpForUnit + rentForRow), {computed:true}), {total:true, tip:'Total Monthly Expenses above, plus this unit\\x27s Rent. This is the actual full monthly cost of this unit — everything you pay out each month.'});
@@ -30335,6 +30366,8 @@ function _finishCopyExpenses(sourceLabel, sc, targetId, sourceRecord, sourceUnit
       INVESTMENT_FIELDS.forEach(k => { tc[k] = sc[k]; });
       tc.airbnbFeePct = sc.airbnbFeePct;
       tc.avgLengthOfStay = sc.avgLengthOfStay;
+      tc.cleaningMode = sc.cleaningMode;
+      tc.cleaningPerTurn = sc.cleaningPerTurn;
       // Also copy cleaning if manually set
       if(sc._cleaningManual && sc.cleaning !== undefined){
         tc.cleaning = sc.cleaning;
@@ -31739,6 +31772,27 @@ function onCalcChange(field, value){
   // Re-render Negotiation Tools tab since it shares data
   const negoEl = document.querySelector('.tab-content[data-tab="negotiation"]');
   if(negoEl){ negoEl.innerHTML = renderNegotiationTab(r); }
+}
+
+// Switches this unit/property's Cleaning Basis between "By Bedrooms" (the
+// existing flat $/mo, auto-set from bedroom count or manually overridden)
+// and "Per Turn" (a $/turn rate × estimated turns/month, same math as an
+// Additional Income Per Turn stream). Not a cInput field since it's a mode
+// toggle, not a number, so it gets its own handler rather than routing
+// through onCalcChange.
+function _setCleaningMode(mode){
+  const r = records.find(x => x.id === currentProfileId);
+  if(!r) return;
+  const c = _expensesTargetCalc(r);
+  if(!c) return;
+  // Seed the per-turn rate from the current flat monthly amount the first
+  // time this is switched on, so it doesn't start at $0.
+  if(mode === 'perTurn' && !c.cleaningPerTurn && c.cleaning){
+    c.cleaningPerTurn = c.cleaning;
+  }
+  c.cleaningMode = mode;
+  saveData();
+  _rerenderCalcTab();
 }
 
 // Free-text label for a fee (e.g. "Pet Deposit", "Key Fee") — purely
@@ -41799,7 +41853,7 @@ async function exportPropertyProfile(recId){
     addCalcRow(ws2, 55, 'Future Repairs', c.futureRepairs || 0);
     addCalcRow(ws2, 57, 'Incidentals (If you provide soap, coffee, toilet paper, etc)', c.incidentals || 0);
     addCalcRow(ws2, 59, 'Parking', c.parking || 0);
-    addCalcRow(ws2, 61, 'Cleaning (Monthly)', v.cleaning || 0);
+    addCalcRow(ws2, 61, c.cleaningMode === 'perTurn' ? 'Cleaning (Monthly, from $' + (c.cleaningPerTurn || 0) + '/turn)' : 'Cleaning (Monthly)', v.cleaning || 0);
     addCalcRow(ws2, 63, 'Garbage / Recycling', c.garbageRecycling || 0);
     addCalcRow(ws2, 65, 'Channel Manager Costs Per Listing (Ex:Hospitable, Guesty)-Usually $25 per listing', c.channelManager || 0);
     addCalcRow(ws2, 67, 'City Permit - Divide Annual Permit by 12', c.cityPermit || 0);
