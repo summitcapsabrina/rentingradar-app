@@ -29556,17 +29556,24 @@ function _renderExpensesEditable(r, v, c, activeUnit, unitEntry, _expLocked){
     const cleaningMode = c.cleaningMode === 'perTurn' ? 'perTurn' : 'auto';
     const cleaningModeBtn = function(mode, label){
       const active = mode === cleaningMode;
-      return '<button type="button" onclick="_setCleaningMode(\''+mode+'\')" style="background:'+(active?'#10b981':'transparent')+';color:'+(active?'#fff':'var(--text3)')+';border:1px solid '+(active?'#10b981':'var(--border)')+';border-radius:6px;padding:4px 10px;font-size:.78rem;cursor:pointer;font-weight:600">'+label+'</button>';
+      return '<button type="button" onclick="event.stopPropagation();_setCleaningMode(\''+mode+'\')" style="background:'+(active?'#10b981':'transparent')+';color:'+(active?'#fff':'var(--text3)')+';border:1px solid '+(active?'#10b981':'var(--border)')+';border-radius:5px;padding:2px 8px;font-size:.7rem;cursor:pointer;font-weight:600;line-height:1.6">'+label+'</button>';
     };
-    h += cRow('Cleaning Basis', '<div style="display:flex;gap:6px;justify-content:flex-end">'+cleaningModeBtn('auto','By Bedrooms')+cleaningModeBtn('perTurn','Per Turn')+'</div>', {tip:'How this '+(isApt?'unit\\x27s':'property\\x27s')+' monthly cleaning cost is calculated. "By Bedrooms" auto-sets a flat $/mo from bedroom count (click the amount below to override it manually). "Per Turn" instead charges a $ amount every time a guest checks out \\u2014 the same Turns/month math as an Additional Income Per Turn stream, using the Avg. Length of Stay set above in Additional Income Streams. Useful as the parallel factor to a per-turn Cleaning Fee you charge guests.'});
+    const cleaningTip = 'How this '+(isApt?'unit\\x27s':'property\\x27s')+' monthly cleaning cost is calculated. "By Bedrooms" auto-sets a flat $/mo from bedroom count (click the amount to the right to override it manually). "Per Turn" instead charges the $ rate below every time a guest checks out \\u2014 the same Turns/month math as an Additional Income Per Turn stream, using the Avg. Length of Stay set above in Additional Income Streams. Useful as the parallel factor to a per-turn Cleaning Fee you charge guests.';
+    const cleaningLabel = '<span class="tip-label"'+tipAttrs('Cleaning', cleaningTip, true)+'>Cleaning</span>'
+      + '<span style="display:inline-flex;gap:4px;margin-left:8px;vertical-align:middle">'+cleaningModeBtn('auto','By Bedrooms')+cleaningModeBtn('perTurn','Per Turn')+'</span>';
     if(cleaningMode === 'perTurn'){
       const alosForCleaning = parseFloat(c.avgLengthOfStay) || 0;
       const turnsPerMoForCleaning = alosForCleaning > 0 ? ((occPctForIncome||0)/100*_INCOME_DAYS_PER_MONTH)/alosForCleaning : 0;
       const cleaningMonthlyComputed = _incomeStreamMonthly({ type:'perTurn', amount: c.cleaningPerTurn }, occPctForIncome, c.avgLengthOfStay);
-      h += cRow('Cleaning ($ per Turn)', cInput('cleaningPerTurn', c.cleaningPerTurn), {hint: alosForCleaning>0 ? fmtNum(turnsPerMoForCleaning)+' turns/mo' : 'set Avg. Length of Stay above', tip:'What you pay your cleaner per turnover (checkout). Multiplied by '+(alosForCleaning>0?fmtNum(turnsPerMoForCleaning)+' estimated turns/month':'estimated turns/month')+' (from Avg. Length of Stay, set in Additional Income Streams above) to get the monthly cost below.'});
-      h += cRow('Cleaning (Monthly)', cDisplay(fmtAcct2(cleaningMonthlyComputed), {computed:true}), {tip:'Computed automatically: Cleaning ($ per Turn) × Turns/month.'});
+      const cleaningHint = alosForCleaning>0 ? fmtNum(turnsPerMoForCleaning)+' turns/mo' : 'set Avg. Length of Stay above';
+      const cleaningPerTurnInputHtml = '<span style="display:inline-flex;align-items:center;gap:2px;margin-left:8px;font-size:.78rem;color:var(--text2)" title="$ paid per guest checkout (turn)">$'
+        + '<input type="number" step="1" min="0" value="'+(c.cleaningPerTurn||'')+'" placeholder="0" onclick="event.stopPropagation()" onchange="_onCleaningPerTurnChange(this.value)" style="width:52px;padding:2px 4px;background:var(--bg2);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:.78rem;text-align:right">'
+        + '/turn</span>';
+      const cleaningValHtml = cDisplay(fmtAcct2(cleaningMonthlyComputed), {computed:true});
+      h += '<div class="calc-row"><div class="calc-label">'+cleaningLabel+cleaningPerTurnInputHtml+'<span class="calc-label-hint">'+cleaningHint+'</span></div>'+cleaningValHtml+'</div>';
     } else {
-      h += cRow('Cleaning (Monthly)', '<div class="calc-val"><div class="calc-editable" onclick="calcEditCell(this)" data-calc-field="cleaning" data-calc-raw="'+c.cleaning+'" data-calc-cleaning="1">'+(c.cleaning ? '$'+c.cleaning.toLocaleString('en-US',{minimumFractionDigits:c.cleaning%1!==0?2:0,maximumFractionDigits:2}) : '<span style="color:var(--text3)">$0</span>')+'</div></div>', {hint: 'auto-set by bedroom count', tip: 'Estimated monthly cleaning cost for this unit — auto-defaulted from its bedroom count (Studio/1BR: $500, 2BR: $650, 3BR: $900, 4BR+: $1,200). You can override it.'});
+      const cleaningValHtml = '<div class="calc-val"><div class="calc-editable" onclick="calcEditCell(this)" data-calc-field="cleaning" data-calc-raw="'+c.cleaning+'" data-calc-cleaning="1">'+(c.cleaning ? '$'+c.cleaning.toLocaleString('en-US',{minimumFractionDigits:c.cleaning%1!==0?2:0,maximumFractionDigits:2}) : '<span style="color:var(--text3)">$0</span>')+'</div></div>';
+      h += '<div class="calc-row"><div class="calc-label">'+cleaningLabel+'<span class="calc-label-hint">auto-set by bedroom count</span></div>'+cleaningValHtml+'</div>';
     }
   }
   h += cRow('Garbage / Recycling', cInput('garbageRecycling', c.garbageRecycling), {tip: 'Monthly waste removal and recycling fee for this unit, if not included in rent or HOA.'});
@@ -31791,6 +31798,19 @@ function _setCleaningMode(mode){
     c.cleaningPerTurn = c.cleaning;
   }
   c.cleaningMode = mode;
+  saveData();
+  _rerenderCalcTab();
+}
+
+// The $/turn rate lives inline in the Cleaning row's own title (not a
+// click-to-edit calc-editable cell like every other $ field), since it and
+// the mode toggle both need to sit on that one line item.
+function _onCleaningPerTurnChange(value){
+  const r = records.find(x => x.id === currentProfileId);
+  if(!r) return;
+  const c = _expensesTargetCalc(r);
+  if(!c) return;
+  c.cleaningPerTurn = parseFloat(value) || 0;
   saveData();
   _rerenderCalcTab();
 }
