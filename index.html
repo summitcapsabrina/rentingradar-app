@@ -29554,21 +29554,25 @@ function _renderExpensesEditable(r, v, c, activeUnit, unitEntry, _expLocked){
   h += cRow('Storage', cInput('storage', c.storage), {tip: 'Monthly cost of any offsite or onsite storage unit rented for this unit\\x27s furniture, supplies, or seasonal items.'});
   {
     const cleaningMode = c.cleaningMode === 'perTurn' ? 'perTurn' : 'auto';
+    // One joined pill (single outer border, no per-button border) so it reads
+    // as a two-sided toggle rather than two separate buttons.
     const cleaningModeBtn = function(mode, label){
       const active = mode === cleaningMode;
-      return '<button type="button" onclick="event.stopPropagation();_setCleaningMode(\''+mode+'\')" style="background:'+(active?'#10b981':'transparent')+';color:'+(active?'#fff':'var(--text3)')+';border:1px solid '+(active?'#10b981':'var(--border)')+';border-radius:5px;padding:2px 8px;font-size:.7rem;cursor:pointer;font-weight:600;line-height:1.6">'+label+'</button>';
+      return '<button type="button" onclick="event.stopPropagation();_setCleaningMode(\''+mode+'\')" style="background:'+(active?'#10b981':'transparent')+';color:'+(active?'#fff':'var(--text3)')+';border:none;padding:3px 10px;font-size:.7rem;cursor:pointer;font-weight:600;line-height:1.6">'+label+'</button>';
     };
     const cleaningTip = 'How this '+(isApt?'unit\\x27s':'property\\x27s')+' monthly cleaning cost is calculated. "By Bedrooms" auto-sets a flat $/mo from bedroom count (click the amount to the right to override it manually). "Per Turn" instead charges the $ rate below every time a guest checks out \\u2014 the same Turns/month math as an Additional Income Per Turn stream, using the Avg. Length of Stay set above in Additional Income Streams. Useful as the parallel factor to a per-turn Cleaning Fee you charge guests.';
     const cleaningLabel = '<span class="tip-label"'+tipAttrs('Cleaning', cleaningTip, true)+'>Cleaning</span>'
-      + '<span style="display:inline-flex;gap:4px;margin-left:8px;vertical-align:middle">'+cleaningModeBtn('auto','By Bedrooms')+cleaningModeBtn('perTurn','Per Turn')+'</span>';
+      + '<span style="display:inline-flex;border:1px solid var(--border);border-radius:6px;overflow:hidden;margin-left:8px;vertical-align:middle">'+cleaningModeBtn('auto','By Bedrooms')+cleaningModeBtn('perTurn','Per Turn')+'</span>';
     if(cleaningMode === 'perTurn'){
       const alosForCleaning = parseFloat(c.avgLengthOfStay) || 0;
       const turnsPerMoForCleaning = alosForCleaning > 0 ? ((occPctForIncome||0)/100*_INCOME_DAYS_PER_MONTH)/alosForCleaning : 0;
       const cleaningMonthlyComputed = _incomeStreamMonthly({ type:'perTurn', amount: c.cleaningPerTurn }, occPctForIncome, c.avgLengthOfStay);
       const cleaningHint = alosForCleaning>0 ? fmtNum(turnsPerMoForCleaning)+' turns/mo' : 'set Avg. Length of Stay above';
-      const cleaningPerTurnInputHtml = '<span style="display:inline-flex;align-items:center;gap:2px;margin-left:8px;font-size:.78rem;color:var(--text2)" title="$ paid per guest checkout (turn)">$'
+      // Sub-line under the title: bigger than the turns/mo hint below it, but
+      // still smaller than the main "Cleaning" label above it.
+      const cleaningPerTurnInputHtml = '<div style="margin-top:2px;font-size:.78rem;color:var(--text2);display:flex;align-items:center;gap:2px" title="$ paid per guest checkout (turn)">$'
         + '<input type="number" step="1" min="0" value="'+(c.cleaningPerTurn||'')+'" placeholder="0" onclick="event.stopPropagation()" onchange="_onCleaningPerTurnChange(this.value)" style="width:52px;padding:2px 4px;background:var(--bg2);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:.78rem;text-align:right">'
-        + '/turn</span>';
+        + '/turn</div>';
       const cleaningValHtml = cDisplay(fmtAcct2(cleaningMonthlyComputed), {computed:true});
       h += '<div class="calc-row"><div class="calc-label">'+cleaningLabel+cleaningPerTurnInputHtml+'<span class="calc-label-hint">'+cleaningHint+'</span></div>'+cleaningValHtml+'</div>';
     } else {
