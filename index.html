@@ -28147,7 +28147,7 @@ const CALC_DEFAULTS = {
   insurance:0, strFee:0, water:0, gas:0, electric:0,
   wifiTv:0, futureRepairs:0, incidentals:0, parking:0, petRent:0, storage:0,
   garbageRecycling:0, channelManager:0, cityPermit:0,
-  coHostPct:0, airbnbFeePct:15.5
+  coHostPct:0, airbnbFeePct:15.5, avgLengthOfStay:3
 };
 const CLEANING_DEFAULTS = {0:500, 1:500, 2:650, 3:900, 4:1200, 5:1200, 6:1200};
 
@@ -28404,10 +28404,7 @@ function calcComputeAll(r){
       const customExpThisUnit = customExpFlatThisUnit + customExpPctThisUnit;
 
       const incomeArr = _additionalIncomeArrayFor(r, u);
-      const additionalIncomeThisUnit = incomeArr.reduce((sum, ai) => {
-        const amt = parseFloat(ai.amount) || 0;
-        return sum + ((ai && ai.type === 'weekly') ? (amt * 52 / 12) : amt);
-      }, 0);
+      const additionalIncomeThisUnit = incomeArr.reduce((sum, ai) => sum + _incomeStreamMonthly(ai, s.occ, uc.avgLengthOfStay), 0);
 
       const monthlyExpThisUnit = fixedExpThisUnit + cleaningThisUnit + coHostFeeThisUnit + airbnbFeeThisUnit + customExpThisUnit;
 
@@ -28434,11 +28431,11 @@ function calcComputeAll(r){
         // (at its natural comp-based revenue) — lets Negotiation Tools re-derive this
         // unit's expenses at a what-if revenue via _unitDeriveFromRev, instead of only
         // ever reading its expenses at the natural revenue above.
-        coHostPct: uc.coHostPct, airbnbFeePct: uc.airbnbFeePct,
+        coHostPct: uc.coHostPct, airbnbFeePct: uc.airbnbFeePct, avgLengthOfStay: uc.avgLengthOfStay,
         customExpFlat: customExpFlatThisUnit, customExpPct: customExpPctThisUnit,
         simpleMonthlyRevenue: monthlyRevThisUnit,
         totalInvested: investedThisUnit + furnishThisUnit + oneTimeThisUnit,
-        tier: s.tier, matchedCompCount: s.matchedCount
+        tier: s.tier, matchedCompCount: s.matchedCount, occPct: s.occ
       });
     });
     // Shared building-wide common spaces (lounges, laundry rooms, etc.) — furnished
@@ -28482,13 +28479,10 @@ function calcComputeAll(r){
       else customExpFlatTotal += amt * unitMult;
     });
     customExpensesTotal = customExpFlatTotal + customExpPctTotal;
-    // User-defined additional income streams. Each item is either $/month or
-    // $/week; weekly amounts convert to monthly via 52/12 to annualize correctly.
+    // User-defined additional income streams. See _incomeStreamMonthly for the
+    // per-frequency math (monthly / weekly / per-turn / per-occupied-night).
     const additionalIncomeRawList = _propEnsureIncomeArray(r);
-    additionalIncomeTotal = additionalIncomeRawList.reduce((sum, ai) => {
-      const amt = parseFloat(ai.amount) || 0;
-      return sum + ((ai && ai.type === 'weekly') ? (amt * 52 / 12) : amt);
-    }, 0);
+    additionalIncomeTotal = additionalIncomeRawList.reduce((sum, ai) => sum + _incomeStreamMonthly(ai, estOccupancyRate, c.avgLengthOfStay), 0);
   }
 
   const monthlyRevenue = annualRevenue / 12;
@@ -29363,7 +29357,7 @@ function _renderExpensesRollup(r, v, units, _expLocked){
     h += '</tr>';
   });
   h += '</tbody></table></div>';
-  h += '<div style="padding:2px 12px">' + cRow('Total Additional Income', cDisplay(fmtAcct2(v.additionalIncomeTotal), {computed:true}), {total:true, tip:'Sum of every unit\\x27s own additional income streams (weekly amounts converted to monthly). Adds to projected revenue when calculating Net Operating Income.'}) + '</div>';
+  h += '<div style="padding:2px 12px">' + cRow('Total Additional Income', cDisplay(fmtAcct2(v.additionalIncomeTotal), {computed:true}), {total:true, tip:'Sum of every unit\\x27s own additional income streams (weekly, per-turn, and per-occupied-night streams converted to a monthly equivalent). Adds to projected revenue when calculating Net Operating Income.'}) + '</div>';
   h += '</div></div>';
 
   // Investment Details, by unit
@@ -29449,6 +29443,7 @@ function _renderExpensesEditable(r, v, c, activeUnit, unitEntry, _expLocked){
   h += '<div class="calc-panel">';
   h += '<div class="calc-section"><div class="calc-section-header">Additional Income Streams'+(isApt?' <span style="font-weight:400;color:var(--text3);font-size:.78rem">— '+unitLabel+'</span>':'')+'</div><div class="calc-section-body">';
   const additionalIncome = isApt ? _additionalIncomeArrayFor(r, activeUnit) : _propEnsureIncomeArray(r);
+  const occPctForIncome = isApt ? (unitEntry ? unitEntry.occPct : 0) : v.estOccupancyRate;
   if(!_expLocked){
     h += '<div class="calc-row" style="padding-top:2px;padding-bottom:6px">'
       +    '<div class="calc-cell" style="flex:1">'
@@ -29459,15 +29454,16 @@ function _renderExpensesEditable(r, v, c, activeUnit, unitEntry, _expLocked){
       +    '</div>'
       +  '</div>';
   }
+  h += cRow('Avg. Length of Stay', cInput('avgLengthOfStay', c.avgLengthOfStay, {noDollar:true}), {hint:'nights/booking', tip:'How many nights a typical guest books, at this '+(isApt?'unit':'property')+'\\x27s current occupancy ('+Math.round(occPctForIncome)+'%). Drives any "Per Turn" income streams below \\u2014 Turns/month = (Occupancy% × ~30.4 days) ÷ this number. Doesn\\x27t affect "Per Occupied Night" streams, which use occupancy alone.'});
   if(additionalIncome.length === 0 && _expLocked){
     h += '<div class="calc-row"><div class="calc-cell" style="flex:1;color:var(--text3);font-size:.82rem;font-style:italic">No additional income streams added.</div></div>';
   }
   additionalIncome.forEach(function(ai){
-    h += _propRenderIncomeRow(r.id, ai, v.monthlyRent, _expLocked);
+    h += _propRenderIncomeRow(r.id, ai, v.monthlyRent, _expLocked, occPctForIncome, c.avgLengthOfStay);
   });
   if(additionalIncome.length > 0){
     const unitIncomeTotal = isApt ? (unitEntry ? unitEntry.additionalIncome : 0) : v.additionalIncomeTotal;
-    h += cRow('Total Additional Income', cDisplay(fmtAcct2(unitIncomeTotal), {computed:true}), {total:true, tip: isApt ? 'Sum of this unit\\x27s own additional income streams above (weekly amounts converted to monthly). Adds to this unit\\x27s revenue when calculating Net Operating Income.' : 'Sum of all additional income streams listed above (weekly amounts converted to monthly equivalent). Adds to projected revenue when calculating Net Operating Income.'});
+    h += cRow('Total Additional Income', cDisplay(fmtAcct2(unitIncomeTotal), {computed:true}), {total:true, tip: isApt ? 'Sum of this unit\\x27s own additional income streams above (weekly, per-turn, and per-occupied-night streams converted to a monthly equivalent). Adds to this unit\\x27s revenue when calculating Net Operating Income.' : 'Sum of all additional income streams listed above (weekly, per-turn, and per-occupied-night streams converted to a monthly equivalent). Adds to projected revenue when calculating Net Operating Income.'});
   }
   h += '</div></div>';
 
@@ -29635,17 +29631,45 @@ function _customExpensesTarget(r){
 
 // ── Additional Income Streams (per-property) ──
 // Same UX pattern as Custom Expenses (modal-add, inline display, edit/delete icons).
-// Items are either $/month or $/week; weekly amounts convert to monthly via 52/12
-// (more accurate than ×4 since it annualizes correctly).
-function _propRenderIncomeRow(recId, ai, monthlyRent, locked){
-  const isWeekly = ai.type === 'weekly';
+// Four frequencies now: $/month, $/week (×52/12 to annualize correctly), $/turn
+// (scales with checkouts — cleaning fees, etc.), and $/occupied night × an attach
+// rate % (scales with occupied nights, discounted for usage that isn't guaranteed
+// every stay — pool fees, etc.). Turn/night streams need this property's own
+// Occupancy % and Average Length of Stay, both passed in by the caller.
+const _INCOME_DAYS_PER_MONTH = 30.44;
+function _incomeStreamMonthly(ai, occPct, alosNights){
+  if(!ai) return 0;
+  const amt = parseFloat(ai.amount) || 0;
+  if(ai.type === 'weekly') return amt * 52 / 12;
+  const occupiedNightsPerMonth = (parseFloat(occPct) || 0) / 100 * _INCOME_DAYS_PER_MONTH;
+  if(ai.type === 'perTurn'){
+    const alos = parseFloat(alosNights) || 0;
+    if(alos <= 0) return 0;
+    return amt * (occupiedNightsPerMonth / alos);
+  }
+  if(ai.type === 'perNight'){
+    const attachRaw = parseFloat(ai.attachRatePct);
+    const attachPct = isNaN(attachRaw) ? 100 : attachRaw;
+    return amt * occupiedNightsPerMonth * (attachPct / 100);
+  }
+  return amt; // monthly (also the fallback for legacy/unrecognized types)
+}
+function _propRenderIncomeRow(recId, ai, monthlyRent, locked, occPct, alosNights){
   const amt = parseFloat(ai.amount) || 0;
   // Each list belongs to one physical unit now, so a $200/mo parking spot on
   // THIS unit's own tab is just $200 — no unit-count multiplier anymore.
-  const computedDollar = isWeekly ? (amt * 52 / 12) : amt;
-  const hint = isWeekly
-    ? '<span class="calc-label-hint">$'+amt.toLocaleString('en-US',{minimumFractionDigits:amt%1?2:0,maximumFractionDigits:2})+'/wk</span>'
-    : '';
+  const computedDollar = _incomeStreamMonthly(ai, occPct, alosNights);
+  let hint = '';
+  if(ai.type === 'weekly'){
+    hint = '<span class="calc-label-hint">$'+amt.toLocaleString('en-US',{minimumFractionDigits:amt%1?2:0,maximumFractionDigits:2})+'/wk</span>';
+  } else if(ai.type === 'perTurn'){
+    const alos = parseFloat(alosNights) || 0;
+    hint = '<span class="calc-label-hint">$'+amt.toLocaleString('en-US',{minimumFractionDigits:amt%1?2:0,maximumFractionDigits:2})+'/turn'+(alos>0?' · '+fmtNum(((parseFloat(occPct)||0)/100*_INCOME_DAYS_PER_MONTH)/alos)+' turns/mo':'')+'</span>';
+  } else if(ai.type === 'perNight'){
+    const attachRaw = parseFloat(ai.attachRatePct);
+    const attachPct = isNaN(attachRaw) ? 100 : attachRaw;
+    hint = '<span class="calc-label-hint">$'+amt.toLocaleString('en-US',{minimumFractionDigits:amt%1?2:0,maximumFractionDigits:2})+'/night × '+attachPct+'%</span>';
+  }
   const actions = locked ? '' :
     '<button onclick="_propOpenAddIncome(\''+recId+'\',\''+ai.id+'\')" title="Edit" style="background:none;border:none;color:var(--text3);cursor:pointer;padding:2px 4px;margin-left:6px;vertical-align:middle"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 113 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>'
     + '<button onclick="_propDeleteIncome(\''+recId+'\',\''+ai.id+'\')" title="Delete" style="background:none;border:none;color:var(--text3);cursor:pointer;padding:2px 4px;vertical-align:middle"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>';
@@ -29679,6 +29703,7 @@ function _additionalIncomeTarget(r){
   return _additionalIncomeArrayFor(r, unit);
 }
 
+const _INCOME_TYPE_LABELS = { monthly:'Monthly', weekly:'Weekly', perTurn:'Per Turn', perNight:'Per Night' };
 function _propOpenAddIncome(recId, itemId){
   if(_blockIfImpersonating && _blockIfImpersonating('Add income')) return;
   const r = records.find(x => x.id === recId);
@@ -29686,10 +29711,24 @@ function _propOpenAddIncome(recId, itemId){
   const targetArr = _additionalIncomeTarget(r);
   if(!targetArr){ showAppAlert('Select a specific unit tab in Income & Expenses first, then add income for that unit.', { title: 'Choose a unit', icon: 'ℹ️' }); return; }
   const existing = itemId ? targetArr.find(x => x.id === itemId) : null;
-  const initial = existing || { name: '', type: 'monthly', amount: '' };
+  const initial = existing || { name: '', type: 'monthly', amount: '', attachRatePct: '' };
   const isEdit = !!existing;
+  // Occupancy % and Avg. Length of Stay for this property/unit — drives the
+  // Per Turn / Per Occupied Night live preview below.
+  const isApt = r.recordType === 'apartment';
+  const unit = isApt ? _expensesActiveUnit(r) : null;
+  const calcCtx = getCalc(r, unit);
+  const v = calcComputeAll(r);
+  let occPct = 0;
+  if(isApt){
+    const ub = (v.unitBreakdown||[]).find(x => unit && x.id === unit.id);
+    occPct = ub ? (ub.occPct || 0) : 0;
+  } else {
+    occPct = v.estOccupancyRate || 0;
+  }
+  const alos = parseFloat(calcCtx.avgLengthOfStay) || 0;
   _fieldDraftCtx = recId + '_' + (itemId || 'new');
-  _fieldDraftIds = ['incomeName','incomeAmount'];
+  _fieldDraftIds = ['incomeName','incomeAmount','incomeAttachRate'];
   const fd = function(fieldId, fallback){ const dft = _getFieldDraft(_fieldDraftCtx, fieldId); return dft != null ? dft : fallback; };
   const old = document.getElementById('incomeModal');
   if(old) old.remove();
@@ -29697,9 +29736,12 @@ function _propOpenAddIncome(recId, itemId){
   overlay.id = 'incomeModal';
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:24px';
   overlay.onclick = function(ev){ if(ev.target === overlay) overlay.remove(); };
-  // Normalize legacy types (flat → monthly, percent → monthly) so old data still loads.
-  const initialType = initial.type === 'weekly' ? 'weekly' : 'monthly';
-  const monthlyActive = initialType === 'monthly';
+  const initialType = ['weekly','perTurn','perNight'].includes(initial.type) ? initial.type : 'monthly';
+  const amountLabels = { monthly:'Amount ($/mo)', weekly:'Amount ($/wk)', perTurn:'Amount ($ per turn)', perNight:'Amount ($ per night used)' };
+  const typeBtn = function(t){
+    const active = t === initialType;
+    return '<button type="button" data-type="'+t+'" onclick="_propSetIncomeType(\''+t+'\')" style="background:'+(active?'#10b981':'transparent')+';color:'+(active?'#fff':'var(--text3)')+';border:1px solid '+(active?'#10b981':'var(--border)')+';border-radius:6px;padding:6px 12px;font-size:.83rem;cursor:pointer;font-weight:600">'+_INCOME_TYPE_LABELS[t]+'</button>';
+  };
   overlay.innerHTML = `<div style="background:var(--bg);border:1px solid var(--border);border-radius:12px;max-width:420px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.4);overflow:hidden">
     <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
       <div style="font-weight:700;font-size:1rem">${isEdit ? 'Edit Income Stream' : 'Add Income Stream'}</div>
@@ -29708,20 +29750,24 @@ function _propOpenAddIncome(recId, itemId){
     <div style="padding:18px 20px;display:flex;flex-direction:column;gap:12px">
       <div>
         <label style="display:block;font-size:.7rem;color:var(--text3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">Income Name</label>
-        <input type="text" id="incomeName" value="${esc(fd('incomeName', initial.name||''))}" placeholder="e.g., Parking, Pet Fee, Non-Security Waiver" style="width:100%;padding:8px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.9rem">
+        <input type="text" id="incomeName" value="${esc(fd('incomeName', initial.name||''))}" placeholder="e.g., Parking, Pet Fee, Cleaning Fee, Pool Usage" style="width:100%;padding:8px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.9rem">
       </div>
       <div>
         <label style="display:block;font-size:.7rem;color:var(--text3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">Frequency</label>
-        <div style="display:inline-flex;border:1px solid var(--border);border-radius:6px;overflow:hidden" id="incomeTypeToggle">
-          <button type="button" data-type="monthly" onclick="_propSetIncomeType('monthly')" style="background:${monthlyActive?'#10b981':'transparent'};color:${monthlyActive?'#fff':'var(--text3)'};border:none;padding:7px 16px;font-size:.85rem;cursor:pointer;font-weight:600">Per Month</button>
-          <button type="button" data-type="weekly" onclick="_propSetIncomeType('weekly')" style="background:${monthlyActive?'transparent':'#10b981'};color:${monthlyActive?'var(--text3)':'#fff'};border:none;padding:7px 16px;font-size:.85rem;cursor:pointer;font-weight:600">Per Week</button>
+        <div style="display:flex;flex-wrap:wrap;gap:6px" id="incomeTypeToggle">
+          ${typeBtn('monthly')}${typeBtn('weekly')}${typeBtn('perTurn')}${typeBtn('perNight')}
         </div>
       </div>
       <div>
-        <label style="display:block;font-size:.7rem;color:var(--text3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px"><span id="incomeAmountLabel">${initialType==='weekly'?'Amount ($/wk)':'Amount ($/mo)'}</span></label>
-        <input type="number" step="0.01" min="0" id="incomeAmount" value="${esc(fd('incomeAmount', initial.amount===''||initial.amount==null?'':initial.amount))}" placeholder="0.00" style="width:100%;padding:8px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.9rem">
-        <div id="incomeHint" style="font-size:.7rem;color:var(--text3);margin-top:4px">${initialType==='weekly'?'Weekly amounts are converted to a monthly equivalent (× 52 ÷ 12) for NOI calculations.':'Income collected once per month.'}</div>
+        <label style="display:block;font-size:.7rem;color:var(--text3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px"><span id="incomeAmountLabel">${amountLabels[initialType]}</span></label>
+        <input type="number" step="0.01" min="0" id="incomeAmount" oninput="_propUpdateIncomePreview()" value="${esc(fd('incomeAmount', initial.amount===''||initial.amount==null?'':initial.amount))}" placeholder="0.00" style="width:100%;padding:8px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.9rem">
       </div>
+      <div id="incomeAttachWrap" style="display:${initialType==='perNight'?'block':'none'}">
+        <label style="display:block;font-size:.7rem;color:var(--text3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">Usage / Attach Rate (%)</label>
+        <input type="number" step="1" min="0" max="100" id="incomeAttachRate" oninput="_propUpdateIncomePreview()" value="${esc(fd('incomeAttachRate', initial.attachRatePct===''||initial.attachRatePct==null?'':initial.attachRatePct))}" placeholder="e.g. 20" style="width:100%;padding:8px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.9rem">
+        <div style="font-size:.7rem;color:var(--text3);margin-top:4px">A conservative estimate of what % of occupied nights guests actually use (and pay for) this — you won't know the exact rate, so err low.</div>
+      </div>
+      <div id="incomeHint" style="font-size:.7rem;color:var(--text3)"></div>
     </div>
     <div style="display:flex;justify-content:flex-end;gap:8px;padding:14px 20px;background:var(--bg2);border-top:1px solid var(--border)">
       <button class="btn btn-secondary btn-sm" onclick="document.getElementById('incomeModal').remove()">Cancel</button>
@@ -29730,10 +29776,13 @@ function _propOpenAddIncome(recId, itemId){
   </div>`;
   document.body.appendChild(overlay);
   overlay.dataset.type = initialType;
+  overlay.dataset.occ = occPct;
+  overlay.dataset.alos = alos;
   overlay.addEventListener('keydown', function(ev){
     if(ev.key === 'Escape') overlay.remove();
     if(ev.key === 'Enter'){ ev.preventDefault(); _propSaveIncome(recId, itemId||''); }
   });
+  _propUpdateIncomePreview();
   setTimeout(() => { const inp = document.getElementById('incomeName'); if(inp){ inp.focus(); if(isEdit) inp.select(); } }, 30);
 }
 
@@ -29741,17 +29790,50 @@ function _propSetIncomeType(t){
   const overlay = document.getElementById('incomeModal');
   if(!overlay) return;
   overlay.dataset.type = t;
+  const amountLabels = { monthly:'Amount ($/mo)', weekly:'Amount ($/wk)', perTurn:'Amount ($ per turn)', perNight:'Amount ($ per night used)' };
   const lbl = document.getElementById('incomeAmountLabel');
-  if(lbl) lbl.textContent = t === 'weekly' ? 'Amount ($/wk)' : 'Amount ($/mo)';
-  const hint = document.getElementById('incomeHint');
-  if(hint) hint.textContent = t === 'weekly'
-    ? 'Weekly amounts are converted to a monthly equivalent (× 52 ÷ 12) for NOI calculations.'
-    : 'Income collected once per month.';
+  if(lbl) lbl.textContent = amountLabels[t];
+  const attachWrap = document.getElementById('incomeAttachWrap');
+  if(attachWrap) attachWrap.style.display = t === 'perNight' ? 'block' : 'none';
   overlay.querySelectorAll('#incomeTypeToggle button').forEach(btn => {
     const active = btn.dataset.type === t;
     btn.style.background = active ? '#10b981' : 'transparent';
     btn.style.color = active ? '#fff' : 'var(--text3)';
+    btn.style.borderColor = active ? '#10b981' : 'var(--border)';
   });
+  _propUpdateIncomePreview();
+}
+
+// Live-updates the modal's explanatory hint as the user picks a frequency /
+// types an amount / sets an attach rate — same turns-per-month and occupied-
+// nights-per-month math as _incomeStreamMonthly, just re-derived here since
+// the modal isn't backed by a saved income-stream object yet.
+function _propUpdateIncomePreview(){
+  const overlay = document.getElementById('incomeModal');
+  const hintEl = document.getElementById('incomeHint');
+  if(!overlay || !hintEl) return;
+  const t = overlay.dataset.type || 'monthly';
+  const occPct = parseFloat(overlay.dataset.occ) || 0;
+  const alos = parseFloat(overlay.dataset.alos) || 0;
+  const amount = parseFloat((document.getElementById('incomeAmount')||{}).value) || 0;
+  const occupiedNightsPerMo = occPct / 100 * _INCOME_DAYS_PER_MONTH;
+  if(t === 'monthly'){
+    hintEl.textContent = 'Income collected once per month.';
+  } else if(t === 'weekly'){
+    hintEl.textContent = 'Weekly amounts are converted to a monthly equivalent (× 52 ÷ 12) for NOI calculations.';
+  } else if(t === 'perTurn'){
+    if(alos <= 0){
+      hintEl.textContent = 'Set this property\\x27s Avg. Length of Stay (above the income list, must be greater than 0) to activate this income stream.';
+    } else {
+      const turns = occupiedNightsPerMo / alos;
+      hintEl.textContent = 'Charged once per guest checkout. At '+Math.round(occPct)+'% occupancy and a '+alos+'-night average stay, that\\x27s about '+fmtNum(turns)+' turns/month'+(amount>0?' ≈ '+fmtMoney(Math.round(amount*turns))+'/mo':'')+'.';
+    }
+  } else if(t === 'perNight'){
+    const attachRaw = parseFloat((document.getElementById('incomeAttachRate')||{}).value);
+    const attachPct = isNaN(attachRaw) ? 0 : attachRaw;
+    const paidNights = occupiedNightsPerMo * (attachPct/100);
+    hintEl.textContent = 'Charged only on nights guests actually use it. At '+Math.round(occPct)+'% occupancy that\\x27s about '+fmtNum(occupiedNightsPerMo)+' occupied nights/month; at '+attachPct+'% usage, about '+fmtNum(paidNights)+' paid nights/month'+(amount>0?' ≈ '+fmtMoney(Math.round(amount*paidNights))+'/mo':'')+'.';
+  }
 }
 
 function _propSaveIncome(recId, itemId){
@@ -29761,24 +29843,29 @@ function _propSaveIncome(recId, itemId){
   const name = (document.getElementById('incomeName').value || '').trim();
   const amountRaw = document.getElementById('incomeAmount').value;
   const amount = parseFloat(amountRaw);
-  const type = overlay.dataset.type === 'weekly' ? 'weekly' : 'monthly';
+  const type = ['weekly','perTurn','perNight'].includes(overlay.dataset.type) ? overlay.dataset.type : 'monthly';
   if(!name){ showToast('Income name is required', 'warning', 2500); return; }
   if(!amountRaw || isNaN(amount) || amount <= 0){ showToast('Amount must be greater than 0', 'warning', 2500); return; }
+  let attachRatePct;
+  if(type === 'perNight'){
+    const attachRaw = document.getElementById('incomeAttachRate').value;
+    attachRatePct = parseFloat(attachRaw);
+    if(!attachRaw || isNaN(attachRatePct) || attachRatePct < 0 || attachRatePct > 100){ showToast('Usage / Attach Rate must be between 0 and 100', 'warning', 2500); return; }
+  }
   const r = records.find(x => x.id === recId);
   if(!r) return;
   const arr = _additionalIncomeTarget(r);
   if(!arr) return; // viewing the read-only 'All Units' rollup — shouldn't happen since the modal only opens from a type tab
   if(itemId){
     const item = arr.find(x => x.id === itemId);
-    if(item){ item.name = name; item.type = type; item.amount = amount; }
+    if(item){ item.name = name; item.type = type; item.amount = amount; if(type === 'perNight') item.attachRatePct = attachRatePct; else delete item.attachRatePct; }
   } else {
-    arr.unshift({
-      id: 'ai_' + Date.now().toString(36) + Math.random().toString(36).slice(2,6),
-      name, type, amount,
-    });
+    const item = { id: 'ai_' + Date.now().toString(36) + Math.random().toString(36).slice(2,6), name, type, amount };
+    if(type === 'perNight') item.attachRatePct = attachRatePct;
+    arr.unshift(item);
   }
   saveData(r.id);
-  _clearFieldDrafts(recId + '_' + (itemId || 'new'), ['incomeName','incomeAmount']);
+  _clearFieldDrafts(recId + '_' + (itemId || 'new'), ['incomeName','incomeAmount','incomeAttachRate']);
   overlay.remove();
   _rerenderExpensesTab();
   if(typeof _rerenderCalcTab === 'function') try { _rerenderCalcTab(); } catch(_){}
@@ -30234,7 +30321,8 @@ function _finishCopyExpenses(sourceLabel, sc, targetId, sourceRecord, sourceUnit
   });
   sourceIncome.forEach(ai => {
     const amt = Number(parseFloat(ai.amount) || 0);
-    summaryParts.push((ai.name || '(unnamed)') + ': $' + amt.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}) + (ai.type === 'weekly' ? '/wk' : '/mo'));
+    const suffix = ai.type === 'weekly' ? '/wk' : ai.type === 'perTurn' ? '/turn' : ai.type === 'perNight' ? '/night used' : '/mo';
+    summaryParts.push((ai.name || '(unnamed)') + ': $' + amt.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}) + suffix);
   });
   const summary = summaryParts.join(', ');
 
@@ -30246,6 +30334,7 @@ function _finishCopyExpenses(sourceLabel, sc, targetId, sourceRecord, sourceUnit
       EXPENSE_FIELDS.forEach(k => { tc[k] = sc[k]; });
       INVESTMENT_FIELDS.forEach(k => { tc[k] = sc[k]; });
       tc.airbnbFeePct = sc.airbnbFeePct;
+      tc.avgLengthOfStay = sc.avgLengthOfStay;
       // Also copy cleaning if manually set
       if(sc._cleaningManual && sc.cleaning !== undefined){
         tc.cleaning = sc.cleaning;
@@ -41752,8 +41841,23 @@ async function exportPropertyProfile(recId){
       const _incomeFirstRow = _expRow;
       _xlsxAdditionalIncome.forEach(function(ai){
         const amt = parseFloat(ai.amount) || 0;
-        const label = (ai.name || 'Additional Income') + (ai.type === 'weekly' ? ' ($' + amt + '/wk)' : '');
-        addCalcRow(ws2, _expRow, label, ai.type === 'weekly' ? 0 : amt, {computed: ai.type === 'weekly'});
+        let label = ai.name || 'Additional Income';
+        let cellVal = amt;
+        let isComputed = false;
+        if(ai.type === 'weekly'){
+          label += ' ($' + amt + '/wk)';
+          cellVal = 0; isComputed = true;
+        } else if(ai.type === 'perTurn' || ai.type === 'perNight'){
+          // Turns/occupied-nights depend on this property's occupancy % and
+          // Avg. Length of Stay, neither of which live in a single named cell
+          // elsewhere on this sheet — so these export as a precomputed monthly
+          // value (same math as _incomeStreamMonthly) rather than a live formula.
+          const attachPct = isNaN(parseFloat(ai.attachRatePct)) ? 100 : parseFloat(ai.attachRatePct);
+          label += ai.type === 'perTurn' ? ' ($' + amt + '/turn)' : ' ($' + amt + '/night used × ' + attachPct + '%)';
+          cellVal = Math.round(_incomeStreamMonthly(ai, v.estOccupancyRate, c.avgLengthOfStay) * 100) / 100;
+          isComputed = true;
+        }
+        addCalcRow(ws2, _expRow, label, cellVal, {computed: isComputed});
         if(ai.type === 'weekly') ws2.getCell(_expRow, 3).value = { formula: amt + '*52/12' };
         _expRow++;
         ws2.getRow(_expRow).height = 6;
