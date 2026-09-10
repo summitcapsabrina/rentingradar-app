@@ -31168,6 +31168,111 @@ function renderCalculatorTab(r){
 }
 
 
+// 3-stop color lerp (red -> blue -> green) for the occupancy wheel's wedges, the
+// same red/blue/green family Revenue Target's own gradient already uses elsewhere
+// in Negotiation Tools — pct is 0-1 (0% occupancy -> 100% occupancy).
+function _occWheelColor(pct){
+  const stops = [[0.937,0.267,0.267],[0.231,0.510,0.965],[0.063,0.725,0.506]]; // #ef4444, #3b82f6, #10b981
+  const p = Math.max(0, Math.min(1, pct));
+  const seg = p <= 0.5 ? 0 : 1;
+  const t = p <= 0.5 ? p * 2 : (p - 0.5) * 2;
+  const a = stops[seg], b = stops[seg + 1];
+  const lerp = i => Math.round((a[i] + (b[i] - a[i]) * t) * 255);
+  return 'rgb('+lerp(0)+','+lerp(1)+','+lerp(2)+')';
+}
+
+// ── Monthly Occupancy Target: the wheel ── A full-circle SVG gauge (colored wedges
+// + a center needle, same visual family as the Rent Adjustment dial below it, just
+// swept almost all the way around instead of a semicircle) standing in for what used
+// to be a horizontal slider. Functionally identical to before: reads/writes
+// _occTargetPreview[r.id] via occTargetPreview/occTargetCommit/occTargetReset, and
+// _activeScenarioRevExp/_activeOccupancy/_activeAdditionalIncome/_activeCleaningMonthly
+// (declared above) don't know or care that the input changed from a slider to a wheel.
+// A 10° gap at the top (between the 100% and 0% wedges) is the wheel's "peg" — the
+// hard stop _initOccWheelDrag clamps to, so it spins freely everywhere else but can't
+// wrap past either end.
+function _occWheelHtml(r, v){
+  const insufficientCompsLocal = v.compsCount < 3 || (v.isApt && v.unitsMissingOwnComps && v.unitsMissingOwnComps.length > 0);
+  const hasData = v.hasProjectionData && !insufficientCompsLocal;
+  let h = '';
+  if(!hasData){
+    h += '<div style="color:var(--text3);font-size:.9rem;padding:18px 0">'+_compsReqMessage(v)+' to use the wheel</div>';
+    return h;
+  }
+
+  const natural = Math.max(0, Math.min(100, _naturalOccupancy(v)));
+  const active = _activeOccupancy(r, v);
+  const val = Math.max(0, Math.min(100, active.occPct));
+
+  const W = 220, CX = 110, CY = 110, R = 88;
+  const START_DEG = -85, SWEEP_DEG = 350; // gap is the remaining 10°, centered at top (-90°)
+  const toRad = d => d * Math.PI / 180;
+  const WEDGES = 10;
+
+  h += '<div id="occWheelConfig_'+r.id+'" data-cx="'+CX+'" data-cy="'+CY+'" data-r="'+R+'" data-w="'+W+'" data-start="'+START_DEG+'" data-sweep="'+SWEEP_DEG+'" data-natural="'+natural.toFixed(2)+'" style="display:none"></div>';
+
+  h += '<svg id="occWheel_'+r.id+'" viewBox="0 0 '+W+' '+W+'" style="display:block;width:100%;max-width:220px;margin:0 auto;cursor:pointer;touch-action:none">';
+  h += '<defs><filter id="occWheelNeedleShadow_'+r.id+'" x="-50%" y="-50%" width="200%" height="200%"><feDropShadow dx="0" dy="2" stdDeviation="2.5" flood-color="#000" flood-opacity="0.45"/></filter></defs>';
+
+  // Wedges — solid pie slices from center to rim, red (low occupancy) through blue
+  // to green (high occupancy). Purely a color story, not tied to Deal Temp thresholds
+  // (those are revenue-driven, not occupancy-driven, so there's no single occupancy%
+  // that universally means "Slam-Dunk").
+  for(let i=0;i<WEDGES;i++){
+    const p0 = i/WEDGES, p1 = (i+1)/WEDGES;
+    const a0 = toRad(START_DEG + p0*SWEEP_DEG), a1 = toRad(START_DEG + p1*SWEEP_DEG);
+    const x0 = CX + R*Math.cos(a0), y0 = CY + R*Math.sin(a0);
+    const x1 = CX + R*Math.cos(a1), y1 = CY + R*Math.sin(a1);
+    const color = _occWheelColor((p0+p1)/2);
+    h += '<path d="M'+CX+','+CY+' L'+x0.toFixed(1)+','+y0.toFixed(1)+' A'+R+','+R+' 0 0,1 '+x1.toFixed(1)+','+y1.toFixed(1)+' Z" fill="'+color+'" opacity=".82" stroke="var(--surface)" stroke-width="1.5"/>';
+  }
+
+  // Peg — a short dark notch at the gap, marking the hard stop between 100% and 0%
+  // (the real wheel's physical travel-stop peg between its highest and lowest wedge).
+  const pegA = toRad(-90);
+  const pegX1 = CX + (R-6)*Math.cos(pegA), pegY1 = CY + (R-6)*Math.sin(pegA);
+  const pegX2 = CX + (R+10)*Math.cos(pegA), pegY2 = CY + (R+10)*Math.sin(pegA);
+  h += '<line x1="'+pegX1.toFixed(1)+'" y1="'+pegY1.toFixed(1)+'" x2="'+pegX2.toFixed(1)+'" y2="'+pegY2.toFixed(1)+'" stroke="var(--text)" stroke-width="4" stroke-linecap="round"/>';
+  h += '<text x="'+(CX-4)+'" y="'+(CY-R-16)+'" text-anchor="end" fill="var(--text3)" font-size="9" font-weight="700">0%</text>';
+  h += '<text x="'+(CX+4)+'" y="'+(CY-R-16)+'" text-anchor="start" fill="var(--text3)" font-size="9" font-weight="700">100%</text>';
+
+  // Needle — same drawing approach as the Rent Adjustment dial's arrow needle, just
+  // parameterized by this wheel's near-360° sweep instead of a semicircle.
+  const needleAngle = toRad(START_DEG + (val/100)*SWEEP_DEG);
+  const nLen = R - 12, tipLen = 18, tipW = 7;
+  const tipX = CX + (nLen + tipLen*0.3)*Math.cos(needleAngle);
+  const tipY = CY + (nLen + tipLen*0.3)*Math.sin(needleAngle);
+  const perpAngle = needleAngle + Math.PI/2;
+  const baseX1 = CX + (nLen - tipLen)*Math.cos(needleAngle) + tipW*Math.cos(perpAngle);
+  const baseY1 = CY + (nLen - tipLen)*Math.sin(needleAngle) + tipW*Math.sin(perpAngle);
+  const baseX2 = CX + (nLen - tipLen)*Math.cos(needleAngle) - tipW*Math.cos(perpAngle);
+  const baseY2 = CY + (nLen - tipLen)*Math.sin(needleAngle) - tipW*Math.sin(perpAngle);
+  h += '<g filter="url(#occWheelNeedleShadow_'+r.id+')">';
+  h += '<line class="occ-wheel-needle-body" x1="'+CX+'" y1="'+CY+'" x2="'+(CX + (nLen-tipLen)*Math.cos(needleAngle)).toFixed(1)+'" y2="'+(CY + (nLen-tipLen)*Math.sin(needleAngle)).toFixed(1)+'" stroke="var(--text)" stroke-width="3.5" stroke-linecap="round"/>';
+  h += '<polygon class="occ-wheel-needle-arrow" points="'+tipX.toFixed(1)+','+tipY.toFixed(1)+' '+baseX1.toFixed(1)+','+baseY1.toFixed(1)+' '+baseX2.toFixed(1)+','+baseY2.toFixed(1)+'" fill="var(--text)" stroke="rgba(0,0,0,.25)" stroke-width=".5"/>';
+  h += '<circle class="occ-wheel-hub" cx="'+CX+'" cy="'+CY+'" r="9" fill="var(--text)" stroke="rgba(0,0,0,.2)" stroke-width="1.5"/>';
+  h += '</g>';
+  h += '<circle cx="'+CX+'" cy="'+CY+'" r="3.5" fill="var(--surface)"/>';
+  h += '<circle cx="'+CX+'" cy="'+CY+'" r="'+R+'" fill="transparent" id="occWheelHitArea_'+r.id+'" style="cursor:grab"/>';
+  h += '</svg>';
+
+  clearTimeout(window._occWheelInitTimer);
+  window._occWheelInitTimer = setTimeout(function(){ _initOccWheelDrag(r.id); }, 10);
+
+  const diff = Math.round(val - natural);
+  h += '<div id="occWheelReadout_'+r.id+'" style="margin:6px 0 2px">';
+  h += '<div onclick="openOccTargetInput(\''+r.id+'\')" style="font-size:1.5rem;font-weight:800;color:var(--text);cursor:pointer;display:inline-flex;align-items:baseline;gap:6px;border-bottom:2px dashed var(--border);padding-bottom:2px" title="Click to type an exact occupancy">'+Math.round(val)+'%<span style="font-size:.8rem;opacity:.55" aria-hidden="true">✏️</span></div>';
+  h += '<div id="occWheelDelta_'+r.id+'" style="font-size:.72rem;color:var(--text3);margin-top:2px">'+(diff===0?'Matches your current occupancy estimate':(diff>0?'+':'')+diff+' pts vs. current estimate')+'</div>';
+  h += '</div>';
+
+  if(active.isOverridden){
+    h += '<div style="text-align:center;margin-top:2px"><button class="co-rev-revert" onclick="occTargetReset(\''+r.id+'\')">↩ reset to current estimate</button></div>';
+  }
+  h += '<div style="font-size:.78rem;color:var(--text2);margin-top:8px;font-weight:600">Spin the wheel, or click the % <span style="color:var(--text3);font-weight:400">· Projection only</span></div>';
+
+  return h;
+}
+
 // ══════════════════════════════════════════
 // NEGOTIATION TOOLS TAB — separate from Projected ROI
 // ══════════════════════════════════════════
@@ -31348,40 +31453,8 @@ function renderNegotiationTab(r){
     h += '</div>';
     h += '</div>';
 
-    // ── Monthly Occupancy Target: horizontal slider, same what-if sandbox as Revenue
-    // Target above — holds each comp-matched nightly rate fixed and re-derives annual
-    // revenue at a chosen occupancy% (rate × 365 × occ%), flowing through the same
-    // Projected Yearly Net / Rent Adjustment / Rental Concessions / Deal Temp readout
-    // below. Scoped entirely to Negotiation Tools, same isolation as Revenue Target —
-    // never feeds back into the Projected ROI tab's KPIs above. Dragging Revenue
-    // Target always takes priority over this slider when both are active — see
-    // _activeScenarioRevExp. Additional Income streams that are natively occupancy-
-    // sensitive (Per Turn / Per Night) react to this too, and so does a per-turn
-    // Cleaning Fee — see _activeAdditionalIncome / _activeCleaningMonthly.
-    const _otNatural = Math.max(0, Math.min(100, _naturalOccupancy(v)));
-    const _otVal = Math.max(0, Math.min(100, _activeOcc.occPct));
-    const _otDiff = Math.round(_otVal - _otNatural);
-
-    h += '<div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border)">';
-    h += '<div class="nft-title-row" style="font-size:.82rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;display:flex;align-items:center;justify-content:center;gap:5px;cursor:help"'+tipAttrs('Monthly Occupancy Target','Drag to explore this deal at a different occupancy assumption \\u2014 annual revenue is re-derived at that occupancy (holding your comp-matched nightly rate fixed), and anything else that\\x27s a factor of occupancy \\u2014 occupancy-based Additional Income streams (Per Turn / Per Night) and a Per Turn Cleaning Fee \\u2014 updates to match. This is a what-if sandbox: it does not change the KPIs, Payback Period, or Deal Temperature on the Projected ROI tab above.\\n\\nDragging Revenue Target above always takes priority over this slider if both are active. Click the marker to snap back to your current occupancy estimate.',true)+'>Monthly Occupancy Target<span class="nft-hint-q">?</span></div>';
-
-    h += '<div style="text-align:center;margin:8px 0 2px">';
-    h += '<span class="co-rev-value" id="occTargetValTop_'+r.id+'" onclick="openOccTargetInput(\''+r.id+'\')" title="Click to type an exact occupancy">'+Math.round(_otVal)+'%</span>';
-    h += '</div>';
-    h += '<div id="occTargetDelta_'+r.id+'" style="text-align:center;font-size:.68rem;color:var(--text3);margin-bottom:10px">'+(_otDiff===0?'Matches your current occupancy estimate':(_otDiff>0?'+':'')+_otDiff+' pts vs. current estimate')+'</div>';
-
-    h += '<div id="occTargetConfig_'+r.id+'" data-natural="'+_otNatural.toFixed(2)+'" style="display:none"></div>';
-
-    h += '<div style="position:relative;padding:0 2px">';
-    h += '<input type="range" class="co-rev-slider" id="occTargetSlider_'+r.id+'" min="0" max="100" step="1" value="'+Math.round(_otVal)+'" style="background:linear-gradient(90deg, #ef4444 0%, #3b82f6 '+_otNatural.toFixed(2)+'%, #10b981 100%)" oninput="occTargetPreview(\''+r.id+'\',this.value)" onchange="occTargetCommit(\''+r.id+'\',this.value)">';
-
-    h += '<div style="position:relative;height:34px;margin-top:4px">';
-    h += '<div style="position:absolute;left:0;top:0;font-size:.62rem;color:var(--text3);text-align:left"><div style="font-weight:600">0%</div></div>';
-    h += '<div style="position:absolute;left:'+_otNatural.toFixed(2)+'%;top:0;transform:translateX(-50%);text-align:center;cursor:pointer" onclick="occTargetReset(\''+r.id+'\')" title="Reset to current occupancy estimate"><div style="font-size:.66rem;font-weight:700;color:var(--num-computed)">Current Est.</div><div style="font-size:.62rem;color:var(--text3)">'+Math.round(_otNatural)+'%</div></div>';
-    h += '<div style="position:absolute;right:0;top:0;font-size:.62rem;color:var(--text3);text-align:right"><div style="font-weight:600">100%</div></div>';
-    h += '</div>';
-    h += '</div>';
-    h += '</div>';
+    // Monthly Occupancy Target now lives as the wheel in the Tool cards row below
+    // (leftmost of the three panels, next to Rent Adjustment) — see _occWheelHtml.
 
     // ── Projected Yearly Net: Negotiation Tools' own live version of the Total
     // Projected Yearly Net table above, but reflecting THIS section's Revenue
@@ -31482,24 +31555,33 @@ function renderNegotiationTab(r){
   }
   h += '</div></div>';
 
-  // ── Tool cards: Rent Adjustment + Rental Concessions ──
-  // Title row and content row below MUST use identical flex/min-width on each side so
-  // the vertical divider lines up. Keep both columns at flex:1 + min-width:300px and
-  // put the border-right on the LEFT cell in both rows (never on the right).
+  // ── Tool cards: Occupancy Wheel + Rent Adjustment + Rental Concessions ──
+  // Title row and content row below MUST use identical flex/min-width on each of the
+  // three cells so the vertical dividers line up. Keep all three columns at flex:1 +
+  // min-width:240px and put the border-right on the LEFT two cells in both rows
+  // (never on the rightmost).
   h += '<div class="calc-section" style="margin-top:0"><div class="calc-section-body" style="padding:0">';
   h += '<div style="display:flex;flex-wrap:wrap">';
-  h += '<div style="flex:1 1 0;min-width:300px;padding:14px 16px;text-align:center;border-right:1px solid var(--border);box-sizing:border-box">';
+  h += '<div style="flex:1 1 0;min-width:240px;padding:14px 16px;text-align:center;border-right:1px solid var(--border);box-sizing:border-box">';
+  h += '<div class="nft-title-row" style="font-size:.82rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;display:inline-flex;align-items:center;gap:5px;cursor:help"'+tipAttrs('Monthly Occupancy Target','Spin the wheel (or click the % below to type an exact number) to explore this deal at a different occupancy assumption \\u2014 annual revenue is re-derived at that occupancy (holding your comp-matched nightly rate fixed), and anything else that\\x27s a factor of occupancy \\u2014 occupancy-based Additional Income streams (Per Turn / Per Night) and a Per Turn Cleaning Fee \\u2014 updates to match. This is a what-if sandbox: it does not change the KPIs, Payback Period, or Deal Temperature on the Projected ROI tab above.\\n\\nDragging Revenue Target above always takes priority over this wheel if both are active.',true)+'>Monthly Occupancy Target<span class="nft-hint-q">?</span></div>';
+  h += '</div>';
+  h += '<div style="flex:1 1 0;min-width:240px;padding:14px 16px;text-align:center;border-right:1px solid var(--border);box-sizing:border-box">';
   h += '<div class="nft-title-row" style="font-size:.82rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;display:inline-flex;align-items:center;gap:5px;cursor:help"'+tipAttrs('Rent Adjustment','Explore what rent would make this deal attractive. Two ways to adjust:\\n\\n• Click the rent amount (✏️) to type an exact number\\n• Click and drag the arrow on the dial to slide it\\n\\nThis is a projection tool — it does NOT change the actual rent.',true)+'>Rent Adjustment<span class="nft-hint-q">?</span></div>';
   h += '</div>';
-  h += '<div style="flex:1 1 0;min-width:300px;padding:14px 16px;text-align:center;box-sizing:border-box">';
+  h += '<div style="flex:1 1 0;min-width:240px;padding:14px 16px;text-align:center;box-sizing:border-box">';
   h += '<div class="nft-title-row" style="font-size:.82rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;display:inline-flex;align-items:center;gap:5px;cursor:help"'+tipAttrs('Rental Concessions','Negotiate free rent weeks to reduce your upfront investment and accelerate break-even. 6–8 weeks is a common target for rental arbitrage.',true)+'>Rental Concessions<span class="nft-hint-q">?</span></div>';
   h += '</div>';
   h += '</div>'; // end title row
 
   h += '<div style="display:flex;flex-wrap:wrap;min-height:480px;border-top:1px solid var(--border)">';
 
-  // ════════════ LEFT HALF: Rent Adjustment ════════════
-  h += '<div style="flex:1 1 0;min-width:300px;padding:12px 16px;text-align:center;border-right:1px solid var(--border);display:flex;flex-direction:column;justify-content:center;box-sizing:border-box">';
+  // ════════════ Monthly Occupancy Target: the wheel ════════════
+  h += '<div style="flex:1 1 0;min-width:240px;padding:12px 16px;text-align:center;border-right:1px solid var(--border);display:flex;flex-direction:column;justify-content:center;box-sizing:border-box">';
+  h += _occWheelHtml(r, v);
+  h += '</div>';
+
+  // ════════════ Rent Adjustment ════════════
+  h += '<div style="flex:1 1 0;min-width:240px;padding:12px 16px;text-align:center;border-right:1px solid var(--border);display:flex;flex-direction:column;justify-content:center;box-sizing:border-box">';
 
   if(!_raHasData || !_raRent){
     h += '<div style="color:var(--text3);font-size:.9rem;padding:18px 0">Set monthly rent and add at least 3 competitors to use the dial</div>';
@@ -31680,15 +31762,15 @@ function renderNegotiationTab(r){
       h += '</div>';
     }
   }
-  h += '</div>'; // end left half
+  h += '</div>'; // end Rent Adjustment column
 
-  // ════════════ RIGHT HALF: Rental Concessions ════════════
-  // Match the LEFT half's flex/min-width/box-sizing exactly so the vertical divider
-  // aligns with the title row above. Flex-center the content so the empty-state
-  // message sits in the same vertical position as the left's empty-state.
+  // ════════════ Rental Concessions ════════════
+  // Match the other two columns' flex/min-width/box-sizing exactly so the vertical
+  // dividers align with the title row above. Flex-center the content so the empty-
+  // state message sits in the same vertical position as the others' empty-states.
   // id lets the rent dial live-refresh JUST this panel while the user drags (without
   // re-rendering the dial SVG mid-drag) — see _liveUpdateConcessionsPanel.
-  h += '<div id="concessionsPanel_'+r.id+'" style="flex:1 1 0;min-width:300px;padding:12px 16px;text-align:center;display:flex;flex-direction:column;justify-content:center;box-sizing:border-box">';
+  h += '<div id="concessionsPanel_'+r.id+'" style="flex:1 1 0;min-width:240px;padding:12px 16px;text-align:center;display:flex;flex-direction:column;justify-content:center;box-sizing:border-box">';
 
   // Allow the panel to render whenever there's a usable annual CF — even negative —
   // because concessions still surface upfront savings (rent waived). We only
@@ -32850,9 +32932,11 @@ function _liveUpdateConcessionsPanel(recId){
   try {
     const tmp = document.createElement('div');
     tmp.innerHTML = renderNegotiationTab(r);
-    // renderNegotiationTab schedules a dial re-init; cancel it so the off-screen render
-    // doesn't double-bind drag handlers onto the live dial mid-drag.
+    // renderNegotiationTab schedules a dial/wheel re-init; cancel both so the
+    // off-screen render doesn't double-bind drag handlers onto the live dial/wheel
+    // mid-drag.
     clearTimeout(window._rentDialInitTimer);
+    clearTimeout(window._occWheelInitTimer);
     if(livePanel){
       const fresh = tmp.querySelector('#concessionsPanel_'+recId);
       if(fresh) livePanel.innerHTML = fresh.innerHTML;
@@ -33077,9 +33161,9 @@ function saveRevTargetInput(recId){
   if(typeof _rerenderCalcTab === 'function') try { _rerenderCalcTab(); } catch(_){}
 }
 
-// ── Monthly Occupancy Target: horizontal slider (standalone — mirrors Revenue
-// Target's preview/commit pattern, but a plain 0-100% linear scale needs none of
-// the piecewise-breakpoint math Revenue Target uses for its warped P/R/O scale) ──
+// ── Monthly Occupancy Target: the wheel (standalone — mirrors Revenue Target's
+// preview/commit pattern; state is a plain 0-100 value like before, only HOW it's
+// set changed, from a linear slider to a drag-to-spin wheel) ──
 let _occTargetPreview = {}; // { recId: previewOccPct }
 let _occTargetRaf = null;
 
@@ -33087,7 +33171,7 @@ function occTargetPreview(recId, val){
   const num = Math.round(parseFloat(val));
   if(!isFinite(num)) return;
   _occTargetPreview[recId] = Math.max(0, Math.min(100, num));
-  _quickUpdateOccTarget(recId, _occTargetPreview[recId]);
+  _quickUpdateOccWheel(recId, _occTargetPreview[recId]);
   // Live-refresh Rental Concessions while dragging, same throttled pattern as
   // Revenue Target and the rent dial — full sync happens on release.
   if(_occTargetRaf) cancelAnimationFrame(_occTargetRaf);
@@ -33102,24 +33186,137 @@ function occTargetReset(recId){
   delete _occTargetPreview[recId];
   if(typeof _rerenderCalcTab === 'function') try { _rerenderCalcTab(); } catch(_){}
 }
-function _quickUpdateOccTarget(recId, occPct){
-  const readout = document.getElementById('occTargetValTop_'+recId);
-  const delta = document.getElementById('occTargetDelta_'+recId);
-  const cfg = document.getElementById('occTargetConfig_'+recId);
-  if(!readout || !cfg) return;
-  readout.textContent = Math.round(occPct)+'%';
+
+// Fast visual update of the wheel's needle + readout during dragging (avoids full
+// re-render) — same "quick update" role as _quickUpdateRentDial plays for the Rent
+// Adjustment dial, just moving a needle over a fixed wedge face instead of recoloring
+// arc zones (the wedges never change, only the needle angle does).
+function _quickUpdateOccWheel(recId, val){
+  const svg = document.getElementById('occWheel_'+recId);
+  const readout = document.getElementById('occWheelReadout_'+recId);
+  const delta = document.getElementById('occWheelDelta_'+recId);
+  const cfg = document.getElementById('occWheelConfig_'+recId);
+  if(!svg || !readout || !cfg) return;
+  const cx = parseFloat(cfg.dataset.cx) || 110;
+  const cy = parseFloat(cfg.dataset.cy) || 110;
+  const R = parseFloat(cfg.dataset.r) || 88;
+  const startDeg = parseFloat(cfg.dataset.start);
+  const sweepDeg = parseFloat(cfg.dataset.sweep);
+  const angle = (startDeg + (Math.max(0,Math.min(100,val))/100) * sweepDeg) * Math.PI / 180;
+
+  const nLen = R - 12, tipLen = 18, tipW = 7;
+  const tipX = cx + (nLen + tipLen * 0.3) * Math.cos(angle);
+  const tipY = cy + (nLen + tipLen * 0.3) * Math.sin(angle);
+  const perpAngle = angle + Math.PI / 2;
+  const baseX1 = cx + (nLen - tipLen) * Math.cos(angle) + tipW * Math.cos(perpAngle);
+  const baseY1 = cy + (nLen - tipLen) * Math.sin(angle) + tipW * Math.sin(perpAngle);
+  const baseX2 = cx + (nLen - tipLen) * Math.cos(angle) - tipW * Math.cos(perpAngle);
+  const baseY2 = cy + (nLen - tipLen) * Math.sin(angle) - tipW * Math.sin(perpAngle);
+
+  const needleBody = svg.querySelector('.occ-wheel-needle-body');
+  const needleArrow = svg.querySelector('.occ-wheel-needle-arrow');
+  if(needleBody){
+    needleBody.setAttribute('x2', (cx + (nLen - tipLen) * Math.cos(angle)).toFixed(1));
+    needleBody.setAttribute('y2', (cy + (nLen - tipLen) * Math.sin(angle)).toFixed(1));
+  }
+  if(needleArrow){
+    needleArrow.setAttribute('points', tipX.toFixed(1)+','+tipY.toFixed(1)+' '+baseX1.toFixed(1)+','+baseY1.toFixed(1)+' '+baseX2.toFixed(1)+','+baseY2.toFixed(1));
+  }
+
+  const readoutNum = readout.querySelector('div');
+  if(readoutNum) readoutNum.innerHTML = Math.round(val)+'%<span style="font-size:.8rem;opacity:.55" aria-hidden="true">✏️</span>';
   if(delta){
     const natural = parseFloat(cfg.dataset.natural) || 0;
-    const diff = Math.round(occPct - natural);
+    const diff = Math.round(val - natural);
     delta.textContent = diff === 0 ? 'Matches your current occupancy estimate' : (diff > 0 ? '+' : '') + diff + ' pts vs. current estimate';
   }
+}
+
+let _occWheelDragging = false;
+
+// Drag-to-spin: converts cursor position into an angle around the wheel's center,
+// clamped to the 350°-wide usable sweep (the remaining 10° is the fixed "peg" gap
+// at the top, between the 100% and 0% wedges) — freely spinnable within that sweep,
+// hard-stopping at 0%/100% rather than wrapping past them. Reads its geometry from
+// occWheelConfig_'s data attributes, written once at render time by _occWheelHtml.
+function _initOccWheelDrag(recId){
+  const svg = document.getElementById('occWheel_'+recId);
+  const cfg = document.getElementById('occWheelConfig_'+recId);
+  if(!svg || !cfg) return;
+  const cx = parseFloat(cfg.dataset.cx);
+  const cy = parseFloat(cfg.dataset.cy);
+  const startRad = parseFloat(cfg.dataset.start) * Math.PI / 180;
+  const sweepRad = parseFloat(cfg.dataset.sweep) * Math.PI / 180;
+  const twoPi = 2 * Math.PI;
+
+  function angleToPct(clientX, clientY){
+    const rect = svg.getBoundingClientRect();
+    const svgW = parseFloat(cfg.dataset.w) || 220;
+    const scale = svgW / rect.width; // viewBox width / rendered width
+    const svgX = (clientX - rect.left) * scale;
+    const svgY = (clientY - rect.top) * scale;
+    const dx = svgX - cx, dy = svgY - cy;
+    const angle = Math.atan2(dy, dx); // -PI..PI
+    let rel = angle - startRad;
+    rel = ((rel % twoPi) + twoPi) % twoPi; // normalize into [0, 2PI)
+    if(rel > sweepRad){
+      // Cursor is over the peg gap (or the unused far side of the circle) — snap to
+      // whichever end (0% or 100%) is angularly closer, so a fast/overshot drag still
+      // lands cleanly at the stop instead of jumping to the wrong end.
+      const distPast100 = rel - sweepRad;
+      const distPast0 = twoPi - rel;
+      return distPast100 < distPast0 ? 1 : 0;
+    }
+    return rel / sweepRad;
+  }
+
+  function updateWheel(clientX, clientY){
+    const pct = angleToPct(clientX, clientY);
+    occTargetPreview(recId, Math.round(pct * 100));
+  }
+
+  function onPointerDown(e){
+    if(e.button && e.button !== 0) return;
+    e.preventDefault();
+    _occWheelDragging = true;
+    svg.style.cursor = 'grabbing';
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    updateWheel(clientX, clientY);
+
+    function onPointerMove(e2){
+      if(!_occWheelDragging) return;
+      e2.preventDefault();
+      const cx2 = e2.touches ? e2.touches[0].clientX : e2.clientX;
+      const cy2 = e2.touches ? e2.touches[0].clientY : e2.clientY;
+      updateWheel(cx2, cy2);
+    }
+    function onPointerUp(){
+      _occWheelDragging = false;
+      svg.style.cursor = 'pointer';
+      document.removeEventListener('mousemove', onPointerMove);
+      document.removeEventListener('mouseup', onPointerUp);
+      document.removeEventListener('touchmove', onPointerMove);
+      document.removeEventListener('touchend', onPointerUp);
+      // Full re-render syncs Rental Concessions with the new wheel value, same as
+      // the rent dial's release handler.
+      if(typeof _rerenderCalcTab === 'function') try { _rerenderCalcTab(); } catch(_){}
+    }
+    document.addEventListener('mousemove', onPointerMove, {passive:false});
+    document.addEventListener('mouseup', onPointerUp);
+    document.addEventListener('touchmove', onPointerMove, {passive:false});
+    document.addEventListener('touchend', onPointerUp);
+  }
+
+  svg.addEventListener('mousedown', onPointerDown);
+  svg.addEventListener('touchstart', onPointerDown, {passive:false});
 }
 
 // ── Monthly Occupancy Target: click-to-type input ──
 function openOccTargetInput(recId){
   const r = records.find(x => x.id === recId);
   if(!r) return;
-  const cfg = document.getElementById('occTargetConfig_'+recId);
+  const cfg = document.getElementById('occWheelConfig_'+recId);
   const current = _occTargetPreview[recId] !== undefined ? _occTargetPreview[recId] : (cfg ? parseFloat(cfg.dataset.natural) : 0);
   const existing = document.getElementById('occTargetInputOverlay');
   if(existing) existing.remove();
