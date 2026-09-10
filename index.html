@@ -29417,6 +29417,7 @@ function _renderExpensesRollup(r, v, units, _expLocked){
   h += cRow('Co-Host / PM Fee', cDisplay(fmtAcct2(v.coHostFee), {computed:true}), {tip:'Sum of each unit\\x27s own Co-Host/PM Fee % applied to that unit\\x27s own projected revenue.'});
   h += cRow('AirBNB Service Fee', cDisplay(fmtAcct2(v.airbnbFee), {computed:true}), {hint:'% of revenue, per unit', tip:'Airbnb\\x27s host service fee, deducted from your payouts by the platform \\u2014 each unit\\x27s own AirBNB Service Fee % applied to that unit\\x27s own projected revenue, summed across every unit. Edit the % on each unit\\x27s own tab.'});
   h += cRow('Total Monthly Expenses (All Units)', cDisplay(fmtAcct2(v.totalMonthlyExp), {computed:true}), {total:true, tip:'Sum of every unit\\x27s own Fixed Costs + Cleaning + Custom Exp + Co-Host/PM Fee + AirBNB Service Fee above. Rent (shown per unit in the table above) is not included in this subtotal \\u2014 it\\x27s automatically factored in on the Competitor Analysis and Projected ROI tabs.'});
+  h += cRow('Total Monthly Rent (All Units)', cDisplay(fmtAcct2(v.monthlyRent), {muted:true}), {tip:'Sum of every unit\\x27s own Rent (shown in the table above). Not included in Total Monthly Expenses above \\u2014 shown here so you don\\x27t have to add it up yourself.'});
   h += cRow('Total Monthly Cost (All Units, incl. Rent)', cDisplay(fmtAcct2(v.totalMonthlyExp + v.monthlyRent), {computed:true}), {total:true, tip:'Total Monthly Expenses (All Units) above, plus every unit\\x27s Rent (shown in the table above). This is the actual full monthly cost of the building \\u2014 everything you pay out each month.'});
   h += cRow('Annual Operating Expenses', cDisplay(fmtAcct(Math.round(v.annualExp)), {muted:true}), {tip:'Total Monthly Expenses × 12. Rent is not included in this figure — it is automatically accounted for in the Competitor Analysis and Projected ROI tabs.'});
   h += '</div>';
@@ -29679,8 +29680,18 @@ function _customExpensesTarget(r){
 // every stay — pool fees, etc.). Turn/night streams need this property's own
 // Occupancy % and Average Length of Stay, both passed in by the caller.
 const _INCOME_DAYS_PER_MONTH = 30.44;
-function _incomeStreamMonthly(ai, occPct, alosNights){
+// A stream with no enabled field yet (created before this toggle existed)
+// defaults to enabled, so existing totals don't silently change.
+function _incomeStreamEnabled(ai){ return !ai || ai.enabled !== false; }
+// ignoreEnabled: pass true to get what this stream WOULD contribute if it
+// were on, regardless of its actual toggle state — used for the row's own
+// display so a disabled stream still shows its dollar figure (just muted),
+// instead of collapsing to $0. Every real total (NOI, By Unit rollup, Excel
+// export) calls this with no 4th arg, so a disabled stream correctly nets
+// to $0 there without each call site needing its own enabled check.
+function _incomeStreamMonthly(ai, occPct, alosNights, ignoreEnabled){
   if(!ai) return 0;
+  if(!ignoreEnabled && !_incomeStreamEnabled(ai)) return 0;
   const amt = parseFloat(ai.amount) || 0;
   if(ai.type === 'weekly') return amt * 52 / 12;
   const occupiedNightsPerMonth = (parseFloat(occPct) || 0) / 100 * _INCOME_DAYS_PER_MONTH;
@@ -29698,9 +29709,12 @@ function _incomeStreamMonthly(ai, occPct, alosNights){
 }
 function _propRenderIncomeRow(recId, ai, monthlyRent, locked, occPct, alosNights){
   const amt = parseFloat(ai.amount) || 0;
+  const enabled = _incomeStreamEnabled(ai);
   // Each list belongs to one physical unit now, so a $200/mo parking spot on
   // THIS unit's own tab is just $200 — no unit-count multiplier anymore.
-  const computedDollar = _incomeStreamMonthly(ai, occPct, alosNights);
+  // ignoreEnabled:true — a disabled stream still shows what it WOULD be
+  // worth (muted below), rather than collapsing the display to $0.
+  const computedDollar = _incomeStreamMonthly(ai, occPct, alosNights, true);
   let hint = '';
   if(ai.type === 'weekly'){
     hint = '<span class="calc-label-hint">$'+amt.toLocaleString('en-US',{minimumFractionDigits:amt%1?2:0,maximumFractionDigits:2})+'/wk</span>';
@@ -29715,9 +29729,16 @@ function _propRenderIncomeRow(recId, ai, monthlyRent, locked, occPct, alosNights
   const actions = locked ? '' :
     '<button onclick="_propOpenAddIncome(\''+recId+'\',\''+ai.id+'\')" title="Edit" style="background:none;border:none;color:var(--text3);cursor:pointer;padding:2px 4px;margin-left:6px;vertical-align:middle"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 113 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>'
     + '<button onclick="_propDeleteIncome(\''+recId+'\',\''+ai.id+'\')" title="Delete" style="background:none;border:none;color:var(--text3);cursor:pointer;padding:2px 4px;vertical-align:middle"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>';
+  // A checkbox instead of the edit modal so turning a stream on/off (to test
+  // "what if this guest charge went away") is one click, not a full edit —
+  // same pattern as the Units tab's "included in analysis" checkbox.
+  const enableCheckbox = '<input type="checkbox" '+(enabled?'checked':'')+' '+(locked?'disabled':'')+' onclick="event.stopPropagation();_propToggleIncomeEnabled(\''+recId+'\',\''+ai.id+'\')" title="'+(enabled?'Enabled — click to disable without deleting':'Disabled — excluded from Additional Income totals, click to re-enable')+'" style="width:15px;height:15px;flex-shrink:0;cursor:'+(locked?'default':'pointer')+';accent-color:var(--primary);margin-right:8px;vertical-align:middle">';
+  const nameHtml = esc(ai.name || '(unnamed)') + (enabled ? '' : ' <span style="font-size:.68rem;color:var(--text3);font-style:italic">(disabled)</span>');
+  const labelHtml = enabled ? nameHtml + hint : '<span style="opacity:.55">'+nameHtml+hint+'</span>';
+  const valSpan = '<span class="calc-display'+(enabled?' computed':' muted')+'" style="'+(enabled?'color:#10b981':'text-decoration:line-through')+'">' + fmtAcct2(computedDollar) + '</span>';
   return '<div class="calc-row" data-income-id="'+ai.id+'">'
-    + '<div class="calc-label">' + esc(ai.name || '(unnamed)') + hint + '</div>'
-    + '<div class="calc-val" style="display:flex;align-items:center;justify-content:flex-end;gap:0"><span class="calc-display computed" style="color:#10b981">' + fmtAcct2(computedDollar) + '</span>' + actions + '</div>'
+    + '<div class="calc-label" style="display:flex;align-items:flex-start">' + enableCheckbox + '<span style="flex:1;min-width:0">' + labelHtml + '</span></div>'
+    + '<div class="calc-val" style="display:flex;align-items:center;justify-content:flex-end;gap:0">' + valSpan + actions + '</div>'
     + '</div>';
 }
 
@@ -29923,6 +29944,25 @@ function _propDeleteIncome(recId, itemId){
   const idx = arr.findIndex(x => x.id === itemId);
   if(idx < 0) return;
   arr.splice(idx, 1);
+  saveData(r.id);
+  _rerenderExpensesTab();
+  if(typeof _rerenderCalcTab === 'function') try { _rerenderCalcTab(); } catch(_){}
+}
+
+// Toggles a stream on/off without deleting it — lets you model "what if this
+// guest charge went away" (e.g. eliminating a cleaning or pool fee) and put
+// it right back after, instead of re-entering the name/amount/type from
+// scratch. _incomeStreamMonthly treats a disabled stream as $0 in every real
+// total; the row itself still shows what it would be worth, just muted.
+function _propToggleIncomeEnabled(recId, itemId){
+  if(_blockIfImpersonating && _blockIfImpersonating('Toggle income')) return;
+  const r = records.find(x => x.id === recId);
+  if(!r) return;
+  const arr = _additionalIncomeTarget(r);
+  if(!arr) return;
+  const item = arr.find(x => x.id === itemId);
+  if(!item) return;
+  item.enabled = !_incomeStreamEnabled(item);
   saveData(r.id);
   _rerenderExpensesTab();
   if(typeof _rerenderCalcTab === 'function') try { _rerenderCalcTab(); } catch(_){}
@@ -30364,7 +30404,7 @@ function _finishCopyExpenses(sourceLabel, sc, targetId, sourceRecord, sourceUnit
   sourceIncome.forEach(ai => {
     const amt = Number(parseFloat(ai.amount) || 0);
     const suffix = ai.type === 'weekly' ? '/wk' : ai.type === 'perTurn' ? '/turn' : ai.type === 'perNight' ? '/night used' : '/mo';
-    summaryParts.push((ai.name || '(unnamed)') + ': $' + amt.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}) + suffix);
+    summaryParts.push((ai.name || '(unnamed)') + ': $' + amt.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}) + suffix + (_incomeStreamEnabled(ai) ? '' : ' (disabled)'));
   });
   const summary = summaryParts.join(', ');
 
@@ -41919,6 +41959,7 @@ async function exportPropertyProfile(recId){
       const _incomeFirstRow = _expRow;
       _xlsxAdditionalIncome.forEach(function(ai){
         const amt = parseFloat(ai.amount) || 0;
+        const disabled = !_incomeStreamEnabled(ai);
         let label = ai.name || 'Additional Income';
         let cellVal = amt;
         let isComputed = false;
@@ -41929,14 +41970,16 @@ async function exportPropertyProfile(recId){
           // Turns/occupied-nights depend on this property's occupancy % and
           // Avg. Length of Stay, neither of which live in a single named cell
           // elsewhere on this sheet — so these export as a precomputed monthly
-          // value (same math as _incomeStreamMonthly) rather than a live formula.
+          // value (same math as _incomeStreamMonthly, disabled streams net $0)
+          // rather than a live formula.
           const attachPct = isNaN(parseFloat(ai.attachRatePct)) ? 100 : parseFloat(ai.attachRatePct);
           label += ai.type === 'perTurn' ? ' ($' + amt + '/turn)' : ' ($' + amt + '/night used × ' + attachPct + '%)';
           cellVal = Math.round(_incomeStreamMonthly(ai, v.estOccupancyRate, c.avgLengthOfStay) * 100) / 100;
           isComputed = true;
         }
+        if(disabled){ label += ' (disabled)'; cellVal = 0; }
         addCalcRow(ws2, _expRow, label, cellVal, {computed: isComputed});
-        if(ai.type === 'weekly') ws2.getCell(_expRow, 3).value = { formula: amt + '*52/12' };
+        if(ai.type === 'weekly' && !disabled) ws2.getCell(_expRow, 3).value = { formula: amt + '*52/12' };
         _expRow++;
         ws2.getRow(_expRow).height = 6;
         _expRow++;
