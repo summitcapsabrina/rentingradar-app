@@ -28441,7 +28441,10 @@ function calcComputeAll(r){
         customExpFlat: customExpFlatThisUnit, customExpPct: customExpPctThisUnit,
         simpleMonthlyRevenue: monthlyRevThisUnit,
         totalInvested: investedThisUnit + furnishThisUnit + oneTimeThisUnit,
-        tier: s.tier, matchedCompCount: s.matchedCount, occPct: s.occ
+        // rate: this unit's own comp-matched nightly rate, independent of days/occupancy —
+        // lets Negotiation Tools' Occupancy Target re-derive this unit's revenue at a
+        // what-if occupancy (rate × 365 × occ%) without re-running the comp matching above.
+        tier: s.tier, matchedCompCount: s.matchedCount, occPct: s.occ, rate: s.rate
       });
     });
     // Shared building-wide common spaces (lounges, laundry rooms, etc.) — furnished
@@ -28689,10 +28692,89 @@ function _baseScenarioRevExp(v){
 function _activeScenarioRevExp(r, v){
   if(!v.hasProjectionData) return { rev: 0, exp: 0, isOverridden: false };
   const base = _baseScenarioRevExp(v);
-  const override = _revTargetPreview[r.id];
-  if(override === undefined) return { rev: base.rev, exp: base.exp, isOverridden: false };
-  const rev = Math.round(override);
-  return { rev, exp: Math.round(v.deriveFromRev(rev).annualExp), isOverridden: true };
+  const revOverride = _revTargetPreview[r.id];
+  if(revOverride !== undefined){
+    const rev = Math.round(revOverride);
+    return { rev, exp: Math.round(v.deriveFromRev(rev).annualExp), isOverridden: true };
+  }
+  // Revenue Target always wins when both are active — Occupancy Target only steps in
+  // as the base revenue when Revenue Target hasn't been touched. See _activeOccupancy.
+  const occOverride = _occTargetPreview[r.id];
+  if(occOverride !== undefined){
+    const rev = _occDerivedRevenue(v, occOverride);
+    // v.deriveFromRev bakes cleaning into its fixedExp closure at the REAL occupancy
+    // (see calcComputeAll) — since that closure adds cleaning in additively, swapping
+    // in the what-if cleaning is just a delta on top of the otherwise-correct exp
+    // figure, without needing to reimplement deriveFromRev's whole expense stack.
+    const cleaningDelta = (_activeCleaningMonthly(r, v, occOverride) - (v.cleaning || 0)) * 12;
+    const exp = Math.round(v.deriveFromRev(rev).annualExp + cleaningDelta);
+    return { rev, exp, isOverridden: true };
+  }
+  return { rev: base.rev, exp: base.exp, isOverridden: false };
+}
+
+// ── Monthly Occupancy Target: Negotiation Tools' occupancy what-if lever ──
+// This unit's/building's average occupancy% today, derived the same way the
+// underlying comp average is (a simple average, not revenue-weighted) — used only
+// as the slider's starting position and its "current estimate" marker.
+function _naturalOccupancy(v){
+  if(v.isApt){
+    const list = v.unitBreakdown || [];
+    if(!list.length) return 0;
+    return list.reduce((s,u) => s + (u.occPct || 0), 0) / list.length;
+  }
+  return v.estOccupancyRate || 0;
+}
+// Recomputes annual revenue at a hypothetical occupancy%, holding each comp-matched
+// nightly rate fixed: rate × 365 days × occ%. Multi Unit sums this per-unit (each
+// unit keeps its own comp-matched rate); Single Unit uses the building's blended rate.
+function _occDerivedRevenue(v, occPct){
+  const days = 365 * (Math.max(0, Math.min(100, parseFloat(occPct) || 0)) / 100);
+  if(v.isApt){
+    return Math.round((v.unitBreakdown || []).reduce((s,u) => s + (u.rate || 0) * days, 0));
+  }
+  return Math.round((v.avgDailyRate || 0) * days);
+}
+// Negotiation Tools' "what occupancy is driving the numbers in this section right
+// now" resolver — mirrors _activeScenarioRevExp's fallback pattern.
+function _activeOccupancy(r, v){
+  const natural = _naturalOccupancy(v);
+  const override = _occTargetPreview[r.id];
+  if(override === undefined) return { occPct: natural, isOverridden: false };
+  return { occPct: Math.max(0, Math.min(100, override)), isOverridden: true };
+}
+// Re-derives Additional Income at a what-if occupancy%. Additional Income streams
+// (perTurn/perNight types) are natively occupancy-sensitive via _incomeStreamMonthly,
+// but v.additionalIncomeTotal was already computed at the REAL occupancy inside
+// calcComputeAll — this recomputes it from the same raw income arrays, read-only,
+// so it doesn't require duplicating calcComputeAll's expense loop.
+function _activeAdditionalIncome(r, v, occPct){
+  if(v.isApt){
+    return (r.units || []).filter(_unitIncluded).reduce((sum, u) => {
+      const uc = getCalc(r, u);
+      const incomeArr = _additionalIncomeArrayFor(r, u);
+      return sum + incomeArr.reduce((s, ai) => s + _incomeStreamMonthly(ai, occPct, uc.avgLengthOfStay), 0);
+    }, 0);
+  }
+  const c = getCalc(r);
+  const incomeArr = _propEnsureIncomeArray(r);
+  return incomeArr.reduce((s, ai) => s + _incomeStreamMonthly(ai, occPct, c.avgLengthOfStay), 0);
+}
+// Re-derives the monthly Cleaning Fee at a what-if occupancy% — only moves for a
+// unit/property whose cleaningMode is 'perTurn' (a $/turn rate scaled by turns-per-
+// month, same formula as a Per Turn Additional Income stream); the flat $/mo default
+// is occupancy-independent by definition and passes through unchanged.
+function _activeCleaningMonthly(r, v, occPct){
+  if(v.isApt){
+    return (r.units || []).filter(_unitIncluded).reduce((sum, u) => {
+      const uc = getCalc(r, u);
+      if(uc.cleaningMode === 'perTurn') return sum + _incomeStreamMonthly({ type:'perTurn', amount: uc.cleaningPerTurn }, occPct, uc.avgLengthOfStay);
+      return sum + (parseFloat(uc.cleaning) || 0);
+    }, 0);
+  }
+  const c = getCalc(r);
+  if(c.cleaningMode === 'perTurn') return _incomeStreamMonthly({ type:'perTurn', amount: c.cleaningPerTurn }, occPct, c.avgLengthOfStay);
+  return parseFloat(c.cleaning) || 0;
 }
 
 // Per-unit equivalent of calcComputeAll's deriveFromRev — re-derives ONE unit's own
@@ -31101,7 +31183,12 @@ function renderNegotiationTab(r){
   const _pynRev = _actRev.rev;
   const _pynExp = _actRev.exp;
   // Annualize the monthly additional income so it stacks with the annualized revenue.
-  const _pynAnnualIncome = Math.round((v.additionalIncomeTotal || 0) * 12);
+  // Re-derived at the Occupancy Target's occupancy% when it's active (perTurn/perNight
+  // streams are occupancy-sensitive) — see _activeAdditionalIncome.
+  const _activeOcc = _activeOccupancy(r, v);
+  const _pynAnnualIncome = _activeOcc.isOverridden
+    ? Math.round(_activeAdditionalIncome(r, v, _activeOcc.occPct) * 12)
+    : Math.round((v.additionalIncomeTotal || 0) * 12);
   const _pynNet = v.hasProjectionData ? (_pynRev + _pynAnnualIncome - _pynExp - _pynAnnualRent) : 0;
   const _pynMonthlyNet = v.hasProjectionData ? Math.round(_pynNet / 12) : Math.round(selectedD.monthlyCF);
   const kpiMonthlyCF = _pynMonthlyNet;
@@ -31156,7 +31243,9 @@ function renderNegotiationTab(r){
   }
 
   // Helper: compute monthly net for a given rent (includes income streams)
-  const _raAnnualIncome = Math.round((v.additionalIncomeTotal || 0) * 12);
+  // Same Occupancy Target-aware figure as _pynAnnualIncome, so the Rent Adjustment
+  // dial and Rental Concessions stay in lock-step with the occupancy slider too.
+  const _raAnnualIncome = _pynAnnualIncome;
   function _calcAdjNet(rent){
     if(!_raHasData) return 0;
     const col = _raSelectedCol;
@@ -31256,6 +31345,41 @@ function renderNegotiationTab(r){
     h += '<div style="position:absolute;left:'+_rtPctR.toFixed(2)+'%;top:0;transform:translateX(-50%);text-align:center;cursor:pointer" onclick="setCalcProjMode(\'realistic\')" title="Set revenue to Realistic"><div style="font-size:.66rem;font-weight:700;color:var(--num-computed)">Realistic</div><div style="font-size:.62rem;color:var(--text3)">'+fmtMoney(_rtR)+'</div></div>';
     h += '<div style="position:absolute;left:'+_rtDispPctO.toFixed(2)+'%;top:0;transform:translateX(-50%);text-align:center;cursor:pointer" onclick="setCalcProjMode(\'optimistic\')" title="Set revenue to Optimistic"><div style="font-size:.66rem;font-weight:700;color:var(--num-success)">Optimistic</div><div style="font-size:.62rem;color:var(--text3)">'+fmtMoney(_rtO)+'</div></div>';
     h += '<div style="position:absolute;right:0;top:0;font-size:.62rem;color:var(--text3);text-align:right"><div style="font-weight:600">'+fmtMoney(_rtMax)+'</div>+25%</div>';
+    h += '</div>';
+    h += '</div>';
+
+    // ── Monthly Occupancy Target: horizontal slider, same what-if sandbox as Revenue
+    // Target above — holds each comp-matched nightly rate fixed and re-derives annual
+    // revenue at a chosen occupancy% (rate × 365 × occ%), flowing through the same
+    // Projected Yearly Net / Rent Adjustment / Rental Concessions / Deal Temp readout
+    // below. Scoped entirely to Negotiation Tools, same isolation as Revenue Target —
+    // never feeds back into the Projected ROI tab's KPIs above. Dragging Revenue
+    // Target always takes priority over this slider when both are active — see
+    // _activeScenarioRevExp. Additional Income streams that are natively occupancy-
+    // sensitive (Per Turn / Per Night) react to this too, and so does a per-turn
+    // Cleaning Fee — see _activeAdditionalIncome / _activeCleaningMonthly.
+    const _otNatural = Math.max(0, Math.min(100, _naturalOccupancy(v)));
+    const _otVal = Math.max(0, Math.min(100, _activeOcc.occPct));
+    const _otDiff = Math.round(_otVal - _otNatural);
+
+    h += '<div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border)">';
+    h += '<div class="nft-title-row" style="font-size:.82rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;display:flex;align-items:center;justify-content:center;gap:5px;cursor:help"'+tipAttrs('Monthly Occupancy Target','Drag to explore this deal at a different occupancy assumption \\u2014 annual revenue is re-derived at that occupancy (holding your comp-matched nightly rate fixed), and anything else that\\x27s a factor of occupancy \\u2014 occupancy-based Additional Income streams (Per Turn / Per Night) and a Per Turn Cleaning Fee \\u2014 updates to match. This is a what-if sandbox: it does not change the KPIs, Payback Period, or Deal Temperature on the Projected ROI tab above.\\n\\nDragging Revenue Target above always takes priority over this slider if both are active. Click the marker to snap back to your current occupancy estimate.',true)+'>Monthly Occupancy Target<span class="nft-hint-q">?</span></div>';
+
+    h += '<div style="text-align:center;margin:8px 0 2px">';
+    h += '<span class="co-rev-value" id="occTargetValTop_'+r.id+'" onclick="openOccTargetInput(\''+r.id+'\')" title="Click to type an exact occupancy">'+Math.round(_otVal)+'%</span>';
+    h += '</div>';
+    h += '<div id="occTargetDelta_'+r.id+'" style="text-align:center;font-size:.68rem;color:var(--text3);margin-bottom:10px">'+(_otDiff===0?'Matches your current occupancy estimate':(_otDiff>0?'+':'')+_otDiff+' pts vs. current estimate')+'</div>';
+
+    h += '<div id="occTargetConfig_'+r.id+'" data-natural="'+_otNatural.toFixed(2)+'" style="display:none"></div>';
+
+    h += '<div style="position:relative;padding:0 2px">';
+    h += '<input type="range" class="co-rev-slider" id="occTargetSlider_'+r.id+'" min="0" max="100" step="1" value="'+Math.round(_otVal)+'" style="background:linear-gradient(90deg, #ef4444 0%, #3b82f6 '+_otNatural.toFixed(2)+'%, #10b981 100%)" oninput="occTargetPreview(\''+r.id+'\',this.value)" onchange="occTargetCommit(\''+r.id+'\',this.value)">';
+
+    h += '<div style="position:relative;height:34px;margin-top:4px">';
+    h += '<div style="position:absolute;left:0;top:0;font-size:.62rem;color:var(--text3);text-align:left"><div style="font-weight:600">0%</div></div>';
+    h += '<div style="position:absolute;left:'+_otNatural.toFixed(2)+'%;top:0;transform:translateX(-50%);text-align:center;cursor:pointer" onclick="occTargetReset(\''+r.id+'\')" title="Reset to current occupancy estimate"><div style="font-size:.66rem;font-weight:700;color:var(--num-computed)">Current Est.</div><div style="font-size:.62rem;color:var(--text3)">'+Math.round(_otNatural)+'%</div></div>';
+    h += '<div style="position:absolute;right:0;top:0;font-size:.62rem;color:var(--text3);text-align:right"><div style="font-weight:600">100%</div></div>';
+    h += '</div>';
     h += '</div>';
     h += '</div>';
 
@@ -32950,6 +33074,83 @@ function saveRevTargetInput(recId){
   if(isNaN(val) || val < rangeMin || val > rangeMax) return; // blocked
   _revTargetPreview[recId] = Math.round(val);
   document.getElementById('revTargetInputOverlay')?.remove();
+  if(typeof _rerenderCalcTab === 'function') try { _rerenderCalcTab(); } catch(_){}
+}
+
+// ── Monthly Occupancy Target: horizontal slider (standalone — mirrors Revenue
+// Target's preview/commit pattern, but a plain 0-100% linear scale needs none of
+// the piecewise-breakpoint math Revenue Target uses for its warped P/R/O scale) ──
+let _occTargetPreview = {}; // { recId: previewOccPct }
+let _occTargetRaf = null;
+
+function occTargetPreview(recId, val){
+  const num = Math.round(parseFloat(val));
+  if(!isFinite(num)) return;
+  _occTargetPreview[recId] = Math.max(0, Math.min(100, num));
+  _quickUpdateOccTarget(recId, _occTargetPreview[recId]);
+  // Live-refresh Rental Concessions while dragging, same throttled pattern as
+  // Revenue Target and the rent dial — full sync happens on release.
+  if(_occTargetRaf) cancelAnimationFrame(_occTargetRaf);
+  _occTargetRaf = requestAnimationFrame(function(){ _occTargetRaf = null; _liveUpdateConcessionsPanel(recId); });
+}
+function occTargetCommit(recId, val){
+  const num = Math.round(parseFloat(val));
+  if(isFinite(num)) _occTargetPreview[recId] = Math.max(0, Math.min(100, num));
+  if(typeof _rerenderCalcTab === 'function') try { _rerenderCalcTab(); } catch(_){}
+}
+function occTargetReset(recId){
+  delete _occTargetPreview[recId];
+  if(typeof _rerenderCalcTab === 'function') try { _rerenderCalcTab(); } catch(_){}
+}
+function _quickUpdateOccTarget(recId, occPct){
+  const readout = document.getElementById('occTargetValTop_'+recId);
+  const delta = document.getElementById('occTargetDelta_'+recId);
+  const cfg = document.getElementById('occTargetConfig_'+recId);
+  if(!readout || !cfg) return;
+  readout.textContent = Math.round(occPct)+'%';
+  if(delta){
+    const natural = parseFloat(cfg.dataset.natural) || 0;
+    const diff = Math.round(occPct - natural);
+    delta.textContent = diff === 0 ? 'Matches your current occupancy estimate' : (diff > 0 ? '+' : '') + diff + ' pts vs. current estimate';
+  }
+}
+
+// ── Monthly Occupancy Target: click-to-type input ──
+function openOccTargetInput(recId){
+  const r = records.find(x => x.id === recId);
+  if(!r) return;
+  const cfg = document.getElementById('occTargetConfig_'+recId);
+  const current = _occTargetPreview[recId] !== undefined ? _occTargetPreview[recId] : (cfg ? parseFloat(cfg.dataset.natural) : 0);
+  const existing = document.getElementById('occTargetInputOverlay');
+  if(existing) existing.remove();
+  const overlay = document.createElement('div');
+  overlay.className = 'multi-editor-overlay';
+  overlay.id = 'occTargetInputOverlay';
+  overlay.innerHTML = '<div class="multi-editor" style="max-width:360px"><div class="multi-editor-header"><h3>Set Monthly Occupancy %</h3><button class="modal-close" onclick="document.getElementById(\'occTargetInputOverlay\').remove()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div><div class="multi-editor-body" style="padding:24px 20px"><input type="number" id="occTargetInputVal" placeholder="Occupancy %" value="'+Math.round(current)+'" min="0" max="100" style="font-size:1rem;padding:10px 12px;margin-bottom:4px"><div id="occTargetInputErr" style="font-size:.72rem;color:#ef4444;font-weight:600;min-height:18px;margin-bottom:8px"></div><div style="font-size:.72rem;color:var(--text3);margin-bottom:16px">Range: 0% – 100% · Enter to save</div><div style="display:flex;gap:10px;justify-content:flex-end"><button class="btn btn-secondary" onclick="document.getElementById(\'occTargetInputOverlay\').remove()">Cancel</button><button class="btn btn-primary" id="occTargetInputSaveBtn" onclick="saveOccTargetInput(\''+recId+'\')">Save</button></div></div></div>';
+  document.body.appendChild(overlay);
+  const inp = document.getElementById('occTargetInputVal');
+  inp.focus();
+  inp.select();
+  inp.addEventListener('input', function(){
+    const v = parseFloat(this.value);
+    const errEl = document.getElementById('occTargetInputErr');
+    if(isNaN(v) || v < 0 || v > 100){
+      errEl.textContent = 'Must be between 0 and 100';
+      document.getElementById('occTargetInputSaveBtn').style.opacity = '.4';
+      document.getElementById('occTargetInputSaveBtn').style.pointerEvents = 'none';
+    } else {
+      errEl.textContent = '';
+      document.getElementById('occTargetInputSaveBtn').style.opacity = '';
+      document.getElementById('occTargetInputSaveBtn').style.pointerEvents = '';
+    }
+  });
+  inp.addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); saveOccTargetInput(recId); }});
+}
+function saveOccTargetInput(recId){
+  const val = parseFloat(document.getElementById('occTargetInputVal')?.value);
+  if(isNaN(val) || val < 0 || val > 100) return; // blocked
+  _occTargetPreview[recId] = Math.round(val);
+  document.getElementById('occTargetInputOverlay')?.remove();
   if(typeof _rerenderCalcTab === 'function') try { _rerenderCalcTab(); } catch(_){}
 }
 
