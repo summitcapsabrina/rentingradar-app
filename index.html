@@ -31181,16 +31181,15 @@ function _occWheelColor(pct){
   return 'rgb('+lerp(0)+','+lerp(1)+','+lerp(2)+')';
 }
 
-// ── Monthly Occupancy Target: the wheel ── A full-circle SVG gauge (colored wedges
-// + a center needle, same visual family as the Rent Adjustment dial below it, just
-// swept almost all the way around instead of a semicircle) standing in for what used
-// to be a horizontal slider. Functionally identical to before: reads/writes
-// _occTargetPreview[r.id] via occTargetPreview/occTargetCommit/occTargetReset, and
-// _activeScenarioRevExp/_activeOccupancy/_activeAdditionalIncome/_activeCleaningMonthly
-// (declared above) don't know or care that the input changed from a slider to a wheel.
-// A 10° gap at the top (between the 100% and 0% wedges) is the wheel's "peg" — the
-// hard stop _initOccWheelDrag clamps to, so it spins freely everywhere else but can't
-// wrap past either end.
+// ── Monthly Occupancy Target: the wheel ── A vertical drum of 5%-increment tiles
+// (100 down to 0, top to bottom) that scrolls behind a fixed arrow on the right —
+// a cylinder viewed edge-on, echoing the physical prize wheel's side profile, rather
+// than a flat disc viewed face-on. Functionally identical to the flat-disc version
+// it replaces: reads/writes _occTargetPreview[r.id] via occTargetPreview/
+// occTargetCommit/occTargetReset, and _activeScenarioRevExp/_activeOccupancy/
+// _activeAdditionalIncome/_activeCleaningMonthly don't know or care what the input
+// control looks like. Dragging UP increases the value (like pulling a vertical
+// fader up) and hard-stops at 0%/100% — see _initOccWheelDrag.
 function _occWheelHtml(r, v){
   const insufficientCompsLocal = v.compsCount < 3 || (v.isApt && v.unitsMissingOwnComps && v.unitsMissingOwnComps.length > 0);
   const hasData = v.hasProjectionData && !insufficientCompsLocal;
@@ -31204,63 +31203,40 @@ function _occWheelHtml(r, v){
   const active = _activeOccupancy(r, v);
   const val = Math.max(0, Math.min(100, active.occPct));
 
-  const W = 220, CX = 110, CY = 110, R = 88;
-  const START_DEG = -85, SWEEP_DEG = 350; // gap is the remaining 10°, centered at top (-90°)
-  const toRad = d => d * Math.PI / 180;
-  const WEDGES = 10;
+  const STEP = 5, COUNT = 21; // 100, 95, ..., 0 — top to bottom
+  const TILE_H = 34, VIEW_W = 100, VIEW_H = TILE_H * 7; // ~7 tiles visible at once
+  const valToIdx = vv => (100 - vv) / STEP; // continuous; index 0 = value 100 (top)
+  const translateForVal = vv => (VIEW_H/2) - (valToIdx(vv)*TILE_H + TILE_H/2);
 
-  h += '<div id="occWheelConfig_'+r.id+'" data-cx="'+CX+'" data-cy="'+CY+'" data-r="'+R+'" data-w="'+W+'" data-start="'+START_DEG+'" data-sweep="'+SWEEP_DEG+'" data-natural="'+natural.toFixed(2)+'" style="display:none"></div>';
+  h += '<div id="occWheelConfig_'+r.id+'" data-tileh="'+TILE_H+'" data-viewh="'+VIEW_H+'" data-natural="'+natural.toFixed(2)+'" style="display:none"></div>';
 
-  h += '<svg id="occWheel_'+r.id+'" viewBox="0 0 '+W+' '+W+'" style="display:block;width:100%;max-width:220px;margin:0 auto;cursor:pointer;touch-action:none">';
-  h += '<defs><filter id="occWheelNeedleShadow_'+r.id+'" x="-50%" y="-50%" width="200%" height="200%"><feDropShadow dx="0" dy="2" stdDeviation="2.5" flood-color="#000" flood-opacity="0.45"/></filter></defs>';
-
-  // Wedges — solid pie slices from center to rim, red (low occupancy) through blue
-  // to green (high occupancy). Purely a color story, not tied to Deal Temp thresholds
-  // (those are revenue-driven, not occupancy-driven, so there's no single occupancy%
-  // that universally means "Slam-Dunk").
-  for(let i=0;i<WEDGES;i++){
-    const p0 = i/WEDGES, p1 = (i+1)/WEDGES;
-    const a0 = toRad(START_DEG + p0*SWEEP_DEG), a1 = toRad(START_DEG + p1*SWEEP_DEG);
-    const x0 = CX + R*Math.cos(a0), y0 = CY + R*Math.sin(a0);
-    const x1 = CX + R*Math.cos(a1), y1 = CY + R*Math.sin(a1);
-    const color = _occWheelColor((p0+p1)/2);
-    h += '<path d="M'+CX+','+CY+' L'+x0.toFixed(1)+','+y0.toFixed(1)+' A'+R+','+R+' 0 0,1 '+x1.toFixed(1)+','+y1.toFixed(1)+' Z" fill="'+color+'" opacity=".82" stroke="var(--surface)" stroke-width="1.5"/>';
+  h += '<div style="display:flex;justify-content:center">';
+  h += '<div style="position:relative;width:'+VIEW_W+'px">';
+  // Viewport clips the strip; the mask fades tiles out near the top/bottom edges, a
+  // cheap stand-in for the real wheel's cylindrical curvature.
+  h += '<div id="occWheelViewport_'+r.id+'" style="position:relative;width:'+VIEW_W+'px;height:'+VIEW_H+'px;overflow:hidden;border-radius:10px;border:1px solid var(--border);background:var(--bg2);cursor:grab;touch-action:none;-webkit-mask-image:linear-gradient(to bottom, transparent 0%, black 18%, black 82%, transparent 100%);mask-image:linear-gradient(to bottom, transparent 0%, black 18%, black 82%, transparent 100%)">';
+  h += '<div id="occWheelStrip_'+r.id+'" style="position:absolute;left:0;top:0;width:100%;transform:translateY('+translateForVal(val).toFixed(1)+'px)">';
+  for(let i=0;i<COUNT;i++){
+    const tileVal = 100 - i*STEP;
+    const color = _occWheelColor(tileVal/100);
+    h += '<div style="height:'+TILE_H+'px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.92rem;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.35);background:linear-gradient(180deg, rgba(255,255,255,.32), rgba(255,255,255,0) 45%, rgba(0,0,0,.16) 100%), '+color+';border-bottom:1px solid rgba(0,0,0,.15);box-sizing:border-box">'+tileVal+'</div>';
   }
+  h += '</div>'; // end strip
+  h += '</div>'; // end viewport
 
-  // Peg — a short dark notch at the gap, marking the hard stop between 100% and 0%
-  // (the real wheel's physical travel-stop peg between its highest and lowest wedge).
-  const pegA = toRad(-90);
-  const pegX1 = CX + (R-6)*Math.cos(pegA), pegY1 = CY + (R-6)*Math.sin(pegA);
-  const pegX2 = CX + (R+10)*Math.cos(pegA), pegY2 = CY + (R+10)*Math.sin(pegA);
-  h += '<line x1="'+pegX1.toFixed(1)+'" y1="'+pegY1.toFixed(1)+'" x2="'+pegX2.toFixed(1)+'" y2="'+pegY2.toFixed(1)+'" stroke="var(--text)" stroke-width="4" stroke-linecap="round"/>';
-  h += '<text x="'+(CX-4)+'" y="'+(CY-R-16)+'" text-anchor="end" fill="var(--text3)" font-size="9" font-weight="700">0%</text>';
-  h += '<text x="'+(CX+4)+'" y="'+(CY-R-16)+'" text-anchor="start" fill="var(--text3)" font-size="9" font-weight="700">100%</text>';
-
-  // Needle — same drawing approach as the Rent Adjustment dial's arrow needle, just
-  // parameterized by this wheel's near-360° sweep instead of a semicircle.
-  const needleAngle = toRad(START_DEG + (val/100)*SWEEP_DEG);
-  const nLen = R - 12, tipLen = 18, tipW = 7;
-  const tipX = CX + (nLen + tipLen*0.3)*Math.cos(needleAngle);
-  const tipY = CY + (nLen + tipLen*0.3)*Math.sin(needleAngle);
-  const perpAngle = needleAngle + Math.PI/2;
-  const baseX1 = CX + (nLen - tipLen)*Math.cos(needleAngle) + tipW*Math.cos(perpAngle);
-  const baseY1 = CY + (nLen - tipLen)*Math.sin(needleAngle) + tipW*Math.sin(perpAngle);
-  const baseX2 = CX + (nLen - tipLen)*Math.cos(needleAngle) - tipW*Math.cos(perpAngle);
-  const baseY2 = CY + (nLen - tipLen)*Math.sin(needleAngle) - tipW*Math.sin(perpAngle);
-  h += '<g filter="url(#occWheelNeedleShadow_'+r.id+')">';
-  h += '<line class="occ-wheel-needle-body" x1="'+CX+'" y1="'+CY+'" x2="'+(CX + (nLen-tipLen)*Math.cos(needleAngle)).toFixed(1)+'" y2="'+(CY + (nLen-tipLen)*Math.sin(needleAngle)).toFixed(1)+'" stroke="var(--text)" stroke-width="3.5" stroke-linecap="round"/>';
-  h += '<polygon class="occ-wheel-needle-arrow" points="'+tipX.toFixed(1)+','+tipY.toFixed(1)+' '+baseX1.toFixed(1)+','+baseY1.toFixed(1)+' '+baseX2.toFixed(1)+','+baseY2.toFixed(1)+'" fill="var(--text)" stroke="rgba(0,0,0,.25)" stroke-width=".5"/>';
-  h += '<circle class="occ-wheel-hub" cx="'+CX+'" cy="'+CY+'" r="9" fill="var(--text)" stroke="rgba(0,0,0,.2)" stroke-width="1.5"/>';
-  h += '</g>';
-  h += '<circle cx="'+CX+'" cy="'+CY+'" r="3.5" fill="var(--surface)"/>';
-  h += '<circle cx="'+CX+'" cy="'+CY+'" r="'+R+'" fill="transparent" id="occWheelHitArea_'+r.id+'" style="cursor:grab"/>';
-  h += '</svg>';
+  // Fixed pointer — a red arrow at the right edge, vertically centered, pointing left
+  // into the wheel (mirrors the show's flapper/indicator). A thin red line across the
+  // viewport at the same height makes the selected row obvious at a glance.
+  h += '<div style="position:absolute;right:-2px;top:50%;transform:translate(100%,-50%);width:0;height:0;border-top:11px solid transparent;border-bottom:11px solid transparent;border-right:16px solid #ef4444;filter:drop-shadow(1px 1px 1.5px rgba(0,0,0,.4))"></div>';
+  h += '<div style="position:absolute;left:0;right:0;top:50%;height:2px;background:rgba(239,68,68,.55);transform:translateY(-1px);pointer-events:none"></div>';
+  h += '</div>'; // end relative wrapper
+  h += '</div>'; // end flex-center wrapper
 
   clearTimeout(window._occWheelInitTimer);
   window._occWheelInitTimer = setTimeout(function(){ _initOccWheelDrag(r.id); }, 10);
 
   const diff = Math.round(val - natural);
-  h += '<div id="occWheelReadout_'+r.id+'" style="margin:6px 0 2px">';
+  h += '<div id="occWheelReadout_'+r.id+'" style="margin:8px 0 2px">';
   h += '<div onclick="openOccTargetInput(\''+r.id+'\')" style="font-size:1.5rem;font-weight:800;color:var(--text);cursor:pointer;display:inline-flex;align-items:baseline;gap:6px;border-bottom:2px dashed var(--border);padding-bottom:2px" title="Click to type an exact occupancy">'+Math.round(val)+'%<span style="font-size:.8rem;opacity:.55" aria-hidden="true">✏️</span></div>';
   h += '<div id="occWheelDelta_'+r.id+'" style="font-size:.72rem;color:var(--text3);margin-top:2px">'+(diff===0?'Matches your current occupancy estimate':(diff>0?'+':'')+diff+' pts vs. current estimate')+'</div>';
   h += '</div>';
@@ -31268,7 +31244,7 @@ function _occWheelHtml(r, v){
   if(active.isOverridden){
     h += '<div style="text-align:center;margin-top:2px"><button class="co-rev-revert" onclick="occTargetReset(\''+r.id+'\')">↩ reset to current estimate</button></div>';
   }
-  h += '<div style="font-size:.78rem;color:var(--text2);margin-top:8px;font-weight:600">Spin the wheel, or click the % <span style="color:var(--text3);font-weight:400">· Projection only</span></div>';
+  h += '<div style="font-size:.78rem;color:var(--text2);margin-top:8px;font-weight:600">Drag the wheel up/down, or click the % <span style="color:var(--text3);font-weight:400">· Projection only</span></div>';
 
   return h;
 }
@@ -33187,113 +33163,65 @@ function occTargetReset(recId){
   if(typeof _rerenderCalcTab === 'function') try { _rerenderCalcTab(); } catch(_){}
 }
 
-// Fast visual update of the wheel's needle + readout during dragging (avoids full
-// re-render) — same "quick update" role as _quickUpdateRentDial plays for the Rent
-// Adjustment dial, just moving a needle over a fixed wedge face instead of recoloring
-// arc zones (the wedges never change, only the needle angle does).
+// Fast visual update of the wheel's scroll position + readout during dragging
+// (avoids full re-render) — same "quick update" role as _quickUpdateRentDial plays
+// for the Rent Adjustment dial, just translating the strip instead of recoloring
+// arc zones (the tiles never change, only the strip's vertical offset does).
 function _quickUpdateOccWheel(recId, val){
-  const svg = document.getElementById('occWheel_'+recId);
+  const strip = document.getElementById('occWheelStrip_'+recId);
   const readout = document.getElementById('occWheelReadout_'+recId);
   const delta = document.getElementById('occWheelDelta_'+recId);
   const cfg = document.getElementById('occWheelConfig_'+recId);
-  if(!svg || !readout || !cfg) return;
-  const cx = parseFloat(cfg.dataset.cx) || 110;
-  const cy = parseFloat(cfg.dataset.cy) || 110;
-  const R = parseFloat(cfg.dataset.r) || 88;
-  const startDeg = parseFloat(cfg.dataset.start);
-  const sweepDeg = parseFloat(cfg.dataset.sweep);
-  const angle = (startDeg + (Math.max(0,Math.min(100,val))/100) * sweepDeg) * Math.PI / 180;
-
-  const nLen = R - 12, tipLen = 18, tipW = 7;
-  const tipX = cx + (nLen + tipLen * 0.3) * Math.cos(angle);
-  const tipY = cy + (nLen + tipLen * 0.3) * Math.sin(angle);
-  const perpAngle = angle + Math.PI / 2;
-  const baseX1 = cx + (nLen - tipLen) * Math.cos(angle) + tipW * Math.cos(perpAngle);
-  const baseY1 = cy + (nLen - tipLen) * Math.sin(angle) + tipW * Math.sin(perpAngle);
-  const baseX2 = cx + (nLen - tipLen) * Math.cos(angle) - tipW * Math.cos(perpAngle);
-  const baseY2 = cy + (nLen - tipLen) * Math.sin(angle) - tipW * Math.sin(perpAngle);
-
-  const needleBody = svg.querySelector('.occ-wheel-needle-body');
-  const needleArrow = svg.querySelector('.occ-wheel-needle-arrow');
-  if(needleBody){
-    needleBody.setAttribute('x2', (cx + (nLen - tipLen) * Math.cos(angle)).toFixed(1));
-    needleBody.setAttribute('y2', (cy + (nLen - tipLen) * Math.sin(angle)).toFixed(1));
-  }
-  if(needleArrow){
-    needleArrow.setAttribute('points', tipX.toFixed(1)+','+tipY.toFixed(1)+' '+baseX1.toFixed(1)+','+baseY1.toFixed(1)+' '+baseX2.toFixed(1)+','+baseY2.toFixed(1));
-  }
+  if(!strip || !readout || !cfg) return;
+  const TILE_H = parseFloat(cfg.dataset.tileh) || 34;
+  const VIEW_H = parseFloat(cfg.dataset.viewh) || 238;
+  const clamped = Math.max(0, Math.min(100, val));
+  const idx = (100 - clamped) / 5; // continuous; index 0 = value 100 (top)
+  const translateY = (VIEW_H / 2) - (idx * TILE_H + TILE_H / 2);
+  strip.style.transform = 'translateY('+translateY.toFixed(1)+'px)';
 
   const readoutNum = readout.querySelector('div');
-  if(readoutNum) readoutNum.innerHTML = Math.round(val)+'%<span style="font-size:.8rem;opacity:.55" aria-hidden="true">✏️</span>';
+  if(readoutNum) readoutNum.innerHTML = Math.round(clamped)+'%<span style="font-size:.8rem;opacity:.55" aria-hidden="true">✏️</span>';
   if(delta){
     const natural = parseFloat(cfg.dataset.natural) || 0;
-    const diff = Math.round(val - natural);
+    const diff = Math.round(clamped - natural);
     delta.textContent = diff === 0 ? 'Matches your current occupancy estimate' : (diff > 0 ? '+' : '') + diff + ' pts vs. current estimate';
   }
 }
 
 let _occWheelDragging = false;
 
-// Drag-to-spin: converts cursor position into an angle around the wheel's center,
-// clamped to the 350°-wide usable sweep (the remaining 10° is the fixed "peg" gap
-// at the top, between the 100% and 0% wedges) — freely spinnable within that sweep,
-// hard-stopping at 0%/100% rather than wrapping past them. Reads its geometry from
-// occWheelConfig_'s data attributes, written once at render time by _occWheelHtml.
+// Drag-to-scroll: vertical mouse/touch delta maps linearly to value — dragging UP
+// increases occupancy% (like pulling a vertical fader up), clamped at 0/100 so it
+// never overshoots past either end (occTargetPreview does the clamping). Reads its
+// tile height from occWheelConfig_'s data attributes, written once at render time
+// by _occWheelHtml; starts from whatever value is already active (an existing
+// override, or the natural estimate) so a drag nudges from where the wheel already
+// sits rather than resetting it.
 function _initOccWheelDrag(recId){
-  const svg = document.getElementById('occWheel_'+recId);
+  const viewport = document.getElementById('occWheelViewport_'+recId);
   const cfg = document.getElementById('occWheelConfig_'+recId);
-  if(!svg || !cfg) return;
-  const cx = parseFloat(cfg.dataset.cx);
-  const cy = parseFloat(cfg.dataset.cy);
-  const startRad = parseFloat(cfg.dataset.start) * Math.PI / 180;
-  const sweepRad = parseFloat(cfg.dataset.sweep) * Math.PI / 180;
-  const twoPi = 2 * Math.PI;
-
-  function angleToPct(clientX, clientY){
-    const rect = svg.getBoundingClientRect();
-    const svgW = parseFloat(cfg.dataset.w) || 220;
-    const scale = svgW / rect.width; // viewBox width / rendered width
-    const svgX = (clientX - rect.left) * scale;
-    const svgY = (clientY - rect.top) * scale;
-    const dx = svgX - cx, dy = svgY - cy;
-    const angle = Math.atan2(dy, dx); // -PI..PI
-    let rel = angle - startRad;
-    rel = ((rel % twoPi) + twoPi) % twoPi; // normalize into [0, 2PI)
-    if(rel > sweepRad){
-      // Cursor is over the peg gap (or the unused far side of the circle) — snap to
-      // whichever end (0% or 100%) is angularly closer, so a fast/overshot drag still
-      // lands cleanly at the stop instead of jumping to the wrong end.
-      const distPast100 = rel - sweepRad;
-      const distPast0 = twoPi - rel;
-      return distPast100 < distPast0 ? 1 : 0;
-    }
-    return rel / sweepRad;
-  }
-
-  function updateWheel(clientX, clientY){
-    const pct = angleToPct(clientX, clientY);
-    occTargetPreview(recId, Math.round(pct * 100));
-  }
+  if(!viewport || !cfg) return;
+  const TILE_H = parseFloat(cfg.dataset.tileh) || 34;
 
   function onPointerDown(e){
     if(e.button && e.button !== 0) return;
     e.preventDefault();
     _occWheelDragging = true;
-    svg.style.cursor = 'grabbing';
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-    updateWheel(clientX, clientY);
+    viewport.style.cursor = 'grabbing';
+    const startY = e.touches ? e.touches[0].clientY : e.clientY;
+    const startVal = _occTargetPreview[recId] !== undefined ? _occTargetPreview[recId] : parseFloat(cfg.dataset.natural);
 
     function onPointerMove(e2){
       if(!_occWheelDragging) return;
       e2.preventDefault();
-      const cx2 = e2.touches ? e2.touches[0].clientX : e2.clientX;
-      const cy2 = e2.touches ? e2.touches[0].clientY : e2.clientY;
-      updateWheel(cx2, cy2);
+      const curY = e2.touches ? e2.touches[0].clientY : e2.clientY;
+      const deltaVal = (startY - curY) / TILE_H * 5; // up = positive = higher value
+      occTargetPreview(recId, Math.round(startVal + deltaVal));
     }
     function onPointerUp(){
       _occWheelDragging = false;
-      svg.style.cursor = 'pointer';
+      viewport.style.cursor = 'grab';
       document.removeEventListener('mousemove', onPointerMove);
       document.removeEventListener('mouseup', onPointerUp);
       document.removeEventListener('touchmove', onPointerMove);
@@ -33308,8 +33236,8 @@ function _initOccWheelDrag(recId){
     document.addEventListener('touchend', onPointerUp);
   }
 
-  svg.addEventListener('mousedown', onPointerDown);
-  svg.addEventListener('touchstart', onPointerDown, {passive:false});
+  viewport.addEventListener('mousedown', onPointerDown);
+  viewport.addEventListener('touchstart', onPointerDown, {passive:false});
 }
 
 // ── Monthly Occupancy Target: click-to-type input ──
