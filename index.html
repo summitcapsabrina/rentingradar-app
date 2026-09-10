@@ -31188,8 +31188,9 @@ function _occWheelColor(pct){
 // it replaces: reads/writes _occTargetPreview[r.id] via occTargetPreview/
 // occTargetCommit/occTargetReset, and _activeScenarioRevExp/_activeOccupancy/
 // _activeAdditionalIncome/_activeCleaningMonthly don't know or care what the input
-// control looks like. Dragging UP increases the value (like pulling a vertical
-// fader up) and hard-stops at 0%/100% — see _initOccWheelDrag.
+// control looks like. The strip tracks the cursor directly — drag it down and it
+// moves down with your pointer, revealing lower values — and hard-stops at 0%/100%
+// — see _initOccWheelDrag.
 function _occWheelHtml(r, v){
   const insufficientCompsLocal = v.compsCount < 3 || (v.isApt && v.unitsMissingOwnComps && v.unitsMissingOwnComps.length > 0);
   const hasData = v.hasProjectionData && !insufficientCompsLocal;
@@ -33189,15 +33190,24 @@ function _quickUpdateOccWheel(recId, val){
   }
 }
 
-let _occWheelDragging = false;
+let _occWheelDragging = {}; // { recId: bool } — per-record, not a single shared flag
+// If a drag's mouseup/touchend never arrives (e.g. another element's handler calls
+// stopPropagation() on its way up before it reaches document, or the pointer is
+// released outside the browser entirely), the listeners below would otherwise stay
+// attached forever — every future mousemove anywhere on the page would keep firing
+// this stale drag's onPointerMove, fighting with (or blocking) any new drag attempt
+// and making the wheel look frozen. This registry lets the NEXT mousedown tear down
+// a stale prior session before starting its own, so the wheel always self-heals.
+let _occWheelCleanup = {}; // { recId: function }
 
-// Drag-to-scroll: vertical mouse/touch delta maps linearly to value — dragging UP
-// increases occupancy% (like pulling a vertical fader up), clamped at 0/100 so it
-// never overshoots past either end (occTargetPreview does the clamping). Reads its
-// tile height from occWheelConfig_'s data attributes, written once at render time
-// by _occWheelHtml; starts from whatever value is already active (an existing
-// override, or the natural estimate) so a drag nudges from where the wheel already
-// sits rather than resetting it.
+// Drag-to-scroll: vertical mouse/touch delta maps linearly to value. The strip
+// tracks the cursor 1:1 (drag DOWN moves the strip down, revealing lower values,
+// same direct-manipulation feel as dragging a scrollbar or a picker wheel), clamped
+// at 0/100 so it never overshoots past either end (occTargetPreview does the
+// clamping). Reads its tile height from occWheelConfig_'s data attributes, written
+// once at render time by _occWheelHtml; starts from whatever value is already
+// active (an existing override, or the natural estimate) so a drag nudges from
+// where the wheel already sits rather than resetting it.
 function _initOccWheelDrag(recId){
   const viewport = document.getElementById('occWheelViewport_'+recId);
   const cfg = document.getElementById('occWheelConfig_'+recId);
@@ -33207,33 +33217,47 @@ function _initOccWheelDrag(recId){
   function onPointerDown(e){
     if(e.button && e.button !== 0) return;
     e.preventDefault();
-    _occWheelDragging = true;
+    if(_occWheelCleanup[recId]) _occWheelCleanup[recId](); // tear down any stale prior session first
+
+    _occWheelDragging[recId] = true;
     viewport.style.cursor = 'grabbing';
     const startY = e.touches ? e.touches[0].clientY : e.clientY;
     const startVal = _occTargetPreview[recId] !== undefined ? _occTargetPreview[recId] : parseFloat(cfg.dataset.natural);
 
     function onPointerMove(e2){
-      if(!_occWheelDragging) return;
+      if(!_occWheelDragging[recId]) return;
       e2.preventDefault();
       const curY = e2.touches ? e2.touches[0].clientY : e2.clientY;
-      const deltaVal = (startY - curY) / TILE_H * 5; // up = positive = higher value
+      const deltaVal = (curY - startY) / TILE_H * 5; // down = positive = higher value
       occTargetPreview(recId, Math.round(startVal + deltaVal));
     }
-    function onPointerUp(){
-      _occWheelDragging = false;
+    function cleanup(){
+      _occWheelDragging[recId] = false;
       viewport.style.cursor = 'grab';
-      document.removeEventListener('mousemove', onPointerMove);
-      document.removeEventListener('mouseup', onPointerUp);
-      document.removeEventListener('touchmove', onPointerMove);
-      document.removeEventListener('touchend', onPointerUp);
+      // Capture phase (matching how these were added below) — must match on removal.
+      document.removeEventListener('mousemove', onPointerMove, true);
+      document.removeEventListener('mouseup', onPointerUp, true);
+      document.removeEventListener('touchmove', onPointerMove, true);
+      document.removeEventListener('touchend', onPointerUp, true);
+      _occWheelCleanup[recId] = null;
+    }
+    function onPointerUp(){
+      cleanup();
       // Full re-render syncs Rental Concessions with the new wheel value, same as
       // the rent dial's release handler.
       if(typeof _rerenderCalcTab === 'function') try { _rerenderCalcTab(); } catch(_){}
     }
-    document.addEventListener('mousemove', onPointerMove, {passive:false});
-    document.addEventListener('mouseup', onPointerUp);
-    document.addEventListener('touchmove', onPointerMove, {passive:false});
-    document.addEventListener('touchend', onPointerUp);
+    _occWheelCleanup[recId] = cleanup;
+    // Capture phase (the `true` / {capture:true} argument): guarantees these fire on
+    // the way down regardless of whether some other element's bubble-phase handler
+    // calls stopPropagation() — the likely reason a mouseup could go missing and
+    // leave the wheel stuck. {passive:false} on the touch listeners is required
+    // alongside capture so preventDefault() above still works (browsers default
+    // touch listeners to passive otherwise).
+    document.addEventListener('mousemove', onPointerMove, true);
+    document.addEventListener('mouseup', onPointerUp, true);
+    document.addEventListener('touchmove', onPointerMove, {capture:true, passive:false});
+    document.addEventListener('touchend', onPointerUp, true);
   }
 
   viewport.addEventListener('mousedown', onPointerDown);
