@@ -31168,6 +31168,12 @@ function renderCalculatorTab(r){
 }
 
 
+// True only while _liveUpdateConcessionsPanel is rendering Negotiation Tools into a
+// detached node to patch a few live panels mid-drag. Renders under this flag must not
+// schedule drag re-inits: their markup never reaches the page, and the timer slots
+// they'd use are shared with real renders whose re-inits must survive.
+let _negRenderOffscreen = false;
+
 // 3-stop color lerp (red -> blue -> green) for the occupancy wheel's wedges, the
 // same red/blue/green family Revenue Target's own gradient already uses elsewhere
 // in Negotiation Tools — pct is 0-1 (0% occupancy -> 100% occupancy).
@@ -31190,7 +31196,7 @@ function _occWheelColor(pct){
 // _activeAdditionalIncome/_activeCleaningMonthly don't know or care what the input
 // control looks like. The strip tracks the cursor directly — drag it down and it
 // moves down with your pointer, revealing lower values — and hard-stops at 0%/100%
-// — see _initOccWheelDrag.
+// — see _occWheelPointerDown.
 function _occWheelHtml(r, v){
   const insufficientCompsLocal = v.compsCount < 3 || (v.isApt && v.unitsMissingOwnComps && v.unitsMissingOwnComps.length > 0);
   const hasData = v.hasProjectionData && !insufficientCompsLocal;
@@ -31215,7 +31221,7 @@ function _occWheelHtml(r, v){
   h += '<div style="position:relative;width:'+VIEW_W+'px">';
   // Viewport clips the strip; the mask fades tiles out near the top/bottom edges, a
   // cheap stand-in for the real wheel's cylindrical curvature.
-  h += '<div id="occWheelViewport_'+r.id+'" style="position:relative;width:'+VIEW_W+'px;height:'+VIEW_H+'px;overflow:hidden;border-radius:10px;border:1px solid var(--border);background:var(--bg2);cursor:grab;touch-action:none;-webkit-mask-image:linear-gradient(to bottom, transparent 0%, black 18%, black 82%, transparent 100%);mask-image:linear-gradient(to bottom, transparent 0%, black 18%, black 82%, transparent 100%)">';
+  h += '<div id="occWheelViewport_'+r.id+'" data-occ-wheel="'+r.id+'" style="position:relative;width:'+VIEW_W+'px;height:'+VIEW_H+'px;overflow:hidden;border-radius:10px;border:1px solid var(--border);background:var(--bg2);cursor:grab;touch-action:none;-webkit-mask-image:linear-gradient(to bottom, transparent 0%, black 18%, black 82%, transparent 100%);mask-image:linear-gradient(to bottom, transparent 0%, black 18%, black 82%, transparent 100%)">';
   h += '<div id="occWheelStrip_'+r.id+'" style="position:absolute;left:0;top:0;width:100%;transform:translateY('+translateForVal(val).toFixed(1)+'px)">';
   for(let i=0;i<COUNT;i++){
     const tileVal = 100 - i*STEP;
@@ -31233,8 +31239,11 @@ function _occWheelHtml(r, v){
   h += '</div>'; // end relative wrapper
   h += '</div>'; // end flex-center wrapper
 
-  clearTimeout(window._occWheelInitTimer);
-  window._occWheelInitTimer = setTimeout(function(){ _initOccWheelDrag(r.id); }, 10);
+  // No per-element binding and no setTimeout re-bind dance: the wheel is driven by a
+  // single delegated listener on document (installed once), which finds its target via
+  // the data-occ-wheel attribute at event time. Re-renders can replace this DOM as
+  // often as they like and the wheel keeps working. See _ensureOccWheelDelegation.
+  _ensureOccWheelDelegation();
 
   const diff = Math.round(val - natural);
   h += '<div id="occWheelReadout_'+r.id+'" style="margin:8px 0 2px">';
@@ -31701,8 +31710,15 @@ function renderNegotiationTab(r){
 
     h += '</svg>';
 
-    clearTimeout(window._rentDialInitTimer);
-    window._rentDialInitTimer = setTimeout(function(){ _initRentDialDrag(r.id); }, 10);
+    // Skip entirely when this render is the off-screen one _liveUpdateConcessionsPanel
+    // runs mid-drag: that render's output never reaches the live DOM, so scheduling a
+    // re-init for it is pointless — and worse, scheduling through this single global
+    // slot would cancel a re-init a REAL render had already queued, leaving the live
+    // dial with no drag handler. See _negRenderOffscreen.
+    if(!_negRenderOffscreen){
+      clearTimeout(window._rentDialInitTimer);
+      window._rentDialInitTimer = setTimeout(function(){ _initRentDialDrag(r.id); }, 10);
+    }
 
     // Readout — clickable rent to type a value. Pencil affordance makes it obvious
     // that the amount itself is editable (otherwise the dashed underline alone gets
@@ -32908,12 +32924,14 @@ function _liveUpdateConcessionsPanel(recId){
   if(!livePanel && !liveBreakdown && !liveSummary) return;
   try {
     const tmp = document.createElement('div');
-    tmp.innerHTML = renderNegotiationTab(r);
-    // renderNegotiationTab schedules a dial/wheel re-init; cancel both so the
-    // off-screen render doesn't double-bind drag handlers onto the live dial/wheel
-    // mid-drag.
-    clearTimeout(window._rentDialInitTimer);
-    clearTimeout(window._occWheelInitTimer);
+    // Flag this render as off-screen so the rent dial doesn't schedule a re-init for
+    // markup that will never be shown. Previously this function cancelled those timers
+    // after the fact, which also cancelled re-inits queued by REAL renders (e.g. the
+    // one the wheel's own mouseup had just triggered), leaving the live control
+    // unbound. Suppressing at the source is what keeps that from happening.
+    _negRenderOffscreen = true;
+    try { tmp.innerHTML = renderNegotiationTab(r); }
+    finally { _negRenderOffscreen = false; }
     if(livePanel){
       const fresh = tmp.querySelector('#concessionsPanel_'+recId);
       if(fresh) livePanel.innerHTML = fresh.innerHTML;
@@ -33205,63 +33223,82 @@ let _occWheelCleanup = {}; // { recId: function }
 // same direct-manipulation feel as dragging a scrollbar or a picker wheel), clamped
 // at 0/100 so it never overshoots past either end (occTargetPreview does the
 // clamping). Reads its tile height from occWheelConfig_'s data attributes, written
-// once at render time by _occWheelHtml; starts from whatever value is already
-// active (an existing override, or the natural estimate) so a drag nudges from
-// where the wheel already sits rather than resetting it.
-function _initOccWheelDrag(recId){
-  const viewport = document.getElementById('occWheelViewport_'+recId);
+// at render time by _occWheelHtml; starts from whatever value is already active (an
+// existing override, or the natural estimate) so a drag nudges from where the wheel
+// already sits rather than resetting it.
+//
+// Bound ONCE on document, by delegation, rather than onto the viewport element on
+// every render. Every re-render (and there are many: any calc edit, forecast-mode
+// switch, or the wheel's own release handler) replaces the viewport node, so a
+// per-element listener has to be re-attached each time. That re-attach used to be a
+// setTimeout through one global slot, which an off-screen render from
+// _liveUpdateConcessionsPanel could cancel — leaving a freshly rendered wheel with no
+// listener at all until something else happened to re-render it. Delegation removes
+// that whole failure mode: the handler resolves its target from the data-occ-wheel
+// attribute at event time, so it cannot go stale.
+let _occWheelDelegated = false;
+function _ensureOccWheelDelegation(){
+  if(_occWheelDelegated) return;
+  _occWheelDelegated = true;
+  document.addEventListener('mousedown', _occWheelPointerDown, true);
+  document.addEventListener('touchstart', _occWheelPointerDown, {capture:true, passive:false});
+}
+
+function _occWheelPointerDown(e){
+  if(e.button && e.button !== 0) return;
+  const t = e.target;
+  if(!t || typeof t.closest !== 'function') return;
+  const viewport = t.closest('[data-occ-wheel]');
+  if(!viewport) return;
+  const recId = viewport.getAttribute('data-occ-wheel');
   const cfg = document.getElementById('occWheelConfig_'+recId);
-  if(!viewport || !cfg) return;
+  if(!recId || !cfg) return;
   const TILE_H = parseFloat(cfg.dataset.tileh) || 34;
 
-  function onPointerDown(e){
-    if(e.button && e.button !== 0) return;
-    e.preventDefault();
-    if(_occWheelCleanup[recId]) _occWheelCleanup[recId](); // tear down any stale prior session first
+  if(e.cancelable) e.preventDefault();
+  if(_occWheelCleanup[recId]) _occWheelCleanup[recId](); // tear down any stale prior session first
 
-    _occWheelDragging[recId] = true;
-    viewport.style.cursor = 'grabbing';
-    const startY = e.touches ? e.touches[0].clientY : e.clientY;
-    const startVal = _occTargetPreview[recId] !== undefined ? _occTargetPreview[recId] : parseFloat(cfg.dataset.natural);
+  _occWheelDragging[recId] = true;
+  viewport.style.cursor = 'grabbing';
+  const startY = e.touches ? e.touches[0].clientY : e.clientY;
+  const startVal = _occTargetPreview[recId] !== undefined ? _occTargetPreview[recId] : parseFloat(cfg.dataset.natural);
 
-    function onPointerMove(e2){
-      if(!_occWheelDragging[recId]) return;
-      e2.preventDefault();
-      const curY = e2.touches ? e2.touches[0].clientY : e2.clientY;
-      const deltaVal = (curY - startY) / TILE_H * 5; // down = positive = higher value
-      occTargetPreview(recId, Math.round(startVal + deltaVal));
-    }
-    function cleanup(){
-      _occWheelDragging[recId] = false;
-      viewport.style.cursor = 'grab';
-      // Capture phase (matching how these were added below) — must match on removal.
-      document.removeEventListener('mousemove', onPointerMove, true);
-      document.removeEventListener('mouseup', onPointerUp, true);
-      document.removeEventListener('touchmove', onPointerMove, true);
-      document.removeEventListener('touchend', onPointerUp, true);
-      _occWheelCleanup[recId] = null;
-    }
-    function onPointerUp(){
-      cleanup();
-      // Full re-render syncs Rental Concessions with the new wheel value, same as
-      // the rent dial's release handler.
-      if(typeof _rerenderCalcTab === 'function') try { _rerenderCalcTab(); } catch(_){}
-    }
-    _occWheelCleanup[recId] = cleanup;
-    // Capture phase (the `true` / {capture:true} argument): guarantees these fire on
-    // the way down regardless of whether some other element's bubble-phase handler
-    // calls stopPropagation() — the likely reason a mouseup could go missing and
-    // leave the wheel stuck. {passive:false} on the touch listeners is required
-    // alongside capture so preventDefault() above still works (browsers default
-    // touch listeners to passive otherwise).
-    document.addEventListener('mousemove', onPointerMove, true);
-    document.addEventListener('mouseup', onPointerUp, true);
-    document.addEventListener('touchmove', onPointerMove, {capture:true, passive:false});
-    document.addEventListener('touchend', onPointerUp, true);
+  function onPointerMove(e2){
+    if(!_occWheelDragging[recId]) return;
+    e2.preventDefault();
+    const curY = e2.touches ? e2.touches[0].clientY : e2.clientY;
+    const deltaVal = (curY - startY) / TILE_H * 5; // down = positive = higher value
+    occTargetPreview(recId, Math.round(startVal + deltaVal));
   }
-
-  viewport.addEventListener('mousedown', onPointerDown);
-  viewport.addEventListener('touchstart', onPointerDown, {passive:false});
+  function cleanup(){
+    _occWheelDragging[recId] = false;
+    // The viewport this drag started on may already have been replaced by a
+    // re-render; it's detached by then, so this is just tidying the old node.
+    try { viewport.style.cursor = 'grab'; } catch(_){}
+    // Capture phase (matching how these were added below) — must match on removal.
+    document.removeEventListener('mousemove', onPointerMove, true);
+    document.removeEventListener('mouseup', onPointerUp, true);
+    document.removeEventListener('touchmove', onPointerMove, true);
+    document.removeEventListener('touchend', onPointerUp, true);
+    _occWheelCleanup[recId] = null;
+  }
+  function onPointerUp(){
+    cleanup();
+    // Full re-render syncs the rest of Negotiation Tools (Projected Yearly Net, Rent
+    // Adjustment, Rental Concessions, Deal Temp) with the released wheel value.
+    if(typeof _rerenderCalcTab === 'function') try { _rerenderCalcTab(); } catch(_){}
+  }
+  _occWheelCleanup[recId] = cleanup;
+  // Capture phase (the `true` / {capture:true} argument): guarantees these fire on
+  // the way down regardless of whether some other element's bubble-phase handler
+  // calls stopPropagation() — which would otherwise let a mouseup go missing and
+  // leave the drag session hanging. {passive:false} on the touch listeners is
+  // required alongside capture so preventDefault() above still works (browsers
+  // default touch listeners to passive otherwise).
+  document.addEventListener('mousemove', onPointerMove, true);
+  document.addEventListener('mouseup', onPointerUp, true);
+  document.addEventListener('touchmove', onPointerMove, {capture:true, passive:false});
+  document.addEventListener('touchend', onPointerUp, true);
 }
 
 // ── Monthly Occupancy Target: click-to-type input ──
