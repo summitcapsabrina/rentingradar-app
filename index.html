@@ -28693,24 +28693,30 @@ function _activeScenarioRevExp(r, v){
   if(!v.hasProjectionData) return { rev: 0, exp: 0, isOverridden: false };
   const base = _baseScenarioRevExp(v);
   const revOverride = _revTargetPreview[r.id];
-  if(revOverride !== undefined){
-    const rev = Math.round(revOverride);
-    return { rev, exp: Math.round(v.deriveFromRev(rev).annualExp), isOverridden: true };
-  }
-  // Revenue Target always wins when both are active — Occupancy Target only steps in
-  // as the base revenue when Revenue Target hasn't been touched. See _activeOccupancy.
   const occOverride = _occTargetPreview[r.id];
-  if(occOverride !== undefined){
-    const rev = _occDerivedRevenue(v, occOverride);
-    // v.deriveFromRev bakes cleaning into its fixedExp closure at the REAL occupancy
-    // (see calcComputeAll) — since that closure adds cleaning in additively, swapping
-    // in the what-if cleaning is just a delta on top of the otherwise-correct exp
-    // figure, without needing to reimplement deriveFromRev's whole expense stack.
-    const cleaningDelta = (_activeCleaningMonthly(r, v, occOverride) - (v.cleaning || 0)) * 12;
-    const exp = Math.round(v.deriveFromRev(rev).annualExp + cleaningDelta);
-    return { rev, exp, isOverridden: true };
-  }
-  return { rev: base.rev, exp: base.exp, isOverridden: false };
+  const hasRev = revOverride !== undefined;
+  const hasOcc = occOverride !== undefined;
+
+  // Occupancy also moves a Per Turn Cleaning Fee, and that holds whenever an occupancy
+  // override is in play — even when Revenue Target is the thing setting revenue.
+  // v.deriveFromRev bakes cleaning into its fixedExp closure at the REAL occupancy (see
+  // calcComputeAll); since that closure adds cleaning in additively, swapping in the
+  // what-if figure is just a delta on top, no need to reimplement the expense stack.
+  const cleaningDelta = hasOcc ? (_activeCleaningMonthly(r, v, occOverride) - (v.cleaning || 0)) * 12 : 0;
+
+  // Revenue Target and Occupancy Target are two ways of setting the same number, so
+  // whichever the user touched MOST RECENTLY drives revenue. (This used to be "Revenue
+  // Target always wins", which left the wheel apparently dead once Revenue Target had
+  // been dragged even once.) Either way the loser stays set, so going back to it takes
+  // over again — and the Revenue Target slider tracks _pynRev, so it visibly follows
+  // along while the wheel is driving.
+  let rev;
+  if(hasRev && hasOcc) rev = (_negLastTouched[r.id] === 'occ') ? _occDerivedRevenue(v, occOverride) : Math.round(revOverride);
+  else if(hasRev) rev = Math.round(revOverride);
+  else if(hasOcc) rev = _occDerivedRevenue(v, occOverride);
+  else return { rev: base.rev, exp: base.exp, isOverridden: false };
+
+  return { rev, exp: Math.round(v.deriveFromRev(rev).annualExp + cleaningDelta), isOverridden: true };
 }
 
 // ── Monthly Occupancy Target: Negotiation Tools' occupancy what-if lever ──
@@ -31168,6 +31174,12 @@ function renderCalculatorTab(r){
 }
 
 
+// Which of Negotiation Tools' two revenue levers the user touched last, per record:
+// 'rev' (Revenue Target) or 'occ' (Monthly Occupancy Target). They both set the same
+// underlying number, so the most recent one wins — see _activeScenarioRevExp. Ephemeral
+// like every other preview-state map here; never persisted to the record.
+let _negLastTouched = {}; // { recId: 'rev' | 'occ' }
+
 // True only while _liveUpdateConcessionsPanel is rendering Negotiation Tools into a
 // detached node to patch a few live panels mid-drag. Renders under this flag must not
 // schedule drag re-inits: their markup never reaches the page, and the timer slots
@@ -31549,7 +31561,7 @@ function renderNegotiationTab(r){
   h += '<div class="calc-section" style="margin-top:0"><div class="calc-section-body" style="padding:0">';
   h += '<div style="display:flex;flex-wrap:wrap">';
   h += '<div style="flex:1 1 0;min-width:240px;padding:14px 16px;text-align:center;border-right:1px solid var(--border);box-sizing:border-box">';
-  h += '<div class="nft-title-row" style="font-size:.82rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;display:inline-flex;align-items:center;gap:5px;cursor:help"'+tipAttrs('Monthly Occupancy Target','Spin the wheel (or click the % below to type an exact number) to explore this deal at a different occupancy assumption \\u2014 annual revenue is re-derived at that occupancy (holding your comp-matched nightly rate fixed), and anything else that\\x27s a factor of occupancy \\u2014 occupancy-based Additional Income streams (Per Turn / Per Night) and a Per Turn Cleaning Fee \\u2014 updates to match. This is a what-if sandbox: it does not change the KPIs, Payback Period, or Deal Temperature on the Projected ROI tab above.\\n\\nDragging Revenue Target above always takes priority over this wheel if both are active.',true)+'>Monthly Occupancy Target<span class="nft-hint-q">?</span></div>';
+  h += '<div class="nft-title-row" style="font-size:.82rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;display:inline-flex;align-items:center;gap:5px;cursor:help"'+tipAttrs('Monthly Occupancy Target','Spin the wheel (or click the % below to type an exact number) to explore this deal at a different occupancy assumption \\u2014 annual revenue is re-derived at that occupancy (holding your comp-matched nightly rate fixed), and anything else that\\x27s a factor of occupancy \\u2014 occupancy-based Additional Income streams (Per Turn / Per Night) and a Per Turn Cleaning Fee \\u2014 updates to match. This is a what-if sandbox: it does not change the KPIs, Payback Period, or Deal Temperature on the Projected ROI tab above.\\n\\nRevenue Target and this wheel are two ways of setting the same number, so whichever you touched last drives revenue. Move the wheel and the Revenue Target slider follows to the revenue that occupancy implies; drag Revenue Target and it takes over again.',true)+'>Monthly Occupancy Target<span class="nft-hint-q">?</span></div>';
   h += '</div>';
   h += '<div style="flex:1 1 0;min-width:240px;padding:14px 16px;text-align:center;border-right:1px solid var(--border);box-sizing:border-box">';
   h += '<div class="nft-title-row" style="font-size:.82rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;display:inline-flex;align-items:center;gap:5px;cursor:help"'+tipAttrs('Rent Adjustment','Explore what rent would make this deal attractive. Two ways to adjust:\\n\\n• Click the rent amount (✏️) to type an exact number\\n• Click and drag the arrow on the dial to slide it\\n\\nThis is a projection tool — it does NOT change the actual rent.',true)+'>Rent Adjustment<span class="nft-hint-q">?</span></div>';
@@ -32905,23 +32917,27 @@ function _quickUpdateRentDial(recId, rent){
     + '<div style="font-size:.95rem;font-weight:700;color:'+color+'">'+icon+' '+label+' · $'+adjNet.toLocaleString()+'/mo net</div>';
 }
 
-// Live-refresh ONLY the Rental Concessions / Break-Even panel (and the Projected
-// Yearly Net summary above it) while the rent dial or Revenue Target slider is being
-// dragged, so they recalculate in real time instead of waiting for release. We
-// re-render the negotiation tab to a detached element (it reads _rentDialPreview /
-// _revTargetPreview for the live values) and graft just the panels' fresh HTML in —
-// this leaves the dial SVG and its in-progress drag handlers untouched, and reuses
-// the exact same render path (no duplicated math). Safe to graft negSummaryPanel
-// even in By Unit mode: its allocation sliders are a DIFFERENT control than the one
-// currently being dragged (you can only drag one range input with one pointer), so
-// this never clobbers an in-progress drag the way grafting the dial itself would.
+// Live-refresh the parts of Negotiation Tools that move with revenue — Rental
+// Concessions / Break-Even, the Projected Yearly Net summary, the per-unit rent
+// breakdown, and Rent Adjustment's zone bands + Deal Temp readout — while the rent
+// dial, Revenue Target slider, or Occupancy wheel is being dragged, so they
+// recalculate in real time instead of waiting for release. We re-render the
+// negotiation tab to a detached element (it reads _rentDialPreview /
+// _revTargetPreview / _occTargetPreview for the live values) and graft the fresh HTML
+// in, reusing the exact same render path with no duplicated math.
+//
+// Grafting never clobbers the control currently under the pointer: the summary's
+// allocation sliders are a different control than whatever is being dragged (one
+// pointer, one control), and the dial is skipped outright while the dial itself is
+// being dragged.
 function _liveUpdateConcessionsPanel(recId){
   const r = records.find(x => x.id === recId);
   if(!r) return;
   const livePanel = document.getElementById('concessionsPanel_'+recId);
   const liveBreakdown = document.getElementById('rentUnitBreakdown_'+recId);
   const liveSummary = document.getElementById('negSummaryPanel_'+recId);
-  if(!livePanel && !liveBreakdown && !liveSummary) return;
+  const liveDialEl = document.getElementById('rentDial_'+recId);
+  if(!livePanel && !liveBreakdown && !liveSummary && !liveDialEl) return;
   try {
     const tmp = document.createElement('div');
     // Flag this render as off-screen so the rent dial doesn't schedule a re-init for
@@ -32943,6 +32959,20 @@ function _liveUpdateConcessionsPanel(recId){
     if(liveSummary){
       const freshSummary = tmp.querySelector('#negSummaryPanel_'+recId);
       if(freshSummary) liveSummary.innerHTML = freshSummary.innerHTML;
+    }
+    // Rent Adjustment's zone bands and its Deal Temp readout both move with revenue,
+    // so they should track a Revenue Target / Occupancy Target drag in real time too
+    // rather than snapping into place on release. Skipped while the dial ITSELF is
+    // being dragged — that's the one case where replacing its contents would fight
+    // the in-progress drag. Grafting innerHTML keeps the <svg> node (and therefore
+    // its drag listener) intact; only its children are swapped.
+    if(!_rentDialDragging){
+      const liveDial = document.getElementById('rentDial_'+recId);
+      const freshDial = tmp.querySelector('#rentDial_'+recId);
+      if(liveDial && freshDial) liveDial.innerHTML = freshDial.innerHTML;
+      const liveDialReadout = document.getElementById('rentDialReadout_'+recId);
+      const freshDialReadout = tmp.querySelector('#rentDialReadout_'+recId);
+      if(liveDialReadout && freshDialReadout) liveDialReadout.innerHTML = freshDialReadout.innerHTML;
     }
   } catch(e){ /* ignore transient calc errors mid-drag */ }
 }
@@ -33079,6 +33109,7 @@ function revTargetPreview(recId, val){
   const num = Math.round(parseFloat(val));
   if(!isFinite(num)) return;
   _revTargetPreview[recId] = num;
+  _negLastTouched[recId] = 'rev';
   _quickUpdateRevTarget(recId, num);
   // Live-refresh Rental Concessions / By Unit while dragging, same throttled pattern
   // as the rent dial — full sync (KPIs, PYN-driven numbers, Payback) happens on release.
@@ -33087,7 +33118,7 @@ function revTargetPreview(recId, val){
 }
 function revTargetCommit(recId, val){
   const num = Math.round(parseFloat(val));
-  if(isFinite(num)) _revTargetPreview[recId] = num;
+  if(isFinite(num)){ _revTargetPreview[recId] = num; _negLastTouched[recId] = 'rev'; }
   if(typeof _rerenderCalcTab === 'function') try { _rerenderCalcTab(); } catch(_){}
 }
 function _quickUpdateRevTarget(recId, rev){
@@ -33152,6 +33183,7 @@ function saveRevTargetInput(recId){
   const val = parseFloat(document.getElementById('revTargetInputVal')?.value);
   if(isNaN(val) || val < rangeMin || val > rangeMax) return; // blocked
   _revTargetPreview[recId] = Math.round(val);
+  _negLastTouched[recId] = 'rev';
   document.getElementById('revTargetInputOverlay')?.remove();
   if(typeof _rerenderCalcTab === 'function') try { _rerenderCalcTab(); } catch(_){}
 }
@@ -33166,6 +33198,7 @@ function occTargetPreview(recId, val){
   const num = Math.round(parseFloat(val));
   if(!isFinite(num)) return;
   _occTargetPreview[recId] = Math.max(0, Math.min(100, num));
+  _negLastTouched[recId] = 'occ';
   _quickUpdateOccWheel(recId, _occTargetPreview[recId]);
   // Live-refresh Rental Concessions while dragging, same throttled pattern as
   // Revenue Target and the rent dial — full sync happens on release.
@@ -33174,11 +33207,14 @@ function occTargetPreview(recId, val){
 }
 function occTargetCommit(recId, val){
   const num = Math.round(parseFloat(val));
-  if(isFinite(num)) _occTargetPreview[recId] = Math.max(0, Math.min(100, num));
+  if(isFinite(num)){ _occTargetPreview[recId] = Math.max(0, Math.min(100, num)); _negLastTouched[recId] = 'occ'; }
   if(typeof _rerenderCalcTab === 'function') try { _rerenderCalcTab(); } catch(_){}
 }
 function occTargetReset(recId){
   delete _occTargetPreview[recId];
+  // Hand the wheel back to whatever else is driving revenue (a Revenue Target
+  // override, or the plain scenario column if there isn't one).
+  if(_negLastTouched[recId] === 'occ') delete _negLastTouched[recId];
   if(typeof _rerenderCalcTab === 'function') try { _rerenderCalcTab(); } catch(_){}
 }
 
@@ -33336,6 +33372,7 @@ function saveOccTargetInput(recId){
   const val = parseFloat(document.getElementById('occTargetInputVal')?.value);
   if(isNaN(val) || val < 0 || val > 100) return; // blocked
   _occTargetPreview[recId] = Math.round(val);
+  _negLastTouched[recId] = 'occ';
   document.getElementById('occTargetInputOverlay')?.remove();
   if(typeof _rerenderCalcTab === 'function') try { _rerenderCalcTab(); } catch(_){}
 }
