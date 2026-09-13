@@ -9544,11 +9544,11 @@ function openDetail(id, restoreTab){
   previousView = currentView;
   currentProfileId = id;
   currentView = 'profile';
-  // Reset negotiation tools to defaults on fresh open
+  // Reset the Rent Adjustment dial preview on fresh open. Rental Concessions weeks
+  // (details.analysis.concessionWeeks) are deliberately NOT reset: they're a saved
+  // per-property setting that should hold until the user changes it.
   if(!restoreTab){
     delete _rentDialPreview[id];
-    const _rr = records.find(x => x.id === id);
-    if(_rr){ const _an = getAnalysis(_rr); delete _an.concessionWeeks; }
   }
   // Fresh open: reset to Property Details tab at top; Back/Forward: restore saved tab
   if(!restoreTab){
