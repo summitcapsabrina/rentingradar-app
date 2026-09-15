@@ -28730,7 +28730,19 @@ function _activeBaseRev(r, v){
 // That one recomputed revenue as rate × 365 × occ%, a different formula from the one
 // behind the scenario columns (which average each comp's own annualRevenue), so
 // touching the wheel at the current estimate jumped revenue by thousands.
+//
+// NEG_OCC_HOLDS_REVENUE switches between the two readings of the occupancy wheel:
+//   true  — Revenue Target is the revenue you need to hit, and it holds still. The
+//           wheel instead answers "what nightly rate gets me there at this occupancy?"
+//           (see _requiredNightlyRate). Occupancy still moves Per Turn cleaning and
+//           occupancy-based Additional Income, since fewer stays means fewer turns.
+//   false — the wheel scales Revenue Target by (wheel % ÷ comp occupancy), holding the
+//           nightly rate fixed. Return false to restore that behavior.
+// A hoisted function rather than a const, so a render that runs before this line of
+// the script still reads the flag instead of hitting the const's temporal dead zone.
+function NEG_OCC_HOLDS_REVENUE(){ return true; }
 function _activeOccFactor(r, v){
+  if(NEG_OCC_HOLDS_REVENUE()) return 1;
   const occOverride = _occTargetPreview[r.id];
   if(occOverride === undefined) return 1;
   const natural = _naturalOccupancy(v);
@@ -28749,6 +28761,22 @@ function _naturalOccupancy(v){
     return list.reduce((s,u) => s + (u.occPct || 0), 0) / list.length;
   }
   return v.estOccupancyRate || 0;
+}
+// The average nightly rate needed to earn the modeled revenue at the active occupancy:
+// revenue ÷ (units × 365 × occ%). Multi Unit buildings report a per-unit rate so it
+// reads against the comps' per-listing nightly rates. compRate is the comps' average
+// nightly rate, shown as the reference point. rate is null at 0% occupancy.
+function _requiredNightlyRate(r, v){
+  const occPct = _activeOccupancy(r, v).occPct;
+  const units = v.isApt ? Math.max(1, v.unitsCount || 0) : 1;
+  const nightsBooked = units * 365 * (occPct / 100);
+  const rev = _activeScenarioRevExp(r, v).rev;
+  return {
+    rate: nightsBooked > 0 ? rev / nightsBooked : null,
+    compRate: v.avgDailyRate || 0,
+    perUnit: v.isApt && units > 1,
+    occPct
+  };
 }
 // Negotiation Tools' "what occupancy is driving the numbers in this section right
 // now" resolver — mirrors _activeScenarioRevExp's fallback pattern.
@@ -31266,11 +31294,56 @@ function _occWheelHtml(r, v){
   h += '<div id="occWheelDelta_'+r.id+'" style="font-size:.72rem;color:var(--text3);margin-top:2px">'+(diff===0?'Matches your current occupancy estimate':(diff>0?'+':'')+diff+' pts vs. current estimate')+'</div>';
   h += '</div>';
 
+  if(NEG_OCC_HOLDS_REVENUE()){
+    h += '<div id="occWheelRate_'+r.id+'" style="margin-top:6px">'+_occWheelRateHtml(r, v)+'</div>';
+  }
+
   if(active.isOverridden){
     h += '<div style="text-align:center;margin-top:2px"><button class="co-rev-revert" onclick="occTargetReset(\''+r.id+'\')">↩ reset to current estimate</button></div>';
   }
   h += '<div style="font-size:.78rem;color:var(--text2);margin-top:8px;font-weight:600">Drag the wheel up/down, or click the % <span style="color:var(--text3);font-weight:400">· Projection only</span></div>';
 
+  return h;
+}
+
+// Under the Revenue Target slider: which occupancy the target assumes, and what the
+// wheel does with it. rtVal is the target shown on the slider; modeledRev is the
+// revenue actually feeding Projected Yearly Net.
+function _revTargetOccLineHtml(r, v, rtVal, modeledRev){
+  const natural = Math.round(_naturalOccupancy(v));
+  const active = _activeOccupancy(r, v);
+  const occ = Math.round(active.occPct);
+  const strong = s => '<span style="font-weight:700;color:var(--text2)">'+s+'</span>';
+  if(!active.isOverridden || occ === natural){
+    return 'at '+strong(natural+'% occupancy')+' (comp average)';
+  }
+  if(NEG_OCC_HOLDS_REVENUE()){
+    const nr = _requiredNightlyRate(r, v);
+    if(nr.rate === null) return 'at '+strong(occ+'% occupancy')+' · no nights booked';
+    return 'at '+strong(occ+'% occupancy')+' → needs '+strong(fmtMoney(Math.round(nr.rate))+'/night'+(nr.perUnit?' per unit':''));
+  }
+  if(modeledRev === rtVal) return 'at '+strong(occ+'% occupancy');
+  return 'at '+natural+'% comp occupancy · at '+strong(occ+'%')+' → '+strong(fmtMoney(modeledRev)+'/yr');
+}
+
+// Under the occupancy wheel (NEG_OCC_HOLDS_REVENUE only): the nightly rate needed to
+// hit the modeled revenue at the wheel's occupancy, against the comps' average rate.
+function _occWheelRateHtml(r, v){
+  const nr = _requiredNightlyRate(r, v);
+  let h = '<div style="font-size:.66rem;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;font-weight:700">Nightly rate needed'+(nr.perUnit?' (per unit)':'')+'</div>';
+  if(nr.rate === null){
+    h += '<div style="font-size:1.1rem;font-weight:800;color:var(--text3)">—</div>';
+    return h;
+  }
+  const rate = Math.round(nr.rate);
+  let color = 'var(--text)', cmp = '';
+  if(nr.compRate > 0){
+    const pct = Math.round((nr.rate - nr.compRate) / nr.compRate * 100);
+    color = pct > 10 ? 'var(--num-danger)' : pct < -10 ? 'var(--num-success)' : 'var(--text)';
+    cmp = (pct === 0 ? 'same as' : (pct > 0 ? '+' : '') + pct + '% vs.') + ' comp avg ' + fmtMoney(Math.round(nr.compRate));
+  }
+  h += '<div style="font-size:1.1rem;font-weight:800;color:'+color+'">'+fmtMoney(rate)+'/night</div>';
+  if(cmp) h += '<div style="font-size:.68rem;color:var(--text3)">'+cmp+'</div>';
   return h;
 }
 
@@ -31397,7 +31470,7 @@ function renderNegotiationTab(r){
   // does NOT feed back into the Projected ROI tab's KPIs/Payback Period/Deal
   // Temperature above. See _activeScenarioRevExp vs _baseScenarioRevExp.
   h += '<div class="calc-section" style="margin-top:0"><div class="calc-section-body" style="padding:14px 16px 16px">';
-  h += '<div class="nft-title-row" style="font-size:.82rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;display:flex;align-items:center;justify-content:center;gap:5px;cursor:help"'+tipAttrs('Revenue Target','Drag to explore what happens at a specific annual revenue — the number driving Rent Adjustment, Rental Concessions, and the Deal Temp readout below. It\\x27s a what-if sandbox: it does not change the KPIs, Payback Period, or Deal Temperature on the Projected ROI tab above.\\n\\nThe three colored stops mark your Pessimistic, Realistic, and Optimistic projections from Projected Yearly Net above. The outer 25% on each side lets you stress-test beyond them.\\n\\nClick Pessimistic, Realistic, or Optimistic (here or above) to snap back to that exact projection.',true)+'>Revenue Target<span class="nft-hint-q">?</span></div>';
+  h += '<div class="nft-title-row" style="font-size:.82rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;display:flex;align-items:center;justify-content:center;gap:5px;cursor:help"'+tipAttrs('Revenue Target','Drag to explore what happens at a specific annual revenue — the number driving Rent Adjustment, Rental Concessions, and the Deal Temp readout below. It\\x27s a what-if sandbox: it does not change the KPIs, Payback Period, or Deal Temperature on the Projected ROI tab above.\\n\\nThis figure already assumes your comps\\x27 average occupancy (shown under the slider), because comp revenue comes from nights those listings actually booked. It is not revenue at 100% occupancy.\\n\\nThe three colored stops mark your Pessimistic, Realistic, and Optimistic projections from Projected Yearly Net above. The outer 25% on each side lets you stress-test beyond them.\\n\\nClick Pessimistic, Realistic, or Optimistic (here or above) to snap back to that exact projection.',true)+'>Revenue Target<span class="nft-hint-q">?</span></div>';
 
   if(!_raHasData){
     h += '<div style="color:var(--text3);font-size:.9rem;padding:14px 0;text-align:center">'+_compsReqMessage(v)+' to use the revenue target</div>';
@@ -31443,14 +31516,11 @@ function renderNegotiationTab(r){
     h += '<div style="text-align:center;margin:8px 0 2px">';
     h += '<span class="co-rev-value" id="revTargetValTop_'+r.id+'" onclick="openRevTargetInput(\''+r.id+'\')" title="Click to type an exact revenue">'+fmtMoney(_rtVal)+'/yr</span>';
     h += '</div>';
-    h += '<div id="revTargetDelta_'+r.id+'" style="text-align:center;font-size:.68rem;color:var(--text3);margin-bottom:'+(_activeOcc.isOverridden ? '2px' : '10px')+'">'+(_rtDiffPct===0?'Matches your Realistic projection':(_rtDiffPct>0?'+':'')+_rtDiffPct+'% vs. Realistic')+'</div>';
-    // When the wheel sits off the listing's occupancy estimate it scales this target,
-    // so spell out the figure actually being modeled. Without this the slider would
-    // read $100,000 while Projected Yearly Net showed something else, with nothing
-    // on screen connecting the two.
-    if(_activeOcc.isOverridden && _pynRev !== _rtVal){
-      h += '<div style="text-align:center;font-size:.68rem;color:var(--text3);margin-bottom:10px">at '+Math.round(_activeOcc.occPct)+'% occupancy → <span style="font-weight:700;color:var(--text2)">'+fmtMoney(_pynRev)+'/yr</span></div>';
-    }
+    h += '<div id="revTargetDelta_'+r.id+'" style="text-align:center;font-size:.68rem;color:var(--text3);margin-bottom:2px">'+(_rtDiffPct===0?'Matches your Realistic projection':(_rtDiffPct>0?'+':'')+_rtDiffPct+'% vs. Realistic')+'</div>';
+    // Always state the occupancy this revenue assumes. Comp revenue already has the
+    // comps' occupancy baked in, so without this line "$120,000 at a 55% wheel" reads
+    // like it should mean 55% of $120,000.
+    h += '<div id="revTargetOccLine_'+r.id+'" style="text-align:center;font-size:.68rem;color:var(--text3);margin-bottom:10px">'+_revTargetOccLineHtml(r, v, _rtVal, _pynRev)+'</div>';
 
     h += '<div id="revTargetConfig_'+r.id+'" data-min="'+_rtMin+'" data-max="'+_rtMax+'" data-p="'+_rtP+'" data-r="'+_rtR+'" data-o="'+_rtO+'" data-pctp="'+_rtDispPctP.toFixed(4)+'" data-pctr="'+_rtPctR.toFixed(4)+'" data-pcto="'+_rtDispPctO.toFixed(4)+'" style="display:none"></div>';
 
@@ -31576,7 +31646,9 @@ function renderNegotiationTab(r){
   h += '<div class="calc-section" style="margin-top:0"><div class="calc-section-body" style="padding:0">';
   h += '<div style="display:flex;flex-wrap:wrap">';
   h += '<div style="flex:1 1 0;min-width:240px;padding:14px 16px;text-align:center;border-right:1px solid var(--border);box-sizing:border-box">';
-  h += '<div class="nft-title-row" style="font-size:.82rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;display:inline-flex;align-items:center;gap:5px;cursor:help"'+tipAttrs('Monthly Occupancy Target','Spin the wheel (or click the % below to type an exact number) to explore this deal at a different occupancy assumption \\u2014 annual revenue is re-derived at that occupancy (holding your comp-matched nightly rate fixed), and anything else that\\x27s a factor of occupancy \\u2014 occupancy-based Additional Income streams (Per Turn / Per Night) and a Per Turn Cleaning Fee \\u2014 updates to match. This is a what-if sandbox: it does not change the KPIs, Payback Period, or Deal Temperature on the Projected ROI tab above.\\n\\nThis scales whatever revenue you\\x27re modeling rather than replacing it: at your current occupancy estimate it changes nothing, and halving occupancy halves modeled revenue. Revenue Target keeps whatever you set it to \\u2014 the two stack.',true)+'>Monthly Occupancy Target<span class="nft-hint-q">?</span></div>';
+  h += '<div class="nft-title-row" style="font-size:.82rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;display:inline-flex;align-items:center;gap:5px;cursor:help"'+tipAttrs('Monthly Occupancy Target',(NEG_OCC_HOLDS_REVENUE()
+    ? 'Spin the wheel (or click the % below to type an exact number) to see the average nightly rate you\\x27d need to hit your Revenue Target at that occupancy. Revenue Target stays fixed: lower occupancy means a higher required rate, higher occupancy a lower one. The rate turns red when it\\x27s more than 10% above your comps\\x27 average and green when it\\x27s more than 10% below.\\n\\nOccupancy-based Additional Income (Per Turn / Per Night) and a Per Turn Cleaning Fee still follow the wheel, since fewer stays means fewer turns.\\n\\nThis is a what-if sandbox: it does not change the KPIs, Payback Period, or Deal Temperature on the Projected ROI tab above.'
+    : 'Spin the wheel (or click the % below to type an exact number) to explore this deal at a different occupancy assumption \\u2014 annual revenue is re-derived at that occupancy (holding your comp-matched nightly rate fixed), and anything else that\\x27s a factor of occupancy \\u2014 occupancy-based Additional Income streams (Per Turn / Per Night) and a Per Turn Cleaning Fee \\u2014 updates to match. This is a what-if sandbox: it does not change the KPIs, Payback Period, or Deal Temperature on the Projected ROI tab above.\\n\\nRevenue Target already assumes your comps\\x27 average occupancy, so the wheel scales it relative to that estimate, not to 100%: at a 70% estimate, a 55% wheel models 55 \\u00f7 70 = 79% of the target. Revenue Target keeps whatever you set it to \\u2014 the two stack.'),true)+'>Monthly Occupancy Target<span class="nft-hint-q">?</span></div>';
   h += '</div>';
   h += '<div style="flex:1 1 0;min-width:240px;padding:14px 16px;text-align:center;border-right:1px solid var(--border);box-sizing:border-box">';
   h += '<div class="nft-title-row" style="font-size:.82rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;display:inline-flex;align-items:center;gap:5px;cursor:help"'+tipAttrs('Rent Adjustment','Explore what rent would make this deal attractive. Two ways to adjust:\\n\\n• Click the rent amount (✏️) to type an exact number\\n• Click and drag the arrow on the dial to slide it\\n\\nThis is a projection tool — it does NOT change the actual rent.',true)+'>Rent Adjustment<span class="nft-hint-q">?</span></div>';
@@ -32975,6 +33047,13 @@ function _liveUpdateConcessionsPanel(recId){
       const freshSummary = tmp.querySelector('#negSummaryPanel_'+recId);
       if(freshSummary) liveSummary.innerHTML = freshSummary.innerHTML;
     }
+    // Revenue Target's occupancy line and the wheel's nightly-rate readout are plain
+    // text, so grafting them mid-drag never disturbs the control being dragged.
+    ['revTargetOccLine_', 'occWheelRate_'].forEach(function(prefix){
+      const liveEl = document.getElementById(prefix+recId);
+      const freshEl = tmp.querySelector('#'+prefix+recId);
+      if(liveEl && freshEl) liveEl.innerHTML = freshEl.innerHTML;
+    });
     // Rent Adjustment's zone bands and its Deal Temp readout both move with revenue,
     // so they should track a Revenue Target / Occupancy Target drag in real time too
     // rather than snapping into place on release. Skipped while the dial ITSELF is
