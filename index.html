@@ -1728,11 +1728,12 @@ tr.unit-row-excluded{opacity:.55}
 .inline-status-dd .isd-item:hover{background:var(--primary-light)}
 .inline-status-dd .isd-item.current{background:var(--primary-light);font-weight:600}
 .card-edit-popup{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:250;display:flex;align-items:center;justify-content:center}
-.card-edit-popup .cep-panel{background:var(--surface);border-radius:var(--radius);border:1px solid var(--border);box-shadow:0 12px 40px rgba(0,0,0,.3);width:500px;max-width:90vw;max-height:85vh;overflow-y:auto}
-.card-edit-popup .cep-header{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--border)}
+/* Header + actions stay pinned; only .cep-body scrolls */
+.card-edit-popup .cep-panel{background:var(--surface);border-radius:var(--radius);border:1px solid var(--border);box-shadow:0 12px 40px rgba(0,0,0,.3);width:500px;max-width:90vw;max-height:85vh;display:flex;flex-direction:column;overflow:hidden}
+.card-edit-popup .cep-header{flex-shrink:0;display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--border)}
 .card-edit-popup .cep-header h3{font-size:.95rem;font-weight:600}
-.card-edit-popup .cep-body{padding:16px 20px;overflow:visible}
-.card-edit-popup .cep-actions{display:flex;gap:8px;justify-content:flex-end;padding:12px 20px;border-top:1px solid var(--border)}
+.card-edit-popup .cep-body{padding:16px 20px;flex:1 1 auto;min-height:0;overflow-y:auto}
+.card-edit-popup .cep-actions{flex-shrink:0;display:flex;gap:8px;justify-content:flex-end;padding:12px 20px;border-top:1px solid var(--border)}
 /* ===== TEXTAREA HINT ===== */
 .note-ta-wrap{position:relative;flex:1}
 .note-ta-wrap textarea{width:100%}
@@ -35094,6 +35095,33 @@ function clearInlineDate(){
   saveData();
   render();
 }
+
+/* ===== BROWSER ADDRESS AUTOFILL GUARD ===== */
+// Chrome ignores autocomplete="off" on fields it recognizes as an address
+// (Address / City / State / ZIP labels) and pops "Save address?" every time an
+// editor closes after a save. An autocomplete token Chrome doesn't recognize
+// opts the field out of both its autofill suggestions and the save prompt.
+// Applied to every form field as it's added to the DOM, so all editors
+// (Single Unit, Multi Unit, Co-Hosting, Operations) are covered. Fields with
+// an explicit token (auth email / name / password) are left alone.
+(function(){
+  const NO_AUTOFILL = 'rr-no-autofill';
+  const SKIP_TYPES = /^(password|hidden|checkbox|radio|file|submit|button|reset|image|range|color)$/i;
+  function guard(el){
+    if(el.tagName === 'INPUT' && SKIP_TYPES.test(el.type)) return;
+    const ac = (el.getAttribute('autocomplete') || '').trim().toLowerCase();
+    if(ac && ac !== 'off' && ac !== 'on') return;
+    el.setAttribute('autocomplete', NO_AUTOFILL);
+  }
+  function scan(node){
+    if(node.nodeType !== 1) return;
+    if(node.matches('input,select,textarea')) guard(node);
+    node.querySelectorAll('input,select,textarea').forEach(guard);
+  }
+  new MutationObserver(muts => { for(const m of muts) m.addedNodes.forEach(scan); })
+    .observe(document.documentElement, { childList:true, subtree:true });
+  scan(document.documentElement);
+})();
 
 /* ===== CARD EDIT POPUPS ===== */
 function dismissAllOverlays(){
