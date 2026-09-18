@@ -3019,6 +3019,18 @@ let _lastSavedJson = '';
 // a flush fires within this many ms of the *first* unsaved change.
 const SAVE_MAX_WAIT_MS = 4000;
 let _saveFirstPendingAt = null;
+// Retry pacing for a failed write. Used to be a flat 2s forever, which hammered
+// Firestore for as long as the failure lasted and told the user something was
+// wrong the instant a single attempt failed — even though the very next attempt
+// usually succeeded. Now: back off, and stay quiet until the save has genuinely
+// been failing for a while (SAVE_TROUBLE_AFTER_ATTEMPTS).
+const SAVE_RETRY_BASE_MS = 2000;
+const SAVE_RETRY_MAX_MS = 30000;
+const SAVE_TROUBLE_AFTER_ATTEMPTS = 3; // ~2s + 4s + 8s of failing before we say anything
+let _saveRetryDelay = SAVE_RETRY_BASE_MS;
+let _saveFailCount = 0;
+let _cohostSaveRetryDelay = SAVE_RETRY_BASE_MS;
+let _cohostSaveFailCount = 0;
 
 // Admin impersonation. When set, _currentUid is swapped to this UID so every Firestore
 // read/write targets the impersonated user's data. Restore in _adminExitImpersonate.
@@ -3488,17 +3500,52 @@ function _showSaveTroubleToast(){
     showToast("A save didn't go through and is retrying. If this keeps happening, contact support before making more changes.", 'error', 8000);
   }
 }
+// 2026-09-18: the toast used to fire on the FIRST failed attempt, so a single
+// transient reject (a network blip, a contended write) told the user a save
+// "didn't go through" and to contact support — while the automatic retry
+// quietly succeeded a couple of seconds later and nothing was ever lost. The
+// retry loop is the feature; interrupting the user is only warranted once it
+// stops working. Nothing is said until the save has failed
+// SAVE_TROUBLE_AFTER_ATTEMPTS times in a row, and if a retry then succeeds
+// after we DID warn, say so — otherwise the last thing the user saw is a
+// warning about data that is in fact safely saved.
 let _saveFailureNotified = false;
-function _notifySaveTrouble(){
+function _notifySaveTrouble(attempts){
   if(_saveFailureNotified) return;
+  if(attempts < SAVE_TROUBLE_AFTER_ATTEMPTS) return;
   _saveFailureNotified = true;
   _showSaveTroubleToast();
 }
+function _notifySaveRecovered(){
+  if(!_saveFailureNotified) return;
+  _saveFailureNotified = false;
+  showToast('Saved — all your changes are up to date.', 'success', 3500);
+}
 let _cohostSaveFailureNotified = false;
-function _notifyCohostSaveTrouble(){
+function _notifyCohostSaveTrouble(attempts){
   if(_cohostSaveFailureNotified) return;
+  if(attempts < SAVE_TROUBLE_AFTER_ATTEMPTS) return;
   _cohostSaveFailureNotified = true;
   _showSaveTroubleToast();
+}
+function _notifyCohostSaveRecovered(){
+  if(!_cohostSaveFailureNotified) return;
+  _cohostSaveFailureNotified = false;
+  showToast('Saved — all your changes are up to date.', 'success', 3500);
+}
+
+// Firestore rejects a write outright — and does it by THROWING SYNCHRONOUSLY out
+// of .set(), before any promise exists — if the payload contains anything it
+// can't store: an `undefined` field value, a Date/File/class instance, a
+// function, a nested array. The records blob never hits this because it's stored
+// as a JSON string, so every mirror/`propertyRecords`-style write that hands
+// Firestore a raw record object is exposed to it where the blob write isn't.
+// This puts the payload through the same JSON round-trip the blob gets, so the
+// mirror stores exactly what the blob stores: undefined keys and functions drop
+// out, Dates become ISO strings, NaN/Infinity become null.
+function _firestoreSafeRecord(r){
+  try { return JSON.parse(JSON.stringify(r)); }
+  catch(e){ console.error('[migration] record is not JSON-serializable, mirror skipped:', e); return null; }
 }
 
 function _flushSaveWrite(){
@@ -3543,31 +3590,57 @@ function _flushSaveWrite(){
     return docRef.set({ data: jsonData, updatedAt: firebase.firestore.FieldValue.serverTimestamp() })
       .then(function(){ return { jsonData, merged }; });
   }).then(function(result){
+    // ── Everything from here on runs AFTER the data is on the server ──
+    // 2026-09-18: this used to be a `.then(...).catch(...)` pair, so the catch
+    // below covered the success handler too. Any throw in here — most of all
+    // _dualWriteDirtyRecords, where Firestore's invalid-data check throws
+    // SYNCHRONOUSLY and so escapes the per-doc .catch that was supposed to
+    // swallow it (see _firestoreSafeRecord) — was reported to the user as "a
+    // save didn't go through and is retrying", re-queued the ids, and spun a
+    // 2s retry loop that rewrote the blob forever. The save had in fact
+    // succeeded every single time, which is exactly what it looked like from
+    // the user's side: a scary toast, and a refresh showing all the data
+    // present. Reported on the Multi Unit → Units tab (saveUnit → saveData),
+    // but nothing about it was specific to units — every save in the app ran
+    // through here.
+    //
+    // The rejection handler is now the second argument to this same .then(),
+    // not a .catch() chained after it, so it can only ever see a failure of
+    // the get/merge/set above — never anything this handler does. Follow-up
+    // work is individually guarded and logged for what it is.
+    const pulledInForeignChange = result.jsonData !== JSON.stringify(records);
+    _lastSavedJson = result.jsonData;
+    records = result.merged;
+    _saveFailCount = 0;
+    _saveRetryDelay = SAVE_RETRY_BASE_MS;
+    _notifySaveRecovered();
+    // Best-effort mirror (Stage A migration) — never part of whether the save worked.
+    try { _dualWriteDirtyRecords(dirtyIds); }
+    catch(e){ console.error('[migration] propertyRecords dual-write threw (the save itself succeeded):', e); }
     // Did the merge pull in anything from another tab/device that this tab's own
     // local `records` didn't already have? Only re-render for that — a render on
     // every routine save (the common single-tab case) would reset scroll/focus
     // for no reason.
-    const pulledInForeignChange = result.jsonData !== JSON.stringify(records);
-    _lastSavedJson = result.jsonData;
-    records = result.merged;
-    _saveFailureNotified = false;
-    _dualWriteDirtyRecords(dirtyIds);
     if(pulledInForeignChange){
-      const ae = document.activeElement;
-      const isEditing = ae && (ae.tagName==='INPUT'||ae.tagName==='TEXTAREA'||ae.tagName==='SELECT'||ae.isContentEditable);
-      if(!isEditing) render();
-      else ae.addEventListener('blur', function handler(){ render(); ae.removeEventListener('blur', handler); }, {once:true});
+      try {
+        const ae = document.activeElement;
+        const isEditing = ae && (ae.tagName==='INPUT'||ae.tagName==='TEXTAREA'||ae.tagName==='SELECT'||ae.isContentEditable);
+        if(!isEditing) render();
+        else ae.addEventListener('blur', function handler(){ render(); ae.removeEventListener('blur', handler); }, {once:true});
+      } catch(e){ console.error('Post-save re-render failed (the save itself succeeded):', e); }
     }
-  }).catch(e => {
+  }, function(e){
     console.error('Failed to save data:', e);
     // Genuine failure (not the offline case above, which .set() already queues
     // and resolves once synced) — put the ids back so the next flush retries.
     dirtyIds.forEach(id => _dirtyRecordIds.add(id));
     deletedIds.forEach(id => _deletedRecordIds.add(id));
-    _notifySaveTrouble();
+    _saveFailCount++;
+    _notifySaveTrouble(_saveFailCount);
     if(_saveFirstPendingAt == null) _saveFirstPendingAt = Date.now();
     if(_saveTimeout) clearTimeout(_saveTimeout);
-    _saveTimeout = setTimeout(_flushSaveWrite, 2000);
+    _saveTimeout = setTimeout(_flushSaveWrite, _saveRetryDelay);
+    _saveRetryDelay = Math.min(SAVE_RETRY_MAX_MS, _saveRetryDelay * 2);
   });
 }
 
@@ -3585,7 +3658,20 @@ function _dualWriteDirtyRecords(ids){
   ids.forEach(id => {
     const r = records.find(x => x.id === id);
     if(!r) return; // removed since being marked dirty — deletion paths handle their own cleanup
-    col.doc(id).set(r).catch(e => console.error('[migration] propertyRecords dual-write failed for', id, e));
+    // The try/catch is not redundant with the .catch: .set() throws synchronously
+    // on an unstorable payload and on a bad document id, and a throw here used to
+    // escape all the way out to the caller's rejection handler — which is how a
+    // fully successful save ended up reported as a failed one. Payload goes
+    // through _firestoreSafeRecord so the write actually lands instead of merely
+    // failing quietly, and each record is independent: one bad record no longer
+    // stops the mirror writes for the rest.
+    const payload = _firestoreSafeRecord(r);
+    if(!payload) return;
+    try {
+      col.doc(id).set(payload).catch(e => console.error('[migration] propertyRecords dual-write failed for', id, e));
+    } catch(e){
+      console.error('[migration] propertyRecords dual-write rejected the payload for', id, e);
+    }
   });
 }
 
@@ -3600,10 +3686,19 @@ function _dualWriteDirtyRecords(ids){
 // in Firestore — but the data itself is never actually gone.
 function _softDeleteRecordMirror(r, collectionName){
   if(!r || !_currentUid || typeof db === 'undefined') return;
-  const payload = Object.assign({}, r, { _deletedAt: new Date().toISOString() });
-  db.collection('users').doc(_currentUid).collection(collectionName).doc(r.id)
-    .set(payload)
-    .catch(e => console.error('[migration] ' + collectionName + ' soft-delete failed for', r.id, e));
+  // Same synchronous-throw exposure as _dualWriteDirtyRecords, and the same fix:
+  // sanitize, then guard. A record that can't be mirrored must never take down
+  // the delete the user asked for.
+  const safe = _firestoreSafeRecord(r);
+  if(!safe) return;
+  const payload = Object.assign(safe, { _deletedAt: new Date().toISOString() });
+  try {
+    db.collection('users').doc(_currentUid).collection(collectionName).doc(r.id)
+      .set(payload)
+      .catch(e => console.error('[migration] ' + collectionName + ' soft-delete failed for', r.id, e));
+  } catch(e){
+    console.error('[migration] ' + collectionName + ' soft-delete rejected the payload for', r.id, e);
+  }
 }
 
 // 2026-08-17: soft-deleted records were recoverable in Firestore but not
@@ -4103,35 +4198,54 @@ function _flushCohostSaveWrite(){
     return docRef.set({ data: jsonData, updatedAt: firebase.firestore.FieldValue.serverTimestamp() })
       .then(function(){ return { jsonData, merged }; });
   }).then(function(result){
+    // Post-write work, guarded exactly as in _flushSaveWrite — see the long
+    // comment there. The rejection handler is this .then()'s second argument so
+    // it can only see a failure of the get/merge/set above, and the cohostRecords
+    // mirror write below (same synchronous-throw exposure) can no longer make a
+    // successful save look like a failed one.
     const pulledInForeignChange = result.jsonData !== JSON.stringify(cohostRecords);
     _lastSavedCohostJson = result.jsonData;
     cohostRecords = result.merged;
-    _cohostSaveFailureNotified = false;
+    _cohostSaveFailCount = 0;
+    _cohostSaveRetryDelay = SAVE_RETRY_BASE_MS;
+    _notifyCohostSaveRecovered();
     // Same per-record mirror records already has (_dualWriteDirtyRecords) — cohost
     // previously only got one on delete; this keeps it live going forward too, same
     // recovery guarantee if this store ever nears its own size ceiling.
     dirtyIds.forEach(function(id){
       const r = cohostRecords.find(function(x){ return x.id === id; });
-      if(r) db.collection('users').doc(_currentUid).collection('cohostRecords').doc(id).set(r)
-        .catch(function(e){ console.error('[migration] cohostRecords dual-write failed for', id, e); });
+      if(!r) return;
+      const payload = _firestoreSafeRecord(r);
+      if(!payload) return;
+      try {
+        db.collection('users').doc(_currentUid).collection('cohostRecords').doc(id).set(payload)
+          .catch(function(e){ console.error('[migration] cohostRecords dual-write failed for', id, e); });
+      } catch(e){
+        console.error('[migration] cohostRecords dual-write rejected the payload for', id, e);
+      }
     });
     if(pulledInForeignChange){
-      const ae = document.activeElement;
-      const isEditing = ae && (ae.tagName==='INPUT'||ae.tagName==='TEXTAREA'||ae.tagName==='SELECT'||ae.isContentEditable);
-      if(!isEditing) render();
-      else ae.addEventListener('blur', function handler(){ render(); ae.removeEventListener('blur', handler); }, {once:true});
+      try {
+        const ae = document.activeElement;
+        const isEditing = ae && (ae.tagName==='INPUT'||ae.tagName==='TEXTAREA'||ae.tagName==='SELECT'||ae.isContentEditable);
+        if(!isEditing) render();
+        else ae.addEventListener('blur', function handler(){ render(); ae.removeEventListener('blur', handler); }, {once:true});
+      } catch(e){ console.error('Post-save re-render failed (the save itself succeeded):', e); }
     }
-  }).catch(function(e){
+  }, function(e){
     console.error('Failed to save co-hosting data:', e);
-    // See _flushSaveWrite's catch — transactions reject outright when offline instead
-    // of queuing like the old plain .set() did, so retry rather than drop the edit.
-    // dirtyIds don't need restoring: they're recomputed from cohostRecords vs
-    // _lastSavedCohostJson next flush, and _lastSavedCohostJson was never advanced.
+    // See _flushSaveWrite's rejection handler — transactions reject outright when
+    // offline instead of queuing like the old plain .set() did, so retry rather
+    // than drop the edit. dirtyIds don't need restoring: they're recomputed from
+    // cohostRecords vs _lastSavedCohostJson next flush, and _lastSavedCohostJson
+    // was never advanced.
     deletedIds.forEach(function(id){ _deletedCohostIds.add(id); });
-    _notifyCohostSaveTrouble();
+    _cohostSaveFailCount++;
+    _notifyCohostSaveTrouble(_cohostSaveFailCount);
     if(_cohostSaveFirstPendingAt == null) _cohostSaveFirstPendingAt = Date.now();
     if(_cohostSaveTimeout) clearTimeout(_cohostSaveTimeout);
-    _cohostSaveTimeout = setTimeout(_flushCohostSaveWrite, 2000);
+    _cohostSaveTimeout = setTimeout(_flushCohostSaveWrite, _cohostSaveRetryDelay);
+    _cohostSaveRetryDelay = Math.min(SAVE_RETRY_MAX_MS, _cohostSaveRetryDelay * 2);
   });
 }
 
