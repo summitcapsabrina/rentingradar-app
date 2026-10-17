@@ -18,6 +18,13 @@
   @keyframes spin{to{transform:rotate(360deg)}}
   .success{color:#3fb950}
   .error{color:#f85149}
+  .field{text-align:left;margin-bottom:14px}
+  .field label{display:block;font-size:.78rem;color:#8b949e;margin-bottom:6px}
+  .field input{width:100%;padding:10px 12px;font-size:.95rem;font-family:inherit;color:#e6edf3;background:#0d1117;border:1px solid #30363d;border-radius:8px}
+  .field input:focus{outline:none;border-color:#2f81f7}
+  .show-pw{display:flex;align-items:center;gap:6px;font-size:.8rem;color:#8b949e;margin:-4px 0 18px;cursor:pointer;user-select:none}
+  .form-err{min-height:20px;font-size:.82rem;color:#f85149;margin-bottom:14px;text-align:left}
+  .btn[disabled]{opacity:.6;cursor:default}
 </style>
 </head>
 <body>
@@ -70,12 +77,88 @@
           'Something went wrong: ' + (err.message || 'Unknown error') + '. Please try again or contact support.', true);
       }
     });
-  } else if (mode === 'resetPassword') {
-    // Redirect password resets to Firebase's default handler
-    window.location.href = 'https://rentingradar.firebaseapp.com/__/auth/action' + window.location.search;
+  } else if (mode === 'resetPassword' && oobCode) {
+    // Handled here, not on Firebase's default page. That page had a single
+    // password field (one typo locks you out) and ran on
+    // rentingradar.firebaseapp.com, which the API key's referrer allowlist
+    // blocks, so every link failed as "expired".
+    document.title = 'RentingRadar — Reset Password';
+    card.innerHTML = '<div class="spinner"></div><h1>Checking your link...</h1><p class="msg">Please wait a moment.</p>';
+    firebase.auth().verifyPasswordResetCode(oobCode).then(function(email) {
+      renderResetForm(email);
+    }).catch(function(err) {
+      console.error('Reset code error:', err);
+      showResetLinkError(err);
+    });
   } else {
     showResult('❓', 'Invalid Link',
       'This link doesn\'t appear to be a valid verification link. Please check your email for the correct link.', true);
+  }
+
+  function escHtml(v) {
+    return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function showResetLinkError(err) {
+    var code = err && err.code;
+    if (code === 'auth/expired-action-code') {
+      showResult('⏰', 'Link Expired',
+        'This password reset link has expired. Go back to the app, click "Forgot password?" and request a new one.', true);
+    } else if (code === 'auth/invalid-action-code') {
+      showResult('⚠️', 'Invalid or Used Link',
+        'This reset link has already been used or was replaced by a newer one. Request a new link from the app and use the most recent email.', true);
+    } else {
+      showResult('❌', 'Reset Failed',
+        'Something went wrong: ' + escHtml((err && err.message) || 'Unknown error') + '. Please try again or contact help@rentingradar.com.', true);
+    }
+  }
+
+  function renderResetForm(email) {
+    card.innerHTML =
+      '<div class="icon">🔑</div>' +
+      '<h1>Choose a New Password</h1>' +
+      '<p class="msg">for <strong style="color:#e6edf3">' + escHtml(email) + '</strong></p>' +
+      '<form id="resetForm" novalidate>' +
+        '<div class="field"><label for="newPw">New password</label>' +
+          '<input type="password" id="newPw" autocomplete="new-password" minlength="6" required></div>' +
+        '<div class="field"><label for="confirmPw">Confirm new password</label>' +
+          '<input type="password" id="confirmPw" autocomplete="new-password" minlength="6" required></div>' +
+        '<label class="show-pw"><input type="checkbox" id="showPw"> Show passwords</label>' +
+        '<div class="form-err" id="resetErr"></div>' +
+        '<button type="submit" class="btn btn-primary" id="resetBtn" style="width:100%">Save New Password</button>' +
+      '</form>';
+    var form = document.getElementById('resetForm');
+    var pw = document.getElementById('newPw');
+    var pw2 = document.getElementById('confirmPw');
+    var errEl = document.getElementById('resetErr');
+    var btn = document.getElementById('resetBtn');
+    document.getElementById('showPw').addEventListener('change', function() {
+      var t = this.checked ? 'text' : 'password';
+      pw.type = t; pw2.type = t;
+    });
+    pw.focus();
+    form.addEventListener('submit', function(e) {
+      e.preventDefault();
+      errEl.textContent = '';
+      if (pw.value.length < 6) { errEl.textContent = 'Password must be at least 6 characters.'; pw.focus(); return; }
+      if (pw.value !== pw2.value) { errEl.textContent = "Passwords don't match. Please re-type them."; pw2.focus(); return; }
+      btn.disabled = true; btn.textContent = 'Saving...';
+      firebase.auth().confirmPasswordReset(oobCode, pw.value).then(function() {
+        showResult('✅', 'Password Updated',
+          'Your password has been changed. You can now sign in to RentingRadar with your new password.', true);
+      }).catch(function(err) {
+        console.error('confirmPasswordReset error:', err);
+        if (err && err.code === 'auth/weak-password') {
+          btn.disabled = false; btn.textContent = 'Save New Password';
+          errEl.textContent = 'That password is too weak. Use at least 6 characters.';
+        } else if (err && (err.code === 'auth/expired-action-code' || err.code === 'auth/invalid-action-code')) {
+          showResetLinkError(err);
+        } else {
+          btn.disabled = false; btn.textContent = 'Save New Password';
+          errEl.textContent = 'Could not save: ' + ((err && err.message) || 'Unknown error');
+        }
+      });
+    });
   }
 </script>
 </body>

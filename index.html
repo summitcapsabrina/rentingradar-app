@@ -4447,6 +4447,9 @@ function _syncContactToLinkedProperties(contact){
     if(r.name !== contact.name){ r.name = contact.name || ''; dirty = true; }
     if(r.phone !== contact.phone){ r.phone = contact.phone || ''; dirty = true; }
     if(r.email !== contact.email){ r.email = contact.email || ''; dirty = true; }
+    // Contact role mirrors onto the property's Contact Title. Only a non-empty role
+    // overwrites, so linking a role-less contact never wipes a title typed on the property.
+    if(contact.role && (r.contactTitle || '') !== contact.role){ r.contactTitle = contact.role; dirty = true; }
     if(dirty){ changed = true; if(r.kind === 'cohost') cohostChanged = true; }
   });
   if(changed) saveData();
@@ -4547,6 +4550,7 @@ function _afterPropertyCreate(r){
     existing.linkedPropertyIds = existing.linkedPropertyIds || [];
     if(!existing.linkedPropertyIds.includes(r.id)) existing.linkedPropertyIds.push(r.id);
     r.primaryContactId = existing.id;
+    if(r.contactTitle && !existing.role) existing.role = r.contactTitle;
     saveContact(existing).catch(function(e){ console.error('Auto-link to existing contact failed:', e); });
   } else {
     const newC = {
@@ -4554,7 +4558,7 @@ function _afterPropertyCreate(r){
       name: r.name.trim(),
       phone: r.phone || '',
       email: r.email || '',
-      role: '',
+      role: r.contactTitle || '',
       photo: null,
       notes: [],
       linkedPropertyIds: [r.id],
@@ -4938,17 +4942,24 @@ function _normalizeListingLink(raw){
 // (one-time migration of pre-existing Outreach entries) — both turn the same
 // building-form shape into a Pipeline record.
 function _aptProspectToPipelineRecord(p){
-  const noteText = [p.contactTitle, p.notes].filter(Boolean).join(' — ');
-  const today = new Date().toISOString().split('T')[0];
+  // Notes go into the Property Note (the profile's "Property Note" box), not the
+  // Activity Log. Contact Title is its own field (shown in Contact & Status and
+  // copied to the linked contact's role) instead of being glued onto the note.
+  const noteText = String(p.notes || '').trim();
+  const contactTitle = String(p.contactTitle || '').trim();
+  const nowIso = new Date().toISOString();
+  const today = _todayLocalStr();
   return {
     id: uid(), property: p.address || p.buildingName || '', addressParts: { street: p.address || '', unit:'', city:'', state:'', zip:'' },
     recordType: 'apartment', buildingName: p.buildingName || '',
-    name: p.contactName || '', phone: p.phone || '', email: p.email || '',
-    status: 'New', link: _normalizeListingLink(p.website), note: noteText,
+    name: p.contactName || '', phone: p.phone || '', email: p.email || '', contactTitle: contactTitle,
+    status: (p.status && STATUSES.indexOf(p.status) !== -1) ? p.status : 'New',
+    link: _normalizeListingLink(p.website), note: noteText,
     date: today, followUpDate: null, meetingDate: null,
-    notes: noteText ? [{ id: uid(), text: noteText, date: today, type: 'note' }] : [],
+    notes: [],
+    propertyNote: noteText ? { text: noteText, html: esc(noteText).replace(/\n/g, '<br>'), date: nowIso, source: 'Manual' } : null,
     propertyDetails: {}, propertyNotes: [],
-    createdAt: p.createdAt || new Date().toISOString()
+    createdAt: p.createdAt || nowIso
   };
 }
 
@@ -4957,6 +4968,7 @@ function _aptProspectToPipelineRecord(p){
 const APT_PROSPECT_DRAFT_FIELD_IDS = ['aptBuildingNameInput','aptAddressInput','aptContactTitleInput','aptContactNameInput','aptEmailInput','aptPhoneInput','aptWebsiteInput','aptNotesInput'];
 function openAptProspectModal(){
   _savingAptProspect = false;
+  window._selectedGeoLocation = null; // never pin a new building with coords picked in another form
   _editingAptProspect = {
     id: uid(), buildingName:'', address:'', priority:'Medium', status:'New', notes:'',
     contactTitle:'', contactName:'', email:'', phone:'', website:'',
@@ -4980,6 +4992,15 @@ function openAptProspectModal(){
   overlay.id = 'aptProspectModalOverlay';
   overlay.className = 'multi-editor-overlay';
   overlay.onclick = function(e){ if(e.target === overlay) closeAptProspectModal(); };
+  if(!document._aptEscBound){
+    document._aptEscBound = true;
+    document.addEventListener('keydown', function(e){
+      if(e.key !== 'Escape' || !document.getElementById('aptProspectModalOverlay')) return;
+      if(document.getElementById('appConfirmOverlay')) return;
+      e.preventDefault();
+      closeAptProspectModal();
+    });
+  }
   document.body.appendChild(overlay);
   _renderAptProspectModal();
 }
@@ -5056,6 +5077,7 @@ async function _saveAptProspectFromModal(){
   const r = _aptProspectToPipelineRecord(p);
   records.unshift(r);
   _afterPropertyCreate(r);
+  _geocodeNewRecord(r);
   saveData();
   _clearFieldDrafts('aptProspectAdd', APT_PROSPECT_DRAFT_FIELD_IDS);
   closeAptProspectModal();
@@ -5269,7 +5291,38 @@ function renderPropertyTasksSection(pid){
 // users after 5pm and flips today's tasks to "overdue."
 function _todayLocalStr(now){
   const d = now || new Date();
+  const tzStr = _ymdInDisplayTz(d);
+  if(tzStr) return tzStr;
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+// The zone every date in the UI renders in: Settings → Time Zone, falling back to
+// the browser's zone. Reads the already-loaded settingsPrefs instead of
+// getUserTimezone() (which re-parses localStorage) because fmtDate runs in tight
+// render loops.
+let _displayTzChecked = { tz: null, ok: false };
+function _displayTz(){
+  let tz = null;
+  try { if(settingsPrefs && settingsPrefs.timezone) tz = settingsPrefs.timezone; } catch(e){}
+  if(tz){
+    // An unrecognised zone string would make every toLocale* call throw, which
+    // fmtDate turns into "—" everywhere. Validate once per distinct value.
+    if(_displayTzChecked.tz !== tz){
+      let ok = false;
+      try { new Intl.DateTimeFormat('en-US', { timeZone: tz }); ok = true; } catch(e){}
+      _displayTzChecked = { tz: tz, ok: ok };
+    }
+    if(_displayTzChecked.ok) return tz;
+  }
+  try { return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined; } catch(e){ return undefined; }
+}
+// YYYY-MM-DD of instant `d` as seen in the display zone, or null if Intl can't resolve it.
+function _ymdInDisplayTz(d){
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', { timeZone: _displayTz(), year:'numeric', month:'2-digit', day:'2-digit' }).formatToParts(d);
+    const g = function(t){ const p = parts.find(function(x){ return x.type === t; }); return p ? p.value : ''; };
+    const s = g('year') + '-' + g('month') + '-' + g('day');
+    return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
+  } catch(e){ return null; }
 }
 // True if the task is past-due. Date-only tasks are overdue if their date is before
 // today (local). Timed tasks are overdue if their full date+time has passed.
@@ -6537,7 +6590,7 @@ function switchView(view){
   clearSearch();
   const navView = view === 'pipeline' ? 'dashboard' : view;
   document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.view === navView));
-  const titles = { dashboard:'Single Unit', pipeline:'Pipeline', operations:'Operations', opsProfile:'Operations', coHosting:'Co-Hosting', cohostProfile:'Co-Hosting', contacts:'All Contacts', apartments:'Multi Unit', notifications:'Notifications', pricing:'Your Plan', tutorial:'Tutorial', adminUsers:'Users', financials:'Financials', affiliateDashboard:'Referrals', tutorialEditor:'Tutorial Editor', settings:'Settings', featureRequest:'Feature Request', askExpert:'Ask an Expert' };
+  const titles = { dashboard:'Single Unit', pipeline:'Pipeline', operations:'Operations', opsProfile:'Operations', coHosting:'Co-Hosting', cohostProfile:'Co-Hosting', contacts:'All Contacts', apartments:'Multi Unit', notifications:'Notifications', pricing:'Your Plan', tutorial:'Tutorial', adminUsers:'Users', financials:'Financials', affiliateDashboard:'Referrals', tutorialEditor:'Tutorial Editor', settings:'Settings', featureRequest:'Feature Request', askExpert:'Ask an Expert', help:'Help', chat:'Inbox', knowledge:'Knowledge Base' };
   document.getElementById('headerTitle').textContent = titles[view] || '';
   if(!_handlingPopstate) history.pushState({ view: view, profileId: null }, '', '#' + view);
   saveViewState();
@@ -6573,6 +6626,35 @@ function restoreViewState(){
   } catch(e){}
 }
 
+// Shown to a signed-in user while their account loads, or when that load failed.
+// After 20s without data it offers Try again too, so a stalled load is visible.
+let _accountLoadStuckTimer = null;
+function renderAccountLoadingState(){
+  // Measured from the auth handler's start, or from page load if auth never reported in.
+  let _since = 0;
+  try { _since = _authLoadStartedAt ? (Date.now() - _authLoadStartedAt) : performance.now(); } catch(e){}
+  const stuck = !_authLoadError && _since > 20000;
+  if(!_authLoadError && !stuck){
+    if(!_accountLoadStuckTimer){
+      _accountLoadStuckTimer = setTimeout(function(){ _accountLoadStuckTimer = null; if(!_currentUid) render(); }, 21000);
+    }
+    return `<div class="auth-signin-prompt">
+      <div class="asp-icon">⏳</div>
+      <div class="asp-title">Loading your account…</div>
+      <div class="asp-desc">This usually takes a second or two.</div>
+    </div>`;
+  }
+  const detail = _authLoadError ? esc((_authLoadError.code ? _authLoadError.code + ': ' : '') + (_authLoadError.message || String(_authLoadError))) : 'Loading is taking longer than expected.';
+  return `<div class="auth-signin-prompt">
+    <div class="asp-icon">⚠️</div>
+    <div class="asp-title">We couldn't load your account</div>
+    <div class="asp-desc">You're still signed in. Check your connection and try again. If this keeps happening, send a screenshot of this message to help@rentingradar.com.</div>
+    <div class="asp-desc" style="font-size:.75rem;color:var(--text3);margin-top:-12px;word-break:break-word">${detail}</div>
+    <button class="login-btn" onclick="_retryAccountLoad()"><span>Try again</span></button>
+    <button class="asp-browse" onclick="handleSignOut()">Sign out</button>
+  </div>`;
+}
+
 function renderSignInPrompt(forTutorial){
   const icon = forTutorial ? '🎓' : '🔒';
   const title = forTutorial ? 'Sign in to start the tutorial' : 'Sign in to get started';
@@ -6590,18 +6672,28 @@ function renderSignInPrompt(forTutorial){
   </div>`;
 }
 
+// Best client-side guess at whether checkout will include the 7-day trial. The
+// server makes the real call (createCheckoutSession skips the trial for any
+// customer with a prior Stripe subscription); this only picks the copy.
+function _newTrialEligible(){
+  return (_subscriptionStatus === 'none' || !_subscriptionStatus) && !currentTier && !_billingInterval && !_currentPeriodEnd;
+}
+
 function renderLockoutScreen(){
   const isExpired = _subscriptionStatus === 'expired';
   const isCancelled = _subscriptionStatus === 'cancelled';
   const isPastDue = _subscriptionStatus === 'past_due';
-  const title = isPastDue ? 'Payment Failed' : (isExpired ? 'Your Free Trial Has Ended' : (isCancelled ? 'Your Subscription Has Ended' : 'Choose a Plan to Continue'));
+  const isNewTrial = !isPastDue && !isExpired && !isCancelled && _newTrialEligible();
+  const title = isPastDue ? 'Payment Failed' : (isExpired ? 'Your Free Trial Has Ended' : (isCancelled ? 'Your Subscription Has Ended' : (isNewTrial ? 'Start your 7-day free trial' : 'Choose a Plan to Continue')));
   const desc = isPastDue
     ? 'Your last payment didn\'t go through. Update your payment method to restore access — your data is preserved.'
     : (isExpired
         ? 'Your 7-day free trial has ended. Your data has been preserved — subscribe to any plan to resume working where you left off.'
         : (isCancelled
             ? 'Your subscription has ended. Your data has been preserved — subscribe to any plan to restore full access.'
-            : 'Choose a plan to continue. Your data is preserved until you subscribe.'));
+            : (isNewTrial
+                ? 'Pick a plan below to start your free trial. You won\'t be charged until day 7, and you can cancel anytime.'
+                : 'Choose a plan to continue. Your data is preserved until you subscribe.')));
 
   if(isPastDue){
     return `<div class="auth-signin-prompt lockout">
@@ -6637,6 +6729,15 @@ function render(){
   area.style.paddingTop = (currentView === 'profile' || currentView === 'cohostProfile') ? '0' : '';
   // If not signed in, show sign-in prompt
   if(!_currentUid){
+    // Signed in (Firebase has a user, or this browser was signed in last visit and
+    // auth is still restoring) but the account data hasn't loaded yet. Never tell
+    // this user to "Sign in": show loading, or the load error with a retry.
+    let _fbUser = null;
+    try { _fbUser = firebase.auth().currentUser; } catch(e){}
+    if(_fbUser || currentUser){
+      area.innerHTML = renderAccountLoadingState();
+      return;
+    }
     area.innerHTML = renderSignInPrompt(_launchTutorialAfterAuth);
     return;
   }
@@ -8117,7 +8218,11 @@ function renderDashPropertyList(){
       const activityDate = lastNote && lastNote.date ? lastNote.date : r.date;
       h += '<li class="db-task-item" onclick="openDetail(\'' + r.id + '\')" style="cursor:pointer">';
       h += '<div class="db-task-info" style="flex:1;min-width:0">';
-      h += '<div class="db-task-property">' + esc(truncate(r.property || 'Untitled Property', 45)) + '</div>';
+      // Multi Unit buildings lead with the Building Name, address underneath —
+      // same convention as Tasks / Meetings / Recent Activity (propTitle).
+      const _bn = r.buildingName && r.buildingName.trim();
+      h += '<div class="db-task-property">' + esc(truncate(_bn || r.property || 'Untitled Property', 45)) + '</div>';
+      if(_bn && r.property && r.property.trim() !== _bn) h += '<div style="color:var(--text3);font-size:.74rem;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(r.property) + '</div>';
       h += '<div class="db-task-meta" style="display:flex;align-items:center;gap:6px;margin-top:3px">';
       h += statusPill(r.status);
       if(r.name) h += '<span style="color:var(--text3);font-size:.76rem">· ' + esc(truncate(r.name, 30)) + '</span>';
@@ -9126,7 +9231,36 @@ function initDashboardMap(){
   });
 }
 
+// Pin a just-created property on the map without a reload. Uses the coordinates
+// the address autocomplete already fetched when the user picked a suggestion;
+// otherwise falls back to the same Places text-search pass that runs at load.
+function _geocodeNewRecord(r){
+  if(!r) return;
+  if(window._selectedGeoLocation){
+    if(!r.propertyDetails) r.propertyDetails = {};
+    if(!r.propertyDetails.latitude){
+      r.propertyDetails.latitude = window._selectedGeoLocation.lat;
+      r.propertyDetails.longitude = window._selectedGeoLocation.lng;
+    }
+    window._selectedGeoLocation = null;
+    return;
+  }
+  geocodeExistingProperties();
+}
+let _geocodeRunning = false;
+let _geocodeRerun = false;
 async function geocodeExistingProperties(){
+  // One pass at a time. A record added while a pass is running gets picked up by
+  // an immediate re-run instead of a second overlapping pass.
+  if(_geocodeRunning){ _geocodeRerun = true; return; }
+  _geocodeRunning = true;
+  try { await _geocodeExistingPropertiesPass(); }
+  finally {
+    _geocodeRunning = false;
+    if(_geocodeRerun){ _geocodeRerun = false; geocodeExistingProperties(); }
+  }
+}
+async function _geocodeExistingPropertiesPass(){
   const toGeocode = records.filter(r => {
     const d = r.propertyDetails || {};
     return !d.latitude && r.property && r.property.length > 5;
@@ -9236,7 +9370,9 @@ function renderPipeline(){
       const rent = d.monthlyRent ? '$'+Number(d.monthlyRent).toLocaleString()+'/mo' : '';
       html += `<div class="pipeline-card" onclick="openDetail('${r.id}')">
         <div class="plc-main">
-          <div class="plc-property">${esc(r.property)}</div>
+          ${(r.buildingName && r.buildingName.trim())
+            ? `<div class="plc-property">${esc(r.buildingName.trim())}</div>${r.property && r.property.trim() !== r.buildingName.trim() ? `<div class="plc-name" style="color:var(--text3)">${esc(r.property)}</div>` : ''}`
+            : `<div class="plc-property">${esc(r.property)}</div>`}
           ${r.name ? `<div class="plc-name">${esc(r.name)}</div>` : ''}
           <div class="plc-meta">
             ${rent ? `<span>${rent}</span>` : ''}
@@ -9347,7 +9483,8 @@ function renderFunnel(allRecords){
 function renderKanbanCard(r){
   const fu = getFollowUpStatus(r);
   return `<div class="kanban-card" onclick="openDetail('${r.id}')">
-    <div class="kc-property">${truncate(r.property,40)}</div>
+    <div class="kc-property">${esc(truncate(propTitle(r),40))}</div>
+    ${(r.buildingName && r.buildingName.trim() && r.property && r.property.trim() !== r.buildingName.trim()) ? `<div class="kc-name" style="color:var(--text3)">${esc(truncate(r.property,40))}</div>` : ''}
     ${r.name ? `<div class="kc-name">${r.name}</div>` : ''}
     <div class="kc-meta">
       ${r.phone ? `<span>📞 ${r.phone}</span>` : ''}
@@ -9929,6 +10066,9 @@ function _renderProfileInner(){
           <div class="cr-field" style="min-width:70px;flex:0 1 auto"><div class="cr-label">Available</div><div class="cr-value ${d.availableDate?'':'empty'}">${d.availableDate==='now'?'Now':d.availableDate ? fmtDate(d.availableDate) : '—'}</div></div>
           <div class="cr-field" style="min-width:auto;flex:0 1 auto"><div class="cr-label">Status</div><div class="cr-value ${r.status?'':'empty'}">${r.status||'—'}</div></div>
         </div>
+        ${(r.recordType==='apartment' || r.contactTitle) ? `<div class="cr-row">
+          <div class="cr-field" style="flex:1 1 100%;min-width:0"><div class="cr-label">Contact Title</div><div class="cr-value ${r.contactTitle?'':'empty'}">${r.contactTitle?esc(r.contactTitle):'Not set'}</div></div>
+        </div>` : ''}
         <div class="cr-row">
           <div class="cr-field" style="flex:0 1 auto;min-width:0;cursor:pointer" onclick="event.stopPropagation();openContactProfileForProperty('${r.id}')" title="Open contact profile"><div class="cr-label">Contact Name</div><div class="cr-val-row"><div class="cr-value ${r.name?'':'empty'}" style="white-space:nowrap">${esc(r.name)||'Not set'}</div>${r.name?`<button class="cr-copy-btn" onclick="event.stopPropagation();copyRecordField(this,'${r.id}','name')" title="Copy name"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>`:''}</div></div>
           <div class="cr-field" style="flex:0 1 auto;min-width:0;cursor:pointer" onclick="event.stopPropagation();openContactProfileForProperty('${r.id}')" title="Open contact profile"><div class="cr-label">Phone</div><div class="cr-val-row"><div class="cr-value ${r.phone?'':'empty'}" style="white-space:nowrap">${r.phone?fmtPhone(r.phone):'Not set'}</div>${r.phone?`<button class="cr-copy-btn" onclick="event.stopPropagation();copyRecordField(this,'${r.id}','phone')" title="Copy phone"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>`:''}</div></div>
@@ -11846,7 +11986,7 @@ async function handleExtensionListing(data) {
       status: 'New',
       link: data.sourceUrl || '',
       note: '',
-      date: new Date().toISOString().split('T')[0],
+      date: _todayLocalStr(),
       followUpDate: null,
       meetingDate: null,
       notes: [],
@@ -12215,6 +12355,7 @@ function checkPendingExtensionComps() {
 let _addModalRecordType = 'house';
 function openAddModal(recordType){
   if(!_currentUid) return; // Must be signed in
+  window._selectedGeoLocation = null; // never pin a new property with coords picked in another form
   _addModalRecordType = recordType === 'apartment' ? 'apartment' : 'house';
   const modal = document.getElementById('detailModal');
   const panel = document.getElementById('detailPanel');
@@ -12227,6 +12368,20 @@ function openAddModal(recordType){
     </div>`;
   modal.classList.add('open');
   showAddChoice();
+  // Escape closes the Add Property panel on either step (choice or manual form),
+  // through closeAddModal so the unsaved-data confirm still applies. Bound once.
+  if(!document._addEscBound){
+    document._addEscBound = true;
+    document.addEventListener('keydown', function(e){
+      if(e.key !== 'Escape') return;
+      const m = document.getElementById('detailModal');
+      if(!m || !m.classList.contains('open') || !document.getElementById('addModalBody')) return;
+      // A confirm, card editor or other popup on top owns Escape first.
+      if(document.querySelector('.multi-editor-overlay, .card-edit-popup')) return;
+      e.preventDefault();
+      closeAddModal();
+    });
+  }
 }
 
 // Choice screen: paste a listing link OR enter details manually
@@ -12260,6 +12415,9 @@ function showAddChoice(){
       <label class="field-label" style="display:flex;align-items:center;gap:6px;font-weight:600;margin-bottom:2px">✏️ Enter details manually</label>
       <div style="font-size:.72rem;color:var(--text3);margin-bottom:10px">Fill in address and property information by hand.</div>
       <button type="button" class="btn btn-secondary btn-sm" onclick="showManualAddForm()">Manual Entry</button>
+    </div>
+    <div style="display:flex;justify-content:flex-end;margin-top:16px">
+      <button type="button" class="btn btn-secondary" onclick="closeAddModal()">Cancel</button>
     </div>
   `;
   setTimeout(() => { const el = document.getElementById('add_choice_url'); if(el) el.focus(); }, 60);
@@ -12510,7 +12668,7 @@ async function startAutoImport(){
 
     // Create the record
     const r = {
-      id: uid(), property: extractAddress(url, data.details), date: new Date().toISOString().split('T')[0],
+      id: uid(), property: extractAddress(url, data.details), date: _todayLocalStr(),
       name:'', phone:'', note:'', status:'New', email:'', link:url,
       followUpDate:null, notes:[], propertyDetails: data.details || {},
       propertyNotes: (data.notes||[]).map(n => ({ id:uid(), text:n, date:new Date().toISOString(), source:'Auto-Import ('+plat.name+')' })),
@@ -12770,7 +12928,7 @@ async function saveNewRecord(){
     status: document.getElementById('add_status').value,
     link: linkEl?.value?.trim() || '',
     note: document.getElementById('add_note').value.trim(),
-    date: new Date().toISOString().split('T')[0],
+    date: _todayLocalStr(),
     followUpDate: document.getElementById('add_followup').value || null,
     meetingDate: meetingDate,
     notes:[], propertyDetails: propDetails, propertyNotes:[],
@@ -12780,6 +12938,7 @@ async function saveNewRecord(){
   if(r.note) r.notes.push({ id:uid(), text:r.note, date:r.date, type:'note' });
   records.unshift(r);
   _afterPropertyCreate(r);
+  _geocodeNewRecord(r);
   saveData(); closeAddModal(true);
   openDetail(r.id);
 }
@@ -12909,19 +13068,26 @@ function fmtDate(d){
     }
     const dt = new Date(d);
     if(isNaN(dt)) return '—';
-    return dt.toLocaleDateString('en-US',{ month:'short', day:'numeric', year:'numeric' });
+    // Full timestamps render in the user's Settings time zone, not the browser's
+    // or UTC, so a property added at 11:50 PM Pacific reads as that Pacific day.
+    return dt.toLocaleDateString('en-US',{ month:'short', day:'numeric', year:'numeric', timeZone:_displayTz() });
   } catch(e){ return '—' }
 }
 function fmtDateTime(d){
   if(!d) return '—';
   try {
+    // Date-only strings (YYYY-MM-DD) are calendar dates, not instants. new Date()
+    // parses them as UTC midnight, which shows as the previous day anywhere west of
+    // UTC, so route them through fmtDate's local parse instead.
+    if(/^\d{4}-\d{2}-\d{2}$/.test(String(d))) return fmtDate(d);
     const dt = new Date(d);
     if(isNaN(dt)) return '—';
     // If the string has time info (contains T or is a full ISO string), show time
     const hasTime = typeof d === 'string' && (d.includes('T') && !d.endsWith('T00:00:00.000'));
-    const datePart = dt.toLocaleDateString('en-US',{ month:'short', day:'numeric', year:'numeric' });
+    const tz = _displayTz();
+    const datePart = dt.toLocaleDateString('en-US',{ month:'short', day:'numeric', year:'numeric', timeZone:tz });
     if(!hasTime) return datePart;
-    const timePart = dt.toLocaleTimeString('en-US',{ hour:'numeric', minute:'2-digit', hour12:true });
+    const timePart = dt.toLocaleTimeString('en-US',{ hour:'numeric', minute:'2-digit', hour12:true, timeZone:tz });
     return datePart + ' at ' + timePart;
   } catch(e){ return '—' }
 }
@@ -19333,9 +19499,9 @@ function renderPricingCard(tier, opts){
   const isCurrent = hasAnySub && currentTier === tier && subscribedInterval === cardInterval;
   const isDim = hasAnySub && !isCurrent;
   const isPopular = opts.popular && !isCurrent;
-  // Anyone who's signed in has already consumed the in-app trial (or is on it now).
-  // Stripe checkout no longer adds a trial, so the card shouldn't promise one.
-  const trialAvailable = false;
+  // Stripe checkout adds a 7-day trial for a customer's first subscription
+  // (createCheckoutSession), so promise it only to accounts that never had one.
+  const trialAvailable = _newTrialEligible();
 
   const tierOrder = { basic:0, standard:1, pro:2 };
   const currentTierRank = currentTier ? tierOrder[currentTier] : -1;
@@ -19359,7 +19525,7 @@ function renderPricingCard(tier, opts){
     if(isCurrent) btnLabel = 'Current Plan';
     else btnLabel = 'Manage Subscription';
   } else {
-    btnLabel = 'Subscribe';
+    btnLabel = trialAvailable ? 'Start Free Trial' : 'Subscribe';
   }
 
   return `<div class="pricing-card ${isPopular?'popular':''} ${isCurrent?'current':''} ${isDim?'dim':''}">
@@ -20246,9 +20412,16 @@ function _idleShowSignedOutToastIfFlagged(){
   } catch(e){}
 })();
 
-firebase.auth().onAuthStateChanged(async (user) => {
+// Set when the signed-in load path below throws before the user's data loads.
+// render() shows it (with a Try again button) instead of the boot-time
+// "Sign in" prompt, which used to stay up forever for a user who IS signed in.
+let _authLoadError = null;
+let _authLoadStartedAt = 0;
+async function _handleAuthUser(user){
   try {
   if(user){
+    _authLoadError = null;
+    _authLoadStartedAt = Date.now();
     // Idle-timeout check FIRST. If exceeded, sign out now — the next auth state
     // change will land us in the else branch which shows the inactivity toast.
     if(_idleCheckTimeout()) return;
@@ -20463,9 +20636,23 @@ firebase.auth().onAuthStateChanged(async (user) => {
   }
   } catch(authErr){
     console.error('Auth state handler error:', authErr);
+    _authLoadError = authErr || new Error('Unknown error');
     hideLoadingOverlay();
+    if(!_currentUid) render();
   }
-});
+}
+firebase.auth().onAuthStateChanged(_handleAuthUser);
+// "Try again" on the account-loading screen. Signing in again can't help here:
+// Firebase only fires onAuthStateChanged when the uid changes, so re-entering the
+// same credentials never re-ran this load. Re-run it directly instead.
+function _retryAccountLoad(){
+  const u = firebase.auth().currentUser;
+  if(!u){ location.reload(); return; }
+  _authLoadError = null;
+  _authDataLoaded = false;
+  render();
+  _handleAuthUser(u);
+}
 let currentUser = null;
 
 // ===== ADMIN DETECTION =====
@@ -20515,6 +20702,11 @@ function applyAdminUI(){
   // who doesn't have access yet (inverse of data-cohost-only).
   document.querySelectorAll('[data-cohost-lock]').forEach(el => {
     el.style.display = (_isAdmin || _isAffiliate) ? 'none' : '';
+    // Hover explains the lock on the whole menu row, not just the tiny icon.
+    const _lockRow = el.closest('.user-menu-item');
+    const _lockTip = (_isAdmin || _isAffiliate) ? '' : 'Co-Hosting is in limited release and not on any plan yet. Coming soon.';
+    if(_lockRow) _lockRow.title = _lockTip;
+    el.title = _lockTip;
   });
   // Floating chat widget — LAUNCH: available to ALL signed-in users. Admins never
   // see it (they are the recipients — user chats land in the sidebar Inbox).
@@ -21304,7 +21496,7 @@ function executeCsvImport(){
           status: maps.status >= 0 ? (row[maps.status]||'').trim() : '',
           link: maps.link >= 0 ? (row[maps.link]||'').trim() : '',
           note: maps.note >= 0 ? (row[maps.note]||'').trim() : '',
-          date: maps.date >= 0 ? (row[maps.date]||'').trim() : new Date().toISOString().split('T')[0],
+          date: maps.date >= 0 ? (row[maps.date]||'').trim() : _todayLocalStr(),
         };
 
         let r;
@@ -21437,7 +21629,7 @@ function _buildCohostImportRecord(p){
   if(p.sqft != null && p.sqft !== '') d.sqft = String(p.sqft).trim();
   if(rent) d.monthlyRent = rent;
   const note = (p.note || '').trim();
-  if(note) r.notes.push({ id: uid(), text: note, date: p.date || new Date().toISOString().split('T')[0], type: 'import' });
+  if(note) r.notes.push({ id: uid(), text: note, date: p.date || _todayLocalStr(), type: 'import' });
   return r;
 }
 
@@ -21683,7 +21875,7 @@ async function _customXlsxExecuteImport(){
     set(existing.propertyDetails, 'sqft', p.sqft);
     set(existing.propertyDetails, 'monthlyRent', rent);
     const note = (p.note || '').toString().trim();
-    if(note){ existing.notes = existing.notes || []; existing.notes.push({ id: uid(), text: note, date: new Date().toISOString().split('T')[0], type: 'import' }); }
+    if(note){ existing.notes = existing.notes || []; existing.notes.push({ id: uid(), text: note, date: _todayLocalStr(), type: 'import' }); }
   }
   let created = 0, merged = 0, overwritten = 0, skipped = 0, limitSkipped = 0;
   const createdIds = [];  // tracked for import history undo
@@ -30731,6 +30923,18 @@ function promptEditRentOnUnitsTab(){
   });
 }
 
+// Multi Unit building with no included units: comps (and so revenue / ROI)
+// belong to units, so both analysis tabs explain that instead of sitting empty.
+function _aptNoUnitsAnalysisBanner(r){
+  return '<div style="grid-column:1/-1;background:rgba(99,129,250,.08);border:1px solid rgba(99,129,250,.3);border-radius:10px;padding:14px 16px;margin-bottom:16px;display:flex;gap:10px;align-items:flex-start">'
+    + '<span style="font-size:1.15rem;flex-shrink:0;line-height:1">🏢</span>'
+    + '<div style="flex:1;min-width:0">'
+    + '<div style="font-weight:700;color:var(--text);font-size:.92rem;margin-bottom:4px">Add a unit to start analysis</div>'
+    + '<div style="font-size:.82rem;color:var(--text2);line-height:1.5;margin-bottom:10px">Competitors, revenue, and Projected ROI are tracked per unit. Add at least one unit on the Units tab, then add its competitors from that unit\'s tab in Competitor Analysis.</div>'
+    + '<button class="btn btn-primary btn-sm" onclick="setProfileTab(\'units\')">Go to Units tab</button>'
+    + '</div></div>';
+}
+
 function renderCalculatorTab(r){
   const pd = r.propertyDetails || {};
   const v = calcComputeAll(r);
@@ -30808,7 +31012,10 @@ function renderCalculatorTab(r){
   // building where the real blocker is a couple of specific units, not "add
   // comps" in the abstract. Spell out exactly which units and let the user
   // jump straight to that unit's Competitor Analysis sub-tab.
-  if(insufficientComps){
+  const _aptNoUnits = v.isApt && !(r.units || []).some(_unitIncluded);
+  if(_aptNoUnits){
+    h += _aptNoUnitsAnalysisBanner(r);
+  } else if(insufficientComps){
     const _missingUnits = v.isApt ? (v.unitsMissingOwnComps || []) : [];
     h += '<div style="grid-column:1/-1;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.3);border-radius:10px;padding:14px 16px;margin-bottom:16px;display:flex;gap:10px;align-items:flex-start">';
     h += '<span style="font-size:1.15rem;flex-shrink:0;line-height:1">⚠️</span>';
@@ -32586,6 +32793,7 @@ function renderAnalysisTab(r){
   const expenses = v.totalMonthlyExp;
 
   let h = '';
+  if(isApt && includedUnits.length === 0) h += _aptNoUnitsAnalysisBanner(r);
 
   // ── Per-unit sub-tabs (Multi Unit buildings with at least one included
   // unit) — one tab per PHYSICAL unit (named from its own Label), not per
@@ -35243,7 +35451,7 @@ function dismissAllOverlays(){
   document.querySelectorAll('.stats-popup-overlay,.multi-editor-overlay,.card-edit-popup,.note-img-popup-overlay').forEach(el => el.remove());
 }
 
-const CONTACT_CARD_DRAFT_FIELD_IDS = ['ce_buildingName','ce_address','ce_unit_num','ce_city','ce_state','ce_zip','ce_market','ce_submarket','ce_beds','ce_baths','ce_sqft','ce_numberOfUnits','ce_name','ce_phone','ce_email','ce_link'];
+const CONTACT_CARD_DRAFT_FIELD_IDS = ['ce_buildingName','ce_contactTitle','ce_address','ce_unit_num','ce_city','ce_state','ce_zip','ce_market','ce_submarket','ce_beds','ce_baths','ce_sqft','ce_numberOfUnits','ce_name','ce_phone','ce_email','ce_link'];
 function openCardEditor(recId, cardType, focusField){
   dismissAllOverlays();
   const r = records.find(x => x.id === recId);
@@ -35306,6 +35514,7 @@ function openCardEditor(recId, cardType, focusField){
         <div class="prop-field"><label>Available Date</label><div style="display:flex;align-items:center;gap:8px"><div class="rr-dt-trigger${isAvailNow?' rr-dt-disabled':''}" id="dt_available" style="flex:1${isAvailNow?';opacity:.4;pointer-events:none':''}"><span class="rr-dt-icon">${CALENDAR_ICON}</span><span class="rr-dt-text empty">--/--/----</span><span class="rr-dt-clear" title="Clear">${CLEAR_X_ICON}</span></div><label style="display:flex;align-items:center;gap:4px;font-size:.78rem;font-weight:400;text-transform:none;letter-spacing:0;color:var(--text2);cursor:pointer;white-space:nowrap"><input type="checkbox" id="ce_avail_now" ${isAvailNow?'checked':''} onchange="const t=document.getElementById('dt_available');if(this.checked){t.style.opacity='.4';t.style.pointerEvents='none';t.classList.add('rr-dt-disabled');const s=window._dtPickers&&window._dtPickers['dt_available'];if(s){s.date='';updateDtTriggerText('dt_available')}}else{t.style.opacity='1';t.style.pointerEvents='';t.classList.remove('rr-dt-disabled')}"> Now</label></div></div>
       </div>
       <div class="prop-field-grid">
+        ${(r.recordType==='apartment' || r.contactTitle) ? `<div class="prop-field"><label>Contact Title</label><input type="text" id="ce_contactTitle" value="${esc(fd('ce_contactTitle', r.contactTitle||''))}" placeholder="Leasing Manager"></div>` : ''}
         <div class="prop-field"><label>Contact Name</label><input type="text" id="ce_name" value="${esc(fd('ce_name', r.name))}"></div>
         <div class="prop-field"><label>Phone</label><input type="tel" id="ce_phone" value="${esc(fd('ce_phone', r.phone))}" maxlength="14" oninput="rrFormatPhoneInput(this)"><div class="ce-phone-error" id="ce_phone_error" style="display:none;color:var(--danger);font-size:.75rem;margin-top:2px">Phone must be 10 digits</div></div>
         <div class="prop-field"><label>Email</label><input type="email" id="ce_email" value="${esc(fd('ce_email', r.email))}" oninput="validateEmailField()"><div class="ce-email-error" id="ce_email_error">Please enter a valid email address</div></div>
@@ -35456,6 +35665,18 @@ function saveContactCard(recId){
   var _cePhoneDigits = (document.getElementById('ce_phone')?.value || '').replace(/\D/g,'');
   r.phone = _cePhoneDigits.length === 10 ? '('+_cePhoneDigits.slice(0,3)+') '+_cePhoneDigits.slice(3,6)+'-'+_cePhoneDigits.slice(6) : '';
   r.email = document.getElementById('ce_email')?.value?.trim() || '';
+  const _ceTitleEl = document.getElementById('ce_contactTitle');
+  if(_ceTitleEl){
+    const _newTitle = _ceTitleEl.value.trim();
+    if(_newTitle !== (r.contactTitle || '')){
+      r.contactTitle = _newTitle;
+      const _titleC = typeof getPrimaryContactForProperty === 'function' ? getPrimaryContactForProperty(r.id) : null;
+      if(_titleC && (_titleC.role || '') !== _newTitle){
+        _titleC.role = _newTitle;
+        saveContact(_titleC).catch(function(e){ console.error('Failed to sync contact title to contact role:', e); });
+      }
+    }
+  }
   // Propagate contact-field edits back to the linked Contact (source of truth)
   // so the Contact Profile + all other properties linked to it stay in sync.
   if((r.name !== _prevContactName || r.phone !== _prevContactPhone || r.email !== _prevContactEmail) && typeof getPrimaryContactForProperty === 'function'){
@@ -35676,7 +35897,7 @@ function logRentChange(r, newRent){
   if(!r.propertyDetails.rentHistory) r.propertyDetails.rentHistory = [];
   const history = r.propertyDetails.rentHistory;
   const amt = parseFloat(newRent) || 0;
-  const today = new Date().toISOString().split('T')[0];
+  const today = _todayLocalStr();
   // Don't log if same amount as last entry
   if(history.length > 0 && history[history.length - 1].amount === amt) return;
   // If last entry was today, update it instead of adding duplicate
@@ -36745,6 +36966,17 @@ function renderSettings(){
       </div>
     </div>
 
+    <!-- SESSION — kept out of the Danger Zone so Sign Out never sits beside Reset All Data. -->
+    <div class="settings-section">
+      <div class="settings-section-header"><h3>🚪 Session</h3></div>
+      <div class="settings-section-body">
+        <div class="settings-row">
+          <div class="settings-row-left"><div class="sr-label">Sign Out</div><div class="sr-desc">Sign out of your current session</div></div>
+          <div class="settings-row-right"><button class="btn btn-secondary btn-sm" onclick="handleSignOut()">Sign Out</button></div>
+        </div>
+      </div>
+    </div>
+
     <!-- DANGER ZONE -->
     <div class="settings-section danger-zone">
       <div class="settings-section-header"><h3>⚠ Danger Zone</h3></div>
@@ -36752,10 +36984,6 @@ function renderSettings(){
         <div class="settings-row">
           <div class="settings-row-left"><div class="sr-label">Reset All Data</div><div class="sr-desc">Clear all properties, notes, and settings. This cannot be undone.</div></div>
           <div class="settings-row-right"><button class="btn btn-secondary btn-sm" style="color:var(--danger);border-color:rgba(239,68,68,.3)" onclick="confirmResetAllData()">Reset Data</button></div>
-        </div>
-        <div class="settings-row">
-          <div class="settings-row-left"><div class="sr-label">Sign Out</div><div class="sr-desc">Sign out of your current session</div></div>
-          <div class="settings-row-right"><button class="btn btn-secondary btn-sm" onclick="setUser(null);switchView('dashboard')">Sign Out</button></div>
         </div>
       </div>
     </div>
@@ -41688,7 +41916,7 @@ if(currentView === 'profile' && currentProfileId){
   document.getElementById('headerTitle').textContent = (_initR && _initR.recordType === 'apartment') ? 'Multi Unit' : 'Single Unit';
 } else {
   document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.view === currentView));
-  const titles = { dashboard:'Single Unit', pipeline:'Pipeline', operations:'Operations', opsProfile:'Operations', coHosting:'Co-Hosting', cohostProfile:'Co-Hosting', contacts:'All Contacts', apartments:'Multi Unit', notifications:'Notifications', pricing:'Your Plan', tutorial:'Tutorial', adminUsers:'Users', financials:'Financials', affiliateDashboard:'Referrals', tutorialEditor:'Tutorial Editor', settings:'Settings', featureRequest:'Feature Request', askExpert:'Ask an Expert' };
+  const titles = { dashboard:'Single Unit', pipeline:'Pipeline', operations:'Operations', opsProfile:'Operations', coHosting:'Co-Hosting', cohostProfile:'Co-Hosting', contacts:'All Contacts', apartments:'Multi Unit', notifications:'Notifications', pricing:'Your Plan', tutorial:'Tutorial', adminUsers:'Users', financials:'Financials', affiliateDashboard:'Referrals', tutorialEditor:'Tutorial Editor', settings:'Settings', featureRequest:'Feature Request', askExpert:'Ask an Expert', help:'Help', chat:'Inbox', knowledge:'Knowledge Base' };
   document.getElementById('headerTitle').textContent = titles[currentView] || '';
 }
 render();
@@ -41790,7 +42018,7 @@ window.addEventListener('popstate', function(e){
       if(state.view !== 'opsProfile') currentOpsId = null;
       clearSearch();
       document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.view === state.view));
-      const titles = { dashboard:'Single Unit', pipeline:'Pipeline', operations:'Operations', opsProfile:'Operations', coHosting:'Co-Hosting', cohostProfile:'Co-Hosting', contacts:'All Contacts', apartments:'Multi Unit', notifications:'Notifications', pricing:'Your Plan', tutorial:'Tutorial', adminUsers:'Users', financials:'Financials', affiliateDashboard:'Referrals', tutorialEditor:'Tutorial Editor', settings:'Settings', featureRequest:'Feature Request', askExpert:'Ask an Expert', chat:'Inbox', knowledge:'Knowledge Base' };
+      const titles = { dashboard:'Single Unit', pipeline:'Pipeline', operations:'Operations', opsProfile:'Operations', coHosting:'Co-Hosting', cohostProfile:'Co-Hosting', contacts:'All Contacts', apartments:'Multi Unit', notifications:'Notifications', pricing:'Your Plan', tutorial:'Tutorial', adminUsers:'Users', financials:'Financials', affiliateDashboard:'Referrals', tutorialEditor:'Tutorial Editor', settings:'Settings', featureRequest:'Feature Request', askExpert:'Ask an Expert', help:'Help', chat:'Inbox', knowledge:'Knowledge Base' };
       document.getElementById('headerTitle').textContent = titles[state.view] || '';
       saveViewState();
       render();
