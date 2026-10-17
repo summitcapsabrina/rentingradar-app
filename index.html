@@ -12554,7 +12554,9 @@ function _friendlyModelName(modelStr){
   return modelStr;
 }
 
-// Direct fetch to /api/aiEnrich to retrieve the model name (same-origin, no extension needed)
+// Direct fetch to /api/aiEnrich to retrieve the model name (same-origin, no extension needed).
+// { ping: true } gets a 200 with the model name; a function deployed before the ping
+// existed answers 400 "Missing systemPrompt", which carries the model name too.
 function _fetchAiModel(){
   var user = firebase.auth().currentUser;
   if(!user) return Promise.resolve('');
@@ -12562,7 +12564,7 @@ function _fetchAiModel(){
     return fetch('/api/aiEnrich', {
       method:'POST',
       headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+token },
-      body: JSON.stringify({ data:{} })
+      body: JSON.stringify({ data:{ ping:true } })
     });
   }).then(function(r){ return r.json(); })
     .then(function(j){ return j.model || ''; })
@@ -20156,8 +20158,9 @@ window.addEventListener('message', (event) => {
         }
       })();
     } else if(m.type === 'TEST_AI_ENRICH' && m.reqId){
-      // Quick test: call aiEnrich with empty data — should get 400 error
-      // which proves the function is live and reachable.
+      // Quick test: ping aiEnrich ({ ping: true } → 200 with the model name). A
+      // function deployed before the ping existed answers 400 instead, which
+      // also proves it's live, so both count.
       (async function(){
         try {
           var currentUser = firebase.auth().currentUser;
@@ -20169,10 +20172,10 @@ window.addEventListener('message', (event) => {
           var resp = await fetch('/api/aiEnrich', {
             method: 'POST',
             headers: headers,
-            body: JSON.stringify({ data: {} })
+            body: JSON.stringify({ data: { ping: true } })
           });
           var json = await resp.json();
-          // 400 (missing prompts) or 401 (not signed in) means function IS live
+          // 200 (ping), 400 (older function: missing prompts) or 401 (not signed in) means function IS live
           if(resp.status === 400 || resp.status === 401 || resp.ok){
             window.postMessage({ rrAiResponse: m.reqId, payload: { ok: true, model: json.model || '' } }, location.origin);
           } else {

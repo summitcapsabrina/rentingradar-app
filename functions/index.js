@@ -3174,6 +3174,12 @@ exports.aiEnrich = functions
 
       // Support both onCall-style { data: {...} } and direct body
       const body = req.body.data || req.body;
+      // Health check from the CRM's AI-status row ({ ping: true }): proves the
+      // function is live and the caller signed in, and returns the model name.
+      // No Claude call and no rate-limit hit.
+      if (body && body.ping) {
+        return res.status(200).json({ ok: true, model: CLAUDE_MODEL });
+      }
       const { systemPrompt, userPrompt } = body || {};
       if (!systemPrompt || !userPrompt) {
         return res.status(400).json({ error: { message: "Missing systemPrompt or userPrompt" }, model: CLAUDE_MODEL });
