@@ -2938,11 +2938,11 @@ function mgShareLink(){
 /* ===== DATA LAYER ===== */
 const INITIAL_DATA = [];
 
-const STATUSES = ['New','No Contact','Messaged','Left Voicemail','Follow Up','Interested','Meeting','HOA Issues','Not Good Fit','Not Interested','Un-Listed'];
+const STATUSES = ['New','Messaged','Left Voicemail','Follow Up','Interested','Meeting','HOA Issues','Not Good Fit','Not Interested','Un-Listed'];
 const STATUS_ORDER = {};
 STATUSES.forEach((s,i) => STATUS_ORDER[s] = i);
 
-const PIPELINE_STAGES = ['New','No Contact','Messaged','Left Voicemail','Follow Up','Interested','Meeting'];
+const PIPELINE_STAGES = ['New','Messaged','Left Voicemail','Follow Up','Interested','Meeting'];
 const CLOSED_STAGES = ['HOA Issues','Not Good Fit','Not Interested','Un-Listed'];
 
 const SELECTABLE_STATUSES = STATUSES;
@@ -3064,6 +3064,7 @@ function hideLoadingOverlay(){
 // Set true whenever a legacy single-file Photos/Video slot is copied into the new
 // multi-upload arrays, so the initial load can persist the migration once.
 let _opsMediaMigrationDidCopy = false;
+let _statusMigrationDidChange = false; // set when a retired status (e.g. "No Contact") is rewritten on load
 
 function _normalizeRecords(arr){
   arr.forEach(r => {
@@ -3089,6 +3090,8 @@ function _normalizeRecords(arr){
     if(!r.propertyNotes) r.propertyNotes=[];
     if(r.status==='No Longer Interested') r.status='Not Interested';
     if(r.status==='Lost') r.status='Not Interested';
+    // 2026-10-17: "No Contact" retired; it meant the same as New.
+    if(r.status==='No Contact'){ r.status='New'; _statusMigrationDidChange = true; }
     // One-time migration: legacy followUpDate becomes a single 'Other' task. We KEEP the
     // legacy field so old dashboards still read it during the rollout, but the new Tasks
     // section is the source of truth going forward.
@@ -3309,11 +3312,14 @@ async function loadDataFromFirestore(userUid){
     if(doc.exists){
       const data = doc.data();
       _opsMediaMigrationDidCopy = false;
+      _statusMigrationDidChange = false;
       records = _normalizeRecords(JSON.parse(data.data || '[]'));
       _lastSavedJson = data.data || '[]';
       // Persist the legacy Photos/Video → mediaPhotos/mediaVideos migration so
       // existing uploads survive even if the user never edits this device's records.
-      if(_opsMediaMigrationDidCopy) saveData();
+      // Persist load-time migrations right away so Firestore (and the per-record
+      // mirror) hold the migrated values, not just this tab's memory.
+      if(_opsMediaMigrationDidCopy || _statusMigrationDidChange) saveData();
     } else {
       records = [];
       _lastSavedJson = '[]';
@@ -4059,7 +4065,7 @@ function _normalizeCohostRecords(arr){
     if(typeof r.links.vrbo !== 'string') r.links.vrbo = r.links.vrbo || '';
     if(typeof r.links.booking !== 'string') r.links.booking = r.links.booking || '';
     if(typeof r.links.maps !== 'string') r.links.maps = r.links.maps || '';
-    if(!r.status) r.status = 'New';
+    if(!r.status || r.status === 'No Contact') r.status = 'New'; // "No Contact" retired 2026-10-17
     if(!r.propertyDetails || typeof r.propertyDetails !== 'object') r.propertyDetails = {};
     if(!r.details || typeof r.details !== 'object') r.details = {};
     if(!Array.isArray(r.details.comps)) r.details.comps = [];
@@ -8092,14 +8098,14 @@ function renderDashboard(){
 
   // Funnel stages
   const funnelStages = [
-    { name:'New Leads', statuses:['New','No Contact'], color:'#818cf8', catKey:'prospects' },
+    { name:'New Leads', statuses:['New'], color:'#818cf8', catKey:'prospects' },
     { name:'In Outreach', statuses:['Messaged','Left Voicemail','Follow Up'], color:'#38bdf8', catKey:'outreach' },
     { name:'Qualified', statuses:['Interested','Meeting'], color:'#34d399', catKey:'qualified' }
   ];
   funnelStages.forEach(s => { s.count = recs.filter(r => s.statuses.includes(r.status)).length });
 
   // Conversion rate
-  const contacted = recs.filter(r => !['New','No Contact'].includes(r.status)).length;
+  const contacted = recs.filter(r => r.status !== 'New').length;
   const convRate = total > 0 ? ((hotLeads/total)*100).toFixed(1) : '0.0';
 
   const ctx = {
@@ -8400,7 +8406,7 @@ function buildPipelineUI(){
     ? 0
     : ((typeof getOpsFiltered === 'function') ? getOpsFiltered().length : records.filter(isOpsProperty).length);
   const funnelStages = [
-    { name:'New Leads', statuses:['New','No Contact'], color:'#818cf8' },
+    { name:'New Leads', statuses:['New'], color:'#818cf8' },
     { name:'In Outreach', statuses:['Messaged','Left Voicemail','Follow Up'], color:'#38bdf8' },
     { name:'Qualified', statuses:['Interested','Meeting'], color:'#34d399' }
   ];
@@ -8534,7 +8540,7 @@ function setMapFilter(filter){
     allowedStatuses = [filter.substring(7)];
   } else {
     // category key
-    const catMap = { prospects:['New','No Contact'], outreach:['Messaged','Left Voicemail','Follow Up'], qualified:['Interested','Meeting'], lost:CLOSED_STAGES };
+    const catMap = { prospects:['New'], outreach:['Messaged','Left Voicemail','Follow Up'], qualified:['Interested','Meeting'], lost:CLOSED_STAGES };
     allowedStatuses = catMap[filter] || null;
   }
 
@@ -8641,7 +8647,7 @@ function initDashboardMap(){
   if(!container) return;
 
   // Status → category mapping for map colors
-  const _statusCatMap = { 'New':'prospects','No Contact':'prospects','Messaged':'outreach','Left Voicemail':'outreach','Follow Up':'outreach','Interested':'qualified','Meeting':'qualified','HOA Issues':'lost','Not Good Fit':'lost','Not Interested':'lost','Un-Listed':'lost' };
+  const _statusCatMap = { 'New':'prospects','Messaged':'outreach','Left Voicemail':'outreach','Follow Up':'outreach','Interested':'qualified','Meeting':'qualified','HOA Issues':'lost','Not Good Fit':'lost','Not Interested':'lost','Un-Listed':'lost' };
   const _catColorMap = { prospects:'#818cf8', outreach:'#38bdf8', qualified:'#34d399', lost:'#ef4444' };
 
   // Collect geocoded properties (use market-filtered data)
@@ -9217,7 +9223,7 @@ function initDashboardMap(){
           if(src && _allGeoJson){
             let allowedStatuses = null;
             if(_mapFilter.startsWith('status:')){ allowedStatuses = [_mapFilter.substring(7)]; }
-            else { const catMap = { prospects:['New','No Contact'], outreach:['Messaged','Left Voicemail','Follow Up'], qualified:['Interested','Meeting'], lost:CLOSED_STAGES }; allowedStatuses = catMap[_mapFilter] || null; }
+            else { const catMap = { prospects:['New'], outreach:['Messaged','Left Voicemail','Follow Up'], qualified:['Interested','Meeting'], lost:CLOSED_STAGES }; allowedStatuses = catMap[_mapFilter] || null; }
             const filtered = allowedStatuses ? { type:'FeatureCollection', features: _allGeoJson.features.filter(f => allowedStatuses.includes(f.properties.status)) } : _allGeoJson;
             src.setData(filtered);
             const countEl = document.getElementById('mapPropertyCount');
@@ -9298,7 +9304,7 @@ async function _geocodeExistingPropertiesPass(){
 
 /* ===== PIPELINE ===== */
 const FUNNEL_CATEGORIES = [
-  { key:'prospects', name:'New Leads', statuses:['New','No Contact'], color:'#818cf8' },
+  { key:'prospects', name:'New Leads', statuses:['New'], color:'#818cf8' },
   { key:'outreach', name:'In Outreach', statuses:['Messaged','Left Voicemail','Follow Up'], color:'#38bdf8' },
   { key:'qualified', name:'Qualified', statuses:['Interested','Meeting'], color:'#34d399' },
 ];
@@ -9397,7 +9403,7 @@ function renderFunnel(allRecords){
 
   // Three funnel stages (grouped)
   const stages = [
-    { name:'Prospects', statuses:['New','No Contact'], color:'#818cf8', label:'New Leads' },
+    { name:'Prospects', statuses:['New'], color:'#818cf8', label:'New Leads' },
     { name:'Outreach', statuses:['Messaged','Left Voicemail','Follow Up'], color:'#38bdf8', label:'In Outreach' },
     { name:'Qualified', statuses:['Interested','Meeting'], color:'#34d399', label:'Qualified' },
   ];
@@ -9410,7 +9416,7 @@ function renderFunnel(allRecords){
 
   const leakedCounts = CLOSED_STAGES.map(s => ({ stage:s, count:allRecords.filter(r=>r.status===s).length })).filter(s=>s.count>0);
   const totalLeaked = leakedCounts.reduce((a,b)=>a+b.count,0);
-  const contacted = allRecords.filter(r => !['New','No Contact'].includes(r.status)).length;
+  const contacted = allRecords.filter(r => r.status !== 'New').length;
   const hot = allRecords.filter(r => ['Interested','Meeting'].includes(r.status)).length;
 
   // SVG horizontal funnel — fixed shape, 3 sections
@@ -11439,6 +11445,10 @@ function confirmDeleteProperty(id){
 /* ===== ADD PROPERTY (URL-first flow) ===== */
 // Chrome Web Store URL
 const EXTENSION_URL = 'https://chromewebstore.google.com/detail/rentingradar/eambgkhnefkigdndllhmakfedkncgmoh';
+// Web Store link for any message telling a user without the extension to install it.
+function _extInstallLink(label){
+  return '<a href="' + EXTENSION_URL + '" target="_blank" rel="noopener" style="color:var(--primary);font-weight:600;text-decoration:underline">' + esc(label || 'Install the extension') + '</a>';
+}
 
 let extensionReady = false;
 let extensionHealth = null;
@@ -12533,7 +12543,7 @@ function importFromChoicePaste(){
     return;
   }
   if(typeof rrScrapeViaExtension !== 'function'){
-    if(statusEl){ statusEl.style.color = 'var(--warning)'; statusEl.textContent = 'Install the RentingRadar Chrome extension to auto-fill from listings.'; }
+    if(statusEl){ statusEl.style.color = 'var(--warning)'; statusEl.innerHTML = 'Install the RentingRadar Chrome extension to auto-fill from listings. ' + _extInstallLink('Get it on the Chrome Web Store'); }
     return;
   }
   if(input) input.disabled = true;
@@ -12549,7 +12559,7 @@ function importFromChoicePaste(){
       if(statusEl){
         statusEl.style.color = 'var(--danger)';
         if(res && res.error === 'extension-not-installed'){
-          statusEl.textContent = 'The RentingRadar Chrome extension isn\'t installed. Install it from the Chrome Web Store.';
+          statusEl.innerHTML = 'The RentingRadar Chrome extension isn\'t installed. ' + _extInstallLink('Get it on the Chrome Web Store');
         } else {
           statusEl.textContent = 'Could not import: ' + ((res && res.error) || 'Unknown error');
         }
@@ -26440,7 +26450,7 @@ function importCohostFromPaste(){
   const url = (input && input.value || '').trim();
   if(!url){ if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent='Please paste a listing URL.'; } return; }
   if(/airdna\.co/i.test(url)){ if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent='Paste a Zillow, Apartments.com, or HotPads link.'; } return; }
-  if(typeof rrScrapeViaExtension !== 'function'){ if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent='Install the RentingRadar extension to auto-fill.'; } return; }
+  if(typeof rrScrapeViaExtension !== 'function'){ if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.innerHTML='Install the RentingRadar extension to auto-fill. '+_extInstallLink('Get it on the Chrome Web Store'); } return; }
   if(input) input.disabled = true;
   if(statusEl){ statusEl.style.color='var(--text3)'; statusEl.textContent='Importing listing…'; }
   showToast('Importing listing…','loading',30000);
@@ -26449,7 +26459,7 @@ function importCohostFromPaste(){
       if(input) input.disabled = false;
       const err = res && res.error;
       let msg = err==='extension-not-installed' ? 'Install the RentingRadar Chrome extension to import listings.' : ('Could not import listing: '+(err||'Unknown error'));
-      if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent=msg; }
+      if(statusEl){ statusEl.style.color='var(--danger)'; if(err==='extension-not-installed') statusEl.innerHTML = esc(msg)+' '+_extInstallLink('Get it on the Chrome Web Store'); else statusEl.textContent=msg; }
       showToast(msg,'error',6000); return;
     }
     // Keep the Add modal open (with its "Importing…" status) while handleCohostListing
@@ -27454,7 +27464,7 @@ function cohostAddComp(id, category){
     if(!res || !res.ok){
       const err = res && res.error;
       let msg = 'Could not import: ' + (err||'error');
-      if(err==='extension-not-installed') msg = 'Install the RentingRadar Chrome extension to import from AirDNA.';
+      if(err==='extension-not-installed') msg = 'Install the RentingRadar Chrome extension to import from AirDNA.<br><br>' + _extInstallLink('Get it on the Chrome Web Store');
       else if(err==='airdna-login-required') msg = (res.detail||'Log into AirDNA first, then retry.');
       else if(err==='airdna-paywall') msg = (res.detail||'This AirDNA listing requires a subscription.');
       showAppAlert(msg, {title:'Import failed', icon:'⚠️'}); return;
@@ -33042,7 +33052,7 @@ function addComp(recId){
       if(addBtn){ addBtn.disabled = false; addBtn.innerHTML = '<span class="comp-add-label">+ Add Competitor</span>'; }
       if(!res || !res.ok){
         if(res && res.error === 'extension-not-installed'){
-          showAppAlert('Install the RentingRadar Chrome extension to import from AirDNA. Open the banner above and click Install.', {title: 'Extension required', icon: '🧩'});
+          showAppAlert('Install the RentingRadar Chrome extension to import from AirDNA.<br><br>' + _extInstallLink('Get it on the Chrome Web Store'), {title: 'Extension required', icon: '🧩'});
         } else if(res && res.error === 'airdna-login-required'){
           showAppAlert(res.detail || 'Please log into AirDNA in your browser first, then try importing again.', {title: 'AirDNA Login Required', icon: '🔒'});
         } else if(res && res.error === 'airdna-paywall'){
@@ -36392,6 +36402,8 @@ function tipIcon(title, body){ return ''; }
 let settingsPrefs = {};
 function loadSettingsPrefs(){
   try { settingsPrefs = JSON.parse(localStorage.getItem('rr_prefs') || '{}') } catch(e){ settingsPrefs = {} }
+  // Settings removed 2026-10-17 because nothing ever read them; drop any saved values.
+  if(settingsPrefs) ['defaultStatus','compact','sounds','statusChangeLog','showClosed'].forEach(function(k){ delete settingsPrefs[k]; });
 }
 function saveSettingsPrefs(){
   try { localStorage.setItem('rr_prefs', JSON.stringify(settingsPrefs)) } catch(e){}
@@ -36497,7 +36509,7 @@ function checkAiEngineStatus(){
     var parts = [];
 
     if(!extId){
-      parts.push('<span style="color:var(--warning)">Extension: not detected</span>');
+      parts.push('<span style="color:var(--warning)">Extension: not detected</span> ' + _extInstallLink('Install the extension'));
       parts.push('<span style="color:var(--text3)">AI: install extension to test</span>');
       statusEl.innerHTML = parts.join(' · ');
       return;
@@ -36630,12 +36642,6 @@ var _settingsSelects = {
     options: function(){ var v = settingsPrefs.timeFormat || '12'; return '<option value="12"'+(v==='12'?' selected':'')+'>12-hour (AM/PM)</option><option value="24"'+(v==='24'?' selected':'')+'>24-hour</option>'; },
     save: function(v){ settingsPrefs.timeFormat = v; },
     after: function(){ try { render(); } catch(e){} }
-  },
-  defaultStatus: {
-    label: 'Default Status for New Properties',
-    display: function(){ return settingsPrefs.defaultStatus || 'New'; },
-    options: function(){ var v = settingsPrefs.defaultStatus || 'New'; return SELECTABLE_STATUSES.map(function(s){ return '<option value="'+esc(s)+'"'+(v===s?' selected':'')+'>'+esc(s)+'</option>'; }).join(''); },
-    save: function(v){ settingsPrefs.defaultStatus = v; }
   }
 };
 function _settingsSelectDisplay(key){ try { return esc(_settingsSelects[key].display()); } catch(e){ return '—'; } }
@@ -36834,20 +36840,12 @@ function renderSettings(){
           <div class="settings-row-right" style="display:flex;align-items:center;gap:8px"><span class="settings-value" id="settingsVal_timezone" style="font-weight:600;color:var(--text)">${_settingsSelectDisplay('timezone')}</span><button class="btn btn-secondary btn-sm" onclick="openSettingsSelectEdit('timezone')">Edit</button></div>
         </div>
         <div class="settings-row">
-          <div class="settings-row-left"><div class="sr-label">Status Change Logging</div><div class="sr-desc">Automatically log a note when a property status changes</div></div>
-          <div class="settings-row-right"><div class="settings-toggle ${settingsPrefs.statusChangeLog!==false?'on':''}" onclick="toggleSettingsPref('statusChangeLog',this)"></div></div>
-        </div>
-        <div class="settings-row">
           <div class="settings-row-left"><div class="sr-label">Meeting Change Logging</div><div class="sr-desc">Automatically log a note when a meeting date is set or changed</div></div>
           <div class="settings-row-right"><div class="settings-toggle ${settingsPrefs.meetingChangeLog!==false?'on':''}" onclick="toggleSettingsPref('meetingChangeLog',this)"></div></div>
         </div>
         <div class="settings-row">
           <div class="settings-row-left"><div class="sr-label">Follow-Up Change Logging</div><div class="sr-desc">Automatically log a note when a follow-up date is set or changed</div></div>
           <div class="settings-row-right"><div class="settings-toggle ${settingsPrefs.followUpChangeLog!==false?'on':''}" onclick="toggleSettingsPref('followUpChangeLog',this)"></div></div>
-        </div>
-        <div class="settings-row">
-          <div class="settings-row-left"><div class="sr-label">Sound Effects</div><div class="sr-desc">Play a sound on import completion and status changes</div></div>
-          <div class="settings-row-right"><div class="settings-toggle ${settingsPrefs.sounds===true?'on':''}" onclick="toggleSettingsPref('sounds',this)"></div></div>
         </div>
       </div>
     </div>
@@ -36892,27 +36890,8 @@ function renderSettings(){
           <div class="settings-row-right" style="display:flex;align-items:center;gap:8px"><span class="settings-value" id="settingsVal_timeFormat" style="font-weight:600;color:var(--text)">${_settingsSelectDisplay('timeFormat')}</span><button class="btn btn-secondary btn-sm" onclick="openSettingsSelectEdit('timeFormat')">Edit</button></div>
         </div>
         <div class="settings-row">
-          <div class="settings-row-left"><div class="sr-label">Compact Mode</div><div class="sr-desc">Reduce spacing for denser information display</div></div>
-          <div class="settings-row-right"><div class="settings-toggle ${settingsPrefs.compact===true?'on':''}" onclick="toggleSettingsPref('compact',this)"></div></div>
-        </div>
-        <div class="settings-row">
           <div class="settings-row-left"><div class="sr-label">Calculation Tips</div><div class="sr-desc">Show clickable help icons next to calculated values explaining how they're derived</div></div>
           <div class="settings-row-right"><div class="settings-toggle ${settingsPrefs.tipsEnabled!==false?'on':''}" onclick="toggleSettingsPref('tipsEnabled',this)"></div></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- PIPELINE SETTINGS -->
-    <div class="settings-section">
-      <div class="settings-section-header"><h3>📊 Pipeline</h3></div>
-      <div class="settings-section-body">
-        <div class="settings-row">
-          <div class="settings-row-left"><div class="sr-label">Default Status for New Properties</div><div class="sr-desc">The status assigned to manually added properties</div></div>
-          <div class="settings-row-right" style="display:flex;align-items:center;gap:8px"><span class="settings-value" id="settingsVal_defaultStatus" style="font-weight:600;color:var(--text)">${_settingsSelectDisplay('defaultStatus')}</span><button class="btn btn-secondary btn-sm" onclick="openSettingsSelectEdit('defaultStatus')">Edit</button></div>
-        </div>
-        <div class="settings-row">
-          <div class="settings-row-left"><div class="sr-label">Show Closed Stages in Pipeline</div><div class="sr-desc">Display HOA Issues, Not Good Fit, etc. in the Kanban view</div></div>
-          <div class="settings-row-right"><div class="settings-toggle ${settingsPrefs.showClosed!==false?'on':''}" onclick="toggleSettingsPref('showClosed',this)"></div></div>
         </div>
       </div>
     </div>
@@ -40706,15 +40685,15 @@ var _KB_STARTER_ENTRIES = [
   { question: "How do I get started with RentingRadar?", answer: "Start in the Houses or Apartments section, where you add and analyze candidate properties. Installing the Chrome extension is the fastest way to pull listing data in automatically rather than typing it by hand.", tags: ["getting-started", "onboarding"] },
   { question: "How do I add my first property?", answer: "Click + Add Property in the top-right and choose House or Apartment (Admin/Affiliate accounts also see a Co-Hosting option). From there, paste a listing link — Zillow, Apartments.com, or HotPads — to auto-fill the property's details, or choose Manual Entry to type them in yourself.", tags: ["getting-started", "add-property"] },
   { question: "What is the Chrome extension for?", answer: "It auto-fills property data into RentingRadar so you skip manual entry. It reads rental listings — Zillow, Apartments.com, and HotPads — to import a property's details, and on the Houses/Apartments side it also pulls competitor/comp data from AirDNA and Airbnb.", tags: ["chrome-extension", "scraping", "airdna", "airbnb", "import"] },
-  { question: "How do I install the Chrome extension?", answer: "Add it from the Chrome Web Store, then sign in to RentingRadar in the same browser. Settings shows whether the extension is connected.", tags: ["chrome-extension", "install", "settings"] },
+  { question: "How do I install the Chrome extension?", answer: "Add it from the [Chrome Web Store](https://chromewebstore.google.com/detail/rentingradar/eambgkhnefkigdndllhmakfedkncgmoh), then sign in to RentingRadar in the same browser. Settings shows whether the extension is connected.", tags: ["chrome-extension", "install", "settings"] },
   { question: "What is AirDNA and why does RentingRadar use it?", answer: "AirDNA is a short-term rental market-data source. RentingRadar pulls AirDNA comp and revenue data (via the Chrome extension) so your ROI projections are based on real nearby performance, not guesses.", tags: ["airdna", "comps", "data"] },
 
   // ---- Arbitrage section & pipeline ----
   { question: "What does the Houses section do?", answer: "The Houses section is your single-family deal pipeline (Apartments has its own matching Pipeline sub-tab for buildings). You list candidate properties, analyze their ROI against AirDNA comps, and track each one through outreach from first contact to close.", tags: ["arbitrage", "overview"] },
   { question: "How do I navigate the Houses section, or where do I find things?", answer: "Houses is your default home view. The dashboard at the top shows your Pipeline, Map, KPIs, and activity cards. Use the market filter and search bar to narrow the list, click + Add Property in the top-right to add one, and open any property to analyze it or move it through the pipeline. Switch between Houses, Apartments, Operations, and Co-Hosting using the left sidebar.", tags: ["arbitrage", "navigation", "getting-started"] },
   { question: "How do I switch between Houses and Operations?", answer: "Use the left sidebar — Houses (or Apartments) is your deal pipeline (sourcing and analyzing), and Operations is for properties you're actively managing. A property moves to Operations when you open it and click Move to Operations.", tags: ["arbitrage", "operations", "navigation"] },
-  { question: "What are the pipeline statuses in the Houses section?", answer: "The active pipeline statuses are New, No Contact, Messaged, Left Voicemail, Follow Up, Interested, and Meeting. Closed statuses are HOA Issues, Not Good Fit, Not Interested, and Un-Listed. Apartments uses the same statuses.", tags: ["arbitrage", "pipeline", "status"] },
-  { question: "How are the pipeline statuses grouped?", answer: "Into four categories: New Leads (New, No Contact), In Outreach (Messaged, Left Voicemail, Follow Up), Qualified (Interested, Meeting), and Closed/Lost (HOA Issues, Not Good Fit, Not Interested, Un-Listed).", tags: ["arbitrage", "pipeline", "categories"] },
+  { question: "What are the pipeline statuses in the Houses section?", answer: "The active pipeline statuses are New, Messaged, Left Voicemail, Follow Up, Interested, and Meeting. Closed statuses are HOA Issues, Not Good Fit, Not Interested, and Un-Listed. Apartments uses the same statuses.", tags: ["arbitrage", "pipeline", "status"] },
+  { question: "How are the pipeline statuses grouped?", answer: "Into four categories: New Leads (New), In Outreach (Messaged, Left Voicemail, Follow Up), Qualified (Interested, Meeting), and Closed/Lost (HOA Issues, Not Good Fit, Not Interested, Un-Listed).", tags: ["arbitrage", "pipeline", "categories"] },
   { question: "How do I change a property's status?", answer: "Open the property and choose a new status from its status selector. The pipeline view and dashboard counts update automatically.", tags: ["arbitrage", "status"] },
   { question: "How do I filter properties by market?", answer: "Use the market filter at the top of the Houses (or Apartments) section. Choose All Markets to see every property across all markets at once.", tags: ["arbitrage", "market", "filter"] },
   { question: "What does the map view show?", answer: "Every property you're tracking, plotted by address. It respects your current market filter, so you only see properties in the selected market.", tags: ["arbitrage", "map", "view"] },
@@ -41197,9 +41176,9 @@ function renderHelp(){
       <div class="settings-section-header"><h3>❓ Frequently Asked Questions</h3></div>
       <div class="settings-section-body" style="padding:0">
         ${renderHelpAccordion('How do I add a new property?',
-          'Click the <strong>+ Add Property</strong> button in the top right to enter a property manually — when you type an address, suggestions appear to auto-fill the city, state, and zip. To skip manual entry, use the <strong>Chrome extension</strong>: visit an AirDNA or Airbnb listing and it pulls the property (with comp and listing data) straight into RentingRadar.')}
+          'Click the <strong>+ Add Property</strong> button in the top right to enter a property manually — when you type an address, suggestions appear to auto-fill the city, state, and zip. To skip manual entry, use the <strong>Chrome extension</strong> (' + _extInstallLink('get it on the Chrome Web Store') + '): visit an AirDNA or Airbnb listing and it pulls the property (with comp and listing data) straight into RentingRadar.')}
         ${renderHelpAccordion('What are the different pipeline categories?',
-          '<strong>New Leads</strong> — Properties you\'re tracking but haven\'t contacted yet (New, No Contact).<br><strong>In Outreach</strong> — Active communication (Messaged, Left Voicemail, Follow Up).<br><strong>Qualified</strong> — Promising prospects (Interested, Meeting).<br><strong>Closed/Lost</strong> — No longer pursuing (HOA Issues, Not Good Fit, Not Interested, Un-Listed).')}
+          '<strong>New Leads</strong> — Properties you\'re tracking but haven\'t contacted yet (New).<br><strong>In Outreach</strong> — Active communication (Messaged, Left Voicemail, Follow Up).<br><strong>Qualified</strong> — Promising prospects (Interested, Meeting).<br><strong>Closed/Lost</strong> — No longer pursuing (HOA Issues, Not Good Fit, Not Interested, Un-Listed).')}
         ${renderHelpAccordion('How does the ROI calculator work?',
           'Open any property profile and go to the <strong>Projected ROI</strong> tab. Enter the monthly rent, furnishing costs, and expected nightly rate. The calculator projects annual revenue, expenses, net operating income, and cash-on-cash return. Add at least 3 genuinely comparable competitors in the <strong>Analysis</strong> tab to get a revenue projection and deal temperature recommendation.')}
         ${renderHelpAccordion('Can I import properties from a spreadsheet?',

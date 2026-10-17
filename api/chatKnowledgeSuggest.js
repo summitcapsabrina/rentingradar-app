@@ -34,7 +34,7 @@ const PRODUCT_FACTS = `
 RentingRadar is a CRM for short-term rental ARBITRAGE operators (people who lease a property from a landlord and re-list it on Airbnb/Vrbo). Two halves: PROSPECTING (source + analyze deals) and OPERATIONS (manage properties you're actively running).
 
 - Add a property: "+ Add Property" (top-right of Prospecting) OR install the Chrome extension and visit an AirDNA/Airbnb listing to auto-import. The extension scrapes AirDNA (financials/comps) + Airbnb (host, beds, baths, amenities).
-- Pipeline statuses: New, No Contact, Messaged, Left Voicemail, Follow Up, Interested, Meeting; closed: HOA Issues, Not Good Fit, Not Interested, Un-Listed. Grouped: New Leads / In Outreach / Qualified / Closed-Lost.
+- Pipeline statuses: New, Messaged, Left Voicemail, Follow Up, Interested, Meeting; closed: HOA Issues, Not Good Fit, Not Interested, Un-Listed. Grouped: New Leads / In Outreach / Qualified / Closed-Lost.
 - Importing: CSV, Monday.com XLSX (auto-detects sub-tabs), Custom XLSX (map your own columns). Logged in Import History; undo within 24 hours.
 - Analysis: add at least 3 comps tagged Loses To / Competes With / Beats → weighted revenue projection + deal recommendation; ROI shown pessimistic/realistic/optimistic.
 - Math: AirBNB service fee = 15.5% of revenue. Position Score = (beats − loses) ÷ total comps. Market Percentile = (beats + ½·competes) ÷ total × 100. Position Adjustment ranges 55–100%.
