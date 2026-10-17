@@ -332,6 +332,7 @@ body.impersonating::before{content:'';position:fixed;inset:38px 0 0 0;background
 .db-pipeline-box.disabled{opacity:.35;cursor:default;pointer-events:none}
 .db-pipeline-box .pb-icon{line-height:1}
 .db-pipeline-box .pb-count{font-size:.85rem;font-weight:800;line-height:1}
+.db-pipeline-box .pb-label{font-size:.6rem;font-weight:600;line-height:1;white-space:nowrap;text-transform:uppercase;letter-spacing:.03em}
 .db-status-breakdown{display:flex;flex-direction:column;gap:2px;margin-top:4px}
 .db-status-row{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:var(--radius);cursor:pointer;transition:background .1s}
 .db-status-row:hover{background:var(--primary-light)}
@@ -354,6 +355,16 @@ body.impersonating::before{content:'';position:fixed;inset:38px 0 0 0;background
 .st-status-item.active{background:rgba(128,128,128,.12);font-weight:600}
 .st-status-item.dimmed{opacity:.4}
 .st-status-item.dimmed:hover{opacity:.7}
+.st-status-item.disabled{opacity:.45;cursor:default}
+.st-status-item.disabled:hover{background:none}
+/* Dark themes: the pills are tinted text on a translucent fill, so they need a
+   higher opacity floor than light mode's solid pills to stay readable. */
+:root:not(.light) .status-tree-col.dimmed{opacity:.6}
+:root:not(.light) .st-status-item.disabled,:root:not(.light) .st-status-item.dimmed{opacity:.65}
+:root:not(.light) .db-pipeline-box.disabled{opacity:.55}
+/* Fade once, not twice: inside a dimmed column the items don't fade again
+   (.4 x .45 left empty stages at ~18% opacity, unreadable in dark mode). */
+:root .status-tree-col.dimmed .st-status-item.disabled,:root .status-tree-col.dimmed .st-status-item.dimmed{opacity:1}
 .st-status-item .st-status-pill-wrap{flex-shrink:0}
 .st-status-item .st-bar{flex:1;height:6px;background:var(--bg);border-radius:3px;overflow:hidden}
 .st-status-item .st-bar-fill{height:100%;border-radius:3px;transition:width .3s ease}
@@ -650,6 +661,7 @@ tr.clickable:hover{background:var(--primary-light)}
 .ac-item .ac-title mark{background:rgba(99,129,250,.25);color:var(--primary);border-radius:2px;padding:0 1px}
 :root.light .ac-item .ac-title mark{background:#dbeafe;color:#1e40af}
 .ac-item .ac-sub{font-size:.7rem;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ac-item .ac-type{flex-shrink:0;font-size:.6rem;font-weight:600;color:var(--text2);border:1px solid var(--border);border-radius:4px;padding:0 5px;line-height:1.6;text-transform:uppercase;letter-spacing:.3px}
 
 
 
@@ -5555,6 +5567,7 @@ function openPropertyTaskEditor(pid, taskId){
     '<div style="margin-bottom:18px"><label style="display:block;font-size:.74rem;color:var(--text3);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:.3px">Note</label>' +
       '<textarea id="taskEditorNote" rows="3" placeholder="What needs to happen?" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:.86rem;font-family:inherit;resize:vertical">' + esc(draft.note) + '</textarea>' +
     '</div>' +
+    '<div id="taskEditorError" role="alert" style="display:none;margin:-6px 0 12px;font-size:.8rem;font-weight:600;color:var(--danger)"></div>' +
     '<div style="display:flex;justify-content:flex-end;gap:8px">' +
       '<button class="btn btn-secondary btn-sm" onclick="document.getElementById(\'taskEditorOverlay\').remove()" style="padding:7px 14px">Cancel</button>' +
       '<button class="btn btn-primary btn-sm" onclick="savePropertyTaskFromEditor(\'' + pid + '\',' + (taskId ? '\'' + taskId + '\'' : 'null') + ')" style="padding:7px 18px">' + (existing ? 'Save' : 'Add') + '</button>' +
@@ -5570,6 +5583,7 @@ function _taskEditorSetType(typeKey){
   const overlay = document.getElementById('taskEditorOverlay');
   if(!overlay) return;
   overlay.dataset.taskType = typeKey;
+  _taskEditorShowError('');
   // Re-paint the pills to reflect new selection
   const wrap = document.getElementById('taskEditorTypes');
   if(!wrap) return;
@@ -5582,6 +5596,16 @@ function _taskEditorSetType(typeKey){
   });
 }
 
+// Validation messages show inside the editor, next to its buttons, rather than as a
+// toast: the toast sits outside the modal (easy to miss) and outlives it. Missing
+// Type also outlines the pills. '' clears the message.
+function _taskEditorShowError(msg, field){
+  const el = document.getElementById('taskEditorError');
+  if(el){ el.textContent = msg; el.style.display = msg ? '' : 'none'; }
+  const types = document.getElementById('taskEditorTypes');
+  if(types){ types.style.outline = field === 'type' ? '2px solid var(--danger)' : ''; types.style.outlineOffset = field === 'type' ? '3px' : ''; types.style.borderRadius = '8px'; }
+}
+
 function savePropertyTaskFromEditor(pid, taskId){
   const overlay = document.getElementById('taskEditorOverlay');
   if(!overlay) return;
@@ -5590,9 +5614,9 @@ function savePropertyTaskFromEditor(pid, taskId){
   const time = readTimeInput('taskEditorTime');
   const note = (document.getElementById('taskEditorNote') || {}).value || '';
   const timezone = (document.getElementById('taskEditorTz') || {}).value || '';
-  if(!type){ showToast('Please select a type (Email, Call, Text, or Other)', 'warning', 3000); return; }
-  if(!date){ showToast('Please pick a date', 'warning', 2500); return; }
-  if(!note.trim()){ showToast('Please add a note', 'warning', 2500); return; }
+  if(!type){ _taskEditorShowError('Please select a type (Email, Call, Text, or Other).', 'type'); return; }
+  if(!date){ _taskEditorShowError('Please pick a date.', 'date'); return; }
+  if(!note.trim()){ _taskEditorShowError('Please add a note.', 'note'); return; }
   if(taskId){
     updatePropertyTask(pid, taskId, { date, time, type, note: note.trim(), timezone });
   } else {
@@ -6523,6 +6547,24 @@ function _isFreeAccount(){
   return false;
 }
 
+// Header title per view. Also the list of views a URL hash may name.
+const VIEW_TITLES = { dashboard:'Single Unit', pipeline:'Pipeline', operations:'Operations', opsProfile:'Operations', coHosting:'Co-Hosting', cohostProfile:'Co-Hosting', contacts:'All Contacts', apartments:'Multi Unit', notifications:'Notifications', pricing:'Your Plan', tutorial:'Tutorial', adminUsers:'Users', financials:'Financials', affiliateDashboard:'Referrals', tutorialEditor:'Tutorial Editor', settings:'Settings', featureRequest:'Feature Request', askExpert:'Ask an Expert', help:'Help', chat:'Inbox', knowledge:'Knowledge Base' };
+
+// Reads a location hash into the view it names: '#apartments', '#profile/<id>',
+// '#cohost-<id>', '#opsProfile/<id>'. Profile-only views without an id (and the
+// Operations profile, whose record can't be restored before data loads) map to
+// their list view. Returns null for an empty or unknown hash.
+function _parseHashRoute(hash){
+  const h = decodeURIComponent((hash || '').replace(/^#/, ''));
+  if(!h) return null;
+  if(h.startsWith('profile/')) return h.length > 8 ? { view:'profile', profileId:h.slice(8) } : null;
+  if(h.startsWith('cohost-')) return h.length > 7 ? { view:'cohostProfile', cohostId:h.slice(7) } : null;
+  if(h === 'opsProfile' || h.startsWith('opsProfile/')) return { view:'operations' };
+  if(h === 'cohostProfile') return { view:'coHosting' };
+  if(Object.prototype.hasOwnProperty.call(VIEW_TITLES, h)) return { view:h };
+  return null;
+}
+
 function switchView(view){
   // Pricing / Plan view is meaningless for free internal accounts. Intercept the
   // navigation and explain via toast instead of routing them to a page that doesn't
@@ -6596,8 +6638,7 @@ function switchView(view){
   clearSearch();
   const navView = view === 'pipeline' ? 'dashboard' : view;
   document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.view === navView));
-  const titles = { dashboard:'Single Unit', pipeline:'Pipeline', operations:'Operations', opsProfile:'Operations', coHosting:'Co-Hosting', cohostProfile:'Co-Hosting', contacts:'All Contacts', apartments:'Multi Unit', notifications:'Notifications', pricing:'Your Plan', tutorial:'Tutorial', adminUsers:'Users', financials:'Financials', affiliateDashboard:'Referrals', tutorialEditor:'Tutorial Editor', settings:'Settings', featureRequest:'Feature Request', askExpert:'Ask an Expert', help:'Help', chat:'Inbox', knowledge:'Knowledge Base' };
-  document.getElementById('headerTitle').textContent = titles[view] || '';
+  document.getElementById('headerTitle').textContent = VIEW_TITLES[view] || '';
   if(!_handlingPopstate) history.pushState({ view: view, profileId: null }, '', '#' + view);
   saveViewState();
   render();
@@ -6765,6 +6806,31 @@ function render(){
       return;
     }
   }
+  try { _renderCurrentView(area); }
+  catch(err){
+    // A crash in one view must not leave the previous page on screen, or abort the
+    // caller part-way (loadDataFromFirestore renders before it attaches listeners).
+    console.error('[RR] render failed for view "' + currentView + '":', err);
+    area.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text2)">This page couldn\'t be displayed. Try another page or reload. If it keeps happening, email help@rentingradar.com.</div>';
+  }
+  updateNotifBadges();
+  // Set up paste handlers for Activity Log editors
+  if(currentView === 'profile' && currentProfileId){
+    requestAnimationFrame(() => {
+      setupNotePasteHandler('newNoteRte_'+currentProfileId, currentProfileId);
+    });
+  }
+  // Same for the Co-Hosting profile's Activity Log (dual-lookup note functions).
+  if(currentView === 'cohostProfile' && currentCohostId){
+    requestAnimationFrame(() => {
+      setupNotePasteHandler('newNoteRte_'+currentCohostId, currentCohostId);
+    });
+  }
+}
+
+// The per-view part of render(). Kept separate so render() can catch a crash in
+// any one view (see the try/catch there).
+function _renderCurrentView(area){
   switch(currentView){
     case 'dashboard':
       _setDashMode(DASH_MODES.arbitrage);
@@ -6855,19 +6921,6 @@ function render(){
       area.innerHTML = renderKnowledge();
       setTimeout(initKnowledge, 30);
       break;
-  }
-  updateNotifBadges();
-  // Set up paste handlers for Activity Log editors
-  if(currentView === 'profile' && currentProfileId){
-    requestAnimationFrame(() => {
-      setupNotePasteHandler('newNoteRte_'+currentProfileId, currentProfileId);
-    });
-  }
-  // Same for the Co-Hosting profile's Activity Log (dual-lookup note functions).
-  if(currentView === 'cohostProfile' && currentCohostId){
-    requestAnimationFrame(() => {
-      setupNotePasteHandler('newNoteRte_'+currentCohostId, currentCohostId);
-    });
   }
 }
 
@@ -7248,7 +7301,7 @@ const DASHBOARD_GROUPS = {
       h += `<div class="db-kpi"><div class="kpi-icon" style="background:rgba(99,129,250,.12);color:var(--primary)">📋</div><div class="kpi-val">${ctx.total}</div><div class="kpi-label">Total Properties</div><div class="kpi-sub">${ctx.withContact} with contacts</div></div>`;
       h += `<div class="db-kpi"><div class="kpi-icon" style="background:rgba(56,189,248,.12);color:#38bdf8">🔄</div><div class="kpi-val">${ctx.active}</div><div class="kpi-label">Active Pipeline</div><div class="kpi-sub">${ctx.closed} closed/lost</div></div>`;
       h += `<div class="db-kpi"><div class="kpi-icon" style="background:rgba(52,211,153,.12);color:#34d399">🔥</div><div class="kpi-val">${ctx.hotLeads}</div><div class="kpi-label">Hot Leads</div><div class="kpi-sub">${ctx.convRate}% qualification rate</div></div>`;
-      h += `<div class="db-kpi"><div class="kpi-icon" style="background:${ctx.overdue.length?'rgba(239,68,68,.12)':'rgba(52,211,153,.12)'};color:${ctx.overdue.length?'var(--danger)':'var(--success)'}">📣</div><div class="kpi-val" style="color:${ctx.overdue.length?'var(--danger)':'var(--text)'}">${ctx.followUps.length}</div><div class="kpi-label">Follow-Ups Due</div><div class="kpi-sub">${ctx.overdue.length} overdue${ctx.todayFU.length ? ', '+ctx.todayFU.length+' today' : ''}</div></div>`;
+      h += `<div class="db-kpi"><div class="kpi-icon" style="background:${ctx.overdue.length?'rgba(239,68,68,.12)':'rgba(52,211,153,.12)'};color:${ctx.overdue.length?'var(--danger)':'var(--success)'}">📣</div><div class="kpi-val" style="color:${ctx.overdue.length?'var(--danger)':'var(--text)'}">${ctx.overdue.length + ctx.todayFU.length}</div><div class="kpi-label">Follow-Ups Due</div><div class="kpi-sub">${ctx.overdue.length} overdue${ctx.todayFU.length ? ', '+ctx.todayFU.length+' today' : ''} · ${ctx.upcomingFUCount} upcoming</div></div>`;
       h += `<div class="db-kpi"><div class="kpi-icon" style="background:rgba(168,85,247,.12);color:#a855f7">📅</div><div class="kpi-val">${ctx.meetings.length}</div><div class="kpi-label">Upcoming Meetings</div><div class="kpi-sub">${ctx.pastMeetings} completed</div></div>`;
       h += '</div>';
       return h;
@@ -8039,19 +8092,38 @@ function _renderDashGroupWrapper(entry, idx, total, ctx){
 }
 
 /* ===== DASHBOARD ===== */
+// One rule for "has contact info", shared by the KPI's "with contacts", the
+// "missing contact info" insight and global search: a name, phone or email.
+// A Contact Title alone (e.g. "Leasing Office") is not a way to reach anyone.
+function _hasContactInfo(r){ return !!(r && (r.name || r.phone || r.email)); }
+// Short "who to reach" text for a property row: the contact name, else the
+// Contact Title and phone/email. '' when the property has no contact info.
+function _contactSummary(r){
+  if(!_hasContactInfo(r)) return '';
+  if(r.name) return r.name;
+  return [r.contactTitle, r.phone || r.email].filter(Boolean).join(' · ');
+}
+// Which list a property lives in, for labels where lists mix (global search).
+function _propertyListLabel(r){
+  if(r.kind === 'cohost') return isOpsProperty(r) ? 'Operations' : 'Co-Hosting';
+  if(isOpsProperty(r)) return 'Operations';
+  return r.recordType === 'apartment' ? 'Multi Unit' : 'Single Unit';
+}
 function renderDashboard(){
   const recs = getDashFiltered();
   const counts = {};
   STATUSES.forEach(s => counts[s] = 0);
   recs.forEach(r => { counts[r.status] = (counts[r.status]||0)+1 });
   const total = recs.length;
-  const withContact = recs.filter(r => r.name || r.phone || r.email).length;
+  const withContact = recs.filter(_hasContactInfo).length;
   const active = recs.filter(r => PIPELINE_STAGES.includes(r.status)).length;
   // Compute follow-ups directly over the active record set (mode-agnostic) so the
   // co-host dashboard reflects co-host follow-ups, not the arbitrage store.
   const followUps = _getOpenFollowUps(recs);
   const overdue = followUps.filter(f => f.type === 'overdue');
   const todayFU = followUps.filter(f => f.type === 'today');
+  // "Follow-Ups Due" = overdue + due today; later ones are only counted as upcoming.
+  const upcomingFUCount = followUps.filter(f => f.type === 'upcoming').length;
   const upcomingFU = followUps.filter(f => f.type === 'upcoming').slice(0,5);
   const hotLeads = (counts['Interested']||0) + (counts['Meeting']||0);
   const closed = recs.filter(r => CLOSED_STAGES.includes(r.status)).length;
@@ -8094,7 +8166,7 @@ function renderDashboard(){
 
   // Needs attention: Follow Up status but no date, or no contact info on active leads
   const needsFollowUp = recs.filter(r => r.status === 'Follow Up' && !_hasOpenFollowUp(r));
-  const noContact = recs.filter(r => PIPELINE_STAGES.includes(r.status) && !r.name && !r.phone && !r.email);
+  const noContact = recs.filter(r => PIPELINE_STAGES.includes(r.status) && !_hasContactInfo(r));
 
   // Funnel stages
   const funnelStages = [
@@ -8109,7 +8181,7 @@ function renderDashboard(){
   const convRate = total > 0 ? ((hotLeads/total)*100).toFixed(1) : '0.0';
 
   const ctx = {
-    recs, counts, total, withContact, active, followUps, overdue, todayFU, upcomingFU,
+    recs, counts, total, withContact, active, followUps, overdue, todayFU, upcomingFU, upcomingFUCount,
     hotLeads, closed, today, meetings, meetingsFull, pastMeetings, recentActivity, needsFollowUp,
     noContact, funnelStages, contacted, convRate
   };
@@ -8212,7 +8284,8 @@ function renderDashPropertyList(){
   })();
 
   let h = '<div id="dashPropertyListContainer" class="db-card" style="margin-bottom:16px;height:400px;display:flex;flex-direction:column">';
-  h += '<div class="db-card-hdr" style="flex-shrink:0"><h3>📋 Properties — ' + esc(filterLabel) + '</h3><span class="db-hdr-action" style="color:var(--text3);cursor:default">' + filtered.length + (filtered.length === 1 ? ' match' : ' matches') + '</span></div>';
+  const _clearFilter = (_mapFilter && _mapFilter !== 'all') ? '<span class="db-hdr-action" onclick="_setPipelineFilter(\'all\',\'all\')" title="Clear the pipeline filter" style="margin-left:10px">✕ Show all</span>' : '';
+  h += '<div class="db-card-hdr" style="flex-shrink:0"><h3>📋 Properties — ' + esc(filterLabel) + '</h3><span style="display:inline-flex;align-items:center"><span class="db-hdr-action" style="color:var(--text3);cursor:default">' + filtered.length + (filtered.length === 1 ? ' match' : ' matches') + '</span>' + _clearFilter + '</span></div>';
   h += '<div class="db-card-body no-pad" style="flex:1;min-height:0;overflow-y:auto">';
   if(filtered.length === 0){
     h += '<div class="db-empty">No properties match the current pipeline filter.</div>';
@@ -8416,10 +8489,10 @@ function buildPipelineUI(){
   // tree column below for visibility. Closed/Won (far right, gold) reflects properties
   // promoted to Operations — click prompts the user to switch to that view.
   const boxMeta = [
-    { key:'prospects', col:'129,140,248', icon:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>' },
-    { key:'outreach', col:'56,189,248', icon:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6A19.79 19.79 0 012.12 4.18 2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>' },
-    { key:'qualified', col:'52,211,153', icon:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>' },
-    { key:'won',       col:'251,191,36', icon:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>' }
+    { key:'prospects', label:'New', name:'New Leads', col:'129,140,248', icon:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>' },
+    { key:'outreach', label:'Outreach', name:'In Outreach', col:'56,189,248', icon:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6A19.79 19.79 0 012.12 4.18 2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>' },
+    { key:'qualified', label:'Qualified', name:'Qualified', col:'52,211,153', icon:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>' },
+    { key:'won',       label:'Won', name:'Closed/Won (moved to Operations)', col:'251,191,36', icon:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>' }
   ];
 
   let h = '';
@@ -8429,10 +8502,11 @@ function buildPipelineUI(){
     const minFlex = 1; // minimum flex value (for 0 or 1 count)
     const flexValues = boxCounts.map(c => Math.max(c, minFlex));
     const totalIsActive = _mapFilter === 'all';
-    h += `<div class="db-pipeline-wrap ${totalIsActive?'active':''}" onclick="_mapFilter='all';pipelineCategory='all';updatePipelineUI();updateDashPropertyList();setMapFilter('all')">`;
+    h += `<div class="db-pipeline-wrap ${totalIsActive?'active':''}" onclick="_setPipelineFilter('all','all')" title="All properties: ${total}. Click to show all.">`;
     h += `<div class="db-pipeline-wrap-hdr">
       <span class="pw-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></span>
       <span class="pw-count">${total}</span>
+      <span class="pw-label">All</span>
     </div>`;
     h += '<div class="db-pipeline-boxes">';
     boxMeta.forEach((m, i) => {
@@ -8450,15 +8524,16 @@ function buildPipelineUI(){
         ? ''
         : (m.key === 'won'
             ? `onclick="event.stopPropagation();_promptSwitchToOperations()"`
-            : `onclick="event.stopPropagation();pipelineCategory='${m.key}';_mapFilter='${m.key}';updatePipelineUI();updateDashPropertyList();setMapFilter('${m.key}')"`);
-      h += `<div class="db-pipeline-box${disabledClass}${isActive?' active':''}" ${onclick} style="color:${isEmpty?'var(--text3)':'rgb('+m.col+')'};background:${bg};border-color:${border};${shadow};flex:${flex} 0 0;min-width:54px">
+            : `onclick="event.stopPropagation();_setPipelineFilter('${m.key}','${m.key}')"`);
+      h += `<div class="db-pipeline-box${disabledClass}${isActive?' active':''}" ${onclick} title="${m.name}: ${count}" style="color:${isEmpty?'var(--text3)':'rgb('+m.col+')'};background:${bg};border-color:${border};${shadow};flex:${flex} 0 0;min-width:54px">
         <span class="pb-icon">${m.icon}</span>
         <span class="pb-count">${count}</span>
+        <span class="pb-label">${m.label}</span>
       </div>`;
     });
     h += '</div></div>';
   } else {
-    h += '<div class="db-empty">No properties yet. Add your first property to see your pipeline.</div>';
+    h += '<div class="db-empty">No properties yet. Add your first property to see your pipeline.' + _otherListHint() + '</div>';
   }
 
   // Always-visible status tree — all categories shown as columns
@@ -8483,7 +8558,7 @@ function buildPipelineUI(){
     const colEmpty = col.count === 0;
     const colClass = 'status-tree-col' + (colDimmed ? ' dimmed' : '') + (colActive ? ' active' : '') + (colEmpty ? ' empty' : '');
     h += `<div class="${colClass}">`;
-    const colHdrClick = colEmpty ? '' : `onclick="event.stopPropagation();pipelineCategory='${col.key}';_mapFilter='${col.key}';updatePipelineUI();updateDashPropertyList();setMapFilter('${col.key}')"`;
+    const colHdrClick = colEmpty ? '' : `onclick="event.stopPropagation();_setPipelineFilter('${col.key}','${col.key}')"`;
     h += `<div class="st-col-hdr" style="color:${colEmpty?'var(--text3)':col.color};cursor:${colEmpty?'default':'pointer'}" ${colHdrClick}><span>${col.name}</span><span class="st-col-count" style="color:${colEmpty?'var(--text3)':col.color}">${col.count}</span></div>`;
 
     col.statuses.forEach(st => {
@@ -8493,8 +8568,8 @@ function buildPipelineUI(){
       const statusDimmed = activeStatus && !isThisStatus && isStatusInThisCol;
       const itemClass = 'st-status-item' + (isThisStatus ? ' active' : '') + (statusDimmed ? ' dimmed' : '') + (isEmpty ? ' disabled' : '');
       const barWidth = total > 0 ? Math.max((cnt/total)*100, cnt > 0 ? 3 : 0) : 0;
-      const stClick = isEmpty ? '' : `onclick="event.stopPropagation();_mapFilter='status:${st}';pipelineCategory='${col.key}';updatePipelineUI();updateDashPropertyList();setMapFilter('status:${st}')"`;
-      h += `<div class="${itemClass}" ${stClick} style="${isEmpty?'opacity:.45;cursor:default':''}">
+      const stClick = isEmpty ? '' : `onclick="event.stopPropagation();_setPipelineFilter('status:${st}','${col.key}')"`;
+      h += `<div class="${itemClass}" ${stClick}>
         <div class="st-status-pill-wrap">${statusPill(st)}</div>
         <div class="st-bar"><div class="st-bar-fill" style="width:${barWidth}%;background:${col.color}"></div></div>
         <div class="st-count">${cnt}</div>
@@ -8506,6 +8581,30 @@ function buildPipelineUI(){
   h += '</div>';
 
   return h;
+}
+
+// Single Unit and Multi Unit keep separate lists. When the one on screen is
+// empty but the other isn't, say so, so an empty dashboard doesn't read as lost data.
+function _otherListHint(){
+  if(typeof _activeDashMode === 'undefined' || _activeDashMode.isCohost) return '';
+  const isApt = _activeDashMode.recordType === 'apartment';
+  const n = getProspectingRecords().filter(r => (r.recordType === 'apartment') !== isApt).length;
+  if(!n) return '';
+  const what = isApt ? (n === 1 ? '1 property' : n + ' properties') : (n === 1 ? '1 building' : n + ' buildings');
+  const where = isApt ? 'Single Unit' : 'Multi Unit';
+  return '<div style="margin-top:6px">You have ' + what + ' in <a href="#' + (isApt ? 'dashboard' : 'apartments') + '" onclick="event.preventDefault();switchView(\'' + (isApt ? 'dashboard' : 'apartments') + '\')" style="color:var(--primary)">' + where + '</a>.</div>';
+}
+
+// Applies a pipeline filter (category key, 'status:<name>', or 'all') to the
+// pipeline, property list and map together. Clicking the filter that's already
+// on turns it off, back to All Properties.
+function _setPipelineFilter(filter, cat){
+  if(filter !== 'all' && _mapFilter === filter){ filter = 'all'; cat = 'all'; }
+  pipelineCategory = cat;
+  _mapFilter = filter;
+  updatePipelineUI();
+  updateDashPropertyList();
+  setMapFilter(filter);
 }
 
 function updatePipelineUI(){
@@ -11624,7 +11723,17 @@ function _rrRenderToast(toast, msg, type, duration, opts) {
     + progressHtml;
   toast.className = 'rr-toast ' + type + (opts.recordId ? ' clickable' : '');
   toast.onclick = opts.recordId ? function(){ toast.classList.remove('visible'); openDetail(opts.recordId); } : null;
-  requestAnimationFrame(() => { toast.classList.add('visible'); });
+  // The auto-dismiss timer starts when the toast is actually shown. rAF waits while
+  // the tab isn't being painted (background tab, automation), and a timer started
+  // here would fire first: the toast then appeared late and never went away.
+  clearTimeout(toast._timer);
+  toast._showSeq = (toast._showSeq || 0) + 1;
+  const shownFor = toast._showSeq;
+  requestAnimationFrame(() => {
+    if(toast._showSeq !== shownFor) return; // a newer toast replaced this one
+    toast.classList.add('visible');
+    if(!isLoading) toast._timer = setTimeout(() => { toast.classList.remove('visible'); }, duration);
+  });
 
   if (isLoading) {
     // v0.6.2: asymptotic progress. The bar moves smoothly and constantly
@@ -11656,14 +11765,11 @@ function _rrRenderToast(toast, msg, type, duration, opts) {
     }, 80);
   }
 
-  clearTimeout(toast._timer);
   // Loading toasts MUST be persistent — they get explicitly replaced by a
   // success / incomplete / failed toast when the import resolves. Auto-
   // dismissing them after `duration` was the bug that caused users to see
   // "import timed out" right before the property profile actually loaded.
-  if (!isLoading) {
-    toast._timer = setTimeout(() => { toast.classList.remove('visible'); }, duration);
-  }
+  // (The non-loading auto-dismiss timer is started in the rAF above.)
 }
 
 // Force-hide the toast immediately (e.g., user cancels an import mid-flight by
@@ -11675,6 +11781,7 @@ function hideToast() {
   if (!toast) return;
   if (toast._timer) { clearTimeout(toast._timer); toast._timer = null; }
   if (toast._progressTimer) { clearInterval(toast._progressTimer); toast._progressTimer = null; }
+  toast._showSeq = (toast._showSeq || 0) + 1; // cancel a show still waiting on rAF
   toast.classList.remove('visible', 'loading');
 }
 
@@ -13020,7 +13127,14 @@ function clearContactsSort(){ contactsSortCols = []; render(); }
 function exportData(format){
   if(!checkCsvAccess()) return;
   const headers = ['Property','Name','Phone','Email','Status','Date','Note','Link','Follow Up Date'];
-  const rows = records.map(r => [r.property,r.name,r.phone,r.email,r.status,r.date?r.date.split('T')[0]:'',r.notes.map(n=>n.text).join(' | '),r.link,r.followUpDate||'']);
+  // Follow Up Date: the earliest open follow-up in Tasks & Follow-Ups (r.tasks[], the
+  // source of truth since that migration), else the legacy r.followUpDate field.
+  // Columns and format are fixed to match the Airpreneur mentorship template.
+  const followUpDate = r => {
+    const open = Array.isArray(r.tasks) ? r.tasks.filter(t => t.status !== 'done' && t.date).sort(_taskSortAsc) : [];
+    return open.length ? open[0].date : (r.followUpDate || '');
+  };
+  const rows = records.map(r => [r.property,r.name,r.phone,r.email,r.status,r.date?r.date.split('T')[0]:'',r.notes.map(n=>n.text).join(' | '),r.link,followUpDate(r)]);
 
   if(format === 'csv'){
     const csvContent = [headers, ...rows].map(row => row.map(cell => '"'+(cell||'').replace(/"/g,'""')+'"').join(',')).join('\n');
@@ -13450,7 +13564,8 @@ function updateAutocomplete(q){
       const phone = r.phone || '';
       const email = r.email || '';
       const isFirst = flatIdx === 0;
-      const nameLine = (name ? highlight(name, q) : '<span style="opacity:.4">No contact</span>') + (status ? ' · <span style="font-weight:600">' + esc(status) + '</span>' : '');
+      const contactText = _contactSummary(r);
+      const nameLine = (contactText ? highlight(contactText, q) : '<span style="opacity:.4">No contact info</span>') + (status ? ' · <span style="font-weight:600">' + esc(status) + '</span>' : '');
       const extras = [];
       if(phone && matchesAllWords(phone, q)) extras.push('📞 ' + highlight(phone, q));
       if(email && matchesAllWords(email, q)) extras.push('✉️ ' + highlight(email, q));
@@ -13464,7 +13579,7 @@ function updateAutocomplete(q){
       html += `<div class="ac-item" data-id="${r.id}" data-idx="${flatIdx}" data-kind="property" onmousedown="acSelect('${r.id}')" onmouseenter="acIndex=${flatIdx};highlightAcItem()">
         <div class="ac-icon">${_acIcon}</div>
         <div class="ac-main">
-          <div class="ac-title">${titleLine}</div>
+          <div style="display:flex;align-items:center;gap:6px"><div class="ac-title" style="flex:1;min-width:0">${titleLine}</div><span class="ac-type">${_propertyListLabel(r)}</span></div>
           ${addressLine}
           <div style="display:flex;justify-content:space-between;align-items:center">
             <div class="ac-sub">${nameLine}</div>
@@ -21234,6 +21349,16 @@ document.addEventListener('click', function(e){
   if(!e.target.closest('#userSection')) closeUserMenu();
   if(!e.target.closest('#dataMenuWrap')) closeDataMenu();
   if(!e.target.closest('#addMenuWrap')) closeAddMenu();
+});
+// Escape closes these small header/sidebar menus too (Help → Keyboard Shortcuts
+// promises Escape closes popups). Only acts when one is open, so Escape still
+// reaches modals and inputs otherwise.
+document.addEventListener('keydown', function(e){
+  if(e.key !== 'Escape') return;
+  const open = document.querySelector('#addMenu.open, #dataMenu.open, #userMenu.open, #themePicker.open');
+  if(!open) return;
+  e.preventDefault();
+  closeAddMenu(); closeDataMenu(); closeUserMenu(); closeThemePicker();
 });
 
 /* ===== CSV IMPORT ===== */
@@ -30734,7 +30859,7 @@ function openCopyExpensesSearch(targetId){
     matched.slice(0,8).forEach((r, i) => {
       const sc = _copyExpensesSourceCalc(r);
       const hasExp = EXPENSE_FIELDS.some(k => sc[k] > 0) || _hasCustomExpenses(r, _copyExpensesSourceUnit(r)) || _hasAdditionalIncome(r, _copyExpensesSourceUnit(r)) || _hasInvestmentDetails(sc);
-      const nameLine = (r.name ? highlightText(r.name, q) : '<span style="opacity:.4">No contact</span>') + (r.status ? ' · <span style="font-weight:600">'+esc(r.status)+'</span>' : '') + (hasExp ? '' : ' · <span style="color:var(--warning)">No expenses</span>');
+      const nameLine = (_contactSummary(r) ? highlightText(_contactSummary(r), q) : '<span style="opacity:.4">No contact info</span>') + (r.status ? ' · <span style="font-weight:600">'+esc(r.status)+'</span>' : '') + (hasExp ? '' : ' · <span style="color:var(--warning)">No expenses</span>');
       html += '<div class="copy-exp-item" data-id="'+r.id+'" data-idx="'+i+'"><div class="copy-exp-item-icon">'+propertyEmoji(r)+'</div><div class="copy-exp-item-main"><div class="copy-exp-item-title">'+highlightText(r.property || 'No address', q)+'</div><div class="copy-exp-item-sub">'+nameLine+'</div></div>'+(i===0?'<div class="copy-exp-item-hint">Shift+Enter</div>':'')+'</div>';
     });
     resultsBox.innerHTML = html;
@@ -34358,7 +34483,10 @@ function setupAddressAutocomplete(inputEl, recId){
   });
 
   inputEl.addEventListener('keydown', function(e){
+    if(e.key === 'Escape') clearTimeout(addressAcTimeout); // no late list after Escape
     if(!dropdown.classList.contains('visible')) return;
+    // Escape closes just the suggestion list; the form it's in stays open.
+    if(e.key === 'Escape'){ e.preventDefault(); e.stopPropagation(); dropdown.classList.remove('visible'); return; }
     const items = dropdown.querySelectorAll('.address-ac-item');
     let idx = Array.from(items).findIndex(i => i.classList.contains('active'));
     // Arrow Down or Shift (without other modifiers) to move down
@@ -34535,7 +34663,10 @@ async function fetchAddressSuggestions(query, dropdown, inputEl, recId){
         <span>${highlightMatch(display, q)}</span>
       </div>`;
     }).join('');
-    dropdown.classList.add('visible');
+    // Suggestions arrive ~300ms+ after the last keystroke. If the field has lost
+    // focus by then, its blur handler already hid the list; showing it now would
+    // leave it stuck open until a suggestion was clicked.
+    if(document.activeElement === inputEl) dropdown.classList.add('visible');
   } catch(e){
     console.log('Address autocomplete error:', e);
     dropdown.classList.remove('visible');
@@ -41135,15 +41266,18 @@ async function kbSeedStarter(){
 }
 
 const SETTINGS_HELP_DRAFT_FIELD_IDS = ['help_subject','help_details','fr_subject','fr_details','ae_market','ae_details'];
-function renderHelp(){
-  // All three lead-gen forms (Help, Feature Request, Ask an Expert) render
-  // together on this one page, so one shared context is enough — the field ids
-  // themselves are already unique per form (help_/fr_/ae_ prefixes), so nothing
-  // collides. Name/email are prefilled from the account and rarely hand-typed,
-  // so only Subject/Details (and Market) participate.
+// The three lead-gen forms (Help, Feature Request, Ask an Expert) share one
+// draft context — the field ids themselves are already unique per form
+// (help_/fr_/ae_ prefixes), so nothing collides. Name/email are prefilled from
+// the account and rarely hand-typed, so only Subject/Details (and Market)
+// participate. Each form's renderer calls this to get its own `fd` reader.
+function _settingsHelpDraftReader(){
   _fieldDraftCtx = 'settingsHelp';
   _fieldDraftIds = SETTINGS_HELP_DRAFT_FIELD_IDS;
-  const fd = function(fieldId){ return _getFieldDraft(_fieldDraftCtx, fieldId) || ''; };
+  return function(fieldId){ return _getFieldDraft(_fieldDraftCtx, fieldId) || ''; };
+}
+function renderHelp(){
+  const fd = _settingsHelpDraftReader();
   return `<div class="settings-page" style="max-width:720px">
 
     <!-- GETTING STARTED -->
@@ -41377,6 +41511,7 @@ function renderTutorialView(){
 
 /* ===== FEATURE REQUEST (sidebar view) ===== */
 function renderFeatureRequest(){
+  const fd = _settingsHelpDraftReader();
   return `<div class="view-content" style="max-width:640px;margin:0 auto;padding:24px 16px">
     <div style="text-align:center;margin-bottom:24px">
       <div style="font-size:2.4rem;margin-bottom:8px">💡</div>
@@ -41451,6 +41586,7 @@ async function submitFeatureRequest(){
 
 /* ===== ASK AN EXPERT (sidebar view) ===== */
 function renderAskExpert(){
+  const fd = _settingsHelpDraftReader();
   return `<div class="view-content" style="max-width:640px;margin:0 auto;padding:24px 16px">
     <div style="text-align:center;margin-bottom:24px">
       <div style="font-size:2.4rem;margin-bottom:8px">🧠</div>
@@ -41886,6 +42022,16 @@ loadSettingsPrefs();
 loadData();
 initNotifications();
 restoreViewState();
+// The address bar wins over this tab's last-saved view: a link or typed URL
+// (#apartments, #pricing from the extension, #profile/<id>) opens that page.
+// restoreViewState() above still supplies the profile tab and previous view.
+(function applyInitialHash(){
+  const route = _parseHashRoute(location.hash);
+  if(!route) return;
+  currentView = route.view;
+  currentProfileId = route.profileId || null;
+  if(route.cohostId) currentCohostId = route.cohostId;
+})();
 // Safety timeout: if auth/Firestore takes too long, hide overlay anyway
 setTimeout(hideLoadingOverlay, 6000);
 // Apply the restored view's UI state
@@ -41895,8 +42041,7 @@ if(currentView === 'profile' && currentProfileId){
   document.getElementById('headerTitle').textContent = (_initR && _initR.recordType === 'apartment') ? 'Multi Unit' : 'Single Unit';
 } else {
   document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.view === currentView));
-  const titles = { dashboard:'Single Unit', pipeline:'Pipeline', operations:'Operations', opsProfile:'Operations', coHosting:'Co-Hosting', cohostProfile:'Co-Hosting', contacts:'All Contacts', apartments:'Multi Unit', notifications:'Notifications', pricing:'Your Plan', tutorial:'Tutorial', adminUsers:'Users', financials:'Financials', affiliateDashboard:'Referrals', tutorialEditor:'Tutorial Editor', settings:'Settings', featureRequest:'Feature Request', askExpert:'Ask an Expert', help:'Help', chat:'Inbox', knowledge:'Knowledge Base' };
-  document.getElementById('headerTitle').textContent = titles[currentView] || '';
+  document.getElementById('headerTitle').textContent = VIEW_TITLES[currentView] || '';
 }
 render();
 
@@ -41907,10 +42052,22 @@ history.replaceState({ view: currentView, profileId: currentProfileId || null, c
 window.addEventListener('popstate', function(e){
   const state = e.state;
   if(!state){
-    // No state — fallback to dashboard
+    // No state: a same-page hash change (a typed URL or plain link). Open the page
+    // the hash names; an unknown hash, or a profile whose record isn't loaded,
+    // falls back to the dashboard. Then give the entry a state like any other.
+    const route = _parseHashRoute(location.hash);
+    const recId = route && (route.profileId || route.cohostId);
     _handlingPopstate = true;
-    switchView('dashboard');
-    _handlingPopstate = false;
+    try {
+      if(recId && (records.some(x => x.id === recId) || (typeof getCohostById === 'function' && getCohostById(recId)))) openDetail(recId);
+      else switchView(route && !recId ? route.view : 'dashboard');
+    } finally {
+      _handlingPopstate = false;
+    }
+    const url = currentView === 'profile' && currentProfileId ? '#profile/' + currentProfileId
+      : (currentView === 'cohostProfile' && currentCohostId ? '#cohost-' + currentCohostId
+      : (currentView === 'opsProfile' && currentOpsId ? '#opsProfile/' + currentOpsId : '#' + currentView));
+    try { history.replaceState({ view: currentView, profileId: currentProfileId || null, cohostId: currentCohostId || null, opsId: currentOpsId || null }, '', url); } catch(ex){}
     return;
   }
   // Before navigating away, save current profile tab/scroll into the CURRENT history entry
@@ -41997,8 +42154,7 @@ window.addEventListener('popstate', function(e){
       if(state.view !== 'opsProfile') currentOpsId = null;
       clearSearch();
       document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.view === state.view));
-      const titles = { dashboard:'Single Unit', pipeline:'Pipeline', operations:'Operations', opsProfile:'Operations', coHosting:'Co-Hosting', cohostProfile:'Co-Hosting', contacts:'All Contacts', apartments:'Multi Unit', notifications:'Notifications', pricing:'Your Plan', tutorial:'Tutorial', adminUsers:'Users', financials:'Financials', affiliateDashboard:'Referrals', tutorialEditor:'Tutorial Editor', settings:'Settings', featureRequest:'Feature Request', askExpert:'Ask an Expert', help:'Help', chat:'Inbox', knowledge:'Knowledge Base' };
-      document.getElementById('headerTitle').textContent = titles[state.view] || '';
+      document.getElementById('headerTitle').textContent = VIEW_TITLES[state.view] || '';
       saveViewState();
       render();
     }
@@ -42007,20 +42163,6 @@ window.addEventListener('popstate', function(e){
   }
 });
 
-// Handle hash-based navigation on initial load only (e.g., #pricing from extension)
-(function checkInitialHash(){
-  const hash = location.hash.replace('#','');
-  if(!hash) return;
-  // Only process if no history state was set (fresh navigation from external link)
-  if(history.state) return;
-  const validViews = ['dashboard','pipeline','contacts','notifications','pricing','settings'];
-  if(validViews.includes(hash)){
-    switchView(hash);
-  } else if(hash.startsWith('profile/')){
-    const pid = hash.substring(8);
-    if(pid && records.find(x => x.id === pid)) openProfile(pid);
-  }
-})();
 
 // ===== EXPORT PROPERTY PROFILE TO EXCEL =====
 
