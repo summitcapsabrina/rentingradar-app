@@ -4052,7 +4052,13 @@ function _setFieldDraft(ctx, fieldId, value){
   } catch(e){}
 }
 function _clearFieldDrafts(ctx, fieldIds){
-  (fieldIds || []).forEach(function(id){ try { localStorage.removeItem(_fieldDraftKey(ctx, id)); } catch(e){} });
+  (fieldIds || []).forEach(function(id){
+    // Cancel a still-pending debounced save too, or it fires after this and
+    // writes the draft straight back (type, then Save within 250ms).
+    const key = _fieldDraftKey(ctx, id);
+    clearTimeout(_fieldDraftTimers[key]); delete _fieldDraftTimers[key];
+    try { localStorage.removeItem(key); } catch(e){}
+  });
 }
 let _fieldDraftCtx = null;
 let _fieldDraftIds = [];
@@ -4060,9 +4066,48 @@ const _fieldDraftTimers = {};
 document.addEventListener('input', function(e){
   const el = e.target;
   if(!_fieldDraftCtx || !el.id || _fieldDraftIds.indexOf(el.id) === -1) return;
-  clearTimeout(_fieldDraftTimers[el.id]);
-  _fieldDraftTimers[el.id] = setTimeout(function(){ _setFieldDraft(_fieldDraftCtx, el.id, el.value); }, 250);
+  // Save under the context the user typed in, not whatever form is open 250ms later.
+  const ctx = _fieldDraftCtx, key = _fieldDraftKey(ctx, el.id);
+  clearTimeout(_fieldDraftTimers[key]);
+  _fieldDraftTimers[key] = setTimeout(function(){ delete _fieldDraftTimers[key]; _setFieldDraft(ctx, el.id, el.value); }, 250);
 });
+
+// Draft restores must be visible. Restoring silently let an old unsaved Add
+// Building draft reopen looking like another property's real data (2026-10-19).
+// A form restores through _applyFieldDrafts, which returns the pre-draft values
+// of the fields it changed (null if none), and while that's non-null shows
+// _draftRestoredNoticeHtml at the top of the form. Its Discard button puts the
+// pre-draft values back and clears the drafts.
+function _applyFieldDrafts(ctx, propToFieldId, obj){
+  let base = null;
+  Object.keys(propToFieldId).forEach(function(prop){
+    const dft = _getFieldDraft(ctx, propToFieldId[prop]);
+    const cur = obj[prop] == null ? '' : String(obj[prop]);
+    if(dft == null || dft === cur) return;
+    if(!base) base = {};
+    base[prop] = obj[prop];
+    obj[prop] = dft;
+  });
+  return base;
+}
+// Template-style forms read drafts field by field (fd(id, fallback)). This
+// wraps that read and records the fallback of every field a draft changed into
+// `base` ({ fieldId: savedValue }), so the form knows a restore happened.
+function _trackedFieldDraft(ctx, base){
+  return function(fieldId, fallback){
+    const dft = _getFieldDraft(ctx, fieldId);
+    const cur = fallback == null ? '' : String(fallback);
+    if(dft == null) return fallback;
+    if(dft !== cur) base[fieldId] = cur;
+    return dft;
+  };
+}
+function _draftRestoredNoticeHtml(onDiscard){
+  return '<div class="draft-restored-notice" role="status" style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--warning-light);border:1px solid rgba(245,158,11,.4);border-radius:6px;font-size:.8rem;color:var(--text)">' +
+    '<span style="flex:1">Restored your unsaved draft from earlier.</span>' +
+    '<button type="button" class="btn btn-secondary btn-sm" style="font-size:.72rem;padding:3px 10px" onclick="' + onDiscard + '">Discard</button>' +
+  '</div>';
+}
 
 /* ===== CO-HOSTING STORE (isolated from `records`) ===== */
 // Mirrors the records persistence pattern but in a separate Firestore doc so
@@ -4709,6 +4754,7 @@ let _pendingPrimaryPid = null;
 //   sourcePid        — if set, modal was opened from a property profile; restricts to
 //                      "Remove from this Property" (no full Delete)
 let _contactModalDraftCtx = null;
+let _contactDraftBase = null; // pre-draft values while a restored draft is showing
 function openContactModal(cid, prelinkPid, prelinkAsPrimary, sourcePid){
   const isNew = !cid;
   const original = isNew ? null : contacts.find(function(c){ return c.id === cid; });
@@ -4741,14 +4787,9 @@ function openContactModal(cid, prelinkPid, prelinkAsPrimary, sourcePid){
   // that would let a stale localStorage snapshot clobber a value the user just
   // typed in the current session before its own 250ms debounce had a chance
   // to save.
-  (function(){
-    const ctx = _contactModalDraftCtx;
-    const nameDft = _getFieldDraft(ctx, 'contactNameInput'); if(nameDft != null) _editingContact.name = nameDft;
-    const pronDft = _getFieldDraft(ctx, 'contactPronunciationInput'); if(pronDft != null) _editingContact.pronunciation = pronDft;
-    const phoneDft = _getFieldDraft(ctx, 'contactPhoneInput'); if(phoneDft != null) _editingContact.phone = phoneDft;
-    const emailDft = _getFieldDraft(ctx, 'contactEmailInput'); if(emailDft != null) _editingContact.email = emailDft;
-    const roleDft = _getFieldDraft(ctx, 'contactRoleInput'); if(roleDft != null) _editingContact.role = roleDft;
-  })();
+  // A restore shows a notice with Discard (see _applyFieldDrafts). For an
+  // existing contact, Discard puts back the saved values.
+  _contactDraftBase = _applyFieldDrafts(_contactModalDraftCtx, { name:'contactNameInput', pronunciation:'contactPronunciationInput', phone:'contactPhoneInput', email:'contactEmailInput', role:'contactRoleInput' }, _editingContact);
   _contactModalSourcePid = sourcePid || null;
   _pendingPrimaryPid = (prelinkAsPrimary && prelinkPid) ? prelinkPid : null;
 
@@ -4767,6 +4808,7 @@ function closeContactModal(){
   const ov = document.getElementById('contactModalOverlay');
   if(ov) ov.remove();
   _editingContact = null;
+  _contactDraftBase = null;
   _contactModalSourcePid = null;
   _pendingPrimaryPid = null;
   // Clear any pending picker callback so a future Add Contact doesn't accidentally
@@ -4776,6 +4818,14 @@ function closeContactModal(){
 }
 
 const CONTACT_MODAL_DRAFT_FIELD_IDS = ['contactNameInput','contactPronunciationInput','contactPhoneInput','contactEmailInput','contactRoleInput'];
+// Discard on the restored-draft notice: back to the saved (or blank) values, drafts dropped.
+function _discardContactDraft(){
+  if(!_editingContact) return;
+  Object.keys(_contactDraftBase || {}).forEach(function(prop){ _editingContact[prop] = _contactDraftBase[prop]; });
+  _clearFieldDrafts(_contactModalDraftCtx || _editingContact.id, CONTACT_MODAL_DRAFT_FIELD_IDS);
+  _contactDraftBase = null;
+  _renderContactModal();
+}
 function _renderContactModal(){
   const overlay = document.getElementById('contactModalOverlay');
   if(!overlay || !_editingContact) return;
@@ -4829,6 +4879,7 @@ function _renderContactModal(){
       '<button class="modal-close" onclick="closeContactModal()" style="background:none;border:none;color:var(--text2);cursor:pointer;font-size:1.5rem;line-height:1">×</button>' +
     '</div>' +
     '<div class="multi-editor-body" style="padding:20px">' +
+      (_contactDraftBase ? '<div style="margin-bottom:16px">' + _draftRestoredNoticeHtml('_discardContactDraft()') + '</div>' : '') +
       // Photo + Name header
       '<div style="display:flex;gap:16px;align-items:center;margin-bottom:20px">' +
         '<div id="contactPhotoSlot" style="position:relative;cursor:pointer" onclick="document.getElementById(\'contactPhotoInput\').click()">' +
@@ -4939,9 +4990,10 @@ function _unlinkContactProperty(pid){
 /* ===== APARTMENT PROSPECTING MODAL ===== */
 const _APT_INPUT_STYLE = 'width:100%;padding:8px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.9rem;box-sizing:border-box';
 
-function _aptModalField(label, innerHtml){
+// forId ties the label to its control (screen readers, automation, the extension).
+function _aptModalField(label, innerHtml, forId){
   return '<div style="display:flex;flex-direction:column;gap:6px">' +
-    '<label style="font-size:.7rem;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">' + label + '</label>' +
+    '<label' + (forId ? ' for="' + forId + '"' : '') + ' style="font-size:.7rem;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">' + label + '</label>' +
     innerHtml +
   '</div>';
 }
@@ -4984,6 +5036,8 @@ function _aptProspectToPipelineRecord(p){
 // "Add Building" modal — reused from the removed Outreach tab. Always creates;
 // saving lands the new building straight in the Pipeline (see _saveAptProspectFromModal).
 const APT_PROSPECT_DRAFT_FIELD_IDS = ['aptBuildingNameInput','aptAddressInput','aptContactTitleInput','aptContactNameInput','aptEmailInput','aptPhoneInput','aptWebsiteInput','aptNotesInput'];
+const APT_PROSPECT_DRAFT_MAP = { buildingName:'aptBuildingNameInput', address:'aptAddressInput', contactTitle:'aptContactTitleInput', contactName:'aptContactNameInput', email:'aptEmailInput', phone:'aptPhoneInput', website:'aptWebsiteInput', notes:'aptNotesInput' };
+let _aptProspectDraftBase = null; // pre-draft values while a restored draft is showing
 function openAptProspectModal(){
   _savingAptProspect = false;
   window._selectedGeoLocation = null; // never pin a new building with coords picked in another form
@@ -4998,11 +5052,8 @@ function openAptProspectModal(){
   // case). Fixed singleton context instead, same shape as the Cohost
   // manual-add form. One-time restoration (see openContactModal for why this
   // happens once here, not on every re-render).
-  (function(){
-    const ctx = 'aptProspectAdd';
-    const map = { buildingName:'aptBuildingNameInput', address:'aptAddressInput', contactTitle:'aptContactTitleInput', contactName:'aptContactNameInput', email:'aptEmailInput', phone:'aptPhoneInput', website:'aptWebsiteInput', notes:'aptNotesInput' };
-    Object.keys(map).forEach(function(prop){ const dft = _getFieldDraft(ctx, map[prop]); if(dft != null) _editingAptProspect[prop] = dft; });
-  })();
+  // A restore shows a notice with Discard (see _applyFieldDrafts).
+  _aptProspectDraftBase = _applyFieldDrafts('aptProspectAdd', APT_PROSPECT_DRAFT_MAP, _editingAptProspect);
 
   const existing = document.getElementById('aptProspectModalOverlay');
   if(existing) existing.remove();
@@ -5028,6 +5079,19 @@ function closeAptProspectModal(){
   if(ov) ov.remove();
   _editingAptProspect = null;
   _savingAptProspect = false;
+  _aptProspectDraftBase = null;
+}
+
+// Discard on the restored-draft notice: blank the restored fields and drop the drafts.
+function _discardAptProspectDraft(){
+  if(!_editingAptProspect) return;
+  Object.keys(_aptProspectDraftBase || {}).forEach(function(prop){ _editingAptProspect[prop] = _aptProspectDraftBase[prop]; });
+  _clearFieldDrafts('aptProspectAdd', APT_PROSPECT_DRAFT_FIELD_IDS);
+  _aptProspectDraftBase = null;
+  window._selectedGeoLocation = null;
+  _renderAptProspectModal();
+  const nameEl = document.getElementById('aptBuildingNameInput');
+  if(nameEl) nameEl.focus();
 }
 
 function _renderAptProspectModal(){
@@ -5049,22 +5113,23 @@ function _renderAptProspectModal(){
       '<button class="modal-close" onclick="closeAptProspectModal()" style="background:none;border:none;color:var(--text2);cursor:pointer;font-size:1.5rem;line-height:1">×</button>' +
     '</div>' +
     '<div class="multi-editor-body" style="padding:20px;display:flex;flex-direction:column;gap:14px">' +
-      _aptModalField('Building Name', '<input type="text" id="aptBuildingNameInput" value="' + esc(p.buildingName||'') + '" placeholder="e.g. The Grand at Riverside" autocomplete="off" data-form-type="other" style="' + _APT_INPUT_STYLE + '" oninput="_editingAptProspect.buildingName=this.value">') +
-      _aptModalField('Address', '<input type="text" id="aptAddressInput" value="' + esc(p.address||'') + '" placeholder="Start typing an address..." autocomplete="off" data-form-type="other" style="' + _APT_INPUT_STYLE + '" oninput="_editingAptProspect.address=this.value">') +
+      (_aptProspectDraftBase ? _draftRestoredNoticeHtml('_discardAptProspectDraft()') : '') +
+      _aptModalField('Building Name', '<input type="text" id="aptBuildingNameInput" value="' + esc(p.buildingName||'') + '" placeholder="e.g. The Grand at Riverside" autocomplete="off" data-form-type="other" style="' + _APT_INPUT_STYLE + '" oninput="_editingAptProspect.buildingName=this.value">', 'aptBuildingNameInput') +
+      _aptModalField('Address', '<input type="text" id="aptAddressInput" value="' + esc(p.address||'') + '" placeholder="Start typing an address..." autocomplete="off" data-form-type="other" style="' + _APT_INPUT_STYLE + '" oninput="_editingAptProspect.address=this.value">', 'aptAddressInput') +
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
-        _aptModalField('Priority', '<select style="' + _APT_INPUT_STYLE + '" onchange="_editingAptProspect.priority=this.value">' + priorityOptions + '</select>') +
-        _aptModalField('Status', '<select style="' + _APT_INPUT_STYLE + '" onchange="_editingAptProspect.status=this.value">' + statusOptions + '</select>') +
+        _aptModalField('Priority', '<select id="aptPriorityInput" style="' + _APT_INPUT_STYLE + '" onchange="_editingAptProspect.priority=this.value">' + priorityOptions + '</select>', 'aptPriorityInput') +
+        _aptModalField('Status', '<select id="aptStatusInput" style="' + _APT_INPUT_STYLE + '" onchange="_editingAptProspect.status=this.value">' + statusOptions + '</select>', 'aptStatusInput') +
       '</div>' +
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
-        _aptModalField('Contact Title', '<input type="text" id="aptContactTitleInput" value="' + esc(p.contactTitle||'') + '" placeholder="Leasing Manager" style="' + _APT_INPUT_STYLE + '" oninput="_editingAptProspect.contactTitle=this.value">') +
-        _aptModalField('Contact Name', '<input type="text" id="aptContactNameInput" value="' + esc(p.contactName||'') + '" style="' + _APT_INPUT_STYLE + '" oninput="_editingAptProspect.contactName=this.value">') +
+        _aptModalField('Contact Title', '<input type="text" id="aptContactTitleInput" value="' + esc(p.contactTitle||'') + '" placeholder="Leasing Manager" style="' + _APT_INPUT_STYLE + '" oninput="_editingAptProspect.contactTitle=this.value">', 'aptContactTitleInput') +
+        _aptModalField('Contact Name', '<input type="text" id="aptContactNameInput" value="' + esc(p.contactName||'') + '" style="' + _APT_INPUT_STYLE + '" oninput="_editingAptProspect.contactName=this.value">', 'aptContactNameInput') +
       '</div>' +
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
-        _aptModalField('Email', '<input type="email" id="aptEmailInput" value="' + esc(p.email||'') + '" style="' + _APT_INPUT_STYLE + '" oninput="_editingAptProspect.email=this.value">') +
-        _aptModalField('Phone #', '<input type="tel" id="aptPhoneInput" maxlength="14" value="' + esc(p.phone||'') + '" style="' + _APT_INPUT_STYLE + '" oninput="this.value=fmtPhone(this.value);_editingAptProspect.phone=this.value">') +
+        _aptModalField('Email', '<input type="email" id="aptEmailInput" value="' + esc(p.email||'') + '" style="' + _APT_INPUT_STYLE + '" oninput="_editingAptProspect.email=this.value">', 'aptEmailInput') +
+        _aptModalField('Phone #', '<input type="tel" id="aptPhoneInput" maxlength="14" value="' + esc(p.phone||'') + '" style="' + _APT_INPUT_STYLE + '" oninput="this.value=fmtPhone(this.value);_editingAptProspect.phone=this.value">', 'aptPhoneInput') +
       '</div>' +
-      _aptModalField('Property Website', '<input type="text" id="aptWebsiteInput" value="' + esc(p.website||'') + '" placeholder="https://..." style="' + _APT_INPUT_STYLE + '" oninput="_editingAptProspect.website=this.value">') +
-      _aptModalField('Notes', '<textarea id="aptNotesInput" rows="4" style="' + _APT_INPUT_STYLE + ';resize:vertical;font-family:inherit" oninput="_editingAptProspect.notes=this.value">' + esc(p.notes||'') + '</textarea>') +
+      _aptModalField('Property Website', '<input type="text" id="aptWebsiteInput" value="' + esc(p.website||'') + '" placeholder="https://..." style="' + _APT_INPUT_STYLE + '" oninput="_editingAptProspect.website=this.value">', 'aptWebsiteInput') +
+      _aptModalField('Notes', '<textarea id="aptNotesInput" rows="4" style="' + _APT_INPUT_STYLE + ';resize:vertical;font-family:inherit" oninput="_editingAptProspect.notes=this.value">' + esc(p.notes||'') + '</textarea>', 'aptNotesInput') +
     '</div>' +
     '<div class="multi-editor-actions" style="display:flex;justify-content:flex-end;align-items:center;padding:14px 20px;border-top:1px solid var(--border)">' +
       '<div style="display:flex;gap:8px">' +
@@ -12515,7 +12580,7 @@ function showAddChoice(){
       <label class="field-label" style="display:flex;align-items:center;gap:6px;font-weight:600;margin-bottom:2px">🤖 AI Listing Import</label>
       <div style="font-size:.72rem;color:var(--text3);margin-bottom:8px">Paste a listing URL and AI will auto-fill the property profile — address, beds, baths, sq ft, rent, amenities, and investor notes from Zillow, Apartments.com, or Hotpads.</div>
       <div style="display:flex;gap:6px">
-        <input id="add_choice_url" type="url" placeholder="Paste listing link here..." style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();importFromChoicePaste()}" />
+        <input id="add_choice_url" type="url" aria-label="Listing link" placeholder="Paste listing link here..." style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();importFromChoicePaste()}" />
         <button type="button" class="btn btn-primary btn-sm" style="white-space:nowrap" onclick="importFromChoicePaste()">Import</button>
       </div>
       <div id="add_choice_status" style="font-size:.72rem;color:var(--text3);margin-top:6px;min-height:1em"></div>
@@ -12854,42 +12919,42 @@ function showManualAddForm(){
         <button type="button" class="btn btn-secondary btn-sm" style="font-size:.72rem" onclick="showAddChoice()">← Back</button>
         <div style="font-size:.72rem;color:var(--text3)">Manual entry</div>
       </div>
-      <div class="field-group" style="position:relative"><label class="field-label">Property Address *</label><input id="add_property" type="text" placeholder="Start typing an address..." autocomplete="off" data-form-type="other"></div>
+      <div class="field-group" style="position:relative"><label class="field-label" for="add_property">Property Address *</label><input id="add_property" type="text" placeholder="Start typing an address..." autocomplete="off" data-form-type="other"></div>
       <div class="field-row" style="gap:8px">
-        <div class="field-group" style="flex:2"><label class="field-label">City</label><input id="add_city" type="text" placeholder="Auto-filled" autocomplete="off" data-form-type="other"></div>
-        <div class="field-group" style="flex:.8"><label class="field-label">State</label><input id="add_state" type="text" placeholder="ST" maxlength="2" style="text-transform:uppercase" autocomplete="off" data-form-type="other"></div>
-        <div class="field-group" style="flex:1"><label class="field-label">Zip</label><input id="add_zip" type="text" placeholder="00000" maxlength="10" autocomplete="off" data-form-type="other"></div>
+        <div class="field-group" style="flex:2"><label class="field-label" for="add_city">City</label><input id="add_city" type="text" placeholder="Auto-filled" autocomplete="off" data-form-type="other"></div>
+        <div class="field-group" style="flex:.8"><label class="field-label" for="add_state">State</label><input id="add_state" type="text" placeholder="ST" maxlength="2" style="text-transform:uppercase" autocomplete="off" data-form-type="other"></div>
+        <div class="field-group" style="flex:1"><label class="field-label" for="add_zip">Zip</label><input id="add_zip" type="text" placeholder="00000" maxlength="10" autocomplete="off" data-form-type="other"></div>
       </div>
       <div class="field-group" style="margin-top:-4px">
-        <label class="field-label">Unit / Suite / # (optional)</label>
+        <label class="field-label" for="add_unit_type">Unit / Suite / # (optional)</label>
         <div style="display:flex;gap:6px;align-items:center">
           <select id="add_unit_type" style="font-size:.82rem;padding:5px 8px;width:auto;min-width:80px"><option value="">None</option><option value="#">#</option><option value="Unit">Unit</option><option value="Apt">Apt</option><option value="Suite">Suite</option><option value="Ste">Ste</option><option value="Bldg">Bldg</option></select>
-          <input id="add_unit_num" type="text" placeholder="Number" style="flex:1;max-width:140px">
+          <input id="add_unit_num" type="text" placeholder="Number" aria-label="Unit number" style="flex:1;max-width:140px">
         </div>
       </div>
       <div class="field-row" style="gap:8px">
-        <div class="field-group" style="flex:1"><label class="field-label">Market</label><input id="add_market" type="text"></div>
-        <div class="field-group" style="flex:1"><label class="field-label">Submarket</label><input id="add_submarket" type="text"></div>
+        <div class="field-group" style="flex:1"><label class="field-label" for="add_market">Market</label><input id="add_market" type="text"></div>
+        <div class="field-group" style="flex:1"><label class="field-label" for="add_submarket">Submarket</label><input id="add_submarket" type="text"></div>
       </div>
       <div class="field-row" style="gap:8px">
-        <div class="field-group" style="flex:1"><label class="field-label">Beds</label><input id="add_beds" type="number" min="0" step="1"></div>
-        <div class="field-group" style="flex:1"><label class="field-label">Baths</label><input id="add_baths" type="number" min="0" step="0.5"></div>
-        <div class="field-group" style="flex:1"><label class="field-label">Sq Ft</label><input id="add_sqft" type="number" min="0"></div>
-        <div class="field-group" style="flex:1"><label class="field-label">Rent</label><input id="add_rent" type="number" min="0"></div>
+        <div class="field-group" style="flex:1"><label class="field-label" for="add_beds">Beds</label><input id="add_beds" type="number" min="0" step="1"></div>
+        <div class="field-group" style="flex:1"><label class="field-label" for="add_baths">Baths</label><input id="add_baths" type="number" min="0" step="0.5"></div>
+        <div class="field-group" style="flex:1"><label class="field-label" for="add_sqft">Sq Ft</label><input id="add_sqft" type="number" min="0"></div>
+        <div class="field-group" style="flex:1"><label class="field-label" for="add_rent">Rent</label><input id="add_rent" type="number" min="0"></div>
       </div>
       <div class="field-row">
-        <div class="field-group"><label class="field-label">Contact Name</label><input id="add_name" type="text"></div>
-        <div class="field-group"><label class="field-label">Phone</label><input id="add_phone" type="tel" maxlength="14" oninput="rrFormatPhoneInput(this)"><div class="ce-phone-error" style="display:none;color:var(--danger);font-size:.75rem;margin-top:2px">Phone must be 10 digits</div></div>
+        <div class="field-group"><label class="field-label" for="add_name">Contact Name</label><input id="add_name" type="text"></div>
+        <div class="field-group"><label class="field-label" for="add_phone">Phone</label><input id="add_phone" type="tel" maxlength="14" oninput="rrFormatPhoneInput(this)"><div class="ce-phone-error" style="display:none;color:var(--danger);font-size:.75rem;margin-top:2px">Phone must be 10 digits</div></div>
       </div>
       <div class="field-row">
-        <div class="field-group"><label class="field-label">Email</label><input id="add_email" type="email"></div>
-        <div class="field-group"><label class="field-label">Status</label><select id="add_status">${SELECTABLE_STATUSES.map(s=>`<option value="${s}" ${s==='New'?'selected':''}>${s}</option>`).join('')}</select></div>
+        <div class="field-group"><label class="field-label" for="add_email">Email</label><input id="add_email" type="email"></div>
+        <div class="field-group"><label class="field-label" for="add_status">Status</label><select id="add_status">${SELECTABLE_STATUSES.map(s=>`<option value="${s}" ${s==='New'?'selected':''}>${s}</option>`).join('')}</select></div>
       </div>
-      <div class="field-group"><label class="field-label">Listing Link</label><input id="add_link2" type="url" value="${esc(url)}" placeholder="https://..."></div>
-      <div class="field-group"><label class="field-label">Notes</label><textarea id="add_note" rows="2"></textarea></div>
+      <div class="field-group"><label class="field-label" for="add_link2">Listing Link</label><input id="add_link2" type="url" value="${esc(url)}" placeholder="https://..."></div>
+      <div class="field-group"><label class="field-label" for="add_note">Notes</label><textarea id="add_note" rows="2"></textarea></div>
       <div class="field-row">
-        <div class="field-group"><label class="field-label">Follow-Up Date</label><input id="add_followup" type="date"></div>
-        <div class="field-group"><label class="field-label">Meeting Date</label><input id="add_meeting" type="date"></div>
+        <div class="field-group"><label class="field-label" for="add_followup">Follow-Up Date</label><input id="add_followup" type="date"></div>
+        <div class="field-group"><label class="field-label" for="add_meeting">Meeting Date</label><input id="add_meeting" type="date"></div>
       </div>
       <div style="display:flex;gap:8px;justify-content:flex-end;align-items:center;margin-top:20px">
         <div style="font-size:.65rem;color:var(--text3);margin-right:auto">Shift + Enter to save</div>
@@ -12920,42 +12985,42 @@ function showManualAddForm(){
         <button type="button" class="btn btn-secondary btn-sm" style="font-size:.72rem" onclick="openAddModal()">← Back</button>
         <div style="font-size:.72rem;color:var(--text3)">Manual entry</div>
       </div>
-      <div class="field-group" style="position:relative"><label class="field-label">Property Address *</label><input id="add_property" type="text" placeholder="Start typing an address..." autocomplete="off" data-form-type="other"></div>
+      <div class="field-group" style="position:relative"><label class="field-label" for="add_property">Property Address *</label><input id="add_property" type="text" placeholder="Start typing an address..." autocomplete="off" data-form-type="other"></div>
       <div class="field-row" style="gap:8px">
-        <div class="field-group" style="flex:2"><label class="field-label">City</label><input id="add_city" type="text" placeholder="Auto-filled" autocomplete="off" data-form-type="other"></div>
-        <div class="field-group" style="flex:.8"><label class="field-label">State</label><input id="add_state" type="text" placeholder="ST" maxlength="2" style="text-transform:uppercase" autocomplete="off" data-form-type="other"></div>
-        <div class="field-group" style="flex:1"><label class="field-label">Zip</label><input id="add_zip" type="text" placeholder="00000" maxlength="10" autocomplete="off" data-form-type="other"></div>
+        <div class="field-group" style="flex:2"><label class="field-label" for="add_city">City</label><input id="add_city" type="text" placeholder="Auto-filled" autocomplete="off" data-form-type="other"></div>
+        <div class="field-group" style="flex:.8"><label class="field-label" for="add_state">State</label><input id="add_state" type="text" placeholder="ST" maxlength="2" style="text-transform:uppercase" autocomplete="off" data-form-type="other"></div>
+        <div class="field-group" style="flex:1"><label class="field-label" for="add_zip">Zip</label><input id="add_zip" type="text" placeholder="00000" maxlength="10" autocomplete="off" data-form-type="other"></div>
       </div>
       <div class="field-group" style="margin-top:-4px">
-        <label class="field-label">Unit / Suite / # (optional)</label>
+        <label class="field-label" for="add_unit_type">Unit / Suite / # (optional)</label>
         <div style="display:flex;gap:6px;align-items:center">
           <select id="add_unit_type" style="font-size:.82rem;padding:5px 8px;width:auto;min-width:80px"><option value="">None</option><option value="#">#</option><option value="Unit">Unit</option><option value="Apt">Apt</option><option value="Suite">Suite</option><option value="Ste">Ste</option><option value="Bldg">Bldg</option></select>
-          <input id="add_unit_num" type="text" placeholder="Number" style="flex:1;max-width:140px">
+          <input id="add_unit_num" type="text" placeholder="Number" aria-label="Unit number" style="flex:1;max-width:140px">
         </div>
       </div>
       <div class="field-row" style="gap:8px">
-        <div class="field-group" style="flex:1"><label class="field-label">Market</label><input id="add_market" type="text"></div>
-        <div class="field-group" style="flex:1"><label class="field-label">Submarket</label><input id="add_submarket" type="text"></div>
+        <div class="field-group" style="flex:1"><label class="field-label" for="add_market">Market</label><input id="add_market" type="text"></div>
+        <div class="field-group" style="flex:1"><label class="field-label" for="add_submarket">Submarket</label><input id="add_submarket" type="text"></div>
       </div>
       <div class="field-row" style="gap:8px">
-        <div class="field-group" style="flex:1"><label class="field-label">Beds</label><input id="add_beds" type="number" min="0" step="1"></div>
-        <div class="field-group" style="flex:1"><label class="field-label">Baths</label><input id="add_baths" type="number" min="0" step="0.5"></div>
-        <div class="field-group" style="flex:1"><label class="field-label">Sq Ft</label><input id="add_sqft" type="number" min="0"></div>
-        <div class="field-group" style="flex:1"><label class="field-label">Rent</label><input id="add_rent" type="number" min="0"></div>
+        <div class="field-group" style="flex:1"><label class="field-label" for="add_beds">Beds</label><input id="add_beds" type="number" min="0" step="1"></div>
+        <div class="field-group" style="flex:1"><label class="field-label" for="add_baths">Baths</label><input id="add_baths" type="number" min="0" step="0.5"></div>
+        <div class="field-group" style="flex:1"><label class="field-label" for="add_sqft">Sq Ft</label><input id="add_sqft" type="number" min="0"></div>
+        <div class="field-group" style="flex:1"><label class="field-label" for="add_rent">Rent</label><input id="add_rent" type="number" min="0"></div>
       </div>
       <div class="field-row">
-        <div class="field-group"><label class="field-label">Contact Name</label><input id="add_name" type="text"></div>
-        <div class="field-group"><label class="field-label">Phone</label><input id="add_phone" type="tel" maxlength="14" oninput="rrFormatPhoneInput(this)"><div class="ce-phone-error" style="display:none;color:var(--danger);font-size:.75rem;margin-top:2px">Phone must be 10 digits</div></div>
+        <div class="field-group"><label class="field-label" for="add_name">Contact Name</label><input id="add_name" type="text"></div>
+        <div class="field-group"><label class="field-label" for="add_phone">Phone</label><input id="add_phone" type="tel" maxlength="14" oninput="rrFormatPhoneInput(this)"><div class="ce-phone-error" style="display:none;color:var(--danger);font-size:.75rem;margin-top:2px">Phone must be 10 digits</div></div>
       </div>
       <div class="field-row">
-        <div class="field-group"><label class="field-label">Email</label><input id="add_email" type="email"></div>
-        <div class="field-group"><label class="field-label">Status</label><select id="add_status">${SELECTABLE_STATUSES.map(s=>`<option value="${s}" ${s==='New'?'selected':''}>${s}</option>`).join('')}</select></div>
+        <div class="field-group"><label class="field-label" for="add_email">Email</label><input id="add_email" type="email"></div>
+        <div class="field-group"><label class="field-label" for="add_status">Status</label><select id="add_status">${SELECTABLE_STATUSES.map(s=>`<option value="${s}" ${s==='New'?'selected':''}>${s}</option>`).join('')}</select></div>
       </div>
-      <div class="field-group"><label class="field-label">Listing Link</label><input id="add_link2" type="url" value="${esc(url)}" placeholder="https://..."></div>
-      <div class="field-group"><label class="field-label">Notes</label><textarea id="add_note" rows="2"></textarea></div>
+      <div class="field-group"><label class="field-label" for="add_link2">Listing Link</label><input id="add_link2" type="url" value="${esc(url)}" placeholder="https://..."></div>
+      <div class="field-group"><label class="field-label" for="add_note">Notes</label><textarea id="add_note" rows="2"></textarea></div>
       <div class="field-row">
-        <div class="field-group"><label class="field-label">Follow-Up Date</label><input id="add_followup" type="date"></div>
-        <div class="field-group"><label class="field-label">Meeting Date</label><input id="add_meeting" type="date"></div>
+        <div class="field-group"><label class="field-label" for="add_followup">Follow-Up Date</label><input id="add_followup" type="date"></div>
+        <div class="field-group"><label class="field-label" for="add_meeting">Meeting Date</label><input id="add_meeting" type="date"></div>
       </div>
       <div style="display:flex;gap:8px;justify-content:flex-end;align-items:center;margin-top:20px">
         <div style="font-size:.65rem;color:var(--text3);margin-right:auto">Shift + Enter to save</div>
@@ -26718,22 +26783,30 @@ function _cohostShowManualForm(){
   const body = document.getElementById('cohostAddBody'); if(!body) return;
   _fieldDraftCtx = 'cohostAdd_manual';
   _fieldDraftIds = COHOST_MANUAL_DRAFT_FIELD_IDS;
-  const fd = function(fieldId){ const dft = _getFieldDraft(_fieldDraftCtx, fieldId); return dft != null ? esc(dft) : ''; };
-  body.innerHTML =
+  const _restored = {}; // a restore shows the notice; Discard re-renders blank
+  const _fdRaw = _trackedFieldDraft(_fieldDraftCtx, _restored);
+  const fd = function(fieldId){ return esc(_fdRaw(fieldId, '')); };
+  const _fields =
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 12px">'+
-      '<div style="grid-column:1/-1"><label class="field-label">Property Address</label><input id="cohost_m_address" type="text" value="'+fd('cohost_m_address')+'" placeholder="123 Main St, City, ST" style="width:100%"></div>'+
-      '<div><label class="field-label">Contact Name</label><input id="cohost_m_host" type="text" value="'+fd('cohost_m_host')+'" placeholder="e.g. Sarah Mills" style="width:100%"></div>'+
-      '<div><label class="field-label">Market</label><input id="cohost_m_market" type="text" value="'+fd('cohost_m_market')+'" style="width:100%"></div>'+
-      '<div><label class="field-label">Bedrooms</label><input id="cohost_m_beds" type="number" min="0" value="'+fd('cohost_m_beds')+'" style="width:100%"></div>'+
-      '<div><label class="field-label">Bathrooms</label><input id="cohost_m_baths" type="number" min="0" step="0.5" value="'+fd('cohost_m_baths')+'" style="width:100%"></div>'+
-      '<div><label class="field-label">Listing Link</label><input id="cohost_m_link" type="url" value="'+fd('cohost_m_link')+'" placeholder="https://… (Zillow/Apartments/Hotpads)" style="width:100%"></div>'+
-      '<div><label class="field-label">Asking Rent / mo</label><input id="cohost_m_rent" type="number" min="0" value="'+fd('cohost_m_rent')+'" placeholder="2500" style="width:100%"></div>'+
+      '<div style="grid-column:1/-1"><label class="field-label" for="cohost_m_address">Property Address</label><input id="cohost_m_address" type="text" value="'+fd('cohost_m_address')+'" placeholder="123 Main St, City, ST" style="width:100%"></div>'+
+      '<div><label class="field-label" for="cohost_m_host">Contact Name</label><input id="cohost_m_host" type="text" value="'+fd('cohost_m_host')+'" placeholder="e.g. Sarah Mills" style="width:100%"></div>'+
+      '<div><label class="field-label" for="cohost_m_market">Market</label><input id="cohost_m_market" type="text" value="'+fd('cohost_m_market')+'" style="width:100%"></div>'+
+      '<div><label class="field-label" for="cohost_m_beds">Bedrooms</label><input id="cohost_m_beds" type="number" min="0" value="'+fd('cohost_m_beds')+'" style="width:100%"></div>'+
+      '<div><label class="field-label" for="cohost_m_baths">Bathrooms</label><input id="cohost_m_baths" type="number" min="0" step="0.5" value="'+fd('cohost_m_baths')+'" style="width:100%"></div>'+
+      '<div><label class="field-label" for="cohost_m_link">Listing Link</label><input id="cohost_m_link" type="url" value="'+fd('cohost_m_link')+'" placeholder="https://… (Zillow/Apartments/Hotpads)" style="width:100%"></div>'+
+      '<div><label class="field-label" for="cohost_m_rent">Asking Rent / mo</label><input id="cohost_m_rent" type="number" min="0" value="'+fd('cohost_m_rent')+'" placeholder="2500" style="width:100%"></div>'+
     '</div>'+
     '<div style="display:flex;justify-content:space-between;gap:8px;margin-top:16px">'+
       '<button type="button" class="btn btn-secondary btn-sm" onclick="_cohostShowAddChoice()">← Back</button>'+
       '<button type="button" class="btn btn-primary" onclick="saveCohostManual()">Save Property</button>'+
     '</div>';
+  body.innerHTML = (Object.keys(_restored).length ? '<div style="margin-bottom:12px">' + _draftRestoredNoticeHtml('_discardCohostManualDraft()') + '</div>' : '') + _fields;
   setTimeout(function(){ const el=document.getElementById('cohost_m_address'); if(el) el.focus(); }, 60);
+}
+// Discard on the restored-draft notice: drop the drafts and re-render the form blank.
+function _discardCohostManualDraft(){
+  _clearFieldDrafts('cohostAdd_manual', COHOST_MANUAL_DRAFT_FIELD_IDS);
+  _cohostShowManualForm();
 }
 function saveCohostManual(){
   const get = function(id){ const el=document.getElementById(id); return el?(el.value||'').trim():''; };
@@ -29693,6 +29766,18 @@ async function _unitUploadFloorplan(file, recordId, unitId){
   const url = await ref.getDownloadURL();
   return { url, name: file.name, path };
 }
+let _unitDraftCtx = null, _unitDraftBase = {};
+// Discard on the restored-draft notice: saved (or blank) values back, drafts dropped.
+function _discardUnitDraft(){
+  Object.keys(_unitDraftBase).forEach(function(fieldId){
+    const el = document.getElementById(fieldId);
+    if(el) el.value = _unitDraftBase[fieldId];
+  });
+  if(_unitDraftCtx) _clearFieldDrafts(_unitDraftCtx, UNIT_MODAL_DRAFT_FIELD_IDS);
+  _unitDraftBase = {};
+  const notice = document.getElementById('unitDraftNotice');
+  if(notice) notice.remove();
+}
 function openAddUnitModal(recordId, unitId){
   const r = records.find(x => x.id === recordId);
   if(!r) return;
@@ -29703,7 +29788,10 @@ function openAddUnitModal(recordId, unitId){
   // record+unit so it can never leak into a different unit's modal.
   _fieldDraftCtx = recordId + '_' + (unitId || 'new');
   _fieldDraftIds = UNIT_MODAL_DRAFT_FIELD_IDS;
-  const fd = function(fieldId, fallback){ const d = _getFieldDraft(_fieldDraftCtx, fieldId); return d != null ? d : fallback; };
+  // Records each field a draft changed, so a restore shows the notice below.
+  _unitDraftCtx = _fieldDraftCtx;
+  _unitDraftBase = {};
+  const fd = _trackedFieldDraft(_fieldDraftCtx, _unitDraftBase);
   _unitFloorplanStaged = null;
   _unitFloorplanCleared = false;
   if(_unitPasteHandler){ document.removeEventListener('paste', _unitPasteHandler); _unitPasteHandler = null; }
@@ -29747,6 +29835,10 @@ function openAddUnitModal(recordId, unitId){
         <button class="btn btn-primary" onclick="saveUnit('${recordId}','${unitId||''}')">${existing ? 'Save Changes' : 'Add Unit'}</button>
       </div>
     </div>`;
+  if(Object.keys(_unitDraftBase).length){
+    const body = panel.querySelector('.modal-body');
+    if(body) body.insertAdjacentHTML('afterbegin', '<div id="unitDraftNotice" style="margin-bottom:12px">' + _draftRestoredNoticeHtml('_discardUnitDraft()') + '</div>');
+  }
   modal.classList.add('open');
   setTimeout(() => { const el = document.getElementById('unit_label'); if(el) el.focus(); }, 60);
   // ⌘/Ctrl-V anywhere in the modal stages a floorplan photo, same pattern as
@@ -34650,13 +34742,109 @@ function formatFullAddress(parts){
   return s;
 }
 
+// ---- Address suggestion bias ----
+// Without a bias, "2115 Runnels St" suggested Big Spring and Fort Worth for a
+// Houston user. locationBias favors the user's market but doesn't restrict it
+// (users work in many markets). Places caps a circle bias at 50 km. Source, in
+// order: the property being edited, the map view when it's zoomed into one
+// market, then the densest cluster of the user's own properties.
+function _recCoords(r){
+  const d = r && r.propertyDetails;
+  if(!d) return null;
+  const lat = parseFloat(d.latitude), lng = parseFloat(d.longitude);
+  return (isFinite(lat) && isFinite(lng) && (lat || lng)) ? { lat: lat, lng: lng } : null;
+}
+function _geoMeters(lat1, lng1, lat2, lng2){
+  const R = 6371000, toRad = Math.PI / 180;
+  const dLat = (lat2 - lat1) * toRad, dLng = (lng2 - lng1) * toRad;
+  const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1 * toRad) * Math.cos(lat2 * toRad) * Math.sin(dLng/2) * Math.sin(dLng/2);
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+let _addrClusterCache = { key: null, center: null };
+// Center of the 50 km area holding the most of the user's properties (ties go
+// to the newest property). A plain centroid of every property lands between
+// markets for a user working in, say, Houston and Phoenix.
+function _propertyClusterCenter(){
+  const pts = [];
+  [records, (typeof cohostRecords !== 'undefined' ? cohostRecords : [])].forEach(function(list){
+    (list || []).forEach(function(r){
+      const c = _recCoords(r);
+      if(c) pts.push({ lat: c.lat, lng: c.lng, t: Date.parse(r.createdAt) || 0 });
+    });
+  });
+  if(!pts.length) return null;
+  const key = pts.length + '|' + pts.map(function(p){ return p.lat.toFixed(3) + ',' + p.lng.toFixed(3); }).join(';');
+  if(_addrClusterCache.key === key) return _addrClusterCache.center;
+  let best = null;
+  pts.forEach(function(p){
+    const near = pts.filter(function(o){ return _geoMeters(p.lat, p.lng, o.lat, o.lng) <= 50000; });
+    if(!best || near.length > best.near.length || (near.length === best.near.length && p.t > best.p.t)) best = { p: p, near: near };
+  });
+  const center = {
+    lat: best.near.reduce(function(s, o){ return s + o.lat; }, 0) / best.near.length,
+    lng: best.near.reduce(function(s, o){ return s + o.lng; }, 0) / best.near.length
+  };
+  _addrClusterCache = { key: key, center: center };
+  return center;
+}
+function _addressLocationBias(recId){
+  const circle = function(lat, lng, radius){
+    return { circle: { center: { latitude: lat, longitude: lng }, radius: Math.max(5000, Math.min(50000, radius)) } };
+  };
+  const own = recId ? _recCoords(_findRec(recId)) : null;
+  if(own) return circle(own.lat, own.lng, 50000);
+  const maps = [typeof dashMap !== 'undefined' ? dashMap : null, typeof opsMap !== 'undefined' ? opsMap : null];
+  for(let i = 0; i < maps.length; i++){
+    const m = maps[i];
+    try {
+      if(!m || !m.getContainer().isConnected) continue;
+      const b = m.getBounds(), c = b.getCenter();
+      const halfDiag = _geoMeters(c.lat, c.lng, b.getNorth(), b.getEast());
+      if(halfDiag <= 150000) return circle(c.lat, c.lng, halfDiag); // zoomed out past one market → skip
+    } catch(e){}
+  }
+  const c = _propertyClusterCenter();
+  return c ? circle(c.lat, c.lng, 50000) : null;
+}
+// Google can rank a named building above the street address the user typed, at
+// the same place ("2424 Capitol St, Houston" → "Circuit Building 1, Capitol
+// Street" first): the address-type request includes 'premise', and named
+// premises outrank plain addresses. When the query starts with a house number,
+// a suggestion that doesn't start with it moves just below the first one in the
+// same city that does. Picking either still fills the street address.
+function _rankAddressSuggestions(places, q){
+  const m = q.match(/^(\d+[a-z]?)\s/i);
+  if(!m) return places;
+  const num = m[1].toLowerCase() + ' ';
+  const mainOf = function(p){ return ((p.structuredFormat && p.structuredFormat.mainText && p.structuredFormat.mainText.text) || (p.text && p.text.text) || '').toLowerCase(); };
+  const cityOf = function(p){ return ((p.text && p.text.text) || '').split(',').slice(-3).join(',').trim().toLowerCase(); };
+  const numbered = function(p){ return mainOf(p).indexOf(num) === 0; };
+  const numberedCities = {};
+  places.forEach(function(p){ if(numbered(p)) numberedCities[cityOf(p)] = true; });
+  const held = places.filter(function(p){ return !numbered(p) && numberedCities[cityOf(p)]; });
+  if(!held.length) return places;
+  const out = [];
+  places.forEach(function(p){
+    if(held.indexOf(p) !== -1) return;
+    out.push(p);
+    if(numbered(p)){
+      const city = cityOf(p);
+      held.filter(function(h){ return cityOf(h) === city; }).forEach(function(h){ out.push(h); held.splice(held.indexOf(h), 1); });
+    }
+  });
+  return out;
+}
+
 async function fetchAddressSuggestions(query, dropdown, inputEl, recId){
   // Clean up pasted addresses: normalize whitespace, trim trailing commas
   let q = query.replace(/\s+/g, ' ').replace(/,\s*$/, '').trim();
   if(q.length < 3){ dropdown.classList.remove('visible'); return; }
+  let bias = null;
+  try { bias = _addressLocationBias(recId); } catch(e){}
 
   async function doFetch(types){
     const body = { input: q, includedRegionCodes: ['us'] };
+    if(bias) body.locationBias = bias;
     if(types) body.includedPrimaryTypes = types;
     const resp = await fetch('https://places.googleapis.com/v1/places:autocomplete', {
       method: 'POST',
@@ -34678,6 +34866,7 @@ async function fetchAddressSuggestions(query, dropdown, inputEl, recId){
     }
 
     if(!places.length){ dropdown.classList.remove('visible'); return; }
+    places = _rankAddressSuggestions(places, q);
 
     dropdown.innerHTML = places.map(p => {
       const placeId = p.placeId || '';
