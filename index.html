@@ -14867,6 +14867,7 @@ function renderAdminUsers(){
         <option value="all">All Statuses</option>
         <option value="active" ${_adminUserFilterStatus==='active'?'selected':''}>Active</option>
         <option value="trialing" ${_adminUserFilterStatus==='trialing'?'selected':''}>Trialing</option>
+        <option value="cancelling" ${_adminUserFilterStatus==='cancelling'?'selected':''}>Cancelling</option>
         <option value="expired" ${_adminUserFilterStatus==='expired'?'selected':''}>Expired</option>
         <option value="cancelled" ${_adminUserFilterStatus==='cancelled'?'selected':''}>Cancelled</option>
         <option value="none" ${_adminUserFilterStatus==='none'?'selected':''}>None</option>
@@ -14944,6 +14945,7 @@ async function _adminSyncAllUsersFromStripeBackground(){
           (u.tier || null) !== (d.tier || null) ||
           (u.subscriptionStatus || null) !== (d.subscriptionStatus || null) ||
           (u.currentPeriodEnd || null) !== (d.currentPeriodEnd || null) ||
+          !!u.cancelAtPeriodEnd !== !!d.cancelAtPeriodEnd ||
           (u.trialEnd || null) !== (d.trialEnd || null) ||
           (u.priceUnitAmount || null) !== ((typeof d.priceUnitAmount === 'number') ? d.priceUnitAmount : null) ||
           (u.billingInterval || null) !== (d.billingInterval || null);
@@ -14952,6 +14954,7 @@ async function _adminSyncAllUsersFromStripeBackground(){
           tier: d.tier || u.tier || null,
           subscriptionStatus: d.subscriptionStatus || 'none',
           currentPeriodEnd: d.currentPeriodEnd || null,
+          cancelAtPeriodEnd: !!d.cancelAtPeriodEnd,
           trialEnd: d.trialEnd || null,
           stripeCustomerId: d.stripeCustomerId || u.stripeCustomerId,
           stripeSubscriptionId: d.stripeSubscriptionId || u.stripeSubscriptionId,
@@ -14996,8 +14999,9 @@ function _adminRenderStats(){
   // "Paid" = subscriptionStatus 'active' AND a real Stripe sub AND not manually
   // overridden — i.e., users actually getting charged right now. Stays mutually
   // exclusive with Trialing so segments don't double-count.
-  const paid = _adminUsers.filter(u => u.subscriptionStatus === 'active' && u.stripeSubscriptionId && !u.manualOverride).length;
-  const trialing = _adminUsers.filter(u => u.subscriptionStatus === 'trialing').length;
+  const paid = _adminUsers.filter(u => u.subscriptionStatus === 'active' && u.stripeSubscriptionId && !u.manualOverride && !_adminIsCancelling(u)).length;
+  const trialing = _adminUsers.filter(u => u.subscriptionStatus === 'trialing' && !_adminIsCancelling(u)).length;
+  const cancelling = _adminUsers.filter(u => _adminIsCancelling(u)).length;
   const cancelled = _adminUsers.filter(u => u.subscriptionStatus === 'cancelled').length;
   const expired = _adminUsers.filter(u => u.subscriptionStatus === 'expired' || !u.subscriptionStatus || u.subscriptionStatus === 'none').length;
   const basic = _adminUsers.filter(u => u.tier === 'basic').length;
@@ -15011,7 +15015,8 @@ function _adminRenderStats(){
     ${_adminBarChart('Status', total, [
       { label:'Paid', count:paid, color:'#10b981' },
       { label:'Trialing', count:trialing, color:'#6366f1' },
-      { label:'Cancelled', count:cancelled, color:'#f59e0b' },
+      { label:'Cancelling', count:cancelling, color:'#f59e0b' },
+      { label:'Cancelled', count:cancelled, color:'#f97316' },
       { label:'Expired / None', count:expired, color:'#ef4444' }
     ])}
     ${_adminBarChart('Tier', total, [
@@ -17153,7 +17158,7 @@ function _affRender(){
       '<td style="padding:10px 12px;font-size:.78rem;color:var(--text2);white-space:nowrap">' + _affDate(u.createdAt) + '</td>' +
       '<td style="padding:10px 12px">' + _adminTierBadge(u.tier, u.subscriptionStatus, u.manualOverride, u.trialEnd) + '</td>' +
       '<td style="padding:10px 12px;font-size:.78rem;color:var(--text2);white-space:nowrap">' + esc(planLabel) + '</td>' +
-      '<td style="padding:10px 12px">' + _adminStatusDot(u.subscriptionStatus || 'none') + '</td>' +
+      '<td style="padding:10px 12px">' + _adminStatusDot(_adminDisplayStatus(u)) + '</td>' +
       '<td style="padding:10px 12px;text-align:right;font-weight:600;font-size:.82rem;color:#10b981">' +
         ((!u.manualOverride && (u.subscriptionStatus === 'active' || u.subscriptionStatus === 'trialing'))
           ? '$' + Math.max(0, (_affEstMonthlyRevenue(u) - _OPS_PER_USER_EXPENSE) * _OPS_COMMISSION_RATE).toFixed(2)
@@ -17618,7 +17623,7 @@ function _adminGetFilteredUsers(){
   }
   if(_adminUserFilterStatus !== 'all'){
     if(_adminUserFilterStatus === 'none') list = list.filter(u => !u.subscriptionStatus || u.subscriptionStatus === 'none');
-    else list = list.filter(u => u.subscriptionStatus === _adminUserFilterStatus);
+    else list = list.filter(u => _adminDisplayStatus(u) === _adminUserFilterStatus);
   }
   if(_adminUserFilterPaid !== 'all'){
     if(_adminUserFilterPaid === 'paid') list = list.filter(u => !u.manualOverride && u.stripeSubscriptionId);
@@ -17698,8 +17703,17 @@ function _adminTierBadge(tier, status, manualOverride, trialEnd, opts, billingIn
   return `<span class="tier-badge ${t.badge}">${t.badgeText}${intervalSuffix}${extra}</span>`;
 }
 
+// Stripe keeps a cancelled-at-period-end sub as 'active' until it expires, so
+// derive 'cancelling' from the cancelAtPeriodEnd flag for display/filtering.
+function _adminIsCancelling(u){
+  return !!(u && u.cancelAtPeriodEnd && (u.subscriptionStatus === 'active' || u.subscriptionStatus === 'trialing'));
+}
+function _adminDisplayStatus(u){
+  return _adminIsCancelling(u) ? 'cancelling' : (u.subscriptionStatus || 'none');
+}
+
 function _adminStatusDot(status){
-  const colors = { active:'#10b981', trialing:'#6366f1', expired:'#ef4444', cancelled:'#ef4444', past_due:'#f59e0b', none:'#6b7280' };
+  const colors = { active:'#10b981', trialing:'#6366f1', cancelling:'#f59e0b', expired:'#ef4444', cancelled:'#ef4444', past_due:'#f59e0b', none:'#6b7280' };
   const c = colors[status] || colors.none;
   const label = (status || 'none').charAt(0).toUpperCase() + (status || 'none').slice(1);
   return `<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:7px;height:7px;border-radius:50%;background:${c};display:inline-block"></span><span style="font-size:.78rem;color:var(--text2)">${label}</span></span>`;
@@ -17752,6 +17766,7 @@ function _adminRenderTable(users){
     <tbody>`;
   users.forEach(u => {
     const isPaid = !u.manualOverride && u.stripeSubscriptionId && (u.subscriptionStatus === 'active' || u.subscriptionStatus === 'trialing');
+    const willBill = isPaid && !_adminIsCancelling(u);
     h += `<tr style="border-bottom:1px solid var(--border);cursor:pointer" onmouseover="this.style.background='var(--bg2)'" onmouseout="this.style.background=''" onclick="_adminOpenUserModal('${u.uid}')">
       <td style="padding:8px 12px">
         <div style="display:flex;align-items:center;gap:8px">
@@ -17764,10 +17779,10 @@ function _adminRenderTable(users){
       </td>
       <td style="padding:8px">${_adminTierBadge(u.tier, u.subscriptionStatus, u.manualOverride, u.trialEnd)}</td>
       <td style="padding:8px;font-size:.78rem;color:var(--text2);white-space:nowrap">${u.billingInterval === 'year' ? 'Yearly' : (u.billingInterval === 'month' ? 'Monthly' : '<span style="color:var(--text3)">—</span>')}</td>
-      <td style="padding:8px">${_adminStatusDot(u.subscriptionStatus)}</td>
+      <td style="padding:8px">${_adminStatusDot(_adminDisplayStatus(u))}</td>
       <td style="padding:8px;text-align:center">${_adminPaidBadge(u)}</td>
       <td style="padding:8px;font-size:.78rem;color:var(--text2)">${_adminFormatDate(u.createdAt)}</td>
-      <td style="padding:8px;font-size:.78rem;color:var(--text2)${isPaid?'':';opacity:.4'}">${isPaid ? _adminFormatDate(u.currentPeriodEnd) : '—'}</td>
+      <td style="padding:8px;font-size:.78rem;color:var(--text2)${willBill?'':';opacity:.4'}">${willBill ? _adminFormatDate(u.currentPeriodEnd) : '—'}</td>
       <td style="padding:8px;font-size:.78rem;color:var(--text2)">${_adminFormatDate(u.lastLogin || u.createdAt)}</td>
       <td style="padding:8px;text-align:center;font-size:.82rem;color:var(--text2)">${u.propertyCount !== undefined ? u.propertyCount : '—'}</td>
       <td style="padding:8px;font-size:.72rem">${u.referredBy ? '<span style="background:rgba(99,129,250,.15);color:var(--primary);padding:2px 7px;border-radius:4px;font-weight:700;font-family:monospace">'+esc(u.referredBy)+'</span>' : '<span style="color:var(--text3)">—</span>'}</td>
@@ -17786,6 +17801,7 @@ function _adminRenderCards(users){
   let h = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px">';
   users.forEach(u => {
     const isPaid = !u.manualOverride && u.stripeSubscriptionId && (u.subscriptionStatus === 'active' || u.subscriptionStatus === 'trialing');
+    const willBill = isPaid && !_adminIsCancelling(u);
     h += `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:16px;cursor:pointer;transition:border-color .15s" onmouseover="this.style.borderColor='var(--primary)'" onmouseout="this.style.borderColor='var(--border)'" onclick="_adminOpenUserModal('${u.uid}')">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
         ${_adminUserAvatar(u, 40)}
@@ -17797,10 +17813,10 @@ function _adminRenderCards(users){
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:.75rem">
         <div><span style="color:var(--text3)">Plan:</span> <span style="color:var(--text2)">${u.billingInterval === 'year' ? 'Yearly' : (u.billingInterval === 'month' ? 'Monthly' : '—')}</span></div>
-        <div><span style="color:var(--text3)">Status:</span> ${_adminStatusDot(u.subscriptionStatus)}</div>
+        <div><span style="color:var(--text3)">Status:</span> ${_adminStatusDot(_adminDisplayStatus(u))}</div>
         <div><span style="color:var(--text3)">Payment:</span> ${_adminPaidBadge(u)}</div>
         <div style="color:var(--text2)"><span style="color:var(--text3)">Joined:</span> ${_adminFormatDate(u.createdAt)}</div>
-        <div style="color:var(--text2)${isPaid?'':';opacity:.4'}"><span style="color:var(--text3)">Next Bill:</span> ${isPaid ? _adminFormatDate(u.currentPeriodEnd) : '—'}</div>
+        <div style="color:var(--text2)${willBill?'':';opacity:.4'}"><span style="color:var(--text3)">Next Bill:</span> ${willBill ? _adminFormatDate(u.currentPeriodEnd) : '—'}</div>
         <div style="color:var(--text2)"><span style="color:var(--text3)">Last Login:</span> ${_adminFormatDate(u.lastLogin || u.createdAt)}</div>
         <div style="color:var(--text2)"><span style="color:var(--text3)">Properties:</span> ${u.propertyCount !== undefined ? u.propertyCount : '—'}</div>
       </div>
@@ -17829,6 +17845,7 @@ async function _adminOpenUserModal(uid){
   if(!u) return;
   const isPaid = !u.manualOverride && u.stripeSubscriptionId && (u.subscriptionStatus === 'active' || u.subscriptionStatus === 'trialing');
   const hasSub = !!u.stripeSubscriptionId;
+  const isCancelling = _adminIsCancelling(u);
   const paymentOpacity = isPaid ? '1' : '.45';
 
   const existing = document.getElementById('adminUserModalOverlay');
@@ -17914,7 +17931,8 @@ async function _adminOpenUserModal(uid){
         </div>
         <div style="margin-top:10px;display:flex;gap:8px;align-items:center">
           <button class="btn btn-primary btn-sm" onclick="_adminSaveUser('${u.uid}')" style="padding:6px 16px">Save Changes</button>
-          ${hasSub && isPaid ? `<button class="btn btn-sm" onclick="_adminCancelSub('${u.uid}')" style="background:rgba(239,68,68,.1);color:#ef4444;border:1px solid rgba(239,68,68,.3);padding:6px 16px;font-size:.78rem">Cancel Subscription</button>` : ''}
+          ${isCancelling ? `<span style="font-size:.75rem;color:#f59e0b">Cancelling: access ends ${_adminFormatDate(u.currentPeriodEnd)}</span>` : ''}
+          ${hasSub && isPaid && !isCancelling ? `<button class="btn btn-sm" onclick="_adminCancelSub('${u.uid}')" style="background:rgba(239,68,68,.1);color:#ef4444;border:1px solid rgba(239,68,68,.3);padding:6px 16px;font-size:.78rem">Cancel Subscription</button>` : ''}
         </div>
       </div>
 
@@ -17930,7 +17948,7 @@ async function _adminOpenUserModal(uid){
           <div><span style="color:var(--text3)">Stripe Customer:</span> <span style="color:var(--text2);font-family:monospace;font-size:.7rem">${u.stripeCustomerId ? u.stripeCustomerId.substring(0,18)+'...' : '—'}</span></div>
           <div><span style="color:var(--text3)">Subscription:</span> <span style="color:var(--text2);font-family:monospace;font-size:.7rem">${u.stripeSubscriptionId ? u.stripeSubscriptionId.substring(0,18)+'...' : '—'}</span></div>
           <div><span style="color:var(--text3)">Plan Started:</span> <span style="color:var(--text2)">${_adminFormatDate(u.subscriptionStartedAt || u.currentPeriodStart)}</span></div>
-          <div><span style="color:var(--text3)">Next Billing:</span> <span style="color:var(--text2)">${isPaid ? _adminFormatDate(u.currentPeriodEnd) : '—'}</span></div>
+          <div><span style="color:var(--text3)">${isCancelling ? 'Access Until' : 'Next Billing'}:</span> <span style="color:var(--text2)">${isPaid ? _adminFormatDate(u.currentPeriodEnd) : '—'}</span></div>
           <div><span style="color:var(--text3)">Trial End:</span> <span style="color:var(--text2)">${_adminFormatDate(u.trialEnd)}</span></div>
           <div><span style="color:var(--text3)">Payment:</span> ${_adminPaidBadge(u)}</div>
         </div>
@@ -18103,6 +18121,9 @@ async function _adminCancelSub(uid){
         var result = await callFunction('adminCancelSubscription', { stripeSubscriptionId: u.stripeSubscriptionId });
         if(result.data && result.data.success){
           showToast('Subscription will cancel at end of billing period (' + _adminFormatDate(result.data.currentPeriodEnd) + ')', 'success', 5000);
+          try {
+            await db.collection('users').doc(uid).update({ cancelAtPeriodEnd: true, currentPeriodEnd: result.data.currentPeriodEnd });
+          } catch(e){ console.warn('[admin] cancelAtPeriodEnd write failed:', e); }
           // Refresh user data
           await _adminRefreshUsers();
           _adminOpenUserModal(uid);
@@ -18171,6 +18192,7 @@ async function _adminSyncUserFromStripe(uid){
       tier: d.tier || null,
       subscriptionStatus: d.subscriptionStatus || 'none',
       currentPeriodEnd: d.currentPeriodEnd || null,
+      cancelAtPeriodEnd: !!d.cancelAtPeriodEnd,
       trialEnd: d.trialEnd || null,
       stripeCustomerId: d.stripeCustomerId || u.stripeCustomerId,
       stripeSubscriptionId: d.stripeSubscriptionId || u.stripeSubscriptionId,
@@ -19797,6 +19819,7 @@ async function _doSyncSubscription(){
       if(d.stripeSubscriptionId) updates.stripeSubscriptionId = d.stripeSubscriptionId;
       else if(d.stripeSubscriptionId === null) updates.stripeSubscriptionId = null;
       if(d.currentPeriodEnd) updates.currentPeriodEnd = d.currentPeriodEnd;
+      updates.cancelAtPeriodEnd = !!d.cancelAtPeriodEnd;
       if(d.trialEnd) updates.trialEnd = d.trialEnd;
       // Discount fields — store whatever Stripe reports (including null/undefined deletion
       // when the user removes a coupon via the Portal). Settings reads these to show the

@@ -185,6 +185,12 @@ module.exports = async function handler(req, res) {
           currentPeriodEnd: (status === "active" || status === "trialing")
             ? new Date(subscription.current_period_end * 1000).toISOString()
             : null,
+          // True when the sub is set to end (admin cancel, Billing Portal cancel, or a
+          // scheduled cancel_at). Status stays "active" until then, so the admin panel
+          // uses this to show "Cancelling" and hide the next billing date.
+          cancelAtPeriodEnd: (status === "active" || status === "trialing")
+            ? !!(subscription.cancel_at_period_end || subscription.cancel_at)
+            : false,
           discountCode: discountCode,
           discountAmountOff: discountAmountOff,
           discountPercentOff: discountPercentOff,
