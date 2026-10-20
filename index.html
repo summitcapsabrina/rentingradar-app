@@ -677,6 +677,7 @@ tr.clickable:hover{background:var(--primary-light)}
 .billing-save-badge{font-size:.7rem;font-weight:700;color:#fff;background:#10b981;padding:3px 10px;border-radius:10px;margin-left:6px}
 .pc-price-old{font-size:.9rem;color:var(--text3);text-decoration:line-through;margin-right:6px;font-weight:400}
 .pc-billed{font-size:.72rem;color:var(--text3);margin-top:2px}
+.pc-renewal{font-size:.7rem;color:var(--text3);line-height:1.45;margin-top:8px;text-align:center}
 .pricing-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
 @media(max-width:900px){.pricing-cards{grid-template-columns:1fr}}
 .pricing-card{background:var(--surface);border-radius:var(--radius);border:2px solid var(--border);padding:24px;display:flex;flex-direction:column;transition:all .2s;position:relative;text-align:left}
@@ -2009,6 +2010,7 @@ tr.unit-row-excluded{opacity:.55}
 #mobileGate .mg-tier-price{font-size:.95rem;font-weight:700;color:var(--text)}
 #mobileGate .mg-tier-price small{font-size:.72rem;font-weight:500;color:var(--text3)}
 #mobileGate .mg-tier-desc{font-size:.8rem;color:var(--text2);line-height:1.4}
+#mobileGate .mg-tier-renew{font-size:.72rem;color:var(--text3);line-height:1.4;margin-top:6px}
 #mobileGate .mg-tier-tag{display:inline-block;background:var(--primary);color:#fff;font-size:.62rem;font-weight:700;padding:2px 7px;border-radius:4px;margin-left:6px;text-transform:uppercase;letter-spacing:.4px;vertical-align:middle}
 </style>
 <!-- Firebase SDK -->
@@ -2329,8 +2331,11 @@ function mgShareLink(){
       { id:'pro',      tail:'Every feature, unlimited room.', recommended:true }
     ];
     tiers.forEach(function(t){ t.desc = mgLimitLine(t.id) + ' · ' + t.tail; });
+    // Same trial guess as the desktop pricing cards; the server makes the real call.
+    var trialOk = (typeof _newTrialEligible === 'function') ? _newTrialEligible() : true;
     var html = '<div class="mg-hero"><h1>Welcome, '+mgEsc(firstName)+'!</h1>'+
-               '<p>Pick a plan to start your 7-day free trial. We won\'t charge your card until the trial ends.</p></div>';
+               (trialOk ? '<p>Pick a plan to start your 7-day free trial. We won\'t charge your card until the trial ends.</p></div>'
+                        : '<p>Pick a plan to continue. Your data is preserved.</p></div>');
 
     html += '<div class="mg-card"><div class="mg-card-title">Choose your plan</div>'+
             '<div class="mg-bp-toggle" role="tablist">'+
@@ -2348,11 +2353,13 @@ function mgShareLink(){
       html += '<button class="mg-tier'+(t.recommended?' recommended':'')+'" type="button" id="mgTierBtn_'+t.id+'" onclick="mgPickTier(\''+t.id+'\')">'+
                 '<div class="mg-tier-head"><div class="mg-tier-name">'+mgEsc(name)+tag+'</div><div class="mg-tier-price">'+priceStr+'</div></div>'+
                 '<div class="mg-tier-desc">'+mgEsc(t.desc)+'</div>'+
+                // Auto-renewal disclosure (Terms §5): tapping a plan goes straight to checkout.
+                '<div class="mg-tier-renew">Your '+mgEsc(name)+' plan renews automatically at $'+Number(price).toFixed(2)+'/'+(period==='yearly'?'year':'month')+(trialOk?' after your 7-day free trial':'')+' until you cancel. Cancel anytime in Manage Billing.</div>'+
               '</button>';
     });
     html += '</div>'+
             '<div id="mgTierMsg" class="mg-auth-msg" role="status" aria-live="polite" style="margin-top:10px"></div>'+
-            '<div class="mg-auth-foot" style="margin-top:12px">7-day free trial · Cancel anytime · Promo codes apply at checkout</div>'+
+            '<div class="mg-auth-foot" style="margin-top:12px">'+(trialOk?'7-day free trial · ':'')+'Cancel anytime · Promo codes apply at checkout · <a href="/terms.html" target="_blank">Terms</a> · <a href="/privacy.html" target="_blank">Privacy</a></div>'+
             '</div>';
 
     html += '<div class="mg-card"><div class="mg-card-title">Or come back on desktop</div>'+
@@ -19454,7 +19461,7 @@ function _getDisclaimerBodyHtml(){
       <p>RentingRadar reserves the right to modify this disclaimer at any time. Continued use of the analytical features after any modification constitutes your acceptance of the updated disclaimer. You may be required to re-acknowledge this disclaimer if material changes are made.</p>
 
       <h3>10. Governing Law</h3>
-      <p>This disclaimer shall be governed by and construed in accordance with the laws of the state in which RentingRadar is organized, without regard to conflict of law principles.</p>
+      <p>This disclaimer shall be governed by and construed in accordance with the laws of the State of Nevada, without regard to conflict of law principles.</p>
 
       <p style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border);font-size:.78rem;color:var(--text3)">Disclaimer Version ${DISCLAIMER_VERSION} · RentingRadar</p>`;
 }
@@ -19741,6 +19748,10 @@ function renderPricingCard(tier, opts){
   } else {
     btnLabel = trialAvailable ? 'Start Free Trial' : 'Subscribe';
   }
+  // Auto-renewal disclosure next to the checkout button (Terms §5 Automatic Renewal).
+  // Only on buttons that go to Stripe Checkout; subscribers' buttons open the portal.
+  const renewPrice = isYearly ? '$' + t.yearly.toFixed(2) + '/year' : '$' + t.monthly.toFixed(2) + '/month';
+  const renewalNote = hasAnySub ? '' : `<div class="pc-renewal">Your ${t.name} plan renews automatically at ${renewPrice}${trialAvailable ? ' after your 7-day free trial' : ''} until you cancel. Cancel anytime in Manage Billing. <a href="/terms.html" target="_blank">Terms</a> · <a href="/privacy.html" target="_blank">Privacy</a></div>`;
 
   return `<div class="pricing-card ${isPopular?'popular':''} ${isCurrent?'current':''} ${isDim?'dim':''}">
     <div class="pc-name">${t.name}</div>
@@ -19755,7 +19766,7 @@ function renderPricingCard(tier, opts){
     </ul>
     ${isCurrent
       ? '<button class="pc-btn current-btn">Current Plan</button>'
-      : `<button class="pc-btn primary" onclick="handleUpgrade('${tier}')">${btnLabel}</button>`
+      : `<button class="pc-btn primary" onclick="handleUpgrade('${tier}')">${btnLabel}</button>${renewalNote}`
     }
   </div>`;
 }
