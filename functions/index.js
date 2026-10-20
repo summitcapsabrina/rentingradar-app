@@ -1268,8 +1268,9 @@ exports.dailyTrialReminders = functions.pubsub
   .schedule("every day 09:00")
   .timeZone("America/New_York")
   .onRun(async (context) => {
-    // DISABLED — Stripe owns trial state now and sends its own trial-ending email
-    // ~3 days before charge. Keeping the code intact in case we want to re-add a
+    // DISABLED — Stripe owns trial state now. Note: Stripe's hosted trial-ending email
+    // goes out 7 days before a trial ends, which for our 7-day trial is at sign-up, so
+    // nothing reminds users shortly before day 7. Keeping the code intact in case we want to re-add a
     // branded RentingRadar trial-end email via Stripe webhook later. To re-enable,
     // remove this early return.
     console.log("dailyTrialReminders skipped — Stripe handles trial-ending emails now.");
@@ -2865,22 +2866,33 @@ exports.createCheckoutSession = functions.https.onRequest((req, res) => {
         await db.collection("users").doc(uid).update({ stripeCustomerId: customerId });
       }
 
-      // Don't grant a new trial if this customer has had any prior subscription.
-      // Guards against the case where a past_due/expired user starts a new checkout
-      // and would otherwise receive a second free trial.
+      // Don't grant a new trial if this person has had any prior subscription, on this
+      // customer or any other Stripe customer with the same Firebase UID or email
+      // (production's api/createCheckoutSession.js does the same check). Guards against
+      // a past_due/expired user starting a new checkout and getting a second free trial.
       let hasHadSubscription = false;
       try {
-        const prevSubs = await stripeClient.subscriptions.list({
-          customer: customerId,
-          status: "all",
-          limit: 1,
-        });
-        hasHadSubscription = prevSubs.data.length > 0;
+        const ids = new Set([customerId]);
+        try {
+          const byUid = await stripeClient.customers.search({ query: `metadata['firebaseUID']:'${uid}'`, limit: 10 });
+          byUid.data.forEach((c) => ids.add(c.id));
+        } catch (e) { console.warn("Trial check: customer search by UID failed:", e.message); }
+        if (email) {
+          const byEmail = await stripeClient.customers.list({ email: email, limit: 10 });
+          byEmail.data.forEach((c) => ids.add(c.id));
+        }
+        for (const id of ids) {
+          const prevSubs = await stripeClient.subscriptions.list({ customer: id, status: "all", limit: 1 });
+          if (prevSubs.data.length > 0) { hasHadSubscription = true; break; }
+        }
       } catch (err) {
         console.warn("Could not check prior subscriptions for trial eligibility:", err.message);
       }
 
-      const session = await stripeClient.checkout.sessions.create({
+      // Checkout requires agreeing to the Terms. Stripe rejects this unless a Terms of
+      // Service URL is set in Dashboard > Settings > Public details, so fall back to a
+      // session without it rather than blocking checkout.
+      const sessionParams = {
         customer: customerId,
         mode: "subscription",
         payment_method_types: ["card"],
@@ -2892,7 +2904,23 @@ exports.createCheckoutSession = functions.https.onRequest((req, res) => {
           metadata: { firebaseUID: uid, tier: tier },
         },
         metadata: { firebaseUID: uid, tier: tier },
-      });
+      };
+      const tosConsent = {
+        consent_collection: { terms_of_service: "required" },
+        custom_text: {
+          terms_of_service_acceptance: {
+            message: "I agree to the [Terms of Service](https://rentingradar.com/terms), including that my plan renews automatically until I cancel.",
+          },
+        },
+      };
+      let session;
+      try {
+        session = await stripeClient.checkout.sessions.create(Object.assign({}, sessionParams, tosConsent));
+      } catch (e) {
+        if (!/terms.of.service/i.test(e.message || "")) throw e;
+        console.error("Checkout Terms consent rejected (set the Terms URL in Stripe > Settings > Public details). Retrying without it:", e.message);
+        session = await stripeClient.checkout.sessions.create(sessionParams);
+      }
 
       sendSuccess(res, { url: session.url });
     } catch (err) {
