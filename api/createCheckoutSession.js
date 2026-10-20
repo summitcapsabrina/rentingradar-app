@@ -1,6 +1,37 @@
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const { verifyFirebaseToken } = require("./verifyToken");
 
+// The 7-day trial is for first-time subscribers only. Checks every Stripe customer
+// tied to this user (same Firebase UID or same email), since older checkouts could
+// create more than one customer per person. Mirrors functions/index.js.
+async function hasHadSubscription(customerId, uid, email) {
+  const ids = new Set([customerId]);
+  try {
+    const byUid = await stripe.customers.search({ query: `metadata['firebaseUID']:'${uid}'`, limit: 10 });
+    byUid.data.forEach((c) => ids.add(c.id));
+  } catch (e) { console.warn("Trial check: customer search by UID failed:", e.message); }
+  if (email) {
+    const byEmail = await stripe.customers.list({ email, limit: 10 });
+    byEmail.data.forEach((c) => ids.add(c.id));
+  }
+  for (const id of ids) {
+    const subs = await stripe.subscriptions.list({ customer: id, status: "all", limit: 1 });
+    if (subs.data.length) return true;
+  }
+  return false;
+}
+
+// Checkout requires agreeing to the Terms (consent checkbox). Stripe rejects this
+// unless a Terms of Service URL is set in Dashboard > Settings > Public details.
+const TOS_CONSENT = {
+  consent_collection: { terms_of_service: "required" },
+  custom_text: {
+    terms_of_service_acceptance: {
+      message: "I agree to the [Terms of Service](https://rentingradar.com/terms), including that my plan renews automatically until I cancel.",
+    },
+  },
+};
+
 module.exports = async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
@@ -76,6 +107,14 @@ module.exports = async function handler(req, res) {
      // referredBy on the user doc and feeds Adam's Affiliate dashboard + commission report.
      // The metadata.referred_by tag carries that attribution onto the Stripe subscription
      // for cross-reference, separate from whatever promo code the user manually applies.
+    // No second free trial for anyone who has subscribed before.
+    let trialEligible = true;
+    try {
+      trialEligible = !(await hasHadSubscription(customerId, user.uid, user.email));
+    } catch (e) {
+      console.warn("Could not check prior subscriptions for trial eligibility:", e.message);
+    }
+
     const sessionConfig = {
       customer: customerId,
       mode: "subscription",
@@ -84,9 +123,9 @@ module.exports = async function handler(req, res) {
       success_url: "https://app.rentingradar.com?checkout=success&session_id={CHECKOUT_SESSION_ID}",
       cancel_url: "https://app.rentingradar.com?checkout=cancelled",
       subscription_data: {
-        // Stripe-managed 7-day free trial. Card collected upfront, no charge during the
-        // trial, auto-charge at day 7. Stripe handles trial-ending emails, dunning, retries.
-        trial_period_days: 7,
+        // Stripe-managed 7-day free trial (first subscription only). Card collected upfront,
+        // no charge during the trial, auto-charge at day 7. Stripe handles dunning and retries.
+        ...(trialEligible ? { trial_period_days: 7 } : {}),
         metadata: Object.assign({ firebaseUID: user.uid, tier: tier }, referralCode ? { referred_by: referralCode } : {}),
       },
       metadata: Object.assign({ firebaseUID: user.uid, tier: tier }, referralCode ? { referred_by: referralCode } : {}),
@@ -95,7 +134,15 @@ module.exports = async function handler(req, res) {
     // AIRPRENEUR / AIRPRENEUR_YEAR or any other active code.
     sessionConfig.allow_promotion_codes = true;
 
-    const session = await stripe.checkout.sessions.create(sessionConfig);
+    let session;
+    try {
+      session = await stripe.checkout.sessions.create(Object.assign({}, sessionConfig, TOS_CONSENT));
+    } catch (e) {
+      // Don't block checkout if the Terms URL isn't set in Stripe yet; log loudly instead.
+      if (!/terms.of.service/i.test(e.message || "")) throw e;
+      console.error("Checkout Terms consent rejected (set the Terms URL in Stripe > Settings > Public details). Retrying without it:", e.message);
+      session = await stripe.checkout.sessions.create(sessionConfig);
+    }
 
     res.status(200).json({
       result: {
