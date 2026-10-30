@@ -1620,6 +1620,8 @@ h1 .hero-edit-input{font-size:1.35rem}
 .comp-section.all-comps .comp-section-hdr{background:rgba(99,129,250,.08);color:var(--primary);border-bottom:1px solid rgba(99,129,250,.2)}
 .comp-section-body{padding:10px 14px}
 .comp-section .comp-table{margin-bottom:0}
+.comp-section .comp-table-wrap{max-height:480px;overflow:auto}
+.comp-section .comp-table thead th{position:sticky;top:0;z-index:1;background:var(--surface)}
 .comp-section .comp-add-row{margin:10px 14px 10px}
 .comp-section-empty{text-align:center;padding:20px 16px;color:var(--text3);font-size:.85rem}
 .req-edit-hint{font-size:.55rem;color:var(--text3);opacity:0;transition:opacity .15s}
@@ -2027,9 +2029,9 @@ tr.unit-row-excluded{opacity:.55}
 <link href="https://unpkg.com/maplibre-gl@4.1.1/dist/maplibre-gl.css" rel="stylesheet">
 <script src="https://unpkg.com/maplibre-gl@4.1.1/dist/maplibre-gl.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+<script src="/comp-import-helpers.js"></script>
 </head>
 <body>
-<script src="/comp-import-helpers.js"></script>
 <!-- Mobile gate: rendered only at <=768px via CSS; desktop ignores this block entirely -->
 <div id="mobileGate" aria-hidden="false">
   <div class="mg-inner">
@@ -3406,6 +3408,7 @@ async function loadDataFromFirestore(userUid){
   render();
   geocodeExistingProperties();
   hideLoadingOverlay();
+  _checkInterruptedCompImports();
 
   // Set up real-time listener for cross-device sync
   _firestoreUnsubscribe = db.collection('users').doc(userUid).collection('properties').doc('records')
@@ -11858,53 +11861,82 @@ function hideToast() {
   toast.classList.remove('visible', 'loading');
 }
 
+// A property's name for messages: building name for Multi Unit, else the address.
+function _compTargetName(r, unit){
+  const name = (r.recordType === 'apartment' && r.buildingName && r.buildingName.trim()) ? r.buildingName.trim() : (r.property || 'this property');
+  return unit && unit.label ? name + ' (' + unit.label + ')' : name;
+}
+
+// All of a user's properties share one Firestore document, so this is the size
+// that counts: going over the limit would make every save on the account fail.
+function _compStorageFullAlert(){
+  if(!compStorageNearLimit(new Blob([JSON.stringify(records)]).size)) return false;
+  showAppAlert('Your account is almost out of space for property data, so this competitor wasn\'t added. Remove some competitors or notes you no longer need, then try again.', {title: 'Storage almost full', icon: '📦'});
+  return true;
+}
+
+function _compDuplicateAlert(comps, index, r, unit){
+  const comp = comps[index] || {};
+  const who = comp.host ? ' (' + esc(comp.host) + ')' : '';
+  showAppAlert('This listing is already competitor #' + (index + 1) + who + ' on ' + esc(_compTargetName(r, unit)) + '.', {title: 'Duplicate Competitor', icon: '⚠️'});
+}
+
 /**
  * Handle a comp imported via the RentingRadar Chrome Extension (AirDNA → Airbnb enrichment).
- * Adds the comp to the currently open property's comps array, or queues it if no profile is open.
+ * With a target ({ recId, unitId }) the comp lands on the record and unit the import
+ * started from, wherever the user has navigated since. Without one (popup flow) it
+ * goes to the currently open property, or is queued if no profile is open.
  */
-function handleExtensionComp(compData) {
+function handleExtensionComp(compData, target) {
   if (!compData) return;
 
-  // Find the target record — use the currently open profile, or the most recently opened one
   let r = null;
-  if (currentProfileId) {
-    r = records.find(x => x.id === currentProfileId);
-  }
-
-  if (!r) {
-    // No property open — store in a pending queue and notify user
-    if (!window._pendingExtensionComps) window._pendingExtensionComps = [];
-    window._pendingExtensionComps.push(compData);
-    showToast('Competitor received from extension! Open a property to add it.', 'info');
-    return;
-  }
-
-  // Multi Unit buildings need a specific unit tab selected — comps belong to
-  // one physical unit now, so there's no "whole building" list to push into.
   let targetUnit = null;
-  if (r.recordType === 'apartment') {
-    targetUnit = _analysisActiveUnit(r);
-    if (!targetUnit) {
-      showToast('Select a specific unit tab in Competitor Analysis first, then import.', 'warning');
+  if (target) {
+    r = records.find(x => x.id === target.recId);
+    if (r && target.unitId) targetUnit = (r.units || []).find(u => u.id === target.unitId) || null;
+    if (!r || (target.unitId && !targetUnit)) {
+      showAppAlert('The AirDNA import finished, but the property or unit it was started from no longer exists, so nothing was added.', {title: 'Import not added', icon: '⚠️'});
       return;
+    }
+  } else {
+    if (currentProfileId) {
+      r = records.find(x => x.id === currentProfileId);
+    }
+
+    if (!r) {
+      // No property open — store in a pending queue and notify user
+      if (!window._pendingExtensionComps) window._pendingExtensionComps = [];
+      window._pendingExtensionComps.push(compData);
+      showToast('Competitor received from extension! Open a property to add it.', 'info');
+      return;
+    }
+
+    // Multi Unit buildings need a specific unit tab selected — comps belong to
+    // one physical unit now, so there's no "whole building" list to push into.
+    if (r.recordType === 'apartment') {
+      targetUnit = _analysisActiveUnit(r);
+      if (!targetUnit) {
+        showToast('Select a specific unit tab in Competitor Analysis first, then import.', 'warning');
+        return;
+      }
     }
   }
   const comps = getComps(r, targetUnit);
-  const sectionCount = comps.filter(c => c.rating === (compData.rating || 'competes')).length;
-  if (sectionCount >= 10) {
-    showToast('Maximum 10 competitors reached for the ' + (compData.rating || 'competes') + ' section.', 'warning');
-    return;
-  }
 
-  // Check for duplicate (by link or airdnaUrl)
-  const isDupe = comps.some(c =>
+  // Same listing already here? Compare ids so the short URL, long URL and Airbnb
+  // link all match each other; raw strings remain the check for a comp with no id.
+  const roomId = airbnbRoomIdFromUrl(compData.link);
+  const dupe = findDuplicateComp(comps, parseAirdnaListingId(compData.airdnaUrl) || (roomId ? 'abnb_' + roomId : null));
+  const dupeIndex = dupe ? dupe.index : comps.findIndex(c =>
     (compData.link && c.link === compData.link) ||
     (compData.airdnaUrl && c.airdnaUrl === compData.airdnaUrl)
   );
-  if (isDupe) {
-    showToast('This competitor has already been imported.', 'warning');
+  if (dupeIndex >= 0) {
+    _compDuplicateAlert(comps, dupeIndex, r, targetUnit);
     return;
   }
+  if (_compStorageFullAlert()) return;
 
   // Add the comp
   comps.push({
@@ -11926,9 +11958,16 @@ function handleExtensionComp(compData) {
     importedAt: compData.importedAt || new Date().toISOString()
   });
 
-  saveData();
-  render();
-  showToast('Competitor imported from AirDNA! (' + sectionCount + '/10)', 'success');
+  saveData(r.id);
+  // Skip the re-render if the user has moved on to a different property: nothing
+  // on that screen changed, and it would interrupt whatever they're doing there.
+  if (!currentProfileId || currentProfileId === r.id) {
+    const sc = document.querySelector('.content');
+    const top = sc ? sc.scrollTop : 0;
+    render();
+    if (sc) sc.scrollTop = top;
+  }
+  showToast('Competitor imported from AirDNA to ' + esc(_compTargetName(r, targetUnit)) + ' (' + compCountText(comps.length) + ')', 'success');
 }
 
 /**
@@ -20177,14 +20216,14 @@ async function _rrRefreshOllamaHealth(){
 }
 
 // Call the extension to scrape a URL. Returns { ok, data } or { ok:false, error }.
-async function rrScrapeViaExtension(url, kind){
+async function rrScrapeViaExtension(url, kind, expectedListingId){
   const extId = window.RR_EXTENSION_INSTALLED || await _rrProbeExtension();
   if(!extId) return { ok: false, error: 'extension-not-installed' };
   return new Promise((resolve) => {
     try {
       chrome.runtime.sendMessage(
         extId,
-        { type: 'SCRAPE_URL', url: url, kind: kind || 'auto' },
+        { type: 'SCRAPE_URL', url: url, kind: kind || 'auto', expectedListingId: expectedListingId || undefined },
         (response) => {
           if(chrome.runtime.lastError){
             resolve({ ok: false, error: chrome.runtime.lastError.message });
@@ -27684,6 +27723,8 @@ function cohostAddComp(id, category){
   if(!link){ showAppAlert('Paste an AirDNA link', {title:'Validation', icon:'⚠️'}); return; }
   const isAirdna = /^https?:\/\/(?:[a-z0-9-]+\.)?airdna\.co\//i.test(link);
   if(!isAirdna){ showAppAlert('Competitor Analysis accepts AirDNA links only.', {title:'AirDNA link required', icon:'⚠️'}); return; }
+  const listingId = parseAirdnaListingId(link);
+  if(!listingId){ showAppAlert('Paste a link to a single AirDNA listing.', {title:'AirDNA listing link required', icon:'⚠️'}); return; }
   if(typeof rrScrapeViaExtension !== 'function'){ showAppAlert('Extension unavailable.', {title:'Extension required', icon:'🧩'}); return; }
   // Loading state — mirror Arbitrage's addComp: swap the Add button to a spinner.
   // (The input keeps the pasted URL, so its placeholder is hidden; only the button
@@ -27694,7 +27735,7 @@ function cohostAddComp(id, category){
     if(input){ input.disabled=false; }
     if(addBtn){ addBtn.disabled=false; addBtn.innerHTML='<span class="comp-add-label">+ Add Competitor</span>'; }
   };
-  rrScrapeViaExtension(link, 'airdna').then(function(res){
+  rrScrapeViaExtension(canonicalAirdnaUrl(listingId), 'airdna', listingId).then(function(res){
     restoreBtn();
     if(input){ input.value=''; }
     if(!res || !res.ok){
@@ -27703,9 +27744,13 @@ function cohostAddComp(id, category){
       if(err==='extension-not-installed') msg = 'Install the RentingRadar Chrome extension to import from AirDNA.<br><br>' + _extInstallLink('Get it on the Chrome Web Store');
       else if(err==='airdna-login-required') msg = (res.detail||'Log into AirDNA first, then retry.');
       else if(err==='airdna-paywall') msg = (res.detail||'This AirDNA listing requires a subscription.');
+      else if(err==='airdna-listing-mismatch') msg = COMP_IMPORT_MISMATCH_MESSAGE;
+      else if(_isCompImportTimeout(err)) msg = COMP_IMPORT_TIMEOUT_MESSAGE;
       showAppAlert(msg, {title:'Import failed', icon:'⚠️'}); return;
     }
     const d = res.data||{};
+    if(!checkCompListing(listingId, d).ok){ showAppAlert(COMP_IMPORT_MISMATCH_MESSAGE, {title:'Import failed', icon:'⚠️'}); return; }
+    d.airdnaUrl = canonicalAirdnaUrl(listingId);
     r.details = r.details||{}; r.details.comps = r.details.comps||[];
     r.details.comps.push({ id:uid(), rating:category, link:d.link||link, airdnaUrl:d.airdnaUrl||link, vrboLink:d.vrboLink||'', linkShort:d.linkShort||'listing', annualRevenue:_cn(d.annualRevenue)||'', nightlyRate:_cn(d.nightlyRate)||'', occupancy:_cn(d.occupancy)||'', daysAvailable:_cn(d.daysAvailable)||'', bedrooms:(d.bedrooms!=null?d.bedrooms:''), bathrooms:(d.bathrooms!=null?d.bathrooms:''), host:d.host||'', pitchNotes:'' });
     // Preserve scroll position across the re-render. The scrape is async (several
@@ -33021,6 +33066,7 @@ function copyCompsFromUnit(recId, targetUnitId, sourceUnitId){
   if(!targetUnit || !sourceUnit) return;
   const sourceComps = getComps(r, sourceUnit);
   const doCopy = () => {
+    if(_compStorageFullAlert()) return;
     if(!r.details) r.details = {};
     if(!r.details.compsByUnit) r.details.compsByUnit = {};
     r.details.compsByUnit[targetUnit.id] = sourceComps.map(cx => Object.assign({}, cx));
@@ -33168,7 +33214,7 @@ function renderAnalysisTab(r){
     let html = '<div class="comp-section '+sectionClass+'">';
     html += '<div class="comp-section-hdr" style="color:'+color+'">';
     html += '<span>'+icon+' '+label+'</span>';
-    html += '<span class="comp-section-count">'+count+'/10</span>';
+    html += '<span class="comp-section-count">'+count+'</span>';
     html += '</div>';
     html += '<div class="comp-section-body">';
 
@@ -33223,12 +33269,15 @@ function renderAnalysisTab(r){
       html += '</tbody></table></div>';
     }
 
-    // Add comp input (if section has < 10 comps, and a specific unit — or a
-    // house — is being edited; "All Units" has no single list to add into)
-    if(count < 10 && !readOnlyComps){
-      html += '<div class="comp-add-row">';
-      html += '<input type="text" id="compLinkInput" placeholder="Paste AirDNA link here..." onkeydown="if(event.key===\'Enter\'){event.preventDefault();addComp(\''+recId+'\')}" />';
-      html += '<button id="compAddBtn" onclick="addComp(\''+recId+'\')"><span class="comp-add-label">+ Add Competitor</span></button>';
+    // Add comp input (only when a specific unit — or a house — is being edited;
+    // "All Units" has no single list to add into). A re-render mid-import keeps
+    // the spinner, since the import outlives this markup.
+    if(!readOnlyComps){
+      const importKey = _compImportKey(recId, activeUnit && activeUnit.id);
+      const importing = _compImportsInFlight.has(importKey);
+      html += '<div class="comp-add-row" data-comp-target="'+esc(importKey)+'">';
+      html += '<input type="text" id="compLinkInput" placeholder="'+(importing ? COMP_INPUT_IMPORTING : COMP_INPUT_IDLE)+'"'+(importing ? ' disabled' : '')+' onkeydown="if(event.key===\'Enter\'){event.preventDefault();addComp(\''+recId+'\')}" />';
+      html += '<button id="compAddBtn"'+(importing ? ' disabled' : '')+' onclick="addComp(\''+recId+'\')">'+(importing ? COMP_BTN_IMPORTING : COMP_BTN_IDLE)+'</button>';
       html += '</div>';
       html += '<div style="text-align:right;font-size:.68rem;color:var(--text3);margin-top:4px">Enter to add</div>';
     } else if(readOnlyComps){
@@ -33261,7 +33310,7 @@ function _dedupeAllUnitsComps(r, units){
   units.forEach(function(u){
     getComps(r, u).forEach(function(comp){
       const label = u.label || 'Unit';
-      const key = comp.link ? _normalizeCompLink(comp.link) : null;
+      const key = comp.link ? (airbnbRoomIdFromUrl(comp.link) || _normalizeCompLink(comp.link)) : null;
       if(key && Object.prototype.hasOwnProperty.call(byLink, key)){
         const existing = out[byLink[key]];
         existing._unitLabels.push(label);
@@ -33280,6 +33329,161 @@ function _dedupeAllUnitsComps(r, units){
   return out;
 }
 
+// ── AirDNA comp import: where it lands, and what survives a reload ──
+// One import at a time per record/unit. The entry captures the target when the
+// import starts, so the result can't land on whatever happens to be open when it
+// comes back. A copy is saved in localStorage: the result only returns through
+// this page's sendMessage callback, so after a reload it is gone for good and
+// the saved marker is all that's left to say it ever happened.
+const COMP_INPUT_IDLE = 'Paste AirDNA link here...';
+const COMP_INPUT_IMPORTING = 'Importing from AirDNA…';
+const COMP_BTN_IDLE = '<span class="comp-add-label">+ Add Competitor</span>';
+const COMP_BTN_IMPORTING = '<span class="comp-add-spinner"></span>';
+const COMP_IMPORT_MISMATCH_MESSAGE = 'AirDNA didn\'t load that listing, so nothing was added. Try again.';
+const COMP_IMPORT_TIMEOUT_MESSAGE = 'AirDNA took too long to load that listing, so nothing was added. Try again.';
+const _compImportsInFlight = new Map(); // _compImportKey → entry
+
+function _compImportKey(recId, unitId){ return recId + '|' + (unitId || ''); }
+// 'airdna-timeout' is the extension's code; older versions only send the text.
+function _isCompImportTimeout(err){ return err === 'airdna-timeout' || /timed out/i.test(err || ''); }
+function _compImportLockName(m){ return 'rr-comp-import:' + _compImportKey(m.recId, m.unitId); }
+
+function _pendingCompImportsKey(){ return 'rr_pending_comp_imports_' + (_currentUid || ''); }
+function _readPendingCompImports(){
+  try {
+    const list = JSON.parse(localStorage.getItem(_pendingCompImportsKey()) || '[]');
+    return Array.isArray(list) ? list : [];
+  } catch(_){ return []; }
+}
+function _writePendingCompImports(list){
+  try {
+    if(list.length) localStorage.setItem(_pendingCompImportsKey(), JSON.stringify(list));
+    else localStorage.removeItem(_pendingCompImportsKey());
+  } catch(_){}
+}
+function _removePendingCompImports(remove){
+  _writePendingCompImports(_readPendingCompImports().filter(m => m && !remove.some(x =>
+    x && _compImportKey(x.recId, x.unitId) === _compImportKey(m.recId, m.unitId))));
+}
+
+// Puts the visible add row in sync with the in-flight state, without a full
+// re-render. Only if it belongs to this import: the row on screen may be for a
+// different property by now, with something half-pasted that isn't ours to clear.
+function _syncCompAddRow(key, restoreUrl){
+  const row = document.querySelector('.comp-add-row[data-comp-target]');
+  if(!row || row.dataset.compTarget !== key) return;
+  const importing = _compImportsInFlight.has(key);
+  const input = row.querySelector('#compLinkInput');
+  const btn = row.querySelector('#compAddBtn');
+  if(input){
+    input.disabled = importing;
+    input.placeholder = importing ? COMP_INPUT_IMPORTING : COMP_INPUT_IDLE;
+    input.value = !importing && restoreUrl ? restoreUrl : '';
+  }
+  if(btn){ btn.disabled = importing; btn.innerHTML = importing ? COMP_BTN_IMPORTING : COMP_BTN_IDLE; }
+}
+
+function _startCompImport(target){
+  const key = _compImportKey(target.recId, target.unitId);
+  if(_compImportsInFlight.has(key)){
+    showToast('Already importing a competitor for this property. Give it a moment to finish.', 'info');
+    return;
+  }
+  const entry = { recId: target.recId, unitId: target.unitId || null, url: target.url, listingId: target.listingId, startedAt: Date.now() };
+  const uid = _currentUid;
+  _compImportsInFlight.set(key, entry);
+  _writePendingCompImports(_readPendingCompImports().filter(m => m && _compImportKey(m.recId, m.unitId) !== key).concat([entry]));
+  // Held until this import ends and released by the browser if the page goes
+  // away, so a second tab can tell a live import from an interrupted one.
+  let releaseLock = function(){};
+  if(navigator.locks){
+    navigator.locks.request(_compImportLockName(entry), () => new Promise(res => { releaseLock = res; })).catch(() => {});
+  }
+  _syncCompAddRow(key);
+  const finish = (res) => {
+    _compImportsInFlight.delete(key);
+    releaseLock();
+    _removePendingCompImports([entry]);
+    if(_currentUid !== uid) return; // signed out or switched accounts mid-import
+    _finishCompImport(entry, res);
+  };
+  rrScrapeViaExtension(canonicalAirdnaUrl(entry.listingId), 'airdna', entry.listingId)
+    .then(finish)
+    .catch((e) => finish({ ok: false, error: e.message || String(e) }));
+}
+
+function _compImportRetryPrompt(entry, message){
+  showAppConfirm(message, { title: 'Import failed', icon: '⚠️', confirmText: 'Retry', cancelText: 'Close', onConfirm: () => _startCompImport(entry) });
+}
+
+function _finishCompImport(entry, res){
+  const key = _compImportKey(entry.recId, entry.unitId);
+  if(!res || !res.ok){
+    _syncCompAddRow(key, entry.url);
+    const err = res && res.error;
+    if(err === 'extension-not-installed'){
+      showAppAlert('Install the RentingRadar Chrome extension to import from AirDNA.<br><br>' + _extInstallLink('Get it on the Chrome Web Store'), {title: 'Extension required', icon: '🧩'});
+    } else if(err === 'airdna-login-required'){
+      showAppAlert(res.detail || 'Please log into AirDNA in your browser first, then try importing again.', {title: 'AirDNA Login Required', icon: '🔒'});
+    } else if(err === 'airdna-paywall'){
+      showAppAlert(res.detail || 'This AirDNA listing requires a paid subscription.', {title: 'AirDNA Subscription Required', icon: '🔒'});
+    } else if(err === 'airdna-listing-mismatch'){
+      _compImportRetryPrompt(entry, COMP_IMPORT_MISMATCH_MESSAGE);
+    } else if(_isCompImportTimeout(err)){
+      _compImportRetryPrompt(entry, COMP_IMPORT_TIMEOUT_MESSAGE);
+    } else {
+      showAppAlert('Could not import from AirDNA: ' + esc(err || 'Unknown error'), {title: 'Import failed', icon: '⚠️'});
+    }
+    return;
+  }
+  const data = res.data || {};
+  // Never trust a result that names a different listing than the one requested.
+  if(!checkCompListing(entry.listingId, data).ok){
+    console.warn('[RR crm] comp import mismatch', entry.listingId, data.link, data.airdnaUrl);
+    _syncCompAddRow(key, entry.url);
+    _compImportRetryPrompt(entry, COMP_IMPORT_MISMATCH_MESSAGE);
+    return;
+  }
+  _syncCompAddRow(key);
+  data.airdnaUrl = canonicalAirdnaUrl(entry.listingId);
+  handleExtensionComp(data, entry);
+}
+
+// On load: an import younger than the marker limit with no result was cut off by
+// a reload or navigation. Tell the user and offer Retry; older markers are dropped.
+async function _checkInterruptedCompImports(){
+  if(_isImpersonating()) return;
+  const { interrupted, stale } = classifyPendingImports(_readPendingCompImports(), Date.now());
+  if(stale.length) _removePendingCompImports(stale);
+  const retryable = [];
+  for(const m of interrupted){
+    if(_compImportsInFlight.has(_compImportKey(m.recId, m.unitId))) continue;
+    // Still running in another open tab, which will deliver its own result.
+    if(navigator.locks){
+      let live = false;
+      try { live = await navigator.locks.request(_compImportLockName(m), { ifAvailable: true }, lock => !lock); } catch(_){}
+      if(live) continue;
+    }
+    const r = records.find(x => x.id === m.recId);
+    if(!r || !parseAirdnaListingId(m.url)) { _removePendingCompImports([m]); continue; }
+    retryable.push({ marker: m, name: _compTargetName(r, m.unitId ? (r.units || []).find(u => u.id === m.unitId) : null) });
+  }
+  if(!retryable.length) return;
+  const names = retryable.map(x => esc(x.name)).join(', ');
+  const markers = retryable.map(x => x.marker);
+  showAppConfirm('The page reloaded before your AirDNA import finished, so nothing was added to ' + names + '.', {
+    title: 'Import interrupted',
+    icon: '⚠️',
+    confirmText: 'Retry',
+    cancelText: 'Dismiss',
+    onConfirm: () => {
+      _removePendingCompImports(markers);
+      markers.forEach(_startCompImport);
+    },
+    onCancel: () => _removePendingCompImports(markers)
+  });
+}
+
 function addComp(recId){
   const r = records.find(x => x.id === recId);
   if(!r) return;
@@ -33294,69 +33498,30 @@ function addComp(recId){
     showAppAlert('Competitor Analysis accepts AirDNA links only. Please paste a URL from airdna.co.', {title: 'AirDNA link required', icon: '⚠️'});
     return;
   }
-
-  // Route through the Chrome extension: it opens the AirDNA page,
-  // scrapes the metrics (and underlying Airbnb link), and delivers
-  // the result via window.postMessage → handleExtensionComp.
-  if(typeof rrScrapeViaExtension === 'function'){
-    if(input){ input.disabled = true; input.placeholder = 'Importing from AirDNA…'; }
-    var addBtn = document.getElementById('compAddBtn');
-    if(addBtn){ addBtn.disabled = true; addBtn.innerHTML = '<span class="comp-add-spinner"></span>'; }
-    rrScrapeViaExtension(link, 'airdna').then((res) => {
-      if(input){ input.disabled = false; input.placeholder = 'Paste AirDNA link here...'; }
-      if(addBtn){ addBtn.disabled = false; addBtn.innerHTML = '<span class="comp-add-label">+ Add Competitor</span>'; }
-      if(!res || !res.ok){
-        if(res && res.error === 'extension-not-installed'){
-          showAppAlert('Install the RentingRadar Chrome extension to import from AirDNA.<br><br>' + _extInstallLink('Get it on the Chrome Web Store'), {title: 'Extension required', icon: '🧩'});
-        } else if(res && res.error === 'airdna-login-required'){
-          showAppAlert(res.detail || 'Please log into AirDNA in your browser first, then try importing again.', {title: 'AirDNA Login Required', icon: '🔒'});
-        } else if(res && res.error === 'airdna-paywall'){
-          showAppAlert(res.detail || 'This AirDNA listing requires a paid subscription.', {title: 'AirDNA Subscription Required', icon: '🔒'});
-        } else {
-          showAppAlert('Could not import from AirDNA: ' + ((res && res.error) || 'Unknown error'), {title: 'Import failed', icon: '⚠️'});
-        }
-        return;
-      }
-      // Response includes data — hand off
-      const data = res.data || {};
-      data.airdnaUrl = data.airdnaUrl || link;
-      if(typeof handleExtensionComp === 'function') handleExtensionComp(data);
-      if(input){ input.value = ''; }
-    }).catch((e) => {
-      if(input){ input.disabled = false; input.placeholder = 'Paste AirDNA link here...'; }
-      if(addBtn){ addBtn.disabled = false; addBtn.innerHTML = '<span class="comp-add-label">+ Add Competitor</span>'; }
-      showAppAlert('Import error: ' + (e.message || e), {title: 'Import failed', icon: '⚠️'});
-    });
+  const listingId = parseAirdnaListingId(link);
+  if(!listingId){
+    showAppAlert('Paste a link to a single AirDNA listing.', {title: 'AirDNA listing link required', icon: '⚠️'});
     return;
   }
 
-  const comps = _analysisTargetComps(r);
-  if(!comps){ showAppAlert('Select a specific unit tab in Competitor Analysis first, then add a competitor for that unit.', { title: 'Choose a unit', icon: 'ℹ️' }); return; }
-  if(comps.length >= 10){ showAppAlert('Maximum 10 competitors reached', {title: 'Limit Reached', icon: '📊'}); return }
-
-  // Check for duplicate link
-  const normalizedNew = _normalizeCompLink(link);
-  const dupe = comps.find(c => _normalizeCompLink(c.link) === normalizedNew);
+  // Pin the destination now: the import takes a while and the user may move on.
+  const unit = r.recordType === 'apartment' ? _analysisActiveUnit(r) : null;
+  if(r.recordType === 'apartment' && !unit){
+    showAppAlert('Select a specific unit tab in Competitor Analysis first, then add a competitor for that unit.', { title: 'Choose a unit', icon: 'ℹ️' });
+    return;
+  }
+  const comps = getComps(r, unit);
+  const dupe = findDuplicateComp(comps, listingId);
   if(dupe){
     if(input) input.value = '';
-    showAppAlert('This property has already been added as a competitor.', { title: 'Duplicate Competitor', icon: '⚠️' });
+    _compDuplicateAlert(comps, dupe.index, r, unit);
     return;
   }
+  if(_compStorageFullAlert()) return;
 
-  _doAddComp(r, comps, link, input);
-}
-
-function _doAddComp(r, comps, link, input){
-  const shortLink = link.replace(/\?.*$/,'').replace(/https?:\/\/(www\.)?airbnb\.com\/rooms\//,'').substring(0,18)+'...';
-  comps.push({
-    link: link, linkShort: shortLink,
-    annualRevenue:0, daysAvailable:0, occupancy:0, nightlyRate:0,
-    guests:0, bedrooms:0, beds:0, bathrooms:0, host:'',
-    rating: 'competes', notes:''
-  });
-  if(input) input.value = '';
-  saveData();
-  render();
+  // Route through the Chrome extension: it opens the AirDNA page, scrapes the
+  // metrics (and Airbnb details), and the reply lands in _finishCompImport.
+  _startCompImport({ recId: r.id, unitId: unit ? unit.id : null, url: link, listingId: listingId });
 }
 
 function confirmRemoveComp(recId, idx){
@@ -34574,6 +34739,7 @@ function updateProjection(recId, field, value, projected){
 
 /* ===== ADDRESS AUTOCOMPLETE (Google Places REST API) ===== */
 let addressAcTimeout = null;
+let _addressSelectSeq = 0; // bumped by each selection and address edit; late place details check it
 const GPLACES_KEY = 'AIzaSyDwxwKzucGYrfmP5VmtwkLGLdqzFHy-etg';
 
 function setupAddressAutocomplete(inputEl, recId){
@@ -34608,8 +34774,13 @@ function setupAddressAutocomplete(inputEl, recId){
     if(this.value.trim().length >= 3) triggerSearch(200);
   });
 
+  // A suggestion click has already run by now (selectAddress is on mousedown,
+  // which fires before blur), so the list can close the moment focus moves.
+  // It covers the fields below it, so lingering lets a click aimed at City land
+  // on a suggestion instead.
   inputEl.addEventListener('blur', function(){
-    setTimeout(() => dropdown.classList.remove('visible'), 200);
+    clearTimeout(addressAcTimeout);
+    dropdown.classList.remove('visible');
   });
 
   inputEl.addEventListener('keydown', function(e){
@@ -34739,7 +34910,6 @@ function highlightMatch(text, query){
     if(c === '&') result += '&amp;';
     else if(c === '<') result += '&lt;';
     else if(c === '>') result += '&gt;';
-let _addressSelectSeq = 0; // bumped by each selection and address edit; late place details check it
     else if(c === '"') result += '&quot;';
     else result += c;
   }
@@ -34774,10 +34944,6 @@ function _geoMeters(lat1, lng1, lat2, lng2){
   return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
 }
 let _addrClusterCache = { key: null, center: null };
-  // A suggestion click has already run by now (selectAddress is on mousedown,
-  // which fires before blur), so the list can close the moment focus moves.
-  // It covers the fields below it, so lingering lets a click aimed at City land
-  // on a suggestion instead.
 // Center of the 50 km area holding the most of the user's properties (ties go
 // to the newest property). A plain centroid of every property lands between
 // markets for a user working in, say, Houston and Phoenix.
@@ -34918,7 +35084,27 @@ async function selectAddress(el, recId){
   const aptInput = document.getElementById('aptAddressInput');
   const activeInput = addrEdStreet || ceAddrInput || addInput || aptInput;
 
+  // The place-details fetch below takes a moment, and the user can keep typing
+  // meanwhile. Remember City/State/Zip as they are now: when the details arrive,
+  // a field that has since changed is the user's and must not be overwritten
+  // (unless they've emptied it). This is how "Topeka" + "auderdale" happened.
+  const seq = ++_addressSelectSeq;
+  const cszSnapshot = {};
+  ['addrEdCity','addrEdState','addrEdZip','ce_city','ce_state','ce_zip','add_city','add_state','add_zip'].forEach(id => {
+    const fieldEl = document.getElementById(id);
+    if(fieldEl) cszSnapshot[id] = fieldEl.value;
+  });
+  // Fills one field unless the user edited it; returns the value the field ends
+  // up holding, so _selectedAddrParts can't contradict what's on screen.
+  function fillUnlessEdited(id, value, part, parts, clearIfMissing){
+    const fieldEl = document.getElementById(id);
+    if(!fieldEl) return;
+    if(fieldEl.value.trim() && fieldEl.value !== cszSnapshot[id]){ parts[part] = fieldEl.value.trim(); return; }
+    if(value || clearIfMissing) fieldEl.value = value || '';
+  }
+
   function applyParts(parts){
+    if(seq !== _addressSelectSeq) return; // a newer selection or address edit won
     window._selectedAddrParts = parts;
     const full = formatAddressOneLine(parts);
     if(activeInput) activeInput.value = parts.street || full;
@@ -35075,27 +35261,7 @@ function showAddressEditorPopup(recId){
     }
   }, 100);
 
-  // The place-details fetch below takes a moment, and the user can keep typing
-  // meanwhile. Remember City/State/Zip as they are now: when the details arrive,
-  // a field that has since changed is the user's and must not be overwritten
-  // (unless they've emptied it). This is how "Topeka" + "auderdale" happened.
-  const seq = ++_addressSelectSeq;
-  const cszSnapshot = {};
-  ['addrEdCity','addrEdState','addrEdZip','ce_city','ce_state','ce_zip','add_city','add_state','add_zip'].forEach(id => {
-    const fieldEl = document.getElementById(id);
-    if(fieldEl) cszSnapshot[id] = fieldEl.value;
-  });
-  // Fills one field unless the user edited it; returns the value the field ends
-  // up holding, so _selectedAddrParts can't contradict what's on screen.
-  function fillUnlessEdited(id, value, part, parts, clearIfMissing){
-    const fieldEl = document.getElementById(id);
-    if(!fieldEl) return;
-    if(fieldEl.value.trim() && fieldEl.value !== cszSnapshot[id]){ parts[part] = fieldEl.value.trim(); return; }
-    if(value || clearIfMissing) fieldEl.value = value || '';
-  }
-
   // Shift+Enter to save
-    if(seq !== _addressSelectSeq) return; // a newer selection or address edit won
   overlay.addEventListener('keydown', function(e){
     if(e.shiftKey && e.key === 'Enter'){ e.preventDefault(); saveAddressEditor(recId); }
     if(e.key === 'Escape') overlay.remove();
@@ -42561,6 +42727,14 @@ async function exportPropertyProfile(recId){
   // live in different places for a house vs. a specific unit.
   async function buildPropertySheets(analysisSheetName, expensesSheetName, ctx){
     const { r, pd, v, c, comps, an, profitReq, customExpensesList, additionalIncomeList, photoUrl, photoName } = ctx;
+    // The comp table starts at row 17 and keeps its usual 12 rows, growing past
+    // them when there are more comps. Everything below it, and every formula
+    // over it on both sheets, is positioned from these.
+    const compRowCount = Math.max(12, comps.length);
+    const compFirstRow = 17;
+    const compLastRow = compFirstRow + compRowCount - 1;
+    const compNotesHeaderRow = compLastRow + 1;
+    const compNotesFirstRow = compNotesHeaderRow + 1;
 
   // ══════════════════════════════════════════
   // SHEET 1: Property Analysis
@@ -42727,14 +42901,6 @@ async function exportPropertyProfile(recId){
   // _weightedAvg() applies (beats→1.15, competes→1.0, loses→0.85), Weighted
   // Revenue applies it to that comp's own revenue (falling back to rate×days×occ
   // exactly like _compRevenue() does when a comp has no reported revenue), and
-    // The comp table starts at row 17 and keeps its usual 12 rows, growing past
-    // them when there are more comps. Everything below it, and every formula
-    // over it on both sheets, is positioned from these.
-    const compRowCount = Math.max(12, comps.length);
-    const compFirstRow = 17;
-    const compLastRow = compFirstRow + compRowCount - 1;
-    const compNotesHeaderRow = compLastRow + 1;
-    const compNotesFirstRow = compNotesHeaderRow + 1;
   // C12 is just =AVERAGE() of that column. Annual Revenue/Occupancy/Nightly Rate
   // also switch from pre-formatted display strings to real numbers (with a
   // numFmt for display) so they're usable in formulas at all.
@@ -42761,7 +42927,7 @@ async function exportPropertyProfile(recId){
       ws1.getCell(16, ci+1).border = borderAllBlk;
     });
 
-    // Rows 17-28: Comp data (up to 12 comps)
+    // Comp data: one row per comp, with a minimum of 12 rows
     const sortedComps = comps.slice().sort(function(a,b){ return (sortOrder[a.rating]||2) - (sortOrder[b.rating]||2); });
     for(let i=0; i<compRowCount; i++){
       const rn = compFirstRow + i;
