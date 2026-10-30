@@ -42671,11 +42671,11 @@ async function exportPropertyProfile(recId){
   ws1.getCell('A12').alignment = { horizontal:'right' };
   ws1.mergeCells('C12:D12');
   // A real formula when there's data to average (the comp table's own
-  // Weighted Revenue column, N17:N28, further down this same sheet) — not
+  // Weighted Revenue column, N17 down, further down this same sheet) — not
   // pre-computed in JS, so a mentor can click this cell and see exactly how
   // it derives from the comps below. Blank comp rows never get a formula in
   // N (see the comp-table loop), so AVERAGE() here naturally skips them.
-  ws1.getCell('C12').value = hasProj ? { formula: 'ROUND(AVERAGE(N17:N28),0)' } : '—';
+  ws1.getCell('C12').value = hasProj ? { formula: 'ROUND(AVERAGE(N' + compFirstRow + ':N' + compLastRow + '),0)' } : '—';
   ws1.getCell('C12').font = { name:'Arial', size:13, color:{argb:'FF000000'} };
   ws1.getCell('C12').fill = blueHeaderFill;
   if(hasProj) ws1.getCell('C12').numFmt = '$#,##0';
@@ -42727,6 +42727,14 @@ async function exportPropertyProfile(recId){
   // _weightedAvg() applies (beats→1.15, competes→1.0, loses→0.85), Weighted
   // Revenue applies it to that comp's own revenue (falling back to rate×days×occ
   // exactly like _compRevenue() does when a comp has no reported revenue), and
+    // The comp table starts at row 17 and keeps its usual 12 rows, growing past
+    // them when there are more comps. Everything below it, and every formula
+    // over it on both sheets, is positioned from these.
+    const compRowCount = Math.max(12, comps.length);
+    const compFirstRow = 17;
+    const compLastRow = compFirstRow + compRowCount - 1;
+    const compNotesHeaderRow = compLastRow + 1;
+    const compNotesFirstRow = compNotesHeaderRow + 1;
   // C12 is just =AVERAGE() of that column. Annual Revenue/Occupancy/Nightly Rate
   // also switch from pre-formatted display strings to real numbers (with a
   // numFmt for display) so they're usable in formulas at all.
@@ -42755,8 +42763,8 @@ async function exportPropertyProfile(recId){
 
     // Rows 17-28: Comp data (up to 12 comps)
     const sortedComps = comps.slice().sort(function(a,b){ return (sortOrder[a.rating]||2) - (sortOrder[b.rating]||2); });
-    for(let i=0; i<12; i++){
-      const rn = 17 + i;
+    for(let i=0; i<compRowCount; i++){
+      const rn = compFirstRow + i;
       const comp = sortedComps[i];
       ws1.getCell(rn, 1).value = i + 1;
       ws1.getCell(rn, 1).font = themeFont;
@@ -42814,17 +42822,18 @@ async function exportPropertyProfile(recId){
       }
     }
 
-    // Row 29: Comparable Notes header
-    ws1.mergeCells('A29:K29');
-    ws1.getCell('A29').value = 'Comparable Notes';
-    ws1.getCell('A29').font = { name:'Arial', size:13, bold:true, color:{argb:'FF333333'} };
-    ws1.getCell('A29').fill = greyFill;
-    ws1.getCell('A29').alignment = { horizontal:'center' };
-    for(let ci=1;ci<=11;ci++){ ws1.getCell(29,ci).border = borderAllBlk; }
+    // Comparable Notes header, directly below the comp table
+    const compNotesHeaderCell = 'A' + compNotesHeaderRow;
+    ws1.mergeCells(compNotesHeaderCell + ':K' + compNotesHeaderRow);
+    ws1.getCell(compNotesHeaderCell).value = 'Comparable Notes';
+    ws1.getCell(compNotesHeaderCell).font = { name:'Arial', size:13, bold:true, color:{argb:'FF333333'} };
+    ws1.getCell(compNotesHeaderCell).fill = greyFill;
+    ws1.getCell(compNotesHeaderCell).alignment = { horizontal:'center' };
+    for(let ci=1;ci<=11;ci++){ ws1.getCell(compNotesHeaderRow,ci).border = borderAllBlk; }
 
-    // Rows 30-41: Comp notes (up to 12)
-    for(let i=0; i<12; i++){
-      const rn = 30 + i;
+    // Comp notes: one row per comp row above
+    for(let i=0; i<compRowCount; i++){
+      const rn = compNotesFirstRow + i;
       const comp = sortedComps[i];
       ws1.getCell(rn, 1).value = i + 1;
       ws1.getCell(rn, 1).font = themeFont;
@@ -42837,8 +42846,9 @@ async function exportPropertyProfile(recId){
       for(let ci=2;ci<=11;ci++){ ws1.getCell(rn, ci).border = borderAllBlk; }
     }
 
-    // Row 42+: merge remaining area
-    ws1.mergeCells('A42:K42');
+    // Merge the remaining area
+    const compTailRow = compNotesFirstRow + compRowCount;
+    ws1.mergeCells('A' + compTailRow + ':K' + compTailRow);
   }
 
   // ══════════════════════════════════════════
@@ -43115,15 +43125,15 @@ async function exportPropertyProfile(recId){
   ws2.getRow(30).height = 6;
 
   // Forecasted Revenue rows — averages pulled straight from the Analysis
-  // sheet's own comp table (columns D/E/F, rows 17:28) instead of recomputed
+  // sheet's own comp table (columns D/E/F) instead of recomputed
   // in JS, so this can never quietly drift from what that table shows.
   addCalcRow(ws2, 31, 'Average Daily Rate', 0);
-  ws2.getCell('C31').value = { formula: "IFERROR(AVERAGE('" + analysisSheetName + "'!F17:F28),0)" };
+  ws2.getCell('C31').value = { formula: "IFERROR(AVERAGE('" + analysisSheetName + "'!F" + compFirstRow + ":F" + compLastRow + "),0)" };
   addCalcRow(ws2, 33, 'Average Occupancy Rate', 0, {pct:true});
-  ws2.getCell('C33').value = { formula: "IFERROR(AVERAGE('" + analysisSheetName + "'!E17:E28),0)" };
+  ws2.getCell('C33').value = { formula: "IFERROR(AVERAGE('" + analysisSheetName + "'!E" + compFirstRow + ":E" + compLastRow + "),0)" };
   ws2.getCell('C33').numFmt = '0%';
   addCalcRow(ws2, 35, 'Average Days/Year Occupied', 0, {computed:true});
-  ws2.getCell('C35').value = { formula: "IFERROR(AVERAGE('" + analysisSheetName + "'!D17:D28),0)" };
+  ws2.getCell('C35').value = { formula: "IFERROR(AVERAGE('" + analysisSheetName + "'!D" + compFirstRow + ":D" + compLastRow + "),0)" };
   ws2.getCell('C35').numFmt = '0';
 
   // Annual/Monthly Revenue — matches the Analysis sheet's Definite Revenue
