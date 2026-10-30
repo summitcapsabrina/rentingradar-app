@@ -285,7 +285,7 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
 
         case 'SCRAPE_URL': {
           // From the CRM: scrape and return result directly (no forwarding)
-          const result = await scrapeAny(msg.url, msg.kind);
+          const result = await scrapeAny(msg.url, msg.kind, msg.expectedListingId);
           sendResponse(result);
           return;
         }
@@ -311,7 +311,7 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
 // ------------------------------------------------------------------
 // Detect which scraper to use and run it
 // ------------------------------------------------------------------
-async function scrapeAny(url, hint) {
+async function scrapeAny(url, hint, expectedListingId) {
   if (!url || !/^https?:\/\//i.test(url)) {
     return { ok: false, error: 'Invalid URL' };
   }
@@ -333,8 +333,15 @@ async function scrapeAny(url, hint) {
 
   // v0.8.0: No import cache — every import runs the full pipeline fresh.
   const file = kind === 'airdna' ? 'content/airdna-scraper.js' : 'content/listing-scraper.js';
+  // The listing this scrape must prove it read, or fail; nothing unverified comes
+  // back. Falls back to the id in the URL, so CRM versions and the popup that don't
+  // send one are protected too. Co-Hosting target imports ('cohost') are left alone.
+  const urlListing = String(url).match(/(?:\/|listing_id=)abnb_(\d+)(?:[/?&#]|$)/i);
+  const expectedId = (kind !== 'airdna' || wantFullProperty) ? null
+    : /^abnb_\d+$/.test(expectedListingId || '') ? expectedListingId
+    : urlListing ? 'abnb_' + urlListing[1] : null;
   try {
-    const data = await scrapeInBackgroundTab(url, file, { wantAiSummary: wantFullProperty });
+    const data = await scrapeInBackgroundTab(url, file, { wantAiSummary: wantFullProperty, expectedListingId: expectedId });
     if (!data) return { ok: false, error: 'Could not read details from the page. Make sure you are signed in where required.' };
 
     // Detect AirDNA login/paywall gate
@@ -344,6 +351,11 @@ async function scrapeAny(url, hint) {
         return { ok: false, error: 'airdna-paywall', detail: 'This AirDNA listing requires a paid subscription. Please upgrade your AirDNA plan or use a listing you have access to.' };
       }
       return { ok: false, error: 'airdna-login-required', detail: 'Please log into AirDNA in your browser first, then try importing again.' };
+    }
+
+    if (expectedId && !data._listingVerified) {
+      console.warn('[RR ext] AirDNA listing not confirmed:', expectedId, data._listingDiagnostics || null);
+      return { ok: false, error: 'airdna-listing-mismatch', detail: "AirDNA didn't load that listing. Try again." };
     }
 
     // Tag the payload with its kind so the CRM knows how to route it
@@ -579,6 +591,7 @@ async function scrapeAny(url, hint) {
 
     return { ok: true, data };
   } catch (e) {
+    if (expectedId && /timed out/i.test(e.message || '')) return { ok: false, error: 'airdna-timeout', detail: 'AirDNA took too long to load that listing.' };
     return { ok: false, error: e.message || 'Scrape failed.' };
   }
 }
@@ -2114,6 +2127,14 @@ async function scrapeInBackgroundTab(url, contentScriptPath, opts) {
           await chrome.scripting.executeScript({
             target: { tabId: tab.id },
             func: function () { window.__rrWantAiSummary = true; },
+          });
+        }
+        // Same pattern for a comp import's expected listing id.
+        if (opts.expectedListingId) {
+          await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            func: function (id) { window.__rrExpectedListingId = id; },
+            args: [opts.expectedListingId],
           });
         }
         await chrome.scripting.executeScript({

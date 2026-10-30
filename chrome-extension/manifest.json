@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "RentingRadar",
-  "version": "1.16.14",
+  "version": "1.16.15",
   "description": "Paste rental listing links to auto-fill property and competitor details in your RentingRadar CRM.",
   "author": "Summit Capital LLC",
   "homepage_url": "https://rentingradar.com",

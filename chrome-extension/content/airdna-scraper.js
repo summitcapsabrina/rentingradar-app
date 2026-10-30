@@ -103,20 +103,79 @@
     return null;
   }
 
+  // ── Expected listing check (comp imports) ──
+  // AirDNA redirects /data/listing/abnb_<id> to its market page
+  // (/top-listings?...&listing_id=abnb_<id>), which holds, in document order:
+  //   1. a grid of the market's top listings, each card with its own Airbnb link
+  //      and its own Revenue / Occupancy / Daily Rate
+  //   2. the detail panel's hero photo, with the target listing's Airbnb link
+  //   3. the "Short-term Rental Listing Overview" header and the target's metrics
+  //   4. Top Competitors, more cards with their own Airbnb links
+  // So the last Airbnb room link before that header identifies the panel, whether
+  // or not the grid has rendered yet. Reading anything page-wide instead is how a
+  // cold load imported the first grid card's numbers for every listing in a market.
+  const OVERVIEW_HEADER = 'Short-term Rental Listing Overview';
+
+  function expectedRoomId() {
+    const m = String(window.__rrExpectedListingId || '').match(/^abnb_(\d+)$/);
+    return m ? m[1] : null;
+  }
+
+  function findOverviewHeader() {
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    let node;
+    while ((node = walker.nextNode())) {
+      if (node.nodeValue.includes(OVERVIEW_HEADER)) return node.parentElement;
+    }
+    return null;
+  }
+
+  function panelRoomId(header) {
+    let room = null;
+    for (const a of document.querySelectorAll('a[href*="airbnb."]')) {
+      if (!(a.compareDocumentPosition(header) & Node.DOCUMENT_POSITION_FOLLOWING)) break;
+      const m = a.href.match(/\/rooms\/(\d+)/);
+      if (m) room = m[1];
+    }
+    return room;
+  }
+
+  // Is the detail panel on screen showing exactly this room? Also returned as
+  // diagnostics, which the service worker logs when a listing can't be confirmed.
+  function confirmTargetPanel(room) {
+    const urlListing = new URLSearchParams(location.search).get('listing_id');
+    const urlOk = !urlListing || urlListing === 'abnb_' + room;
+    const header = findOverviewHeader();
+    const panelRoom = header ? panelRoomId(header) : null;
+    return {
+      confirmed: urlOk && panelRoom === room,
+      urlOk: urlOk,
+      hasOverview: !!header,
+      panelRoomMatches: panelRoom === room,
+      panelHasRoomLink: !!panelRoom,
+    };
+  }
+
   // ── Primary extraction: body text scoped to the selected listing ──
   // The AirDNA listing detail page shows "Short-term Rental Listing Overview"
   // followed by the listing title, metadata, and metrics in a predictable
   // value→label line pattern. We scope extraction to the text after this
   // header to avoid picking up metrics from other listings on the page.
-  function extractFromScopedText(data) {
+  function extractFromScopedText(data, metricsOnly) {
     const body = document.body.innerText || '';
-    const overviewIdx = body.indexOf('Short-term Rental Listing Overview');
+    const overviewIdx = body.indexOf(OVERVIEW_HEADER);
     if (overviewIdx < 0) return false;
 
     // Grab a generous chunk of text containing the selected listing's detail.
     // AirDNA's layout sometimes inserts extra UI elements between metrics,
     // so we read 1500 chars to capture all 5 metric pairs reliably.
-    const chunk = body.substring(overviewIdx, overviewIdx + 1500);
+    let chunk = body.substring(overviewIdx, overviewIdx + 1500);
+    // Stop where this listing's metrics end, so a metric that hasn't rendered
+    // can't be filled from a Top Competitors card further down.
+    if (metricsOnly) {
+      const end = chunk.search(/\n\s*(?:AI Summary|What Guests Are Saying|What key amenities|How is this listing priced|Top Competitors)/i);
+      if (end >= 0) chunk = chunk.substring(0, end);
+    }
     const lines = chunk.split(/\n/).map(l => l.trim()).filter(Boolean);
 
     // Extract header info: beds, baths, guests, rating
@@ -219,6 +278,24 @@
     const loginCheck = detectLoginWall();
     if (loginCheck) {
       data._loginRequired = loginCheck;
+      return data;
+    }
+
+    // Comp import with an expected listing: the Airbnb link comes from the id,
+    // and numbers come only from a panel confirmed to be that listing. No fallback
+    // below may run, since they all read the whole page. run() keeps polling until
+    // _listingVerified is set or time runs out.
+    const expectedRoom = expectedRoomId();
+    if (expectedRoom) {
+      const expectedLink = 'https://www.airbnb.com/rooms/' + expectedRoom;
+      data.link = expectedLink;
+      data.linkShort = shortLink(expectedLink);
+      const confirmation = confirmTargetPanel(expectedRoom);
+      if (confirmation.confirmed) extractFromScopedText(data, true);
+      const metricsComplete = data.annualRevenue != null && data.nightlyRate != null && data.occupancy != null && data.daysAvailable != null;
+      data._listingVerified = confirmation.confirmed && metricsComplete;
+      data._listingDiagnostics = Object.assign(confirmation, { metricsComplete: metricsComplete });
+      try { extractCohostExtras(data); } catch (_) {}
       return data;
     }
 
@@ -459,6 +536,10 @@
     } catch (_) {}
   }
 
+  // About 30-36 s (background tabs throttle timers to 1/s), inside the service
+  // worker's 45 s limit, so a slow page gets a clear answer instead of a timeout.
+  const EXPECTED_LISTING_MAX_ATTEMPTS = 36;
+
   function run(attempt) {
     // Expand AirDNA's "Show AI Summary" on the first few passes so its prose
     // is in the DOM by the time extractCohostExtras reads it. (Co-Hosting only
@@ -484,6 +565,17 @@
       const hasFinancials = data.annualRevenue != null || data.nightlyRate != null;
       const hasOccupancy = data.occupancy != null || data.daysAvailable != null;
       const hasLink = !!data.link;
+      // With an expected listing, only a verified panel can finish early. Waiting
+      // out the attempts ends in a result the service worker rejects as a mismatch.
+      if (expectedRoomId()) {
+        const aiWait = window.__rrWantAiSummary === true && data.aiSummary == null && attempt < 10;
+        if ((data._listingVerified && !aiWait) || attempt >= EXPECTED_LISTING_MAX_ATTEMPTS) {
+          chrome.runtime.sendMessage({ type: 'SCRAPE_RESULT', payload: data });
+          return;
+        }
+        setTimeout(() => run(attempt + 1), 800);
+        return;
+      }
       // Co-Hosting imports (flagged via window.__rrWantAiSummary, set by the service
       // worker before injection) wait a few extra passes for AirDNA's "Show AI
       // Summary" dropdown to expand + load before declaring success — otherwise the
@@ -500,7 +592,7 @@
         return;
       }
     } catch (e) {
-      if (attempt >= 15) {
+      if (attempt >= (expectedRoomId() ? EXPECTED_LISTING_MAX_ATTEMPTS : 15)) {
         chrome.runtime.sendMessage({ type: 'SCRAPE_RESULT', error: e.message });
         return;
       }
