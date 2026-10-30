@@ -32,8 +32,6 @@
   "host_permissions": [
     "https://*.airdna.co/*",
     "https://*.airbnb.com/*",
-    "https://*.vrbo.com/*",
-    "https://*.booking.com/*",
     "https://www.zillow.com/*",
     "https://www.apartments.com/*",
     "https://*.hotpads.com/*",
