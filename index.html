@@ -34595,7 +34595,7 @@ function setupAddressAutocomplete(inputEl, recId){
   }
 
   // Normal typing
-  inputEl.addEventListener('input', function(){ triggerSearch(300); });
+  inputEl.addEventListener('input', function(){ _addressSelectSeq++; triggerSearch(300); });
 
   // Paste — trigger immediately with short delay for value to settle
   inputEl.addEventListener('paste', function(){ setTimeout(() => triggerSearch(50), 0); });
@@ -34739,6 +34739,7 @@ function highlightMatch(text, query){
     if(c === '&') result += '&amp;';
     else if(c === '<') result += '&lt;';
     else if(c === '>') result += '&gt;';
+let _addressSelectSeq = 0; // bumped by each selection and address edit; late place details check it
     else if(c === '"') result += '&quot;';
     else result += c;
   }
@@ -34773,6 +34774,10 @@ function _geoMeters(lat1, lng1, lat2, lng2){
   return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
 }
 let _addrClusterCache = { key: null, center: null };
+  // A suggestion click has already run by now (selectAddress is on mousedown,
+  // which fires before blur), so the list can close the moment focus moves.
+  // It covers the fields below it, so lingering lets a click aimed at City land
+  // on a suggestion instead.
 // Center of the 50 km area holding the most of the user's properties (ties go
 // to the newest property). A plain centroid of every property lands between
 // markets for a user working in, say, Houston and Phoenix.
@@ -34920,32 +34925,23 @@ async function selectAddress(el, recId){
     // Auto-fill city/state/zip fields in the address editor popup if open
     if(addrEdStreet){
       addrEdStreet.value = parts.street || full;
-      const cityEl = document.getElementById('addrEdCity');
-      const stateEl = document.getElementById('addrEdState');
-      const zipEl = document.getElementById('addrEdZip');
-      if(cityEl && parts.city) cityEl.value = parts.city;
-      if(stateEl && parts.state) stateEl.value = parts.state;
-      if(zipEl && parts.zip) zipEl.value = parts.zip;
+      fillUnlessEdited('addrEdCity', parts.city, 'city', parts);
+      fillUnlessEdited('addrEdState', parts.state, 'state', parts);
+      fillUnlessEdited('addrEdZip', parts.zip, 'zip', parts);
     }
     // Auto-fill city/state/zip fields in the contact card editor popup if open
     if(ceAddrInput){
       ceAddrInput.value = parts.street || full;
-      const ceCityEl = document.getElementById('ce_city');
-      const ceStateEl = document.getElementById('ce_state');
-      const ceZipEl = document.getElementById('ce_zip');
-      if(ceCityEl && parts.city) ceCityEl.value = parts.city;
-      if(ceStateEl && parts.state) ceStateEl.value = parts.state;
-      if(ceZipEl && parts.zip) ceZipEl.value = parts.zip;
+      fillUnlessEdited('ce_city', parts.city, 'city', parts);
+      fillUnlessEdited('ce_state', parts.state, 'state', parts);
+      fillUnlessEdited('ce_zip', parts.zip, 'zip', parts);
     }
     // Auto-fill city/state/zip in the Add Property manual form
     if(addInput){
       addInput.value = parts.street || full;
-      const addCityEl = document.getElementById('add_city');
-      const addStateEl = document.getElementById('add_state');
-      const addZipEl = document.getElementById('add_zip');
-      if(addCityEl) addCityEl.value = parts.city || '';
-      if(addStateEl) addStateEl.value = parts.state || '';
-      if(addZipEl) addZipEl.value = parts.zip || '';
+      fillUnlessEdited('add_city', parts.city, 'city', parts, true);
+      fillUnlessEdited('add_state', parts.state, 'state', parts, true);
+      fillUnlessEdited('add_zip', parts.zip, 'zip', parts, true);
     }
     // Apartment Prospecting's Address field has no separate city/state/zip inputs,
     // so fill it with the full formatted address.
@@ -35079,7 +35075,27 @@ function showAddressEditorPopup(recId){
     }
   }, 100);
 
+  // The place-details fetch below takes a moment, and the user can keep typing
+  // meanwhile. Remember City/State/Zip as they are now: when the details arrive,
+  // a field that has since changed is the user's and must not be overwritten
+  // (unless they've emptied it). This is how "Topeka" + "auderdale" happened.
+  const seq = ++_addressSelectSeq;
+  const cszSnapshot = {};
+  ['addrEdCity','addrEdState','addrEdZip','ce_city','ce_state','ce_zip','add_city','add_state','add_zip'].forEach(id => {
+    const fieldEl = document.getElementById(id);
+    if(fieldEl) cszSnapshot[id] = fieldEl.value;
+  });
+  // Fills one field unless the user edited it; returns the value the field ends
+  // up holding, so _selectedAddrParts can't contradict what's on screen.
+  function fillUnlessEdited(id, value, part, parts, clearIfMissing){
+    const fieldEl = document.getElementById(id);
+    if(!fieldEl) return;
+    if(fieldEl.value.trim() && fieldEl.value !== cszSnapshot[id]){ parts[part] = fieldEl.value.trim(); return; }
+    if(value || clearIfMissing) fieldEl.value = value || '';
+  }
+
   // Shift+Enter to save
+    if(seq !== _addressSelectSeq) return; // a newer selection or address edit won
   overlay.addEventListener('keydown', function(e){
     if(e.shiftKey && e.key === 'Enter'){ e.preventDefault(); saveAddressEditor(recId); }
     if(e.key === 'Escape') overlay.remove();
@@ -35102,9 +35118,9 @@ function saveAddressEditor(recId){
   const addrParts = {
     street: selected.street || streetInput,
     unit: unit,
-    city: selected.city || cityVal,
-    state: selected.state || stateVal,
-    zip: selected.zip || zipVal,
+    city: cityVal || selected.city || '',
+    state: stateVal || selected.state || '',
+    zip: zipVal || selected.zip || '',
   };
   // If autocomplete was used, also fill in city/state/zip fields that were left empty
   if(selected.street){
