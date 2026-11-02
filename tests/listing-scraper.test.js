@@ -10,8 +10,9 @@ const read = (p) => fs.readFileSync(path.join(EXT, p), 'utf8');
 const LIBS = [read('lib/amenity-match.js'), read('lib/listing-plans.js')];
 const SCRAPER = read('content/listing-scraper.js');
 
-function scrape(fixture, url) {
-  const html = fs.readFileSync(path.join(__dirname, 'fixtures', fixture), 'utf8');
+function scrape(fixture, url, edit) {
+  const raw = fs.readFileSync(path.join(__dirname, 'fixtures', fixture), 'utf8');
+  const html = edit ? edit(raw) : raw;
   const dom = new JSDOM(html, { url, runScripts: 'outside-only', pretendToBeVisual: true });
   const { window } = dom;
   // jsdom has no layout, so innerText is the closest thing to textContent.
@@ -93,4 +94,18 @@ test('Apartments.com single unit still imports its own numbers', async () => {
   assert.ok(!d._needsFloorplan);
   const exterior = d.propertyDetails.exteriorFeatures || [];
   assert.ok(!exterior.includes('Shed/Outbuilding'), '"furnished" and "refreshed" are not a shed');
+});
+
+const planRow = (name, rent) => '<div class="pricingGridItem"><span class="modelName">' + name + '</span><span class="rentLabel">' + rent + '</span><span class="detailsLabel">2 beds, 2 baths, 914 sq ft</span></div>';
+const withPlans = (...rows) => (html) => html.replace('</main>', rows.join('') + '</main>');
+
+test('the only plan on a page, with no price of its own, keeps the offers price', async () => {
+  const d = await scrape('apartments-bulevar.html', BULEVAR, withPlans(planRow('A1', 'Call for Rent')));
+  assert.deepEqual([d.bedrooms, d.bathrooms, d.sqft, d.price], [2, 2, 914, 2750]);
+});
+
+test('a plan picked from several, with no price of its own, does not take the offers price', async () => {
+  const d = await scrape('apartments-bulevar.html', BULEVAR + '?floorplan=A1', withPlans(planRow('A1', 'Call for Rent'), planRow('B1', '$3,000')));
+  assert.match(d._chosenPlan, /^A1,/);
+  assert.equal(d.price, null);
 });

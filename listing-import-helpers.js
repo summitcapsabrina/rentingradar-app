@@ -135,6 +135,7 @@ function applyPlanToListing(data, plan) {
     bathrooms: plan.baths != null ? plan.baths : null,
     sqft: plan.sqft != null ? plan.sqft : null,
     price: plan.priceMin != null ? plan.priceMin : null,
+    _chosenPlanName: plan.label || plan.name || null,
     _otherPlanNames: _planNames(data, plan.label || plan.name),
   });
   // A Zillow unit has its own number and listing page; a floor plan has neither.
@@ -166,22 +167,53 @@ const NUMBER_WORDS = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6 };
 const COUNT_PART = '(\\d+(?:\\.\\d+)?|one|two|three|four|five|six)';
 const NOT_UNIT_AREA_RE = /^\s*(?:of\s+)?(?:[a-z-]+\s+){0,2}(?:clubhouse|fitness|gym|lot|pool|amenit|retail|office|lobby|community|park|deck|center|courtyard)/i;
 const RENT_CONTEXT_RE = /\b(?:rent|rents|rental|monthly|per month|\/\s*mo|a month|starting|from|priced|price|asking)\b/i;
+// A $ figure next to one of these is a charge on top of the rent, not the rent.
+const FEE_CONTEXT_RE = /\b(?:fees?|deposits?|packages?|pets?|parking|amenit(?:y|ies)|admin(?:istrative)?|application|utilit(?:y|ies))\b/i;
+const RENT_WORD_RE = /\brents?\b/i;
+const FIGURE_BOUNDARY_RE = /\$|;|,\s|\.\s/;
+// A sentence about other units says nothing about this one's beds and baths.
+const OTHER_UNITS_RE = /\balso available\b|\bother\s+(?:units?|floor\s*plans?|plans?|layouts?)\b/i;
+const RENT_BAND = [0.5, 2];
+
+function _countValue(raw) {
+  const w = raw.toLowerCase();
+  if (/^studios?$/.test(w)) return 0;
+  return NUMBER_WORDS[w] != null ? NUMBER_WORDS[w] : parseFloat(w);
+}
+
+// Removes lists of sizes: "1, 2 and 3 bedroom", "studio to 3 bedroom", "1-2 bath".
+// The counts must rise, so "Unit 4 - 3 bedroom" still reads as a 3 bedroom.
+function _withoutCountLists(text, unitWords) {
+  const item = '(?:studios?|\\d(?:\\.\\d)?|one|two|three|four|five|six)';
+  const sep = '\\s*(?:,\\s*(?:and\\s+|or\\s+|&\\s*)?|and\\s+|or\\s+|&\\s*|to\\s+|through\\s+|-|–|—)\\s*';
+  const list = new RegExp('(?<![\\d,.$])\\b(' + item + '(?:' + sep + item + ')+)[\\s-]*(?:' + unitWords + ')\\b', 'gi');
+  return text.replace(list, (whole, items) => {
+    const counts = (items.match(new RegExp(item, 'gi')) || []).map(_countValue);
+    return counts.every((n, i) => i === 0 || n > counts[i - 1]) ? ' ' : whole;
+  });
+}
 
 function _countsIn(text, re) {
   const out = [];
   let m;
-  while ((m = re.exec(text))) {
-    const raw = m[1].toLowerCase();
-    out.push(NUMBER_WORDS[raw] != null ? NUMBER_WORDS[raw] : parseFloat(raw));
-  }
+  while ((m = re.exec(text))) out.push(_countValue(m[1]));
   return out;
 }
 
-// What a bullet says about the unit: { beds:[], baths:[], sqft:[], rent:[] }.
+// One size in a bullet is a claim about the unit. Two different ones are a list of
+// what the building offers ("1 bedroom and 2 bedroom units").
+function _unitCounts(text, unitWords) {
+  const found = _countsIn(_withoutCountLists(text, unitWords), new RegExp('\\b' + COUNT_PART + '[\\s-]*(?:' + unitWords + ')\\b', 'gi'));
+  return new Set(found).size > 1 ? [] : found;
+}
+
+// What a bullet says about the unit: { beds:[], baths:[], sqft:[], rent:[] }. Each
+// rent entry is the figures of one claim: [1900], or [1900, 2400] for a range.
 function bulletFigures(text) {
   const t = String(text == null ? '' : text);
-  const beds = _countsIn(t, new RegExp('\\b' + COUNT_PART + '[\\s-]*(?:bed(?:room)?s?|bd|br)\\b', 'gi'));
-  const baths = _countsIn(t, new RegExp('\\b' + COUNT_PART + '[\\s-]*(?:bath(?:room)?s?|ba)\\b', 'gi'));
+  const aboutOtherUnits = OTHER_UNITS_RE.test(t);
+  const beds = aboutOtherUnits ? [] : _unitCounts(t, 'bed(?:room)?s?|bd|br');
+  const baths = aboutOtherUnits ? [] : _unitCounts(t, 'bath(?:room)?s?|ba');
   const sqft = [];
   const sqRe = /\b(\d[\d,]*)\s*(?:sq\.?\s*ft\.?|sqft|square\s*f(?:ee|oo)t|sf)(?![a-z])/gi;
   let m;
@@ -189,10 +221,16 @@ function bulletFigures(text) {
     if (!NOT_UNIT_AREA_RE.test(t.slice(m.index + m[0].length, m.index + m[0].length + 40))) sqft.push(parseInt(m[1].replace(/,/g, ''), 10));
   }
   const rent = [];
-  const rentRe = /\$\s*(\d[\d,]*)/g;
+  const rentRe = /\$\s*(\d[\d,]*)(?:\s*(?:-|–|—|to)\s*\$?\s*(\d[\d,]*))?/gi;
   while ((m = rentRe.exec(t))) {
-    const around = t.slice(Math.max(0, m.index - 24), m.index + m[0].length + 16);
-    if (RENT_CONTEXT_RE.test(around)) rent.push(parseInt(m[1].replace(/,/g, ''), 10));
+    const end = m.index + m[0].length;
+    const before = t.slice(Math.max(0, m.index - 24), m.index).split(FIGURE_BOUNDARY_RE).pop();
+    const after = t.slice(end, end + 16).split(FIGURE_BOUNDARY_RE)[0];
+    if (FEE_CONTEXT_RE.test(before) || (FEE_CONTEXT_RE.test(after) && !RENT_WORD_RE.test(before))) continue;
+    if (!RENT_CONTEXT_RE.test(before + m[0] + after)) continue;
+    const low = parseInt(m[1].replace(/,/g, ''), 10);
+    const high = m[2] ? parseInt(m[2].replace(/,/g, ''), 10) : NaN;
+    rent.push(high > low ? [low, high] : [low]);
   }
   return { beds, baths, sqft, rent };
 }
@@ -204,20 +242,34 @@ function _contradicts(found, actual, slack) {
   return found.some((n) => Math.abs(n - want) > (slack || 0));
 }
 
+// A claim far from the final rent is some other charge, and a range only needs one
+// end to match.
+function _contradictsRent(claims, actual) {
+  if (actual == null || actual === '') return false;
+  const want = Number(actual);
+  if (!Number.isFinite(want)) return false;
+  return claims.some((c) => c.some((n) => n >= want * RENT_BAND[0] && n <= want * RENT_BAND[1]) && !c.includes(want));
+}
+
+function _escapeRegExp(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
 // Drops note bullets that disagree with the numbers the record ended up with.
 // core: { bedrooms, bathrooms, sqft, price }. opts.otherPlanNames: plans that were
-// not chosen. opts.blankUnit: no plan was chosen, so bullets may state no unit
+// not chosen. opts.chosenPlanName: the plan that was, so "B3" can't match inside
+// "B3 Deluxe". opts.blankUnit: no plan was chosen, so bullets may state no unit
 // numbers at all. Returns the bullets to keep.
 function filterBulletsAgainstCore(bullets, core, opts) {
   const o = opts || {};
   const c = core || {};
   const others = (o.otherPlanNames || []).filter(Boolean).map((n) =>
-    new RegExp('(?<![a-z0-9.])' + String(n).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![a-z0-9])', 'i'));
+    new RegExp('(?<![a-z0-9.])' + _escapeRegExp(n) + '(?![a-z0-9]|\\.\\d)', 'i'));
+  const chosen = o.chosenPlanName ? new RegExp('(?<![a-z0-9.])' + _escapeRegExp(o.chosenPlanName) + '(?![a-z0-9]|\\.\\d)', 'gi') : null;
   return (Array.isArray(bullets) ? bullets : []).filter((b) => {
-    if (others.some((re) => re.test(String(b)))) return false;
+    const named = chosen ? String(b).replace(chosen, ' ') : String(b);
+    if (others.some((re) => re.test(named))) return false;
     const f = bulletFigures(b);
     if (o.blankUnit) return !(f.beds.length || f.baths.length || f.sqft.length || f.rent.length);
-    return !(_contradicts(f.beds, c.bedrooms) || _contradicts(f.baths, c.bathrooms) || _contradicts(f.sqft, c.sqft, 1) || _contradicts(f.rent, c.price));
+    return !(_contradicts(f.beds, c.bedrooms) || _contradicts(f.baths, c.bathrooms) || _contradicts(f.sqft, c.sqft, 1) || _contradictsRent(f.rent, c.price));
   });
 }
 

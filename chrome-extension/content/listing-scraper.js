@@ -1633,7 +1633,9 @@
       out.bedrooms = chosen.beds;
       out.bathrooms = chosen.baths;
       out.sqft = chosen.sqft;
-      out.price = chosen.priceMin;
+      // The one plan on the page has no price, so the offers price is its price. With
+      // several plans, the offers price could be any of them.
+      if (chosen.priceMin != null || floorplans.length > 1) out.price = chosen.priceMin;
       out._chosenPlan = [chosen.name, chosen.beds + ' bd', chosen.baths + ' ba', chosen.sqft + ' sf'].join(', ');
       log('floorplan chosen', chosen.name);
       return;

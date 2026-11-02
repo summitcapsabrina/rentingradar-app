@@ -134,3 +134,97 @@ test('bullet validator states no unit numbers when no plan was chosen', () => {
   assert.deepEqual(h.filterBulletsAgainstCore(list, {}, {}), list, 'with nothing to compare, nothing contradicts');
   assert.deepEqual(h.filterBulletsAgainstCore(undefined, {}), []);
 });
+
+test('bullet validator keeps fees, ranges and size lists that fit the unit', () => {
+  const core = { bedrooms: 2, bathrooms: 2, sqft: 1360, price: 1900 };
+  for (const b of [
+    'Resident Benefits Package $50/mo covers filters and pest control',
+    'Pet fee $35 monthly',
+    'Rents from $1,900 to $2,400 per month',
+    'Rents from $1,600 to $1,900 per month',
+    'Choose from 1, 2 and 3 bedroom plans',
+    'Studio and 1 bedroom units also available',
+    'Studio to 3 bedroom floor plans',
+    '1-3 bedroom apartments',
+    'One, two or three bedroom homes',
+    '1 bedroom and 3 bedroom units',
+    'Other units have 3 bedrooms and 3 baths',
+    '$1,500 security deposit',
+    '$1,000 administrative fee due at move-in',
+    '$75 monthly parking',
+  ]) {
+    assert.deepEqual(h.filterBulletsAgainstCore([b], core), [b], b);
+  }
+});
+
+test('bullet validator still drops real contradictions', () => {
+  const drop = (b, core) => assert.deepEqual(h.filterBulletsAgainstCore([b], core), [], b);
+  drop('T2 Townhome 3 bed/2 bath, 1,982 sq ft', { bedrooms: 2, bathrooms: 2, sqft: 1193 });
+  drop('Rent is $2,650 per month', { price: 1991 });
+  drop('Rent of $2,650 includes all utilities', { price: 1991 });
+  drop('Rent is $2,650 per month, pet fee $35', { price: 1991 });
+  drop('Rents from $2,100 to $2,400 per month', { price: 1900 });
+  drop('Unit 4 - 3 bedroom corner home', { bedrooms: 2 });
+  drop('Built 2019, 3 bedroom layout', { bedrooms: 2 });
+});
+
+test('a $ figure outside half to double the final rent is not the rent', () => {
+  const core = { price: 2000 };
+  const keep = (b) => h.filterBulletsAgainstCore([b], core).length === 1;
+  assert.equal(keep('Trash service $25 per month'), true);
+  assert.equal(keep('Monthly rent $999'), true);
+  assert.equal(keep('Monthly rent $1,000'), false, 'exactly half is in the band');
+  assert.equal(keep('Monthly rent $4,000'), false, 'exactly double is in the band');
+  assert.equal(keep('Monthly rent $4,001'), true);
+  assert.equal(keep('Monthly rent $2,000'), true);
+});
+
+test('with no plan chosen, fees and size lists are not unit numbers', () => {
+  const opts = { blankUnit: true };
+  for (const b of [
+    'Resident Benefits Package $50/mo covers filters and pest control',
+    'Pet fee $35 monthly',
+    'Choose from 1, 2 and 3 bedroom plans',
+    'Studio and 1 bedroom units also available',
+  ]) {
+    assert.deepEqual(h.filterBulletsAgainstCore([b], {}, opts), [b], b);
+  }
+  for (const b of ['Rents from $1,900 to $2,400 per month', 'Rent is $2,650 per month', '3 bed/2 bath', '1,982 sq ft home']) {
+    assert.deepEqual(h.filterBulletsAgainstCore([b], {}, opts), [], b);
+  }
+});
+
+test('bulletFigures reports each rent claim whole', () => {
+  assert.deepEqual(h.bulletFigures('Rents from $1,900 to $2,400 per month').rent, [[1900, 2400]]);
+  assert.deepEqual(h.bulletFigures('Rent $1,900-$2,400').rent, [[1900, 2400]]);
+  assert.deepEqual(h.bulletFigures('Rent is $2,650 per month').rent, [[2650]]);
+  assert.deepEqual(h.bulletFigures('Pet fee $35 monthly').rent, []);
+  assert.deepEqual(h.bulletFigures('Choose from 1, 2 and 3 bedroom plans').beds, []);
+  assert.deepEqual(h.bulletFigures('Spacious 3 bedroom').beds, [3]);
+});
+
+test('picking B3.1 keeps bullets that name it when B3 is another plan', () => {
+  const core = { bedrooms: 2, bathrooms: 2, sqft: 1088, price: 2166 };
+  const opts = { otherPlanNames: ['B3', 'B4'], chosenPlanName: 'B3.1' };
+  const b31 = 'Floor plan B3.1 offers 1,088 sq ft';
+  assert.deepEqual(h.filterBulletsAgainstCore([b31], core, opts), [b31]);
+  assert.deepEqual(h.filterBulletsAgainstCore([b31], core, { otherPlanNames: ['B3', 'B4'] }), [b31], 'the lookahead holds without the chosen name');
+  assert.deepEqual(h.filterBulletsAgainstCore(['B3 has water views', 'B4 is the largest', 'Plan B3. Water views'], core, opts), []);
+});
+
+test('a plan named inside the chosen plan\'s own name is not another plan', () => {
+  const opts = { otherPlanNames: ['T2', 'B3'], chosenPlanName: 'T2 - Townhome' };
+  assert.deepEqual(h.filterBulletsAgainstCore(['T2 - Townhome end unit', 'T2 flat upstairs'], {}, opts), ['T2 - Townhome end unit']);
+});
+
+test('applyPlanToListing records the chosen name for the validator', () => {
+  const b31 = { name: 'B3.1', beds: 2, baths: 2, sqft: 1088, priceMin: 2166 };
+  const out = h.applyPlanToListing({ address: 'x', _needsFloorplan: true, floorplans: [{ name: 'B3' }, b31, { name: 'B4' }] }, b31);
+  assert.equal(out._chosenPlanName, 'B3.1');
+  assert.deepEqual(out._otherPlanNames, ['B3', 'B4']);
+});
+
+test('hosting never publishes log files', () => {
+  const firebase = JSON.parse(require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'firebase.json'), 'utf8'));
+  assert.ok(firebase.hosting.ignore.includes('*.log'));
+});
