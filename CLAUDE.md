@@ -71,7 +71,7 @@ pro:      { name:'Pro',      monthly:29.99, yearly:289.99, maxProperties:Infinit
 admin:    { name:'Admin',    monthly:0,     yearly:0,      maxProperties:Infinity, darkMode:true }
 ```
 - **Analysis limits**: Basic=1/month, Standard=10/month, Pro=Unlimited
-- **Feature gating**: Dark mode & themes gated at `standard`+. CSV, Negotiation Forecasting, Operations all available on Basic.
+- **Feature gating**: Dark mode & themes gated at `standard`+. Negotiation Forecasting is Pro-only (`requireTier('pro')`). CSV and Operations are available on Basic.
 - **No-plan lockout**: `renderLockoutScreen()` shows pricing cards with `auth-signin-prompt lockout` class (960px max-width). Uses `renderPricing({hideHeader:true})` to avoid redundant headers.
 - **Manual override**: `manualOverride` flag on user doc prevents Stripe webhook sync from overwriting tier/status
 

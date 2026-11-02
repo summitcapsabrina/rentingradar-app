@@ -2069,6 +2069,20 @@ tr.unit-row-excluded{opacity:.55}
   <div class="mg-toast" id="mgToast">Link copied to clipboard</div>
 </div>
 <script>
+// Checkout disclosures for the last screens before Stripe (desktop cards and the mobile picker).
+// Wording cleared by Lena 2026-11-02; only the plan, prices and date vary.
+function _planChargeLine(price, isYearly, trialOk){
+  var amount = '$' + Number(price).toFixed(2) + (isYearly ? '/yr' : '/mo');
+  if(trialOk){
+    var date = new Date(Date.now()+7*864e5).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+    return 'Your card will be charged ' + amount + ' starting ' + date + ' unless you cancel before then. Cancel anytime in Manage Billing.';
+  }
+  return 'Your card will be charged ' + amount + ' starting today, then every ' + (isYearly ? 'year' : 'month') + ' until you cancel. Cancel anytime in Manage Billing.';
+}
+function _planTrialLongForm(name, monthly, yearly){
+  return '7-day free trial on ' + name + ' (first subscription only). Card required. Then $' + Number(monthly).toFixed(2) + '/mo (or $' + Number(yearly).toFixed(2) + '/yr) unless you cancel before the trial ends. Cancel anytime in Manage Billing.';
+}
+
 // Mobile gate share handler. Safe to define on desktop too — it's never called there.
 function mgShareLink(){
   var url='https://app.rentingradar.com';
@@ -2337,7 +2351,7 @@ function mgShareLink(){
     // Same trial guess as the desktop pricing cards; the server makes the real call.
     var trialOk = (typeof _newTrialEligible === 'function') ? _newTrialEligible() : true;
     var html = '<div class="mg-hero"><h1>Welcome, '+mgEsc(firstName)+'!</h1>'+
-               (trialOk ? '<p>Pick a plan to start your 7-day free trial. We won\'t charge your card until the trial ends.</p></div>'
+               (trialOk ? '<p>Pick a plan to start your 7-day free trial (card required). We won\'t charge your card until the trial ends. Then your plan renews at the price shown until you cancel.</p></div>'
                         : '<p>Pick a plan to continue. Your data is preserved.</p></div>');
 
     html += '<div class="mg-card"><div class="mg-card-title">Choose your plan</div>'+
@@ -2357,12 +2371,13 @@ function mgShareLink(){
                 '<div class="mg-tier-head"><div class="mg-tier-name">'+mgEsc(name)+tag+'</div><div class="mg-tier-price">'+priceStr+'</div></div>'+
                 '<div class="mg-tier-desc">'+mgEsc(t.desc)+'</div>'+
                 // Auto-renewal disclosure (Terms §5): tapping a plan goes straight to checkout.
-                '<div class="mg-tier-renew">Your '+mgEsc(name)+' plan renews automatically at $'+Number(price).toFixed(2)+'/'+(period==='yearly'?'year':'month')+(trialOk?' after your 7-day free trial':'')+' until you cancel. Cancel anytime in Manage Billing.</div>'+
+                '<div class="mg-tier-renew">'+mgEsc(_planChargeLine(price, period==='yearly', trialOk))+'</div>'+
+                (trialOk ? '<div class="mg-tier-renew">'+mgEsc(_planTrialLongForm(name, def.monthly||0, def.yearly||0))+'</div>' : '')+
               '</button>';
     });
     html += '</div>'+
             '<div id="mgTierMsg" class="mg-auth-msg" role="status" aria-live="polite" style="margin-top:10px"></div>'+
-            '<div class="mg-auth-foot" style="margin-top:12px">'+(trialOk?'7-day free trial · ':'')+'Cancel anytime · Promo codes apply at checkout · <a href="/terms.html" target="_blank">Terms</a> · <a href="/privacy.html" target="_blank">Privacy</a></div>'+
+            '<div class="mg-auth-foot" style="margin-top:12px">'+(trialOk?'7-day free trial (card required) · ':'')+'Cancel anytime · Promo codes apply at checkout · <a href="/terms.html" target="_blank">Terms</a> · <a href="/privacy.html" target="_blank">Privacy</a></div>'+
             '</div>';
 
     html += '<div class="mg-card"><div class="mg-card-title">Or come back on desktop</div>'+
@@ -2481,14 +2496,14 @@ function mgShareLink(){
     var isSignup = _mgAuthMode === 'signup';
     var heroTitle = isSignup ? 'Start your free trial.' : 'Built for desktop.';
     var heroBody = isSignup
-      ? 'Create your account on mobile and pick a plan. Then continue on desktop to import properties and manage your pipeline.'
+      ? 'Create your account on mobile and pick a plan. Card required; then your plan\'s price ($9.99–$29.99/mo) unless you cancel. Then continue on desktop to import properties and manage your pipeline.'
       : 'The full CRM opens on a computer. Sign in here to glance at your pipeline, follow-ups, and earnings on the go.';
 
     var googleBtnLabel = isSignup ? 'Sign up with Google' : 'Continue with Google';
     var submitLabel = isSignup ? 'Create account' : 'Sign in';
     var cardTitle = isSignup ? 'Create your account' : 'Sign in';
     var cardBody = isSignup
-      ? 'After signup you\'ll pick a plan and start a 7-day free trial.'
+      ? 'After signup you\'ll pick a plan and start a 7-day free trial. Card required; then your plan\'s price ($9.99–$29.99/mo) unless you cancel.'
       : 'Use the same account you use on desktop.';
 
     var googleSvg = '<svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3c-1.6 4.7-6.1 8-11.3 8-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.2-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.6 16 18.9 13 24 13c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2c-2 1.5-4.5 2.4-7.2 2.4-5.2 0-9.6-3.3-11.3-7.9l-6.5 5C9.6 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.3 4.3-4.2 5.7l6.2 5.2c-.4.4 6.7-4.9 6.7-14.9 0-1.2-.1-2.4-.4-3.5z"/></svg>';
@@ -2554,7 +2569,7 @@ function mgShareLink(){
   }
   function mgFriendlyAuthError(e){
     var c = (e && e.code) || '';
-    if(c==='auth/user-not-found' || c==='auth/invalid-credential') return 'No account matches that email and password. New here? Start a free trial on RentingRadar.com.';
+    if(c==='auth/user-not-found' || c==='auth/invalid-credential') return 'No account matches that email and password. New here? Create an account on RentingRadar.com.';
     if(c==='auth/wrong-password') return 'Incorrect password. Try again or reset it below.';
     if(c==='auth/invalid-email') return 'That doesn\'t look like a valid email.';
     if(c==='auth/too-many-requests') return 'Too many attempts. Please wait a moment and try again.';
@@ -6783,7 +6798,7 @@ function renderSignInPrompt(forTutorial){
   const title = forTutorial ? 'Sign in to start the tutorial' : 'Sign in to get started';
   const desc = forTutorial
     ? 'Sign in to access the interactive tutorial. Your progress will be saved automatically.'
-    : 'Sign in to start your 7-day free trial.';
+    : 'Sign in to start. 7-day free trial, card required, then $9.99–$29.99/mo depending on plan unless you cancel.';
   return `<div class="auth-signin-prompt">
     <div class="asp-icon">${icon}</div>
     <div class="asp-title">${title}</div>
@@ -6815,7 +6830,7 @@ function renderLockoutScreen(){
         : (isCancelled
             ? 'Your subscription has ended. Your data has been preserved — subscribe to any plan to restore full access.'
             : (isNewTrial
-                ? 'Pick a plan below to start your free trial. You won\'t be charged until day 7, and you can cancel anytime.'
+                ? 'Pick a plan below. 7-day free trial, card required, then $9.99–$29.99/mo depending on plan unless you cancel. Cancel anytime in Manage Billing.'
                 : 'Choose a plan to continue. Your data is preserved until you subscribe.')));
 
   if(isPastDue){
@@ -14798,9 +14813,9 @@ const TE_BASELINE = {
     { chapter:3, image:'07-projected-roi.webp', title:'Projection Modes', desc:'Switch between <b>Pessimistic</b>, <b>Realistic</b>, and <b>Optimistic</b> projection modes to formulate an understanding of the capability of your investment under different scenarios.', highlight:{x:74.72,y:27.23,w:22.68,h:2.76}, tier:'basic' },
     { chapter:3, image:'07-projected-roi.webp', title:'Deal Temperature', desc:'The <b>Deal Temperature</b> gauge rates your property from <b>Cold</b> to <b>Hot</b> based on all available data — financials, competition, and market conditions. Use it as a quick go/no-go indicator.', highlight:{x:48.88,y:50.23,w:50.56,h:21.16}, tier:'basic' },
     { chapter:3, image:'07-projected-roi.webp', title:'Payback Period', desc:'See how long it will take to recoup your initial investment. The <b>With Concessions</b> and <b>Without Concessions</b> views show how negotiating affects your timeline.', highlight:{x:14.89,y:70.38,w:84.55,h:29.62}, tier:'basic' },
-    { chapter:4, image:'08-negotiation-tools.webp', title:'Negotiation Forecasting Tools', desc:'Use powerful <b>negotiation forecasting</b> tools. The <b>Rent Adjustment</b> dial and <b>Rental Concessions</b> panels let you model different negotiation outcomes before making an offer.', highlight:null, tier:'basic' },
-    { chapter:4, image:'08-negotiation-tools.webp', title:'Rent Adjustment Dial', desc:'Drag the <b>dial</b> to simulate different rent amounts. Watch how <b>monthly cash flow</b>, <b>ROI</b>, and <b>deal temperature</b> change in real-time. Find the sweet spot for your negotiation.', highlight:{x:14.86,y:32.65,w:40.50,h:59.00}, tier:'basic' },
-    { chapter:4, image:'08-negotiation-tools.webp', title:'Rental Concessions', desc:'Model common concessions like <b>free months</b>, <b>reduced security deposit</b>, or <b>included utilities</b>. See the impact on your <b>break-even timeline</b> and overall <b>ROI</b> instantly.', highlight:{x:55.36,y:32.65,w:43.87,h:58.99}, tier:'basic' },
+    { chapter:4, image:'08-negotiation-tools.webp', title:'Negotiation Forecasting Tools', desc:'Pro plan: Use powerful <b>negotiation forecasting</b> tools. The <b>Rent Adjustment</b> dial and <b>Rental Concessions</b> panels let you model different negotiation outcomes before making an offer.', highlight:null, tier:'pro' },
+    { chapter:4, image:'08-negotiation-tools.webp', title:'Rent Adjustment Dial', desc:'Drag the <b>dial</b> to simulate different rent amounts. Watch how <b>monthly cash flow</b>, <b>ROI</b>, and <b>deal temperature</b> change in real-time. Find the sweet spot for your negotiation.', highlight:{x:14.86,y:32.65,w:40.50,h:59.00}, tier:'pro' },
+    { chapter:4, image:'08-negotiation-tools.webp', title:'Rental Concessions', desc:'Model <b>free rent weeks</b> (rent you never pay). See the impact on your <b>break-even timeline</b> and overall <b>ROI</b> instantly.', highlight:{x:55.36,y:32.65,w:43.87,h:58.99}, tier:'pro' },
   ]
 };
 
@@ -19701,7 +19716,6 @@ function renderPricing(opts){
           'Follow-up reminders & notifications',
           'Expense tracking',
           'CSV import & export',
-          'Negotiation Forecasting Tools',
         ],
         disabled: [
           'Dark mode & color themes',
@@ -19724,6 +19738,7 @@ function renderPricing(opts){
         operationsLimit: 'Unlimited Operations properties',
         features: [
           'Everything in Standard',
+          'Negotiation Forecasting Tools',
           'Priority feature requests',
         ],
         disabled: [],
@@ -19773,10 +19788,10 @@ function renderPricingCard(tier, opts){
     const perMonth = (t.yearly / 12).toFixed(2);
     const monthlyCost = t.monthly.toFixed(2);
     priceDisplay = `<span class="pc-price-old">$${monthlyCost}</span>$${perMonth}<span>/mo</span>`;
-    billedNote = `<div class="pc-billed">Billed annually at $${t.yearly.toFixed(2)}/year${trialAvailable ? '<br><div style="font-size:.75rem;color:var(--text2);margin-top:4px">7-day free trial</div>' : ''}</div>`;
+    billedNote = `<div class="pc-billed">Billed annually at $${t.yearly.toFixed(2)}/year${trialAvailable ? '<br><div style="font-size:.75rem;color:var(--text2);margin-top:4px">7-day free trial · card required</div>' : ''}</div>`;
   } else {
     priceDisplay = '$' + t.monthly.toFixed(2) + '<span>/mo</span>';
-    billedNote = `<div class="pc-billed">Billed monthly${trialAvailable ? '<br><div style="font-size:.75rem;color:var(--text2);margin-top:4px">7-day free trial</div>' : ''}</div>`;
+    billedNote = `<div class="pc-billed">Billed monthly${trialAvailable ? '<br><div style="font-size:.75rem;color:var(--text2);margin-top:4px">7-day free trial · card required</div>' : ''}</div>`;
   }
 
   // Determine button label. Existing subscribers (paid OR trialing) get routed to the
@@ -19790,8 +19805,8 @@ function renderPricingCard(tier, opts){
   }
   // Auto-renewal disclosure next to the checkout button (Terms §5 Automatic Renewal).
   // Only on buttons that go to Stripe Checkout; subscribers' buttons open the portal.
-  const renewPrice = isYearly ? '$' + t.yearly.toFixed(2) + '/year' : '$' + t.monthly.toFixed(2) + '/month';
-  const renewalNote = hasAnySub ? '' : `<div class="pc-renewal">Your ${t.name} plan renews automatically at ${renewPrice}${trialAvailable ? ' after your 7-day free trial' : ''} until you cancel. Cancel anytime in Manage Billing. <a href="/terms.html" target="_blank">Terms</a> · <a href="/privacy.html" target="_blank">Privacy</a></div>`;
+  const chargeLine = _planChargeLine(isYearly ? t.yearly : t.monthly, isYearly, trialAvailable);
+  const renewalNote = hasAnySub ? '' : `<div class="pc-renewal"><div>${chargeLine}</div>${trialAvailable ? `<div style="margin-top:6px">${_planTrialLongForm(t.name, t.monthly, t.yearly)}</div>` : ''}<div style="margin-top:6px"><a href="/terms.html" target="_blank">Terms</a> · <a href="/privacy.html" target="_blank">Privacy</a></div></div>`;
 
   return `<div class="pricing-card ${isPopular?'popular':''} ${isCurrent?'current':''} ${isDim?'dim':''}">
     <div class="pc-name">${t.name}</div>
@@ -32286,7 +32301,7 @@ function renderNegotiationTab(r){
   h += '<div class="nft-title-row" style="font-size:.82rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;display:inline-flex;align-items:center;gap:5px;cursor:help"'+tipAttrs('Rent Adjustment','Explore what rent would make this deal attractive. Two ways to adjust:\\n\\n• Click the rent amount (✏️) to type an exact number\\n• Click and drag the arrow on the dial to slide it\\n\\nThis is a projection tool — it does NOT change the actual rent.',true)+'>Rent Adjustment<span class="nft-hint-q">?</span></div>';
   h += '</div>';
   h += '<div style="flex:1 1 0;min-width:240px;padding:14px 16px;text-align:center;box-sizing:border-box">';
-  h += '<div class="nft-title-row" style="font-size:.82rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;display:inline-flex;align-items:center;gap:5px;cursor:help"'+tipAttrs('Rental Concessions','Negotiate free rent weeks to reduce your upfront investment and accelerate break-even. 6–8 weeks is a common target for rental arbitrage.',true)+'>Rental Concessions<span class="nft-hint-q">?</span></div>';
+  h += '<div class="nft-title-row" style="font-size:.82rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;display:inline-flex;align-items:center;gap:5px;cursor:help"'+tipAttrs('Rental Concessions','Negotiate free rent weeks to reduce your upfront investment and accelerate break-even. Free-rent concessions are often a few weeks; what\'s realistic varies by landlord and market.',true)+'>Rental Concessions<span class="nft-hint-q">?</span></div>';
   h += '</div>';
   h += '</div>'; // end title row
 
@@ -33585,7 +33600,7 @@ function editConcessionWeeks(recId){
   const overlay = document.createElement('div');
   overlay.className = 'multi-editor-overlay';
   overlay.id = 'concessionWeeksOverlay';
-  overlay.innerHTML = '<div class="multi-editor" style="max-width:400px"><div class="multi-editor-header"><h3>Rental Concession Weeks</h3><button class="modal-close" onclick="document.getElementById(\'concessionWeeksOverlay\').remove()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div><div class="multi-editor-body" style="padding:24px 20px"><input type="number" id="concessionWeeksInput" placeholder="Weeks of free rent" value="'+startVal+'" min="0" max="52" style="font-size:1rem;padding:10px 12px;margin-bottom:8px"><div style="font-size:.72rem;color:var(--text3);margin-bottom:16px">Recommended: 6–8 weeks · Enter to save</div><div style="display:flex;gap:10px;justify-content:flex-end"><button class="btn btn-secondary" onclick="document.getElementById(\'concessionWeeksOverlay\').remove()">Cancel</button><button class="btn btn-primary" onclick="saveConcessionWeeks(\''+recId+'\')">Save</button></div></div></div>';
+  overlay.innerHTML = '<div class="multi-editor" style="max-width:400px"><div class="multi-editor-header"><h3>Rental Concession Weeks</h3><button class="modal-close" onclick="document.getElementById(\'concessionWeeksOverlay\').remove()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div><div class="multi-editor-body" style="padding:24px 20px"><input type="number" id="concessionWeeksInput" placeholder="Weeks of free rent" value="'+startVal+'" min="0" max="52" style="font-size:1rem;padding:10px 12px;margin-bottom:8px"><div style="font-size:.72rem;color:var(--text3);margin-bottom:16px">Often a few weeks; varies by landlord · Enter to save</div><div style="display:flex;gap:10px;justify-content:flex-end"><button class="btn btn-secondary" onclick="document.getElementById(\'concessionWeeksOverlay\').remove()">Cancel</button><button class="btn btn-primary" onclick="saveConcessionWeeks(\''+recId+'\')">Save</button></div></div></div>';
   document.body.appendChild(overlay);
   const inp = document.getElementById('concessionWeeksInput');
   inp.focus();
@@ -41277,7 +41292,7 @@ var _KB_STARTER_ENTRIES = [
   { question: "How do I figure out what rent to offer the landlord?", answer: "Use the rent dial in the Negotiation Tools tab — drag it to watch your NOI and cash flow shift at different rent prices, then target a rent that keeps you comfortably cash-flow positive.", tags: ["negotiation", "rent-dial"] },
   { question: "What is the Rental Concession calculator?", answer: "It models the value of the free-rent weeks you negotiate as rent waived — rent you simply never pay. Formula: monthly rent × (free weeks ÷ 4). That savings comes straight off your upfront investment to speed up break-even. A month is treated as 4 weeks, so for example $2,000/mo rent × 7 free weeks ÷ 4 = $3,500 saved.", tags: ["negotiation", "rental-concession", "free-rent"] },
   { question: "How do rental concessions help my break-even?", answer: "Free-rent weeks are rent you never pay, so their dollar value comes straight off your upfront investment. With a smaller amount to recover, your cash flow pays you back sooner — the panel shows your break-even timeline with and without the concession so you can see the head-start.", tags: ["negotiation", "rental-concession", "free-rent", "break-even", "payback"] },
-  { question: "How many weeks of free rent should I negotiate?", answer: "6–8 weeks is a common target for rental arbitrage. What's realistic depends on the market and the landlord — slower markets and motivated owners give more. Use the concession panel to test different week counts and see how each one moves your break-even before you ask.", tags: ["negotiation", "rental-concession", "free-rent"] },
+  { question: "How many weeks of free rent should I negotiate?", answer: "It varies by landlord and market. Concessions are often a few weeks, more in slower markets or with motivated owners. What's realistic depends on the market and the landlord — slower markets and motivated owners give more. Use the concession panel to test different week counts and see how each one moves your break-even before you ask.", tags: ["negotiation", "rental-concession", "free-rent"] },
   { question: "Does a concession change my monthly cash flow?", answer: "No. A concession is a one-time upfront benefit — it lowers your effective investment so you break even faster, but it does NOT change your steady-state monthly cash flow or NOI. Your ongoing numbers stay the same; you just start from a better position.", tags: ["negotiation", "rental-concession", "cash-flow", "break-even"] },
   { question: "What does the With / Without Concessions comparison show?", answer: "Two break-even timelines side by side: 'Without' uses your full upfront investment, 'With' subtracts the rent you negotiated free. The difference is how much sooner you recover your money. The break-even chart plots both lines so you can see the gap the concession creates.", tags: ["negotiation", "rental-concession", "break-even", "payback"] },
   { question: "What does 'X mo faster · Saves $Y' mean in the concessions panel?", answer: "$Y is the rent waived — the dollar value of the free weeks (monthly rent × free weeks ÷ 4). 'X mo faster' is roughly how much sooner you reach break-even because that amount comes off your upfront investment instead of having to be earned back over time.", tags: ["negotiation", "rental-concession", "free-rent", "break-even"] },
@@ -41727,7 +41742,7 @@ function renderHelp(){
         ${renderHelpAccordion('Can I import properties from a spreadsheet?',
           'Yes — in <strong>Prospecting</strong>, open the import option (the <strong>+ / Import</strong> menu). RentingRadar supports <strong>CSV</strong>, <strong>Monday.com XLSX</strong> (it auto-detects sub-tabs like VA Schedule, Maintenance, Cases, Reviews, and Purchases), and <strong>Custom XLSX</strong> where you map your own columns. Include a header row. Every import is logged in <strong>Import History</strong>, and you can undo within 24 hours.')}
         ${renderHelpAccordion('What\'s the difference between the plans?',
-          'All plans let you <strong>upload and track unlimited properties</strong> — what differs is how many you can <strong>Analyze</strong> and how many you can <strong>Operate</strong>.<br><strong>Basic ($9.99/mo)</strong> — 1 analysis per month and 1 Operations property, plus pipeline management, property profiles, follow-ups, expense tracking, spreadsheet import, and negotiation forecasting tools.<br><strong>Standard ($19.99/mo)</strong> — 10 analyses per month and up to 5 Operations properties, everything in Basic, plus dark mode &amp; color themes.<br><strong>Pro ($29.99/mo)</strong> — unlimited analyses and unlimited Operations properties, everything in Standard, plus priority feature requests.<br>Yearly billing saves roughly two months.')}
+          'All plans let you <strong>upload and track unlimited properties</strong> — what differs is how many you can <strong>Analyze</strong> and how many you can <strong>Operate</strong>.<br><strong>Basic ($9.99/mo)</strong> — 1 analysis per month and 1 Operations property, plus pipeline management, property profiles, follow-ups, expense tracking, and spreadsheet import.<br><strong>Standard ($19.99/mo)</strong> — 10 analyses per month and up to 5 Operations properties, everything in Basic, plus dark mode &amp; color themes.<br><strong>Pro ($29.99/mo)</strong> — unlimited analyses and unlimited Operations properties, everything in Standard, plus Negotiation Forecasting Tools and priority feature requests.<br>Yearly billing saves roughly two months.')}
         ${renderHelpAccordion('How do follow-up reminders work?',
           'Add a follow-up in the <strong>Tasks &amp; Follow-Ups</strong> card on a property — set a date (plus optional time, time zone, type, and a note). Upcoming follow-ups appear on your dashboard, and you can turn on <strong>Browser Notifications</strong> for reminders under <strong>Settings → Notification Preferences</strong>.')}
       </div>

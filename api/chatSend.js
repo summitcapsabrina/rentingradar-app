@@ -16,6 +16,7 @@
 // during the Phase 1 rollout. Mirror this with the Firestore rules.
 
 const { verifyFirebaseToken } = require("./verifyToken");
+const { PLAN_PRICING } = require("./_lib/pricing");
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_MODEL = "claude-haiku-4-5-20251001";
@@ -24,13 +25,6 @@ const MAX_OUTPUT_TOKENS = 1024;
 // Generous so Sabrina recalls the WHOLE conversation (including any stretch a
 // human support rep handled before the AI was re-enabled), not just the recent tail.
 const MAX_HISTORY_TURNS = 150;
-
-// Canonical plan pricing (keep in sync with the TIERS object in index.html).
-const PLAN_PRICING = {
-  basic:    { name: "Basic",    monthly: 9.99,  yearly: 89.99,  analyses: "1 analysis / month",   darkMode: false },
-  standard: { name: "Standard", monthly: 19.99, yearly: 199.99, analyses: "10 analyses / month",  darkMode: true },
-  pro:      { name: "Pro",      monthly: 29.99, yearly: 289.99, analyses: "Unlimited analyses",    darkMode: true },
-};
 
 const OPENAI_EMBED_URL = "https://api.openai.com/v1/embeddings";
 const EMBED_MODEL = "text-embedding-3-small";
@@ -472,6 +466,8 @@ All imports are logged in Import History. Users can undo any import within 24 ho
 **Notifications.** Task reminders, meeting reminders, daily and weekly digests via email.
 
 **Plans.** Basic $9.99/mo · Standard $19.99/mo · Pro $29.99/mo. Yearly plans are roughly 10× monthly (so 2 months free). All tiers include unlimited properties; Standard+ unlocks dark mode and themes.
+Negotiation Tools (Rent Adjustment dial + Rental Concessions) are included on Pro only.
+Trial: 7-day free trial (first subscription only), card required, then $9.99–$29.99/mo depending on plan unless you cancel. Cancel anytime in Manage Billing.
 
 **Affiliate program.** Affiliate-tier users get unique referral codes. Commission = 50% × (gross subscription revenue − $3/user/month operating cost). Paid out via monthly commission report.
 
@@ -508,6 +504,8 @@ You know the standard plan pricing and can quote it to anyone who asks:
 - Standard — $19.99/month or $199.99/year. 10 analyses/month. Dark mode + themes.
 - Pro — $29.99/month or $289.99/year. Unlimited analyses. Dark mode + themes.
 - All plans include UNLIMITED properties. Yearly billing saves roughly two months vs. paying monthly.
+- Negotiation Tools (Rent Adjustment dial + Rental Concessions) are included on Pro only.
+- Trial: 7-day free trial (first subscription only), card required, then $9.99–$29.99/mo depending on plan unless you cancel. Cancel anytime in Manage Billing.
 IMPORTANT: Share only these STANDARD prices. NEVER reference, confirm, or speculate about any personal discount, coupon, promo, or affiliate rate a specific user may have on their account — if they ask about their own discount or a billing adjustment, warmly direct them to email help@rentingradar.com.
 
 # Memory & recall (use the conversation history above)

@@ -1,5 +1,6 @@
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const { verifyFirebaseToken } = require("./verifyToken");
+const { sendTrialStartedEmail } = require("./_lib/trialEmail");
 
 module.exports = async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -31,6 +32,18 @@ module.exports = async function handler(req, res) {
 
     if (session.metadata?.firebaseUID !== user.uid) {
       return res.status(403).json({ error: { message: "Session does not belong to this user." } });
+    }
+
+    // Confirm the trial to the buyer. Runs before the payment_status check so the email
+    // doesn't depend on which status Stripe reports for a $0 trial. Never fails the request.
+    try {
+      await sendTrialStartedEmail({
+        subscription: session.subscription,
+        email: session.customer_details?.email || user.email,
+        name: session.customer_details?.name,
+      });
+    } catch (emailErr) {
+      console.error("Failed to send trial-started email:", emailErr?.response?.body || emailErr.message);
     }
 
     if (session.payment_status !== "paid") {
