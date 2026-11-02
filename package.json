@@ -3,12 +3,17 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "test": "node --test tests/*.test.js"
+    "test": "node --test tests/*.test.js",
+    "test:rules": "firebase emulators:exec --only firestore --project demo-rentingradar \"node --test tests/rules/*.test.js\""
   },
   "dependencies": {
     "@sendgrid/mail": "^8.1.0",
     "firebase-tools": "^15.15.0",
     "jsonwebtoken": "^9.0.0",
     "stripe": "^14.0.0"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^6.0.0",
+    "firebase": "^13.2.0"
   }
 }
