@@ -1,32 +1,56 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    function isSupportAdmin() {
+      return request.auth != null && request.auth.token.email == "help@rentingradar.com";
+    }
+
     match /users/{userId} {
       allow read: if request.auth != null && (
         request.auth.uid == userId ||
-        request.auth.token.email == "help@rentingradar.com" ||
+        isSupportAdmin() ||
         (
           resource.data.referredBy != null &&
           'referralCodes' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data &&
           resource.data.referredBy in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.referralCodes
         )
       );
-      allow write: if request.auth != null && (
-        request.auth.uid == userId ||
-        request.auth.token.email == "help@rentingradar.com"
+
+      // Owner may create their doc, but never with admin/referral grants.
+      allow create: if isSupportAdmin() || (
+        request.auth != null && request.auth.uid == userId &&
+        !request.resource.data.keys().hasAny(['admin', 'referralCodes', 'referralCode'])
       );
-      match /{document=**} {
+
+      // Owner may update anything EXCEPT: setting admin to anything but false/absent,
+      // or adding/changing referralCodes/referralCode (removing them is allowed).
+      // tier / subscriptionStatus / manualOverride are intentionally NOT locked here (T1b).
+      allow update: if isSupportAdmin() || (
+        request.auth != null && request.auth.uid == userId &&
+        ownerSafeUpdate()
+      );
+
+      allow delete: if isSupportAdmin() || (request.auth != null && request.auth.uid == userId);
+
+      function ownerSafeUpdate() {
+        let changed = request.resource.data.diff(resource.data).affectedKeys();
+        let d = request.resource.data;
+        return (!changed.hasAny(['admin']) || d.get('admin', false) == false)
+          && (!changed.hasAny(['referralCodes']) || !('referralCodes' in d))
+          && (!changed.hasAny(['referralCode'])  || !('referralCode' in d));
+      }
+
+      // {document=**} also matches zero segments, which would re-open users/{uid}
+      // itself to the owner. Requiring {subcollection} keeps this below the doc.
+      match /{subcollection}/{document=**} {
         allow read, write: if request.auth != null && (
-          request.auth.uid == userId ||
-          request.auth.token.email == "help@rentingradar.com"
+          request.auth.uid == userId || isSupportAdmin()
         );
       }
     }
     match /tutorialContent/{doc} {
       allow read: if true;
-      allow write: if request.auth != null &&
-        (request.auth.token.email == "help@rentingradar.com" ||
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.admin == true);
+      allow write: if isSupportAdmin();
     }
 
     // ===== Chat / Support System (Phase 1 beta: admin + affiliate users) =====
@@ -34,10 +58,7 @@ service cloud.firestore {
     // Only admins and affiliate-tier users can CREATE conversations during beta.
     match /chatConversations/{conversationId} {
       function isAdminUser() {
-        return request.auth != null && (
-          request.auth.token.email == "help@rentingradar.com" ||
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.admin == true
-        );
+        return isSupportAdmin();
       }
       // Chat is for PAYING users (active sub, trialing, manual override, or
       // affiliate) — keeps pre-sale users out. Coarse here (rules can't compare
@@ -98,10 +119,7 @@ service cloud.firestore {
     // Users write their own events; admins read all for support context.
     match /sessionEvents/{eventId} {
       function isAdminUser2() {
-        return request.auth != null && (
-          request.auth.token.email == "help@rentingradar.com" ||
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.admin == true
-        );
+        return isSupportAdmin();
       }
       allow read: if request.auth != null && (
         resource.data.userId == request.auth.uid || isAdminUser2()
@@ -115,10 +133,7 @@ service cloud.firestore {
     // (the AI surfaces it in answers); writes are admin-only.
     match /chatKnowledge/{docId} {
       allow read: if request.auth != null;
-      allow write: if request.auth != null && (
-        request.auth.token.email == "help@rentingradar.com" ||
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.admin == true
-      );
+      allow write: if isSupportAdmin();
     }
 
     // Chat config (e.g. blocked-topics list). Any signed-in user can read it (the
@@ -126,10 +141,7 @@ service cloud.firestore {
     // blocked-topic guard); only admins can edit it.
     match /chatConfig/{docId} {
       allow read: if request.auth != null;
-      allow write: if request.auth != null && (
-        request.auth.token.email == "help@rentingradar.com" ||
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.admin == true
-      );
+      allow write: if isSupportAdmin();
     }
 
     // Admin device push tokens (web-push / FCM). The mobile admin PWA registers
@@ -138,10 +150,7 @@ service cloud.firestore {
     // (bypasses rules). Doc id is the FCM token.
     match /adminPushTokens/{token} {
       function isAdminUser3() {
-        return request.auth != null && (
-          request.auth.token.email == "help@rentingradar.com" ||
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.admin == true
-        );
+        return isSupportAdmin();
       }
       allow read, write: if isAdminUser3();
     }
