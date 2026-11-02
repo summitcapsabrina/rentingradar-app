@@ -12,6 +12,8 @@
 // When the source of the scrape was the popup, we additionally forward
 // the payload to any open CRM tab so the CRM can consume it.
 
+importScripts('../lib/amenity-match.js', '../lib/listing-plans.js');
+
 const CRM_ORIGIN = 'https://app.rentingradar.com';
 const SCRAPE_TIMEOUT_MS = 45000;
 const MARKET_LOOKUP_TIMEOUT_MS = 20000;
@@ -553,6 +555,10 @@ async function scrapeAny(url, hint, expectedListingId) {
     // then Claude/Ollama fills gaps (utilities, pets, bullets, core numbers
     // the scraper missed). All values are source-grounded against page text.
     if (kind === 'listing') {
+      // Blocked or half-loaded page: nothing to import, so don't spend an AI call.
+      if (self.RRListingPlans.scrapeIsEmpty(data)) {
+        return { ok: false, error: 'listing-empty', detail: 'The page loaded without listing details. Try again.' };
+      }
       const enriched = await enrichWithOllama(data);
       // Merge AI-derived propertyDetails into scraper-provided ones
       const scraperPd = data.propertyDetails || {};
@@ -569,12 +575,15 @@ async function scrapeAny(url, hint, expectedListingId) {
       data.propertyNoteBullets = enriched.propertyNoteBullets || [];
       // Overlay AI-extracted core numbers only when the scraper missed them
       const core = enriched.core || {};
-      if (core.bedrooms != null && (data.bedrooms == null || data.bedrooms === ''))
-        data.bedrooms = core.bedrooms;
-      if (core.bathrooms != null && (data.bathrooms == null || data.bathrooms === ''))
-        data.bathrooms = core.bathrooms;
-      if (core.sqft != null && (data.sqft == null || data.sqft === '' || data.sqft === 0))
-        data.sqft = core.sqft;
+      // A building or multi-plan page has no one set of numbers: the user picks.
+      if (!data._needsUnit && !data._needsFloorplan) {
+        if (core.bedrooms != null && (data.bedrooms == null || data.bedrooms === ''))
+          data.bedrooms = core.bedrooms;
+        if (core.bathrooms != null && (data.bathrooms == null || data.bathrooms === ''))
+          data.bathrooms = core.bathrooms;
+        if (core.sqft != null && (data.sqft == null || data.sqft === '' || data.sqft === 0))
+          data.sqft = core.sqft;
+      }
       // price is NEVER overlaid from AI — scraper price is authoritative
       // Available date: prefer scraper (from JSON-LD / state blob), fall back to AI
       if (!data.propertyDetails.availableDate && core.availableDate) {
@@ -1008,190 +1017,8 @@ function filterDuplicativeBullets(bullets) {
   return final;
 }
 
-// Source-grounding for amenity enum values. Each allowed value (e.g.
-// "Stainless Steel Appliances", "Attached Garage", "Swimming Pool") has
-// a set of trigger phrases. If NONE of those phrases appear in the
-// listing's page text, the model invented the value and we drop it.
-// This is the strongest anti-hallucination guard we have — the Pass A/B
-// prompts request grounding too, but small models still slip, so we
-// verify here as a hard filter.
-const AMENITY_SOURCE_TRIGGERS = {
-  // Interior features
-  'Fireplace': ['fireplace','firepl','wood burning','gas fire'],
-  'Ceiling Fans': ['ceiling fan'],
-  'Walk-In Closets': ['walk-in closet','walk in closet','walkin closet'],
-  'High Ceilings': ['high ceiling','tall ceiling','9-foot','10-foot','9 ft ceiling','10 ft ceiling'],
-  'Vaulted Ceilings': ['vaulted','cathedral ceiling'],
-  'Open Floor Plan': ['open floor plan','open concept','open layout'],
-  'Natural Light': ['natural light','sun-drenched','sun drenched','bright','sunlit','large windows','floor-to-ceiling window'],
-  'Crown Molding': ['crown molding','crown moulding'],
-  'Recessed Lighting': ['recessed light','can light','pot light'],
-  'Smart Thermostat': ['smart thermostat','nest thermostat','ecobee'],
-  'Smart Locks': ['smart lock','keyless entry'],
-  'Built-In Shelving': ['built-in shelv','built in shelv','bookshel'],
-  'Pantry': ['pantry'],
-  'Kitchen Island': ['kitchen island','island'],
-  'Breakfast Bar': ['breakfast bar','breakfast nook'],
-  'Stainless Steel Appliances': ['stainless','stainless steel'],
-  'Double Vanity': ['double vanity','dual vanity','his and hers'],
-  'Soaking Tub': ['soaking tub','clawfoot','deep tub'],
-  'Walk-In Shower': ['walk-in shower','walk in shower'],
-  'Separate Tub/Shower': ['separate tub','separate shower'],
-  'Linen Closet': ['linen closet'],
-  'Storage Unit': ['storage unit','storage space','storage locker'],
-  'Window Blinds': ['blinds'],
-  'Blackout Curtains': ['blackout'],
-  // Appliances
-  'Dishwasher': ['dishwasher'],
-  'Garbage Disposal': ['garbage disposal','disposal'],
-  'Microwave': ['microwave'],
-  'Oven/Range (Gas)': ['gas oven','gas range','gas stove','gas cooktop'],
-  'Oven/Range (Electric)': ['electric oven','electric range','electric stove','oven','range','stove','cooktop'],
-  'Refrigerator': ['refrigerator','fridge'],
-  'Ice Maker': ['ice maker','icemaker'],
-  'Trash Compactor': ['trash compactor','compactor'],
-  'Wine Cooler': ['wine cooler','wine fridge'],
-  // Flooring
-  'Hardwood': ['hardwood','wood floor'],
-  'Carpet': ['carpet'],
-  'Tile': ['tile floor','ceramic tile','porcelain tile','tiled'],
-  'Laminate': ['laminate'],
-  'Vinyl Plank': ['vinyl plank','lvp','luxury vinyl'],
-  'Concrete': ['concrete floor','polished concrete'],
-  'Marble': ['marble floor'],
-  'Stone': ['stone floor','slate floor','travertine'],
-  'Mixed': [],
-  // Laundry (single)
-  'In-Unit W/D': ['in-unit washer','in unit washer','in-unit w/d','washer/dryer in','washer and dryer in','w/d in unit'],
-  'W/D Hookups': ['hookup','w/d hookup','washer hookup','dryer hookup'],
-  'Shared/On-Site': ['shared laundry','on-site laundry','on site laundry','laundry room','laundry on site','community laundry'],
-  'Stacked W/D': ['stacked washer','stacked w/d'],
-  // A/C (single). v0.6.3: "air conditioning" and bare "a/c" now trigger
-  // Central A/C as a safe default when no more-specific type is stated.
-  // The section-routing in parseApartments takes precedence when the
-  // listing's Apartment Features DOM section names the type explicitly.
-  'Central A/C': ['central a/c','central ac','central air','air conditioning','air conditioner','air-conditioning','air-conditioned','air conditioned','a/c'],
-  'Window Unit': ['window unit','window a/c','window ac'],
-  'Mini-Split': ['mini-split','mini split','ductless'],
-  'Evaporative/Swamp Cooler': ['swamp cooler','evaporative cooler'],
-  'Portable': ['portable a/c','portable ac'],
-  // Heating (single)
-  'Central (Gas)': ['central heat','gas heat','gas furnace','forced air gas','gas heating','central heating'],
-  'Central (Electric)': ['electric heat','electric furnace','heat pump','forced air electric'],
-  'Baseboard': ['baseboard heat','baseboard'],
-  'Radiator': ['radiator','steam heat'],
-  'Heat Pump': ['heat pump'],
-  'Space Heater': ['space heater'],
-  // Parking (single)
-  'Attached Garage': ['attached garage','attached 1-car','attached 2-car','attached two-car'],
-  'Detached Garage': ['detached garage'],
-  'Carport': ['carport'],
-  'Covered Parking': ['covered parking','covered spot','covered space','parking covered'],
-  'Assigned Spot': ['assigned parking','assigned spot','reserved parking','reserved spot','parking assigned'],
-  'Street Only': ['street parking','on-street parking','on street parking','parking street','parking: street'],
-  'Driveway': ['driveway','parking driveway'],
-  'Open Lot': ['parking lot','open lot','surface lot','parking: lot'],
-  'Parking Garage': ['parking garage','garage parking'],
-  // Pool (single)
-  'Private': ['private pool','own pool','backyard pool','in-ground pool'],
-  'Community/Shared': ['community pool','shared pool','pool access','building pool','complex pool'],
-  'Heated Private': ['heated pool'],
-  'Heated Community': ['heated community pool','heated shared pool'],
-  // Outdoor
-  'Balcony': ['balcony','balconies'],
-  'Patio': ['patio'],
-  'Deck': ['deck'],
-  'Porch': ['porch'],
-  'Screened Porch': ['screened porch','screen porch'],
-  'Sunroom': ['sunroom','sun room'],
-  'Rooftop': ['rooftop','roof deck','roof top','roof terrace'],
-  'Courtyard': ['courtyard'],
-  'Lanai': ['lanai'],
-  // Exterior features
-  'Fenced Yard': ['fenced yard','fenced-in yard','fenced backyard','privacy fence'],
-  'Sprinkler System': ['sprinkler'],
-  'Outdoor Lighting': ['outdoor lighting','landscape lighting'],
-  'Outdoor Kitchen/BBQ': ['outdoor kitchen','bbq','barbecue','grill station','built-in grill'],
-  'Fire Pit': ['fire pit','firepit'],
-  'Garden Space': ['garden','planter'],
-  'Shed/Outbuilding': ['shed','outbuilding'],
-  'RV Parking': ['rv parking'],
-  'Boat Parking': ['boat parking','boat dock'],
-  'EV Charging': ['ev charg','electric vehicle charg','tesla charg'],
-  'Gated Entry': ['gated','gate entry','gated community'],
-  'Desert Landscaping': ['desert landscap','xeriscap'],
-  'Pool Fence': ['pool fence'],
-  // Community amenities
-  'Gym/Fitness Center': ['gym','fitness center','fitness room','workout'],
-  'Clubhouse': ['clubhouse','club house'],
-  'Business Center': ['business center','business lounge'],
-  'Package Lockers': ['package locker','parcel locker','amazon locker','luxer'],
-  'Dog Park': ['dog park','dog run'],
-  'Playground': ['playground','play area'],
-  'Swimming Pool': ['pool','swimming'],
-  'Community Spa/Hot Tub': ['hot tub','spa','jacuzzi'],
-  'Sauna': ['sauna'],
-  'Elevator': ['elevator','lift'],
-  'Concierge/Doorman': ['concierge','doorman','front desk'],
-  'On-Site Management': ['on-site management','on site management','on-site manager'],
-  'On-Site Maintenance': ['on-site maintenance','on site maintenance'],
-  'Bike Storage': ['bike storage','bicycle storage','bike room'],
-  'BBQ/Grill Area': ['bbq','barbecue','grill area','grilling station'],
-  'Rooftop Lounge': ['rooftop lounge','rooftop deck','sky lounge','rooftop terrace'],
-  'Tennis Court': ['tennis court','tennis'],
-  'Pickleball Court': ['pickleball'],
-  // Utilities included — triggers include contextual phrases. Bare words
-  // like "water" are too loose (match "water heater", "waterfront", other
-  // listings' utilities). Use "utilities included" as a section-level trigger.
-  'Water': ['water included','includes water','water is included','utilities included'],
-  'Hot Water': ['hot water included','includes hot water','hot water is included','hot water'],
-  'Gas': ['gas included','includes gas'],
-  'Electric': ['electric included','electricity included','includes electric','electricity'],
-  'Heat': ['heat included','heating included','heat and hot water included','includes heat','heat '],
-  'Trash': ['trash included','garbage included','includes trash','trash removal','trash pickup'],
-  'Sewer': ['sewer included','includes sewer'],
-  'Recycling': ['recycling included'],
-  'Internet/WiFi': ['internet included','wifi included','wi-fi included','includes wifi'],
-  'Cable TV': ['cable included','cable tv included'],
-  'Landscaping/Grounds': ['landscaping included','grounds maintenance'],
-  'Pest Control': ['pest control included','pest control'],
-  // Pets
-  // v0.9.0: Pet policy is now multi-select. Each type triggers independently.
-  'Cats Allowed': ['cats allowed','cats welcome','cats ok','cats permitted','cat friendly','cats, dogs ok','cats, dogs allowed','cats and dogs','cats & dogs'],
-  'Dogs Allowed': ['dogs allowed','dogs welcome','dogs ok','dogs permitted','dog friendly','cats, dogs ok','cats, dogs allowed','cats and dogs','cats & dogs','dogs, cats ok','dogs, cats allowed'],
-  'Small Dogs Only': ['small dogs only','small dogs allowed','small dogs'],
-  'Small Pets Only': ['small pets','small animal'],
-  'Case by Case': ['case by case','case-by-case','upon approval','with approval'],
-  'Service Animals Only': ['service animal'],
-  'No Pets': ['no pets','pets not allowed','pet free','pet-free'],
-  // Safety
-  'Smoke Detectors': ['smoke detector','smoke alarm'],
-  'Carbon Monoxide Detectors': ['carbon monoxide','co detector'],
-  'Fire Extinguisher': ['fire extinguisher'],
-  'Security System/Alarm': ['security system','alarm system','burglar alarm'],
-  'Deadbolt Locks': ['deadbolt'],
-  'Security Cameras': ['security camera','cctv','surveillance'],
-  '24-Hour Security': ['24-hour security','24 hour security','24/7 security'],
-  // Property type (single-select)
-  'House': ['single family','single-family','sfh',' house ','house for rent','home for rent','detached home'],
-  'Apartment': ['apartment',' apt '],
-  'Condo': ['condo','condominium'],
-  'Townhouse': ['townhouse','townhome','town house','town home'],
-  'Duplex': ['duplex'],
-  'Triplex': ['triplex'],
-  'Fourplex': ['fourplex','quadplex','4-plex','four-plex'],
-  'Studio': ['studio apartment','studio for rent','studio unit',' studio '],
-  'Loft': ['loft'],
-  'Mobile Home': ['mobile home','manufactured home'],
-  'Villa': ['villa'],
-  'Cottage': ['cottage','casita'],
-  // Furnished (single-select). Order matters in the extractor below:
-  // "partially furnished" and "unfurnished" must be checked BEFORE the
-  // bare "furnished" trigger so we don't misclassify them.
-  'Partially Furnished': ['partially furnished','partly furnished','semi-furnished','semi furnished'],
-  'Unfurnished': ['unfurnished','not furnished'],
-  'Furnished': ['fully furnished','comes furnished','furnished '],
-};
+// The amenity trigger table lives in lib/amenity-match.js, shared with the scraper.
+const { AMENITY_SOURCE_TRIGGERS, valueInText } = self.RRAmenityMatch;
 
 // ------------------------------------------------------------------
 // DETERMINISTIC DICTIONARY EXTRACTOR
@@ -1240,16 +1067,6 @@ const EXTRACTOR_FIELD_OPTIONS = Object.assign({}, OLLAMA_FIELD_OPTIONS, {
   propertyType: ['House','Apartment','Condo','Townhouse','Duplex','Triplex','Fourplex','Studio','Loft','Mobile Home','Villa','Cottage','Other'],
   furnished:    ['Unfurnished','Furnished','Partially Furnished'],
 });
-
-// Does any trigger for this value appear in the (lowercased) source text?
-function valueInText(value, lowerText) {
-  const triggers = AMENITY_SOURCE_TRIGGERS[value];
-  if (triggers && triggers.length) {
-    for (const t of triggers) if (lowerText.includes(t)) return true;
-    return false;
-  }
-  return false;
-}
 
 // Main extractor. Returns a propertyDetails object built purely from
 // the page text — no LLM. Identical text → identical output.
@@ -1355,16 +1172,10 @@ function mergeLlmIntoDictionary(dictPd, llmPd, lowerText) {
 function isAmenityInSource(value, text) {
   if (typeof value !== 'string' || !value) return false;
   if (!text) return false;
-  // v1.14.0: Also try a flattened version of the text with all whitespace
-  // collapsed to single spaces. Tab panels (e.g. Apartments.com parking)
-  // produce text like "Parking\n\nStreet" where a trigger like "parking street"
-  // fails on text.includes() but succeeds on the flattened version.
-  const textFlat = text.replace(/\s+/g, ' ');
+  // Tab panels (e.g. Apartments.com parking) produce text like "Parking\n\nStreet";
+  // the matcher treats any whitespace between a trigger's words as a space.
   const triggers = AMENITY_SOURCE_TRIGGERS[value];
-  if (triggers && triggers.length) {
-    for (const t of triggers) if (text.includes(t) || textFlat.includes(t)) return true;
-    return false;
-  }
+  if (triggers && triggers.length) return valueInText(value, text);
   // v0.6.4: TIGHTENED fallback. Previously required only ONE 4-letter word
   // from the value label to appear in the source, which let through false
   // positives like "Elevator" matching "elevator pitch" in a description,
@@ -1737,6 +1548,14 @@ async function enrichWithOllama(scraped) {
   const rawPageText = normalizePageText(scraped._rawPageText || '');
   const pageTextFull = (rawPageText || fullPageText || llmSnippet).slice(0, 30000);
 
+  // Several floor plans or units on one page: the bullets must describe one, or
+  // state no unit numbers at all when nobody has chosen yet.
+  const planRule = (scraped._needsUnit || scraped._needsFloorplan)
+    ? '\n\nThis page lists multiple floor plans or units and none is chosen. Do not state beds, baths, sq ft or rent in bullets, and do not return "bedrooms", "bathrooms" or "sqft".'
+    : scraped._chosenPlan
+      ? '\n\nThis page lists multiple floor plans or units. Describe ONLY the chosen floor plan: ' + scraped._chosenPlan + '. Do not mention any other plan.'
+      : '';
+
   // ----- v0.10.0: CLAUDE-OPTIMIZED EXTRACTION PROMPT -----
   // Structured system prompt for accurate extraction + investor-grade notes.
   // Claude follows instructions precisely — no hallucination guards needed
@@ -1817,7 +1636,7 @@ BULLETS — These are Property Notes for a Rental Arbitrage investor, NOT a rent
 - NEVER use filler language: no "perfect for", "provides easy access", "ideal for investors", "great opportunity", "well-maintained"
 - If the listing is bare with no notable location/deal details, return an empty array []
 
-Return ONLY the JSON object.`;
+Return ONLY the JSON object.${planRule}`;
 
   // ----- v0.10.0: SERVER PROXY → DIRECT API → OLLAMA -----
   let aiResult = null;
@@ -2139,7 +1958,9 @@ async function scrapeInBackgroundTab(url, contentScriptPath, opts) {
         }
         await chrome.scripting.executeScript({
           target: { tabId: tab.id },
-          files: [contentScriptPath],
+          files: contentScriptPath === 'content/listing-scraper.js'
+            ? ['lib/amenity-match.js', 'lib/listing-plans.js', contentScriptPath]
+            : [contentScriptPath],
         });
       } catch (e) { fail(e); }
     };

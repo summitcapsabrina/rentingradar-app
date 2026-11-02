@@ -83,7 +83,7 @@ admin:    { name:'Admin',    monthly:0,     yearly:0,      maxProperties:Infinit
 - **Position Score formula**: `(-1 × loses + 0 × competes + 1 × beats) ÷ total comps` → range -1.0 to +1.0
 - **Market Percentile formula**: `(beats + 0.5 × competes) ÷ total comps × 100`
 - **Position Adjustment formula**: `55 + (positionScore + 1) ÷ 2 × 45` → range 55% to 100%
-- **Amenity patterns**: `AMENITY_PATTERNS` dictionary in `listing-scraper.js` supports multi-label entries (one regex → multiple labels). Pet policy uses "No Pets" override logic.
+- **Amenity patterns**: `AMENITY_PATTERNS` dictionary in `chrome-extension/lib/amenity-match.js` supports multi-label entries (one regex → multiple labels). Pet policy uses "No Pets" override logic.
 - **Firestore timestamps**: Come as `{seconds, nanoseconds}` plain objects in collection queries, not Timestamp instances. `_adminFormatDate()` handles both via `val.seconds` fallback.
 
 ## Deployment

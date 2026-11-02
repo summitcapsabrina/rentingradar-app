@@ -341,178 +341,9 @@
     pd[key] = value;
   }
 
-  // ---- dictionary-driven amenity matching --------------------------
-  // Maps a regex to a PROP_SECTIONS multi-select option label (the exact
-  // string the CRM expects). For each listing, we run every regex against
-  // the concatenated "amenity blob" and collect matches per field.
-  const AMENITY_PATTERNS = {
-    appliances: [
-      [/dishwasher/i, 'Dishwasher'],
-      [/garbage disposal|disposal/i, 'Garbage Disposal'],
-      [/microwave/i, 'Microwave'],
-      [/gas (oven|range|stove)/i, 'Oven/Range (Gas)'],
-      [/electric (oven|range|stove)/i, 'Oven/Range (Electric)'],
-      [/\boven\b|\brange\b|\bstove\b/i, 'Oven/Range (Electric)'],
-      [/refrigerator|fridge/i, 'Refrigerator'],
-      [/ice maker/i, 'Ice Maker'],
-      [/trash compactor/i, 'Trash Compactor'],
-      [/wine (cooler|fridge)/i, 'Wine Cooler'],
-    ],
-    flooring: [
-      [/hardwood/i, 'Hardwood'],
-      [/carpet/i, 'Carpet'],
-      [/\btile\b/i, 'Tile'],
-      [/laminate/i, 'Laminate'],
-      [/vinyl plank|luxury vinyl|lvp/i, 'Vinyl Plank'],
-      [/concrete floor/i, 'Concrete'],
-      [/marble floor/i, 'Marble'],
-      [/stone floor/i, 'Stone'],
-    ],
-    interiorFeatures: [
-      [/fireplace/i, 'Fireplace'],
-      [/ceiling fan/i, 'Ceiling Fans'],
-      [/walk-?in closet/i, 'Walk-In Closets'],
-      [/high ceiling/i, 'High Ceilings'],
-      [/vaulted ceiling/i, 'Vaulted Ceilings'],
-      [/open floor plan/i, 'Open Floor Plan'],
-      [/natural light/i, 'Natural Light'],
-      [/crown molding/i, 'Crown Molding'],
-      [/recessed lighting/i, 'Recessed Lighting'],
-      [/smart thermostat/i, 'Smart Thermostat'],
-      [/smart lock/i, 'Smart Locks'],
-      [/built-?in shelv/i, 'Built-In Shelving'],
-      [/pantry/i, 'Pantry'],
-      [/kitchen island/i, 'Kitchen Island'],
-      [/breakfast bar/i, 'Breakfast Bar'],
-      [/stainless steel/i, 'Stainless Steel Appliances'],
-      [/double vanity/i, 'Double Vanity'],
-      [/soaking tub/i, 'Soaking Tub'],
-      [/walk-?in shower/i, 'Walk-In Shower'],
-      [/separate tub/i, 'Separate Tub/Shower'],
-      [/linen closet/i, 'Linen Closet'],
-      [/storage unit/i, 'Storage Unit'],
-      [/blinds/i, 'Window Blinds'],
-      [/blackout curtain/i, 'Blackout Curtains'],
-    ],
-    outdoor: [
-      [/balcony/i, 'Balcony'],
-      [/patio/i, 'Patio'],
-      [/\bdeck\b/i, 'Deck'],
-      [/porch/i, 'Porch'],
-      [/screened porch/i, 'Screened Porch'],
-      [/sunroom/i, 'Sunroom'],
-      [/rooftop/i, 'Rooftop'],
-      [/courtyard/i, 'Courtyard'],
-      [/lanai/i, 'Lanai'],
-    ],
-    exteriorFeatures: [
-      [/fenced yard|privacy fence/i, 'Fenced Yard'],
-      [/sprinkler/i, 'Sprinkler System'],
-      [/outdoor lighting/i, 'Outdoor Lighting'],
-      [/outdoor kitchen|bbq/i, 'Outdoor Kitchen/BBQ'],
-      [/fire pit/i, 'Fire Pit'],
-      [/garden/i, 'Garden Space'],
-      [/shed/i, 'Shed/Outbuilding'],
-      [/rv parking/i, 'RV Parking'],
-      [/boat parking/i, 'Boat Parking'],
-      [/ev charg|electric vehicle charg/i, 'EV Charging'],
-      [/gated/i, 'Gated Entry'],
-      [/desert landscap|xeriscap/i, 'Desert Landscaping'],
-      [/pool fence/i, 'Pool Fence'],
-    ],
-    communityAmenities: [
-      [/gym|fitness/i, 'Gym/Fitness Center'],
-      [/yoga|pilates/i, 'Yoga/Pilates Studio'],
-      [/clubhouse/i, 'Clubhouse'],
-      [/business center/i, 'Business Center'],
-      [/co-?working/i, 'Co-Working Space'],
-      [/package locker/i, 'Package Lockers'],
-      [/bike storage|bicycle storage/i, 'Bike Storage'],
-      [/bbq|grill area/i, 'BBQ/Grill Area'],
-      [/dog park/i, 'Dog Park'],
-      [/pet wash/i, 'Pet Washing Station'],
-      [/playground/i, 'Playground'],
-      [/tennis court/i, 'Tennis Court'],
-      [/basketball court/i, 'Basketball Court'],
-      [/volleyball/i, 'Volleyball Court'],
-      [/pickleball/i, 'Pickleball Court'],
-      [/putting green/i, 'Putting Green'],
-      [/swimming pool|community pool/i, 'Swimming Pool'],
-      [/community (spa|hot tub)/i, 'Community Spa/Hot Tub'],
-      [/sauna/i, 'Sauna'],
-      [/game room/i, 'Game Room'],
-      [/theater|screening room/i, 'Theater/Screening Room'],
-      [/rooftop lounge/i, 'Rooftop Lounge'],
-      [/coffee bar/i, 'Coffee Bar'],
-      [/car wash/i, 'Car Wash'],
-      [/on-?site laundry|laundry room/i, 'On-Site Laundry'],
-      [/trash valet/i, 'Trash Valet'],
-      [/controlled access|gated access/i, 'Controlled Access/Gated'],
-      [/key card|fob entry/i, 'Key Card Entry'],
-      [/elevator/i, 'Elevator'],
-      [/concierge|doorman/i, 'Concierge/Doorman'],
-      [/on-?site management/i, 'On-Site Management'],
-      [/on-?site maintenance/i, 'On-Site Maintenance'],
-      [/community wifi|wi-?fi lounge/i, 'Community WiFi'],
-    ],
-    utilitiesIncluded: [
-      [/water included/i, 'Water'],
-      [/hot water included/i, 'Hot Water'],
-      [/gas included/i, 'Gas'],
-      [/electric included|electricity included/i, 'Electric'],
-      [/trash included/i, 'Trash'],
-      [/sewer included/i, 'Sewer'],
-      [/recycling included/i, 'Recycling'],
-      [/internet included|wifi included/i, 'Internet/WiFi'],
-      [/cable (tv )?included/i, 'Cable TV'],
-      [/landscaping included/i, 'Landscaping/Grounds'],
-      [/pest control included/i, 'Pest Control'],
-    ],
-    safetyFeatures: [
-      [/smoke detector/i, 'Smoke Detectors'],
-      [/carbon monoxide/i, 'Carbon Monoxide Detectors'],
-      [/fire extinguisher/i, 'Fire Extinguisher'],
-      [/fire sprinkler/i, 'Fire Sprinklers'],
-      [/security system|alarm system/i, 'Security System/Alarm'],
-      [/gated entry/i, 'Gated Entry'],
-      [/deadbolt/i, 'Deadbolt Locks'],
-      [/smart lock/i, 'Smart Locks'],
-      [/security camera/i, 'Security Cameras'],
-      [/motion sensor/i, 'Motion Sensor Lights'],
-      [/intercom/i, 'Intercom'],
-      [/24-?hour security|24\/7 security/i, '24-Hour Security'],
-    ],
-    petsAllowed: [
-      [/no pets|pets not allowed|no pets allowed/i, 'No Pets'],
-      [/cats? allowed/i, 'Cats Allowed'],
-      [/dogs? allowed/i, 'Dogs Allowed'],
-      [/cats? and dogs?|dogs? and cats?/i, 'Cats Allowed', 'Dogs Allowed'],
-      [/pets? (allowed|welcome|friendly|ok\b|okay)/i, 'Cats Allowed', 'Dogs Allowed'],
-      [/small dogs? only/i, 'Small Dogs Only'],
-    ],
-  };
-
-  function matchAmenities(text) {
-    if (!text) return {};
-    const out = {};
-    for (const field in AMENITY_PATTERNS) {
-      const hits = [];
-      for (const entry of AMENITY_PATTERNS[field]) {
-        const re = entry[0];
-        if (re.test(text)) {
-          for (let i = 1; i < entry.length; i++) {
-            if (!hits.includes(entry[i])) hits.push(entry[i]);
-          }
-        }
-      }
-      if (hits.length) out[field] = hits;
-    }
-    // "No Pets" overrides any positive pet entries
-    if (out.petsAllowed && out.petsAllowed.includes('No Pets')) {
-      out.petsAllowed = ['No Pets'];
-    }
-    return out;
-  }
+  // The amenity dictionary lives in lib/amenity-match.js, injected before this file.
+  const { matchAmenities, rowMatches } = window.RRAmenityMatch;
+  const Plans = window.RRListingPlans;
 
   // v0.6.2: Generic labeled-list extractor. Walks the DOM looking for a
   // heading (h1-h6, or any element with "header"/"label" in its class name)
@@ -911,7 +742,16 @@
   function collectStateBlobs() {
     const roots = [];
     const nd = findJsonFromScript('__NEXT_DATA__');
-    if (nd) roots.push(nd);
+    if (nd) {
+      roots.push(nd);
+      // Zillow keeps the listing in componentProps.gdpClientCache as a JSON string,
+      // which an object walk can't see. It also holds nearbyHomes, so callers must
+      // match on zpid rather than take the fattest object.
+      const cp = nd.props && nd.props.pageProps && nd.props.pageProps.componentProps;
+      if (cp && typeof cp.gdpClientCache === 'string') {
+        try { roots.push(JSON.parse(cp.gdpClientCache)); } catch (_) {}
+      }
+    }
     const apolloEl = document.getElementById('hdpApolloPreloadedData');
     if (apolloEl) {
       try {
@@ -969,10 +809,26 @@
     // pick the object with the richest set of listing-shaped fields.
     const candidates = collectStateBlobs();
     log('state blobs found', candidates.length);
+    const page = Plans.zillowPageType(location.href);
+    log('page type', page);
+    if (page.type === 'building') return parseZillowBuilding(out, candidates, log);
+
     let gdp = null;
-    for (const root of candidates) {
-      const hit = deepFindBest(root, gdpScore);
-      if (hit && gdpScore(hit) > gdpScore(gdp)) gdp = hit;
+    // A unit page: only the object with this URL's zpid describes this unit. The
+    // state also holds nearby homes and sibling units that score just as high.
+    if (page.zpid) {
+      const sameZpid = (v) => (v && !Array.isArray(v) && String(v.zpid) === page.zpid ? gdpScore(v) : 0);
+      for (const root of candidates) {
+        const hit = deepFindBest(root, sameZpid);
+        if (hit && gdpScore(hit) > gdpScore(gdp)) gdp = hit;
+      }
+      log(gdp ? 'gdp matched URL zpid' : 'no gdp for URL zpid, using scorer');
+    }
+    if (!gdp) {
+      for (const root of candidates) {
+        const hit = deepFindBest(root, gdpScore);
+        if (hit && gdpScore(hit) > gdpScore(gdp)) gdp = hit;
+      }
     }
     if (gdp) {
       log('gdp found', { score: gdpScore(gdp), keys: Object.keys(gdp).slice(0, 20) });
@@ -1047,19 +903,9 @@
       if (out.sqft == null) out.sqft = num(t.match(/([\d,]+)\s*(?:sq\s*ft|sqft)/i)?.[1]);
     }
 
-    // NOTE: beds/baths are NO LONGER extracted via body-text regex here.
-    // That approach hits "3 bed" strings inside "similar listings" widgets
-    // and nearby-home carousels, poisoning the numbers. Ollama sees the
-    // full page text downstream and extracts the authoritative values.
-    // We still allow price/sqft body fallback as a convenience.
-    if (out.sqft == null || out.price == null) {
-      const body = document.body.innerText || '';
-      if (out.sqft == null) out.sqft = num(body.match(/([\d,]+)\s*(?:sq\s*ft|sqft)/i)?.[1]);
-      if (out.price == null) {
-        const pm = body.match(/\$\s*([\d,]+)(?:\s*\/\s*mo)?/i);
-        if (pm) out.price = num(pm[1]);
-      }
-    }
+    // No page-wide number fallbacks. The body text includes nearby homes and similar
+    // listings ("1 bd1 ba906 sqft" belonged to another building). The AI overlay sees
+    // the cleaned page text downstream and can fill a missing sqft.
 
     // ---- Availability (if mentioned anywhere on the page)
     const availMatch = (document.body.innerText || '').match(
@@ -1070,9 +916,6 @@
       setPD(out.propertyDetails, 'availableDate', avail);
       log('availability: ' + avail);
     }
-
-    // Studio fallback: if no bedroom count found, check page text for "Studio"
-    if (out.bedrooms == null && /\bstudio\b/i.test(document.body.innerText || '')) out.bedrooms = 0;
 
     // Sanity-guard beds/baths (same rules as Apartments)
     if (out.bedrooms != null && (out.bedrooms < 0 || out.bedrooms > 20)) out.bedrooms = null;
@@ -1098,6 +941,55 @@
       beds: out.bedrooms, baths: out.bathrooms, sqft: out.sqft, price: out.price,
       pdKeys: Object.keys(out.propertyDetails).length,
     });
+    return out;
+  }
+
+  // A Zillow building page: building-level facts only. Its units disagree with each
+  // other, so beds/baths/sqft/price stay blank unless the URL selects a unit.
+  function parseZillowBuilding(out, candidates, log) {
+    const pd = out.propertyDetails;
+    let b = null;
+    for (const root of candidates) {
+      b = deepFind(root, (v) => v && !Array.isArray(v) && (Array.isArray(v.ungroupedUnits) || v.bdpUrl) && (v.buildingName || v.streetAddress));
+      if (b) break;
+    }
+    const addr = (b && b.address && typeof b.address === 'object') ? b.address : (b || {});
+    const street = addr.streetAddress || (b && b.streetAddress);
+    if (street) {
+      const cityState = [addr.city || (b && b.city), addr.state || (b && b.state)].filter(Boolean).join(' ');
+      const csz = [cityState, addr.zipcode || (b && b.zipcode)].filter(Boolean).join(' ');
+      out.address = [street, csz].filter(Boolean).join(', ');
+    }
+    if (!out.address) {
+      findAllJsonLd().some((block) => {
+        const a = block && block.address;
+        if (!a || !a.streetAddress) return false;
+        out.address = [a.streetAddress, [a.addressLocality, a.addressRegion, a.postalCode].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+        return true;
+      });
+    }
+    out.title = (b && b.buildingName) || document.title;
+    if (b && b.buildingName) out.buildingName = String(b.buildingName);
+    out.photoUrl = (b && Array.isArray(b.galleryPhotos) && b.galleryPhotos[0] && b.galleryPhotos[0].url) || null;
+    if (b && b.description) out.description = String(b.description).slice(0, 2000);
+
+    const blob = flattenToText(b ? [b.amenityDetails, b.amenitySummary, b.structuredAmenities, b.commonUnitAmenities, b.description] : []).join(' ').toLowerCase();
+    const dict = matchAmenities(blob);
+    for (const k in dict) pd[k] = dict[k];
+
+    const units = Plans.zillowBuildingUnits(b, location.origin);
+    const wanted = Plans.zillowSelectedUnitId(location.href);
+    const chosen = wanted ? units.find((u) => u.id === wanted || u.label.toLowerCase().replace(/^unit\s+/, '') === wanted.toLowerCase()) : null;
+    if (chosen) {
+      out.bedrooms = chosen.beds; out.bathrooms = chosen.baths; out.sqft = chosen.sqft; out.price = chosen.priceMin;
+      if (out.address) out.address = out.address.replace(/,/, ' #' + chosen.label.replace(/^unit\s+/i, '') + ',');
+      log('building page, unit from URL', chosen);
+    } else {
+      out._needsUnit = true;
+      if (units.length) out.units = units;
+      log('building page, needs a unit', { units: units.length });
+    }
+    log('final', { hasAddress: !!out.address, beds: out.bedrooms, baths: out.bathrooms, sqft: out.sqft, price: out.price });
     return out;
   }
 
@@ -1179,9 +1071,17 @@
     // can iterate uniformly. Hotpads wraps listings as
     //   { @type: "ItemPage", about: { @type: "Product", offers: {…} } }
     // — without unwrapping, the price in `about.offers` is missed.
+    // Floor plans come first: on a multi-plan page every core number must come from
+    // one plan, never field by field from whichever object had it.
+    const allPlaces = [];
+    jsonLd.forEach((b) => { if (b && Array.isArray(b.containsPlace)) allPlaces.push(...b.containsPlace); });
+    const subPlaces = new Set(allPlaces);
+    const floorplans = extractApartmentFloorplans(allPlaces);
+    log('floorplans', floorplans.length);
+
     const ldBlocks = [];
     jsonLd.forEach((b) => {
-      if (!b || typeof b !== 'object') return;
+      if (!b || typeof b !== 'object' || subPlaces.has(b)) return;
       if (Array.isArray(b['@graph'])) ldBlocks.push(...b['@graph']);
       else ldBlocks.push(b);
     });
@@ -1237,17 +1137,6 @@
       }
       const goodPrice = priceCandidates.filter((p) => p != null && p > 0)[0];
       if (out.price == null && goodPrice != null) out.price = goodPrice;
-      // Contained places (unit listings under an ApartmentComplex)
-      if (Array.isArray(block.containsPlace)) {
-        block.containsPlace.forEach((sub) => {
-          if (!sub || typeof sub !== 'object') return;
-          if (out.bedrooms == null && sub.numberOfBedrooms != null) out.bedrooms = num(sub.numberOfBedrooms);
-          if (out.bathrooms == null && (sub.numberOfBathroomsTotal != null || sub.numberOfFullBathrooms != null)) {
-            out.bathrooms = num(sub.numberOfBathroomsTotal || sub.numberOfFullBathrooms);
-          }
-          if (out.sqft == null && sub.floorSize && sub.floorSize.value != null) out.sqft = num(sub.floorSize.value);
-        });
-      }
       // Photo
       if (!out.photoUrl && block.image) {
         out.photoUrl = Array.isArray(block.image) ? block.image[0] : block.image;
@@ -1403,8 +1292,12 @@
     // structured data (state blob, JSON-LD, DOM hero block) or not at all.
     // if (out.price == null) { ... }
 
-    // Studio fallback: if no bedroom count found, check page text for "Studio"
-    if (out.bedrooms == null && /\bstudio\b/i.test(document.body.innerText || '')) out.bedrooms = 0;
+    // Studio fallback, from the listing's own facts only. The page text won't do:
+    // "yoga studio" made Altura a 0-bedroom.
+    if (out.bedrooms == null) {
+      const facts = Array.from(document.querySelectorAll('.rentInfoDetail')).map((el) => el.textContent.trim());
+      if (facts.some((t) => /^studio$/i.test(t)) || /^studio\b/i.test(ogTitle)) out.bedrooms = 0;
+    }
 
     // ---- Sanity guard: reject obviously-bogus beds/baths ----
     if (out.bedrooms != null && (out.bedrooms < 0 || out.bedrooms > 20)) {
@@ -1413,6 +1306,7 @@
     if (out.bathrooms != null && (out.bathrooms <= 0 || out.bathrooms > 15)) {
       log('rejected bogus bathrooms ' + out.bathrooms); out.bathrooms = null;
     }
+    applyFloorplanDecision(out, floorplans, log);
 
     // ---- Description + photo fallbacks ----
     if (!out.description) {
@@ -1486,7 +1380,7 @@
 
         // Utilities Included
         if (/^utilities?\s+included$/i.test(heading) || /^utilities?$/i.test(heading)) {
-          addValues('utilitiesIncluded', values.map(normalizeUtility).filter(Boolean));
+          addValues('utilitiesIncluded', values.filter((v) => !/\b(?:tenant|resident|renter)s?\b|not included|paid by|pays?\b/i.test(v)).map(normalizeUtility).filter(Boolean));
         }
 
         // Apartment / Unit features → ac, laundry, appliances, interior
@@ -1513,7 +1407,7 @@
             [/dishwasher/, 'Dishwasher'],
             [/microwave/, 'Microwave'],
             [/refrigerator|fridge/, 'Refrigerator'],
-            [/garbage disposal|disposal/, 'Garbage Disposal'],
+            [/\b(?:garbage )?disposal\b/, 'Garbage Disposal'],
             [/oven|range|stove/, 'Oven/Range (Electric)'],
             [/ice maker/, 'Ice Maker'],
           ];
@@ -1569,30 +1463,30 @@
         if (/community (amenit|feature)|building (amenit|feature)|complex (amenit|feature)/i.test(heading)) {
           const norm = values.map(v => String(v).toLowerCase());
           const caMap = [
-            [/fitness|gym/, 'Gym/Fitness Center'],
-            [/clubhouse|community room/, 'Clubhouse'],
+            [/\bfitness\b|\bgym\b/, 'Gym/Fitness Center'],
+            [/\bclubhouse\b|\bcommunity room\b/, 'Clubhouse'],
             [/business center/, 'Business Center'],
-            [/package/, 'Package Lockers'],
+            [/\bpackage lockers?\b|\bpackage service\b|\bpackage room\b/, 'Package Lockers'],
             [/dog park|pet park/, 'Dog Park'],
             [/playground/, 'Playground'],
             [/swimming pool|\bpool\b/, 'Swimming Pool'],
-            [/hot tub|spa/, 'Community Spa/Hot Tub'],
+            [/\bhot tub\b|\bspa\b/, 'Community Spa/Hot Tub'],
             [/sauna/, 'Sauna'],
             [/elevator/, 'Elevator'],
-            [/concierge|doorman/, 'Concierge/Doorman'],
+            [/\bconcierge\b|\bdoorman\b/, 'Concierge/Doorman'],
             [/on-?site management/, 'On-Site Management'],
             [/on-?site maintenance/, 'On-Site Maintenance'],
             [/bike storage/, 'Bike Storage'],
-            [/bbq|grill/, 'BBQ/Grill Area'],
-            [/rooftop/, 'Rooftop Lounge'],
-            [/tennis/, 'Tennis Court'],
+            [/\bbbq\b|\bgrill(?:s|ing)?\b/, 'BBQ/Grill Area'],
+            [/\brooftop (?:lounge|deck|terrace)\b/, 'Rooftop Lounge'],
+            [/\btennis\b/, 'Tennis Court'],
             [/pickleball/, 'Pickleball Court'],
-            [/controlled access|gated/, 'Controlled Access/Gated'],
+            [/\bcontrolled access\b|\bgated\b/, 'Controlled Access/Gated'],
           ];
           const cas = [];
           for (const v of norm) {
             for (const [re, label] of caMap) {
-              if (re.test(v) && !cas.includes(label)) cas.push(label);
+              if (rowMatches(re, label, v) && !cas.includes(label)) cas.push(label);
             }
           }
           addValues('communityAmenities', cas);
@@ -1710,6 +1604,47 @@
 
     if (!out.title) out.title = document.title;
     return out;
+  }
+
+  // Every floor plan on an Apartments.com page, each with numbers from that plan only.
+  // The pricing grid carries prices; JSON-LD is the fallback when there's no grid.
+  function extractApartmentFloorplans(places) {
+    const rows = Array.from(document.querySelectorAll('.pricingGridItem')).map((el) => {
+      const units = Array.from(el.querySelectorAll('.unitContainer'));
+      return Plans.parseApartmentsPlanRow({
+        name: el.querySelector('.modelName')?.textContent,
+        rent: el.querySelector('.rentLabel')?.textContent,
+        details: el.querySelector('.detailsLabel')?.textContent,
+        maxRents: units.map((u) => u.getAttribute('data-maxrent')),
+        unit: units.length === 1 ? units[0].getAttribute('data-unit') : null,
+        rentalKey: el.querySelector('[data-rentalkey]')?.getAttribute('data-rentalkey'),
+      });
+    });
+    const plans = Plans.dedupePlans(rows);
+    return plans.length ? plans : Plans.plansFromContainsPlace(places);
+  }
+
+  // One plan (or one the URL selects) fills the core fields. Several with none chosen
+  // leave them blank for the user to pick; nothing from another pass may survive.
+  function applyFloorplanDecision(out, floorplans, log) {
+    if (!floorplans.length) return;
+    const chosen = floorplans.length === 1 ? floorplans[0] : Plans.selectedPlanFromUrl(floorplans, location.href);
+    if (chosen) {
+      out.bedrooms = chosen.beds;
+      out.bathrooms = chosen.baths;
+      out.sqft = chosen.sqft;
+      out.price = chosen.priceMin;
+      out._chosenPlan = [chosen.name, chosen.beds + ' bd', chosen.baths + ' ba', chosen.sqft + ' sf'].join(', ');
+      log('floorplan chosen', chosen.name);
+      return;
+    }
+    out.bedrooms = null;
+    out.bathrooms = null;
+    out.sqft = null;
+    out.price = null;
+    out._needsFloorplan = true;
+    out.floorplans = floorplans;
+    log('floorplan needs a pick', floorplans.length);
   }
 
   // ---- Hotpads -----------------------------------------------------
@@ -2094,7 +2029,7 @@
       // EARLY EXIT: if the per-site parser hit all 4 core fields,
       // there's nothing more to wait for — capture and send immediately.
       const hasAll = cfc >= 4;
-      const hasEnough = cfc >= 2 || (cfc >= 1 && !!data.address);
+      const hasEnough = cfc >= 2 || (cfc >= 1 && !!data.address) || data._needsUnit || data._needsFloorplan;
       if (hasAll || hasEnough || attempt >= 7) {
         // v0.8.0: AI enrichment restored — capture page text for the
         // dictionary extractor and Ollama LLM pass.
