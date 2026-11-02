@@ -135,19 +135,19 @@ function welcomeEmailHtml(displayName) {
 
   return emailWrapper(`
     <h2 style="margin:0 0 16px;font-size:20px;font-weight:700;color:#ffffff">${firstName ? 'Welcome to RentingRadar, ' + firstName + '!' : 'Welcome to RentingRadar!'}</h2>
-    <p style="margin:0 0 14px;color:#c8cbd6">We're excited to have you on board! To get started, choose a plan and enter your payment details. Every plan comes with a <strong style="color:#34d399">free 7-day trial</strong> — you won't be charged until day 7, and you can cancel anytime before then with one click.</p>
+    <p style="margin:0 0 14px;color:#c8cbd6">We're excited to have you on board! Pick a plan to start a <strong style="color:#34d399">7-day free trial</strong> (card required, first subscription only). After the trial it renews at the plan price until you cancel. You can cancel online anytime in Manage Billing (Settings &gt; Plan &amp; Billing &gt; Manage Billing &gt; Open Stripe Portal).</p>
 
     <div style="background:#1a1e30;border:1px solid #252a3d;border-radius:8px;padding:16px 20px;margin:20px 0">
       <p style="margin:0 0 12px;font-size:13px;font-weight:600;color:#6381fa;text-transform:uppercase;letter-spacing:.5px">Choose Your Plan</p>
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-        <tr><td style="padding:6px 0;font-size:14px;color:#c8cbd6"><strong style="color:#ffffff">Basic</strong> — $9.99/mo · 1 analysis/month</td></tr>
-        <tr><td style="padding:6px 0;font-size:14px;color:#c8cbd6"><strong style="color:#ffffff">Standard</strong> — $19.99/mo · 10 analyses/month</td></tr>
-        <tr><td style="padding:6px 0;font-size:14px;color:#c8cbd6"><strong style="color:#ffffff">Pro</strong> — $29.99/mo · Unlimited analyses</td></tr>
+        <tr><td style="padding:6px 0;font-size:14px;color:#c8cbd6"><strong style="color:#ffffff">Basic</strong> $9.99/mo or $89.99/yr · 1 analysis/month</td></tr>
+        <tr><td style="padding:6px 0;font-size:14px;color:#c8cbd6"><strong style="color:#ffffff">Standard</strong> $19.99/mo or $199.99/yr · 10 analyses/month</td></tr>
+        <tr><td style="padding:6px 0;font-size:14px;color:#c8cbd6"><strong style="color:#ffffff">Pro</strong> $29.99/mo or $289.99/yr · unlimited analyses + Negotiation Forecasting Tools</td></tr>
       </table>
     </div>
 
     <p style="text-align:center">
-      <a href="${APP_URL}" style="display:inline-block;background:#6381fa;color:#ffffff;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:600;font-size:14px;margin:8px 0 16px">Choose a Plan & Start Free Trial</a>
+      <a href="${APP_URL}" style="display:inline-block;background:#6381fa;color:#ffffff;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:600;font-size:14px;margin:8px 0 16px">Choose a Plan</a>
     </p>
 
     <div style="height:1px;background:#252a3d;margin:24px 0"></div>
@@ -1479,10 +1479,10 @@ function planReminderEmailHtml(displayName, stage, unsubscribeUrl) {
 
   if (stage === 2) {
     return {
-      subject: "Still deciding? Your free trial — and your deals — are waiting",
+      subject: "Still deciding? Your deals are waiting",
       html: emailWrapper(`
         <h2 style="margin:0 0 16px;font-size:20px;font-weight:700;color:#ffffff">Ready when you are, ${name}</h2>
-        <p style="margin:0 0 14px;color:#c8cbd6">Your RentingRadar account is set up, but you haven't started your <strong style="color:#34d399">free 7-day trial</strong> yet. The moment you pick a plan, you can put it to work:</p>
+        <p style="margin:0 0 14px;color:#c8cbd6">Your RentingRadar account is set up, but you haven't picked a plan yet. The moment you pick one, you can put it to work:</p>
         <div style="background:#1a1e30;border:1px solid #252a3d;border-radius:8px;padding:16px 20px;margin:20px 0">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
             <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span>Analyze <strong style="color:#ffffff">Rental Arbitrage &amp; Co-Hosting</strong> deals with real competitor data</td></tr>
@@ -1490,9 +1490,9 @@ function planReminderEmailHtml(displayName, stage, unsubscribeUrl) {
             <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span>Manage expenses and day-to-day operations in one place</td></tr>
           </table>
         </div>
-        <p style="margin:0 0 14px;color:#c8cbd6">Every plan starts with a free 7-day trial — no charge until day 7, cancel anytime.</p>
+        <p style="margin:0 0 14px;color:#c8cbd6">7-day free trial, card required, then $9.99–$29.99/mo depending on plan unless you cancel. Cancel anytime in Manage Billing.</p>
         ${planBox}
-        ${ctaBtn("Start My Free Trial")}
+        ${ctaBtn("Choose a Plan")}
         <div style="height:1px;background:#252a3d;margin:24px 0"></div>
         <p style="font-size:13px;color:#6b7280;margin:0">Not the right time? No problem — reply and let us know if there's anything we can help with, or if you'd rather not hear from us.</p>
       `, unsubscribeUrl),
@@ -1500,13 +1500,13 @@ function planReminderEmailHtml(displayName, stage, unsubscribeUrl) {
   }
 
   return {
-    subject: "Your RentingRadar free trial is waiting ⏳",
+    subject: "You haven't picked a RentingRadar plan yet ⏳",
     html: emailWrapper(`
       <h2 style="margin:0 0 16px;font-size:20px;font-weight:700;color:#ffffff">You're almost set up, ${name}</h2>
       <p style="margin:0 0 14px;color:#c8cbd6">Welcome to RentingRadar! We noticed you created your account but haven't picked a plan yet — so your <strong style="color:#34d399">free 7-day trial</strong> hasn't started.</p>
-      <p style="margin:0 0 14px;color:#c8cbd6">Choose any plan to unlock the app. You won't be charged until day 7, and you can cancel anytime before then with one click. From there you can start organizing your <strong style="color:#ffffff">Rental Arbitrage</strong> and <strong style="color:#ffffff">Co-Hosting</strong> prospecting and operations right away.</p>
+      <p style="margin:0 0 14px;color:#c8cbd6">Choose any plan to unlock the app. 7-day free trial, card required, then $9.99–$29.99/mo depending on plan unless you cancel. You can cancel online anytime in Manage Billing. From there you can start organizing your <strong style="color:#ffffff">Rental Arbitrage</strong> and <strong style="color:#ffffff">Co-Hosting</strong> prospecting and operations right away.</p>
       ${planBox}
-      ${ctaBtn("Choose a Plan &amp; Start Free Trial")}
+      ${ctaBtn("Choose a Plan")}
       <div style="height:1px;background:#252a3d;margin:24px 0"></div>
       <p style="font-size:13px;color:#6b7280;margin:0"><strong style="color:#9298ad">Questions?</strong> Just reply to this email or reach us at <a href="mailto:help@rentingradar.com" style="color:#6381fa;text-decoration:none">help@rentingradar.com</a>. We're happy to help you get started.</p>
     `, unsubscribeUrl),

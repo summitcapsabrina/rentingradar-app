@@ -78,13 +78,13 @@ const ctaBtn = (label) => `
 function planReminderFirst(displayName, preferencesUrl) {
   const name = displayName ? displayName.split(" ")[0] : "there";
   return {
-    subject: "Your RentingRadar free trial is waiting ⏳",
+    subject: "You haven't picked a RentingRadar plan yet ⏳",
     html: emailWrapper(`
       <h2 style="margin:0 0 16px;font-size:20px;font-weight:700;color:#ffffff">You're almost set up, ${name}</h2>
       <p style="margin:0 0 14px;color:#c8cbd6">Welcome to RentingRadar! We noticed you created your account but haven't picked a plan yet — so your <strong style="color:#34d399">free 7-day trial</strong> hasn't started.</p>
-      <p style="margin:0 0 14px;color:#c8cbd6">Choose any plan to unlock the app. You won't be charged until day 7, and you can cancel anytime before then with one click. From there you can start organizing your <strong style="color:#ffffff">Rental Arbitrage</strong> and <strong style="color:#ffffff">Co-Hosting</strong> prospecting and operations right away.</p>
+      <p style="margin:0 0 14px;color:#c8cbd6">Choose any plan to unlock the app. 7-day free trial, card required, then $9.99–$29.99/mo depending on plan unless you cancel. You can cancel online anytime in Manage Billing. From there you can start organizing your <strong style="color:#ffffff">Rental Arbitrage</strong> and <strong style="color:#ffffff">Co-Hosting</strong> prospecting and operations right away.</p>
       ${planBox}
-      ${ctaBtn("Choose a Plan &amp; Start Free Trial")}
+      ${ctaBtn("Choose a Plan")}
       <div style="height:1px;background:#252a3d;margin:24px 0"></div>
       <p style="font-size:13px;color:#6b7280;margin:0"><strong style="color:#9298ad">Questions?</strong> Just reply to this email or reach us at <a href="mailto:help@rentingradar.com" style="color:#6381fa;text-decoration:none">help@rentingradar.com</a>. We're happy to help you get started.</p>
     `, preferencesUrl),
@@ -95,10 +95,10 @@ function planReminderFirst(displayName, preferencesUrl) {
 function planReminderSecond(displayName, preferencesUrl) {
   const name = displayName ? displayName.split(" ")[0] : "there";
   return {
-    subject: "Still deciding? Your free trial — and your deals — are waiting",
+    subject: "Still deciding? Your deals are waiting",
     html: emailWrapper(`
       <h2 style="margin:0 0 16px;font-size:20px;font-weight:700;color:#ffffff">Ready when you are, ${name}</h2>
-      <p style="margin:0 0 14px;color:#c8cbd6">Your RentingRadar account is set up, but you haven't started your <strong style="color:#34d399">free 7-day trial</strong> yet. The moment you pick a plan, you can put it to work:</p>
+      <p style="margin:0 0 14px;color:#c8cbd6">Your RentingRadar account is set up, but you haven't picked a plan yet. The moment you pick one, you can put it to work:</p>
       <div style="background:#1a1e30;border:1px solid #252a3d;border-radius:8px;padding:16px 20px;margin:20px 0">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
           <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span>Analyze <strong style="color:#ffffff">Rental Arbitrage &amp; Co-Hosting</strong> deals with real competitor data</td></tr>
@@ -106,9 +106,9 @@ function planReminderSecond(displayName, preferencesUrl) {
           <tr><td style="padding:3px 0;font-size:14px;color:#c8cbd6"><span style="color:#34d399;margin-right:8px">✓</span>Manage expenses and day-to-day operations in one place</td></tr>
         </table>
       </div>
-      <p style="margin:0 0 14px;color:#c8cbd6">Every plan starts with a free 7-day trial — no charge until day 7, cancel anytime.</p>
+      <p style="margin:0 0 14px;color:#c8cbd6">7-day free trial, card required, then $9.99–$29.99/mo depending on plan unless you cancel. Cancel anytime in Manage Billing.</p>
       ${planBox}
-      ${ctaBtn("Start My Free Trial")}
+      ${ctaBtn("Choose a Plan")}
       <div style="height:1px;background:#252a3d;margin:24px 0"></div>
       <p style="font-size:13px;color:#6b7280;margin:0">Not the right time? No problem — reply and let us know if there's anything we can help with, or if you'd rather not hear from us.</p>
     `, preferencesUrl),
