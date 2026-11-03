@@ -3348,6 +3348,8 @@ async function loadDataFromFirestore(userUid){
       _lastSavedJson = '[]';
     }
   } catch(e){
+    // A newer load owns records now; leave them alone.
+    if(e && e._rrLoadSuperseded) throw e;
     console.error('Failed to load data from Firestore:', e);
     records = [];
     // Show the load error, not an account that looks empty.
@@ -20984,11 +20986,20 @@ let _authLoadStartedAt = 0;
 // A Firestore read that never answers must not leave "Loading your account…" up
 // forever. The timeout rejects, which lands in the handler's catch below and shows
 // the Try again screen.
-const ACCOUNT_LOAD_TIMEOUT_MS = 20000;
+const ACCOUNT_LOAD_TIMEOUT_MS = 45000;
+// Every account load bumps the sequence. A load that a newer one has replaced stops
+// at its next read, and a late answer can tell whether anything started since.
+let _accountLoadSeq = 0;
+let _accountLoadRunning = false;
+let _accountLoadUid = null;
 function _rrAccountLoadStep(promise, step){
+  const seq = _accountLoadSeq;
+  const uid = _accountLoadUid;
   let timer;
+  let timedOut = false;
   const timeout = new Promise(function(_, reject){
     timer = setTimeout(function(){
+      timedOut = true;
       console.warn('[RR] account load timed out:', step);
       const err = new Error('Loading timed out (' + step + ')');
       err.code = 'timeout';
@@ -20996,10 +21007,32 @@ function _rrAccountLoadStep(promise, step){
       reject(err);
     }, ACCOUNT_LOAD_TIMEOUT_MS);
   });
-  return Promise.race([promise, timeout]).finally(function(){ clearTimeout(timer); });
+  // A slow connection isn't a dead one: the read keeps going after the timeout. If it
+  // answers while the Try again screen is still up for the same user, and no load has
+  // started since, load again once. Firestore's cache answers fast by then.
+  promise.then(function(){
+    if(!timedOut) return;
+    console.log('[RR] account load finished late:', step);
+    if(seq !== _accountLoadSeq || _accountLoadRunning || _authDataLoaded) return;
+    let u = null;
+    try { u = firebase.auth().currentUser; } catch(e){}
+    if(!u || u.uid !== uid) return;
+    _retryAccountLoad();
+  }, function(){});
+  return Promise.race([promise, timeout]).finally(function(){ clearTimeout(timer); }).then(function(result){
+    if(seq !== _accountLoadSeq){
+      const err = new Error('Superseded by a newer account load (' + step + ')');
+      err._rrLoadSuperseded = true;
+      throw err;
+    }
+    return result;
+  });
 }
 async function _handleAuthUser(user){
   _rrImportInFlightTrace('onAuthStateChanged');
+  const loadSeq = ++_accountLoadSeq;
+  _accountLoadRunning = true;
+  _accountLoadUid = user ? user.uid : null;
   try {
   if(user){
     _authLoadError = null;
@@ -21218,6 +21251,8 @@ async function _handleAuthUser(user){
     hideLoadingOverlay();
   }
   } catch(authErr){
+    // A newer load replaced this one; it owns the screen now.
+    if(authErr && authErr._rrLoadSuperseded) return;
     console.error('Auth state handler error:', authErr);
     _authLoadError = authErr || new Error('Unknown error');
     // A timed-out records load has already set _currentUid; clear it so render()
@@ -21225,12 +21260,17 @@ async function _handleAuthUser(user){
     if(authErr && authErr._rrLoadTimeout) _currentUid = null;
     hideLoadingOverlay();
     if(!_currentUid) render();
+  } finally {
+    if(loadSeq === _accountLoadSeq) _accountLoadRunning = false;
   }
 }
 firebase.auth().onAuthStateChanged(_handleAuthUser);
 // "Try again" on the account-loading screen. Signing in again can't help here:
 // Firebase only fires onAuthStateChanged when the uid changes, so re-entering the
 // same credentials never re-ran this load. Re-run it directly instead.
+// A Try again click replaces a load still in flight; that load stops at its next
+// read, so two never run together. The automatic retry after a late answer only
+// runs when nothing else is loading.
 function _retryAccountLoad(){
   const u = firebase.auth().currentUser;
   if(!u){ _rrReload('account retry with no signed-in user'); return; }

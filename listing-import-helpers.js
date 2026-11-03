@@ -134,17 +134,27 @@ function importDuplicateCheck(candidates, records) {
 
 const IMPORT_LINK_RE = /(?:^|\/\/|\.)(?:zillow\.com|apartments\.com|hotpads\.com|facebook\.com\/marketplace|craigslist\.org)/i;
 
-// A profile a failed import left behind: a stand-in name, no street, no beds, baths or
-// sq ft. A rent alone doesn't save it (a non-listing page's filter price could land
-// there), and neither does a missing link. Same rule as isEmptyImport.
+const _blank = (v) => v == null || String(v).trim() === '';
+const _none = (list) => !Array.isArray(list) || list.length === 0;
+
+// A profile a failed import left behind: a name with no street number, no street, no
+// beds, baths or sq ft. A rent alone doesn't save it (a non-listing page's filter
+// price could land there). Same rule as isEmptyImport.
+// Without an import link it could just as well be a property someone named by hand
+// ("Smith Duplex"), so it only counts with a stand-in name ("New Property") and
+// nothing the owner added: no notes, no contact details.
 function isBlankImportedRecord(r) {
   if (!r || !isPlaceholderPropertyName(r.property)) return false;
   if (r.addressParts && String(r.addressParts.street || '').trim()) return false;
-  return importStructuralCount({
-    bedrooms: (r.propertyDetails || {}).bedrooms,
-    bathrooms: (r.propertyDetails || {}).bathrooms,
-    sqft: (r.propertyDetails || {}).sqft,
-  }) === 0;
+  const d = r.propertyDetails || {};
+  if (importStructuralCount({ bedrooms: d.bedrooms, bathrooms: d.bathrooms, sqft: d.sqft }) > 0) return false;
+  if (blankImportSourceLink(r)) return true;
+  const name = String(r.property == null ? '' : r.property).trim().toLowerCase();
+  if (name && !PLACEHOLDER_PROPERTY_NAMES.has(name)) return false;
+  const pn = r.propertyNote || {};
+  const hasNotes = !_none(r.notes) || !_none(r.propertyNotes) || !_blank(r.note) || !_blank(pn.text) || !_blank(pn.html);
+  const hasContact = !_blank(r.name) || !_blank(r.phone) || !_blank(r.email);
+  return !hasNotes && !hasContact;
 }
 
 // The listing link a blank record came from, or '' when it has none.

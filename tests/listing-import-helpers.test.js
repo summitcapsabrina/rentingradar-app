@@ -82,6 +82,23 @@ test('a rent alone or a missing link no longer keeps a record out of cleanup', (
   assert.equal(h.isBlankImportedRecord({ ...junk, propertyDetails: { monthlyRent: 1900, bedrooms: 2 } }), false, 'a real record with beds');
 });
 
+test('cleanup never lists a property someone named by hand', () => {
+  const blank = (r) => h.isBlankImportedRecord(r);
+  assert.equal(blank({ property: 'Smith Duplex', propertyDetails: {} }), false, 'Smith Duplex, no link');
+  assert.equal(blank({ property: 'New Property', propertyDetails: {}, notes: [], propertyNotes: [], note: '' }), true, 'New Property, no link, no notes');
+  assert.equal(blank({ property: '', propertyDetails: {} }), true, 'empty name, no link');
+  assert.equal(blank({ property: 'New Property', propertyDetails: {}, note: 'Call the owner Tuesday' }), false, 'a note');
+  assert.equal(blank({ property: 'New Property', propertyDetails: {}, notes: [{ text: 'x' }] }), false, 'an activity note');
+  assert.equal(blank({ property: 'New Property', propertyDetails: {}, propertyNotes: [{ text: 'x' }] }), false, 'a property note');
+  assert.equal(blank({ property: 'New Property', propertyDetails: {}, propertyNote: { text: 'x' } }), false, 'the property note');
+  for (const k of ['name', 'phone', 'email']) {
+    assert.equal(blank({ property: 'New Property', propertyDetails: {}, [k]: 'x' }), false, 'contact ' + k);
+  }
+  assert.equal(blank({ property: 'Bulevar Apartments', link: 'https://www.apartments.com/x/', propertyDetails: {} }), true, 'Bulevar Apartments + apartments.com link');
+  assert.equal(blank({ property: 'Smith Duplex', link: 'https://www.zillow.com/a', propertyDetails: { monthlyRent: 500 }, note: 'x' }), true, 'rent 500 + link');
+  assert.equal(blank({ property: 'Smith Duplex', link: 'https://example.com/a', propertyDetails: {} }), false, 'a link that is not a listing site');
+});
+
 test('unit prefixes stack and all normalize to the number', () => {
   const key = (x) => h.addressMatchKey(x).unit;
   for (const a of ['8436 Gulf Blvd #Unit 714, Navarre FL 32566', '8436 Gulf Blvd Unit #714, Navarre FL 32566', '8436 Gulf Blvd #714, Navarre FL 32566',

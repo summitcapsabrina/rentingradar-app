@@ -421,7 +421,7 @@ H.scenarios = {
     const realWarn = console.warn;
     console.warn = function (a, b) { if (a === '[RR] account load timed out:') warns.push(b); return realWarn.apply(console, arguments); };
     const realSet = window.setTimeout;
-    window.setTimeout = function (fn, ms, ...rest) { return realSet.call(window, fn, ms === 20000 ? 40 : ms, ...rest); };
+    window.setTimeout = function (fn, ms, ...rest) { return realSet.call(window, fn, ms === 45000 ? 40 : ms, ...rest); };
     const hang = () => new Promise(() => {});
     const user = { uid: 'harness2', email: 'h@example.com', displayName: 'H', emailVerified: true, providerData: [{ providerId: 'google.com' }], getIdToken: async () => 'x' };
     try {
@@ -447,6 +447,100 @@ H.scenarios = {
         H.check(fails, warns.includes(step), step + ': step logged: ' + warns);
       }
     } finally { window.setTimeout = realSet; console.warn = realWarn; }
+    return { fails };
+  },
+  'T5b a slow read shows Try again, then loads by itself when it answers': async () => {
+    const fails = [];
+    const realSet = window.setTimeout;
+    const auth = firebase.auth();
+    const user = { uid: 'harness3', email: 'h@example.com', displayName: 'H', emailVerified: true, providerData: [{ providerId: 'google.com' }], getIdToken: async () => 'x' };
+    Object.defineProperty(auth, 'currentUser', { get: () => user, configurable: true });
+    const lines = [];
+    const realLog = console.log;
+    console.log = function (a, b) { if (String(a).startsWith('[RR] account load')) lines.push(a + ' ' + b); return realLog.apply(console, arguments); };
+    let nullSaves = 0;
+    const realSave = saveData;
+    saveData = function () { if (!_currentUid) nullSaves++; return realSave.apply(this, arguments); };
+    // Test timeout 60 ms; the slow read answers at 90 ms, about 1.5x.
+    window.setTimeout = function (fn, ms, ...rest) { return realSet.call(window, fn, ms === 45000 ? 60 : ms, ...rest); };
+    const later = (ms, v) => new Promise((r) => realSet.call(window, () => r(v), ms));
+    const userDoc = { exists: true, data: () => ({ tier: 'pro', subscriptionStatus: 'active', disclaimerAcknowledged: true }) };
+    const recordsDoc = { exists: true, data: () => ({ data: JSON.stringify([{ id: 'r1', property: '1 Main St, Navarre FL 32566', propertyDetails: {} }]) }) };
+    try {
+      for (const step of ['user doc', 'records']) {
+        let slowLeft = 1;
+        const read = (doc, isStep) => () => (isStep && slowLeft-- > 0 ? later(90, doc) : Promise.resolve(doc));
+        db.collection = () => new Proxy(function () {}, {
+          get(_, k) {
+            if (k === 'then') return undefined;
+            if (k === 'get') return read(userDoc, step === 'user doc');
+            if (k === 'set' || k === 'update' || k === 'delete') return async () => {};
+            if (k === 'onSnapshot') return () => () => {};
+            if (k === 'doc') return (id) => (id === 'records' ? { get: read(recordsDoc, step === 'records'), onSnapshot: () => () => {}, set: async () => {} } : db.collection());
+            return db.collection();
+          },
+          apply() { return db.collection(); },
+        });
+        _currentUid = null; _authDataLoaded = false; _authLoadError = null; records = []; lines.length = 0; nullSaves = 0;
+        await _handleAuthUser(user);
+        const area = document.getElementById('contentArea').textContent;
+        H.check(fails, area.includes('Try again') && _authLoadError && _authLoadError._rrLoadTimeout, step + ': Try again shown first');
+        const loaded = await H.until(() => _currentUid === 'harness3' && _authDataLoaded && records.length > 0, 3000);
+        H.check(fails, loaded, step + ': loaded by itself, records=' + records.length + ' uid=' + _currentUid);
+        H.check(fails, !_authLoadError, step + ': error cleared');
+        H.check(fails, lines.includes('[RR] account load finished late: ' + step), step + ': late line logged: ' + lines);
+        H.check(fails, nullSaves === 0, step + ': saves while signed-out state: ' + nullSaves);
+      }
+    } finally {
+      window.setTimeout = realSet; console.log = realLog; saveData = realSave;
+      delete auth.currentUser;
+    }
+    return { fails };
+  },
+  'T5b a Try again already running wins over the late answer': async () => {
+    const fails = [];
+    const realSet = window.setTimeout;
+    const auth = firebase.auth();
+    const user = { uid: 'harness4', email: 'h@example.com', displayName: 'H', emailVerified: true, providerData: [{ providerId: 'google.com' }], getIdToken: async () => 'x' };
+    Object.defineProperty(auth, 'currentUser', { get: () => user, configurable: true });
+    window.setTimeout = function (fn, ms, ...rest) { return realSet.call(window, fn, ms === 45000 ? 60 : ms, ...rest); };
+    const later = (ms, v) => new Promise((r) => realSet.call(window, () => r(v), ms));
+    const userDoc = { exists: true, data: () => ({ tier: 'pro', subscriptionStatus: 'active', disclaimerAcknowledged: true }) };
+    const recordsDoc = { exists: true, data: () => ({ data: JSON.stringify([{ id: 'r1', property: '1 Main St', propertyDetails: {} }]) }) };
+    // First read: answers at 90 ms (after the timeout). Second read (the click): 50 ms.
+    const delays = [90, 50];
+    db.collection = () => new Proxy(function () {}, {
+      get(_, k) {
+        if (k === 'then') return undefined;
+        if (k === 'get') return () => later(delays.shift() || 0, userDoc);
+        if (k === 'set' || k === 'update' || k === 'delete') return async () => {};
+        if (k === 'onSnapshot') return () => () => {};
+        if (k === 'doc') return (id) => (id === 'records' ? { get: () => Promise.resolve(recordsDoc), onSnapshot: () => () => {}, set: async () => {} } : db.collection());
+        return db.collection();
+      },
+      apply() { return db.collection(); },
+    });
+    const lines = [];
+    const realLog = console.log;
+    console.log = function (a, b) { if (String(a).startsWith('[RR] account load')) lines.push(a + ' ' + b); return realLog.apply(console, arguments); };
+    let loads = 0;
+    const realHandle = _handleAuthUser;
+    _handleAuthUser = function () { loads++; return realHandle.apply(this, arguments); };
+    try {
+      _currentUid = null; _authDataLoaded = false; _authLoadError = null; records = [];
+      await realHandle(user);
+      H.check(fails, !!_authLoadError, 'timed out first');
+      await H.wait(15);
+      _retryAccountLoad(); // the click, at about 75 ms; the first read answers at 90 ms
+      const loaded = await H.until(() => _authDataLoaded && records.length > 0, 3000);
+      await H.wait(150);
+      H.check(fails, loaded, 'loaded');
+      H.check(fails, loads === 1, 'one load after the click, got ' + loads);
+      H.check(fails, lines.includes('[RR] account load finished late: user doc'), 'the late answer arrived and was logged: ' + lines);
+    } finally {
+      window.setTimeout = realSet; _handleAuthUser = realHandle; console.log = realLog;
+      delete auth.currentUser;
+    }
     return { fails };
   },
   'Nit race timers are cleared, timeouts leave a trace line': async () => {
