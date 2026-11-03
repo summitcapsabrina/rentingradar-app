@@ -46,14 +46,20 @@ function isEmptyImport(data) {
 }
 
 const STREET_WORDS = { street: 'st', avenue: 'ave', boulevard: 'blvd', drive: 'dr', road: 'rd', lane: 'ln', court: 'ct', place: 'pl', parkway: 'pkwy', highway: 'hwy', terrace: 'ter', circle: 'cir' };
-const UNIT_SUFFIX_RE = /\s+(?:#|(?:apt|apartment|unit|ste|suite|bldg|building|floor|fl)\b\.?)\s*#?\s*([a-z0-9-]+)\s*$/i;
+// One unit prefix: "#", "Unit", "Apt." and so on. Listings stack them ("#Unit 714",
+// "Unit #714"), so the patterns below accept any run of them.
+const UNIT_PREFIX = '(?:#|(?:apt|apartment|unit|ste|suite|bldg|building|floor|fl)\\b\\.?)';
+const UNIT_PREFIXES = UNIT_PREFIX + '(?:\\s*' + UNIT_PREFIX + ')*';
+const UNIT_SUFFIX_RE = new RegExp('\\s+' + UNIT_PREFIXES + '\\s*([a-z0-9-]+)\\s*$', 'i');
+const UNIT_AFTER_STREET_RE = new RegExp('^,\\s*' + UNIT_PREFIXES + '\\s*([a-z0-9-]+)\\s*(?=,|$)', 'i');
+const LEADING_UNIT_PREFIXES_RE = new RegExp('^\\s*' + UNIT_PREFIXES + '\\s*', 'i');
 
 function normalizeStreetForMatch(street) {
   return normalizeAddressForMatch(street).split(' ').map((w) => STREET_WORDS[w] || w).join(' ');
 }
 
 function normalizeUnitForMatch(unit) {
-  return normalizeAddressForMatch(String(unit == null ? '' : unit).replace(/^\s*(?:#|(?:apt|apartment|unit|ste|suite|bldg|building|floor|fl)\b\.?)\s*#?/i, ''));
+  return normalizeAddressForMatch(String(unit == null ? '' : unit).replace(LEADING_UNIT_PREFIXES_RE, ''));
 }
 
 // { street, unit, zip } for comparing addresses, from an addressParts object or a
@@ -75,10 +81,16 @@ function addressMatchKey(address) {
   let unit = '';
   const inStreet = street.match(UNIT_SUFFIX_RE);
   if (inStreet) { unit = inStreet[1]; street = street.slice(0, inStreet.index); }
-  const afterStreet = rest.match(/^,\s*(?:#|(?:apt|apartment|unit|ste|suite)\b\.?)\s*([a-z0-9-]+)\s*(?=,)/i);
+  // "8436 Gulf Blvd, Unit 714", with or without more after it.
+  const afterStreet = rest.match(UNIT_AFTER_STREET_RE);
   if (!unit && afterStreet) unit = afterStreet[1];
   const zip = (rest.match(/\b(\d{5})(?:-\d{4})?\s*$/) || [])[1] || '';
   return { street: normalizeStreetForMatch(street), unit: normalizeUnitForMatch(unit), zip };
+}
+
+// The key as one string for logs: "8436 gulf blvd|714|32566".
+function addressKeyText(key) {
+  return key ? [key.street, key.unit, key.zip].join('|') : '';
 }
 
 function addressKeysMatch(a, b) {
@@ -104,15 +116,78 @@ function findImportDuplicate(candidate, records) {
   return null;
 }
 
+// Checks every way this import can name its address (geocoded parts, the one-line
+// name, the scraped text); a match on any of them is a duplicate. Returns the match
+// (or null) and the key that matched, else the first key, for the import trace.
+function importDuplicateCheck(candidates, records) {
+  let firstKey = '';
+  for (const c of candidates || []) {
+    if (!c || isPlaceholderPropertyName(c.name)) continue;
+    const key = addressMatchKey(c.addressParts && c.addressParts.street ? c.addressParts : c.name);
+    if (!key.street) continue;
+    if (!firstKey) firstKey = addressKeyText(key);
+    const match = findImportDuplicate(c, records);
+    if (match) return { match, key: addressKeyText(key) };
+  }
+  return { match: null, key: firstKey };
+}
+
 const IMPORT_LINK_RE = /(?:^|\/\/|\.)(?:zillow\.com|apartments\.com|hotpads\.com|facebook\.com\/marketplace|craigslist\.org)/i;
 
-// A profile a failed import left behind: no address, no numbers, an import link.
+const _blank = (v) => v == null || String(v).trim() === '';
+const _none = (list) => !Array.isArray(list) || list.length === 0;
+
+// A profile a failed import left behind: a name with no street number, no street, no
+// beds, baths or sq ft. A rent alone doesn't save it (a non-listing page's filter
+// price could land there). Same rule as isEmptyImport.
+// Without an import link it could just as well be a property someone named by hand
+// ("Smith Duplex"), so it only counts with a stand-in name ("New Property") and
+// nothing the owner added: no notes, no contact details.
 function isBlankImportedRecord(r) {
   if (!r || !isPlaceholderPropertyName(r.property)) return false;
   if (r.addressParts && String(r.addressParts.street || '').trim()) return false;
   const d = r.propertyDetails || {};
-  if (['bedrooms', 'bathrooms', 'sqft', 'monthlyRent'].some((k) => d[k] != null && d[k] !== '')) return false;
-  return IMPORT_LINK_RE.test(String(r.link || '')) || IMPORT_LINK_RE.test(String(r._aiSourceUrl || ''));
+  if (importStructuralCount({ bedrooms: d.bedrooms, bathrooms: d.bathrooms, sqft: d.sqft }) > 0) return false;
+  if (blankImportSourceLink(r)) return true;
+  const name = String(r.property == null ? '' : r.property).trim().toLowerCase();
+  if (name && !PLACEHOLDER_PROPERTY_NAMES.has(name)) return false;
+  const pn = r.propertyNote || {};
+  const hasNotes = !_none(r.notes) || !_none(r.propertyNotes) || !_blank(r.note) || !_blank(pn.text) || !_blank(pn.html);
+  const hasContact = !_blank(r.name) || !_blank(r.phone) || !_blank(r.email);
+  return !hasNotes && !hasContact;
+}
+
+// The listing link a blank record came from, or '' when it has none.
+function blankImportSourceLink(r) {
+  const link = [r && r.link, r && r._aiSourceUrl].map((x) => String(x || '')).find((x) => IMPORT_LINK_RE.test(x));
+  return link || '';
+}
+
+const GEOCODE_UNIT_PREFIX_WORD = { '#': '#', ste: 'Ste', suite: 'Suite', apt: 'Apt', apartment: 'Apt', bldg: 'Bldg', building: 'Bldg', unit: 'Unit' };
+
+// The unit for a geocoded address, from Places' subpremise and the scraped text.
+// Places usually returns the bare number ("714"), so the prefix comes from how the
+// listing wrote it, "#" if it didn't. A subpremise that already has a prefix is
+// kept as it is, so this never makes "#Unit 714".
+function geocodedUnit(subpremise, rawAddress) {
+  const sub = String(subpremise || '').trim();
+  const raw = typeof rawAddress === 'string' ? rawAddress : '';
+  if (sub && /^(?:#|(?:unit|ste|suite|apt|apartment|bldg|building)\b)/i.test(sub)) {
+    return sub.replace(/^#\s*(?=[a-z])/i, '').replace(/^(#)\s+/, '$1');
+  }
+  // The last "<prefixes> <token>" in the text; with stacked prefixes ("#Unit 714")
+  // the word wins over "#".
+  const re = /((?:(?:#|\b(?:Unit|Suite|Apartment|Building)\b|\b(?:Ste|Apt|Bldg)\b\.?)\s*)+)([A-Za-z0-9][\w-]*)/gi;
+  let match, last = null;
+  while ((match = re.exec(raw)) !== null) last = match;
+  let prefix = '#';
+  if (last) {
+    const words = last[1].match(/[a-z]+/gi) || [];
+    if (words.length) prefix = GEOCODE_UNIT_PREFIX_WORD[words[words.length - 1].toLowerCase()] || '#';
+  }
+  const token = sub || (last ? last[2] : '');
+  if (!token) return '';
+  return prefix === '#' ? '#' + token : prefix + ' ' + token;
 }
 
 function _planMoney(n) { return '$' + Number(n).toLocaleString('en-US'); }
@@ -293,7 +368,11 @@ if (typeof module !== 'undefined' && module.exports) {
     addressMatchKey,
     addressKeysMatch,
     findImportDuplicate,
+    addressKeyText,
+    importDuplicateCheck,
     isBlankImportedRecord,
+    blankImportSourceLink,
+    geocodedUnit,
     formatPlanLabel,
     applyPlanToListing,
     skipPlanForListing,

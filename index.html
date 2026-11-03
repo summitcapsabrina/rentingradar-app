@@ -3331,7 +3331,7 @@ async function loadDataFromFirestore(userUid){
 
   try {
     // Initial one-time load for fast startup
-    const doc = await db.collection('users').doc(userUid).collection('properties').doc('records').get();
+    const doc = await _rrAccountLoadStep(db.collection('users').doc(userUid).collection('properties').doc('records').get(), 'records');
     if(doc.exists){
       const data = doc.data();
       _opsMediaMigrationDidCopy = false;
@@ -3348,8 +3348,12 @@ async function loadDataFromFirestore(userUid){
       _lastSavedJson = '[]';
     }
   } catch(e){
+    // A newer load owns records now; leave them alone.
+    if(e && e._rrLoadSuperseded) throw e;
     console.error('Failed to load data from Firestore:', e);
     records = [];
+    // Show the load error, not an account that looks empty.
+    if(e && e._rrLoadTimeout) throw e;
   }
   _shadowVerifyMirror(userUid, records, 'propertyRecords', '_lastMirrorMismatchAt');
   // 2026-08-17: one-time cleanup for the inline-base64-screenshot problem (see
@@ -3818,7 +3822,7 @@ function openBlankImportCleanupModal(){
     return '<label class="settings-row" style="padding:10px 0;cursor:pointer;gap:10px;justify-content:flex-start">'
       + '<input type="checkbox" data-blank-id="' + esc(r.id) + '" style="width:18px;height:18px;padding:0;margin:0;flex-shrink:0">'
       + '<div class="settings-row-left" style="min-width:0"><div class="sr-label">' + esc(r.property || 'Untitled property') + '</div>'
-      + '<div class="sr-desc" style="overflow-wrap:anywhere">Added ' + esc(when) + ' · ' + esc(r.link || r._aiSourceUrl || '') + '</div></div>'
+      + '<div class="sr-desc" style="overflow-wrap:anywhere">Added ' + esc(when) + ' · ' + (blankImportSourceLink(r) ? esc(blankImportSourceLink(r)) : 'no source link') + '</div></div>'
       + '</label>';
   }).join('');
   overlay.innerHTML = `<div class="multi-editor" style="max-width:560px">
@@ -11070,7 +11074,7 @@ async function autoImport(recId){
   const statusEl = document.getElementById('profileImportStatus');
   try {
     if(!extensionReady){
-      container.innerHTML = `<div class="import-dialog"><h3>Extension Required</h3><p>The RentingRadar Importer extension is needed for auto-import. <a href="${EXTENSION_URL}" target="_blank" style="color:var(--primary);font-weight:600">Download it from the Chrome Web Store</a>, then reload this page.</p><div style="display:flex;gap:8px;margin-top:12px"><button class="btn btn-primary btn-sm" onclick="location.reload()">I've Installed It — Reload</button><button class="btn btn-secondary btn-sm" onclick="showManualEntry('${recId}')">Manual Entry</button></div></div>`;
+      container.innerHTML = `<div class="import-dialog"><h3>Extension Required</h3><p>The RentingRadar Importer extension is needed for auto-import. <a href="${EXTENSION_URL}" target="_blank" style="color:var(--primary);font-weight:600">Download it from the Chrome Web Store</a>, then reload this page.</p><div style="display:flex;gap:8px;margin-top:12px"><button class="btn btn-primary btn-sm" onclick="_rrReload('extension required: reload button')">I've Installed It — Reload</button><button class="btn btn-secondary btn-sm" onclick="showManualEntry('${recId}')">Manual Entry</button></div></div>`;
       return;
     }
     if(statusEl) statusEl.textContent = 'Extension is fetching listing page...';
@@ -12133,52 +12137,9 @@ async function rrGeocodeAddress(rawAddress) {
     const streetNum = get('street_number');
     const route = getShort('route') || get('route');
     const street = [streetNum, route].filter(Boolean).join(' ');
-    const subpremise = get('subpremise');
-    // Preserve the original unit prefix the listing used (Suite, Apt, Ste, #,
-    // Bldg, Apartment) instead of always saying "Unit". Google Places strips
-    // the prefix and only returns the bare subpremise (e.g. "4B"), so we
-    // detect the prefix from the raw address text the user/scraper supplied.
-    // Map "Apartment" → "Apt" to match the CRM dropdown options.
-    // Default to "#" (the most universal shorthand). "Unit " is only used if
-    // the source listing actually says the word "Unit" — otherwise we were
-    // injecting a word that wasn't in the listing. The "#" prefix matches
-    // the way Zillow / Hotpads / Apartments typically render unit numbers.
-    let unitPrefix = '#';
-    if (typeof rawAddress === 'string') {
-      // Match the # symbol OR a prefix WORD that's followed by an alphanum
-      // unit token (so we don't false-positive on the word "unit" appearing
-      // mid-sentence in a listing description). Prefer the LAST match in
-      // the address — the unit prefix appears AFTER the street, not before.
-      const re = /(#|\b(?:Unit|Ste\.?|Suite|Apt\.?|Apartment|Bldg\.?|Building)\b)\s*[A-Za-z0-9-]+/gi;
-      let match, last = null;
-      while ((match = re.exec(rawAddress)) !== null) last = match;
-      if (last) {
-        const raw = last[1].replace(/\.$/, '');
-        const norm = raw.toLowerCase();
-        if (norm === '#') unitPrefix = '#';
-        else if (norm === 'ste') unitPrefix = 'Ste';
-        else if (norm === 'suite') unitPrefix = 'Suite';
-        else if (norm === 'apt' || norm === 'apartment') unitPrefix = 'Apt';
-        else if (norm === 'bldg' || norm === 'building') unitPrefix = 'Bldg';
-        else if (norm === 'unit') unitPrefix = 'Unit';
-      }
-    }
-    // For "#" prefix the convention is "#4B" (no space); everything else is
-    // "<Prefix> <Number>" — matches the manual-entry format builder.
-    // v0.7.0: If Google Places didn't return a subpremise (common for
-    // smaller buildings), extract the unit token directly from the raw
-    // address. The listing clearly stated "#A" or "Apt 4B" — we
-    // shouldn't lose it just because Google's geocoder didn't echo it.
-    let unitToken = subpremise;
-    if (!unitToken && typeof rawAddress === 'string') {
-      const unitRe = /(?:#|\b(?:Unit|Ste\.?|Suite|Apt\.?|Apartment|Bldg\.?|Building)\b)\s*([A-Za-z0-9][\w-]*)/gi;
-      let um, lastUnit = null;
-      while ((um = unitRe.exec(rawAddress)) !== null) lastUnit = um[1];
-      if (lastUnit) unitToken = lastUnit;
-    }
-    const unit = unitToken
-      ? (unitPrefix === '#' ? ('#' + unitToken) : (unitPrefix + ' ' + unitToken))
-      : '';
+    // Places returns the bare unit ("714") or one with its own prefix ("Unit 714");
+    // geocodedUnit adds the listing's prefix only when there isn't one already.
+    const unit = geocodedUnit(get('subpremise'), rawAddress);
     const city = get('locality') || get('sublocality_level_1') || get('administrative_area_level_2') || '';
     const state = getShort('administrative_area_level_1') || '';
     const zip = get('postal_code') || '';
@@ -12243,6 +12204,22 @@ function rrNormalizeAvailableDate(raw) {
   return null;
 }
 
+// ---- App-initiated reloads --------------------------------------------------
+// Every reload the app starts goes through here and leaves its reason behind, so
+// the next page load can tell an app reload from a user's or the browser's.
+const RR_RELOAD_KEY = 'rr_reload_reason';
+function _rrReload(reason){
+  try { sessionStorage.setItem(RR_RELOAD_KEY, JSON.stringify({ reason: reason, at: new Date().toISOString() })); } catch(e){}
+  window.location.reload();
+}
+(function _rrLogReload(){
+  let stored = null;
+  try { stored = JSON.parse(sessionStorage.getItem(RR_RELOAD_KEY) || 'null'); sessionStorage.removeItem(RR_RELOAD_KEY); } catch(e){}
+  let navType = null;
+  try { const nav = performance.getEntriesByType('navigation')[0]; navType = nav ? nav.type : null; } catch(e){}
+  console.log('[RR reload]', navType, stored ? stored.reason + ' at ' + stored.at : 'not app-initiated');
+})();
+
 // ---- Listing import lifecycle ---------------------------------------------
 // One import at a time per tab, from the moment scraping starts until its one
 // visible outcome. While it runs, remote changes merge but don't re-render, a
@@ -12298,7 +12275,7 @@ function _rrEndListingImport(entry){
   // A queued popup import goes first: a reload here would lose it. The timeout lets
   // this import's caller finish with its own outcome before the next one starts.
   if(_rrQueuedPopupListing){ setTimeout(_rrRunQueuedPopupListing, 0); return; }
-  if(window._rrReloadAfterImport){ try { window.location.reload(); } catch(e){} return; }
+  if(window._rrReloadAfterImport){ try { _rrReload('service worker update, after an import'); } catch(e){} return; }
   _rrFlushDeferredRender();
 }
 
@@ -12545,18 +12522,27 @@ async function handleExtensionListing(data) {
   const canonical = formatAddressOneLine(addrParts) || geo.formattedAddress || data.address || data.title || 'New Property';
 
   let replaceRecord = null;
+  // ── Duplicate detection ──
+  // Every form of the address counts: the geocoded parts, the one-line name, and
+  // the scraped text (geocoding can drop a unit the listing had). It runs again just
+  // before saving, against the records as they are then, so a property that arrived
+  // by sync during this import is caught too. 'replace' deletes the old record in
+  // the same step that saves the new one; 'keep-both' creates the new one normally.
+  const dupCandidates = [{ name: canonical, addressParts: addrParts }, { name: canonical }, { name: data.address }];
+  let decidedDupId = null;
+  const checkDuplicate = async () => {
+    const res = importDuplicateCheck(dupCandidates, records);
+    _rrImportInFlightTrace('dup check: key=' + (res.key || '(none)') + ' records=' + records.length + ' match=' + (res.match ? res.match.id : 'none'));
+    if (!res.match || res.match.id === decidedDupId) return 'none';
+    decidedDupId = res.match.id;
+    const choice = await showDuplicateDialog(canonical, res.match);
+    if (choice === 'replace') replaceRecord = res.match;
+    return choice;
+  };
   if (!existingOnEntry) {
-    // ── Duplicate detection ──
-    const dupRecord = findImportDuplicate({ name: canonical, addressParts: addrParts }, records);
-    if (dupRecord) {
-      const choice = await showDuplicateDialog(canonical, dupRecord);
-      if (choice === 'cancel') {
-        showToast('Import cancelled.', 'info', 3500);
-        return 'cancelled';
-      }
-      // 'replace' deletes the old record in the same step that saves the new one;
-      // 'keep-both' just falls through and creates the new record normally.
-      if (choice === 'replace') replaceRecord = dupRecord;
+    if (await checkDuplicate() === 'cancel') {
+      showToast('Import cancelled.', 'info', 3500);
+      return 'cancelled';
     }
 
     // Enforce tier/property-count limits just like the manual add flow. Replacing
@@ -12598,6 +12584,11 @@ async function handleExtensionListing(data) {
     } catch (e) {
       console.log('[RR] Market lookup failed:', e.message);
     }
+  }
+
+  if (!existingOnEntry && !replaceRecord && await checkDuplicate() === 'cancel') {
+    showToast('Import cancelled.', 'info', 3500);
+    return 'cancelled';
   }
 
   // Everything from here to saveData() is synchronous. A remote merge during the
@@ -14231,7 +14222,8 @@ function showDuplicateDialog(address, existingRecord){
 
     const dateStr = formatDuplicateDate(existingRecord);
     const statusStr = existingRecord.status || 'New';
-    const escapedName = (address || 'this property').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+    const newName = esc(address || 'this property');
+    const existingName = esc(_compTargetName(existingRecord));
 
     const overlay = document.createElement('div');
     overlay.className = 'multi-editor-overlay';
@@ -14243,10 +14235,15 @@ function showDuplicateDialog(address, existingRecord){
       </div>
       <div class="multi-editor-body" style="text-align:center;padding:24px 20px">
         <div style="font-size:2.2rem;margin-bottom:12px">⚠️</div>
-        <div style="font-size:.95rem;color:var(--text);margin-bottom:8px;line-height:1.5">A property with this address already exists:</div>
+        <div style="font-size:.95rem;color:var(--text);margin-bottom:8px;line-height:1.5">A property with this address already exists.</div>
+        <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:12px 16px;margin:0 auto 10px;max-width:400px;text-align:left">
+          <div style="font-size:.72rem;color:var(--text3);margin-bottom:2px">Importing</div>
+          <div style="font-weight:600;font-size:.9rem;color:var(--text);overflow-wrap:anywhere" id="dupDialogNewName">${newName}</div>
+        </div>
         <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:12px 16px;margin:0 auto 18px;max-width:400px;text-align:left">
-          <div style="font-weight:600;font-size:.9rem;color:var(--text);margin-bottom:4px">${escapedName}</div>
-          <div style="font-size:.78rem;color:var(--text3)">Added ${dateStr} · Status: ${statusStr}</div>
+          <div style="font-size:.72rem;color:var(--text3);margin-bottom:2px">Already in your list</div>
+          <div style="font-weight:600;font-size:.9rem;color:var(--text);margin-bottom:4px;overflow-wrap:anywhere" id="dupDialogExistingName">${existingName}</div>
+          <div style="font-size:.78rem;color:var(--text3)">Added ${esc(dateStr)} · Status: ${esc(statusStr)}</div>
         </div>
         <div id="dupDialogChoices">
           <div style="font-size:.85rem;color:var(--text2);margin-bottom:20px">How would you like to proceed?</div>
@@ -20986,8 +20983,56 @@ function _idleShowSignedOutToastIfFlagged(){
 // "Sign in" prompt, which used to stay up forever for a user who IS signed in.
 let _authLoadError = null;
 let _authLoadStartedAt = 0;
+// A Firestore read that never answers must not leave "Loading your account…" up
+// forever. The timeout rejects, which lands in the handler's catch below and shows
+// the Try again screen.
+const ACCOUNT_LOAD_TIMEOUT_MS = 45000;
+// Every account load bumps the sequence. A load that a newer one has replaced stops
+// at its next read, and a late answer can tell whether anything started since.
+let _accountLoadSeq = 0;
+let _accountLoadRunning = false;
+let _accountLoadUid = null;
+function _rrAccountLoadStep(promise, step){
+  const seq = _accountLoadSeq;
+  const uid = _accountLoadUid;
+  let timer;
+  let timedOut = false;
+  const timeout = new Promise(function(_, reject){
+    timer = setTimeout(function(){
+      timedOut = true;
+      console.warn('[RR] account load timed out:', step);
+      const err = new Error('Loading timed out (' + step + ')');
+      err.code = 'timeout';
+      err._rrLoadTimeout = true;
+      reject(err);
+    }, ACCOUNT_LOAD_TIMEOUT_MS);
+  });
+  // A slow connection isn't a dead one: the read keeps going after the timeout. If it
+  // answers while the Try again screen is still up for the same user, and no load has
+  // started since, load again once. Firestore's cache answers fast by then.
+  promise.then(function(){
+    if(!timedOut) return;
+    console.log('[RR] account load finished late:', step);
+    if(seq !== _accountLoadSeq || _accountLoadRunning || _authDataLoaded) return;
+    let u = null;
+    try { u = firebase.auth().currentUser; } catch(e){}
+    if(!u || u.uid !== uid) return;
+    _retryAccountLoad();
+  }, function(){});
+  return Promise.race([promise, timeout]).finally(function(){ clearTimeout(timer); }).then(function(result){
+    if(seq !== _accountLoadSeq){
+      const err = new Error('Superseded by a newer account load (' + step + ')');
+      err._rrLoadSuperseded = true;
+      throw err;
+    }
+    return result;
+  });
+}
 async function _handleAuthUser(user){
   _rrImportInFlightTrace('onAuthStateChanged');
+  const loadSeq = ++_accountLoadSeq;
+  _accountLoadRunning = true;
+  _accountLoadUid = user ? user.uid : null;
   try {
   if(user){
     _authLoadError = null;
@@ -21019,7 +21064,8 @@ async function _handleAuthUser(user){
         .catch(function(e){ console.error('lastLogin (refresh) write failed:', e && (e.code || e.message) || e); });
       // Silently refresh tier and disclaimer state in background without re-rendering
       try {
-        const userDoc = await db.collection('users').doc(user.uid).get();
+        // A timeout here is caught just below; the account is already loaded.
+        const userDoc = await _rrAccountLoadStep(db.collection('users').doc(user.uid).get(), 'user doc (refresh)');
         if(userDoc.exists){
           const data = userDoc.data();
           _manualOverride = !!data.manualOverride;
@@ -21050,7 +21096,7 @@ async function _handleAuthUser(user){
     }
     // Check/create user doc in Firestore
     const userRef = db.collection('users').doc(user.uid);
-    const userDoc = await userRef.get();
+    const userDoc = await _rrAccountLoadStep(userRef.get(), 'user doc');
     if(!userDoc.exists){
       // New signup. We no longer auto-start a no-card in-app trial — the trial is now
       // Stripe-managed (card required upfront, 7 days free, auto-charge at day 7).
@@ -21205,19 +21251,29 @@ async function _handleAuthUser(user){
     hideLoadingOverlay();
   }
   } catch(authErr){
+    // A newer load replaced this one; it owns the screen now.
+    if(authErr && authErr._rrLoadSuperseded) return;
     console.error('Auth state handler error:', authErr);
     _authLoadError = authErr || new Error('Unknown error');
+    // A timed-out records load has already set _currentUid; clear it so render()
+    // shows the Try again screen instead of an empty account.
+    if(authErr && authErr._rrLoadTimeout) _currentUid = null;
     hideLoadingOverlay();
     if(!_currentUid) render();
+  } finally {
+    if(loadSeq === _accountLoadSeq) _accountLoadRunning = false;
   }
 }
 firebase.auth().onAuthStateChanged(_handleAuthUser);
 // "Try again" on the account-loading screen. Signing in again can't help here:
 // Firebase only fires onAuthStateChanged when the uid changes, so re-entering the
 // same credentials never re-ran this load. Re-run it directly instead.
+// A Try again click replaces a load still in flight; that load stops at its next
+// read, so two never run together. The automatic retry after a late answer only
+// runs when nothing else is loading.
 function _retryAccountLoad(){
   const u = firebase.auth().currentUser;
-  if(!u){ location.reload(); return; }
+  if(!u){ _rrReload('account retry with no signed-in user'); return; }
   _authLoadError = null;
   _authDataLoaded = false;
   render();
@@ -21531,7 +21587,7 @@ function _checkEmailVerified(){
       // Set flag so on reload we know to trigger the welcome email
       try { sessionStorage.setItem('rr_just_verified', '1'); } catch(e){}
       // Reload the page — onAuthStateChanged will fire fresh with emailVerified=true
-      setTimeout(function(){ window.location.reload(); }, 800);
+      setTimeout(function(){ _rrReload('email verified'); }, 800);
     } else {
       if(btn){ btn.disabled = false; btn.textContent = "I've Verified My Email"; }
       if(msg){ msg.style.color = 'var(--warning,#d29922)'; msg.textContent = "Email not verified yet. Please click the link in the email we sent you."; }
@@ -42717,7 +42773,7 @@ async function performReset(){
     localStorage.removeItem('arbflow_theme');
   } catch(e){}
   records = [];
-  location.reload();
+  _rrReload('reset all data');
 }
 
 /* ===== REFERRAL CODE CAPTURE =====
@@ -44896,7 +44952,7 @@ var MobileAdmin = (function(){
         if(_swReloaded) return; _swReloaded = true;
         // Don't cut off an import; _rrEndListingImport reloads once it has finished.
         if(window._rrListingImportInFlight){ window._rrReloadAfterImport = true; return; }
-        try { window.location.reload(); } catch(e){}
+        try { _rrReload('service worker update'); } catch(e){}
       });
     }
   } catch(e){}
