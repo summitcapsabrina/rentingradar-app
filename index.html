@@ -21486,7 +21486,11 @@ function handleEmailSignUp(){
   if(password !== confirm){ showAuthError('Passwords do not match.'); return; }
   setAuthLoading(true);
   firebase.auth().createUserWithEmailAndPassword(email, password).then(function(result){
-    return result.user.updateProfile({ displayName: name }).then(function(){
+    // The account exists either way, so a failed display-name update must not stop the
+    // verification email (same as mgEmailSignUp).
+    return result.user.updateProfile({ displayName: name }).catch(function(e){
+      console.warn('updateProfile after signup failed:', e && (e.code || e.message));
+    }).then(function(){
       try { if(window.rrTrackSignup) rrTrackSignup('email', result.user.email); } catch(e){}
       // The one automatic verification email. The overlay itself never sends.
       _sendVerificationEmail(result.user, 'signup');
@@ -21556,6 +21560,10 @@ function _sendVerificationEmail(user, reason){
   const btn = document.getElementById('emailVerifyResendBtn');
   if(btn && reason === 'resend'){ btn.disabled = true; btn.textContent = 'Sending...'; }
   return _verifyEmailSender.trySend(user.uid, function(){ return user.sendEmailVerification(); }).then(function(res){
+    // The send has settled, so "Sending..." is over whatever the outcome. Below, the
+    // button becomes either the countdown or an enabled Resend.
+    const sendingBtn = document.getElementById('emailVerifyResendBtn');
+    if(sendingBtn && sendingBtn.textContent === 'Sending...') sendingBtn.textContent = 'Resend Verification Email';
     console.info('[RR] verification email:', reason, res.status);
     if(res.status === 'sent') _setVerifyMsg('var(--success,#3fb950)', 'Verification email sent! Check your inbox.');
     else if(res.status === 'rate-limited') _setVerifyMsg('var(--warning,#d29922)', 'Too many attempts. Please wait a few minutes, then try again.');
