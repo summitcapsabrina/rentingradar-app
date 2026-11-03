@@ -370,6 +370,19 @@ test('an exact match beats a same-building record listed earlier', () => {
   assert.equal(res2.key, '400 example way|2b|32000');
 });
 
+test('the import\'s three candidates: a dropped unit never matches another unit\'s building', () => {
+  const saved715 = { id: 'u715', property: '400 Example Way Unit 715, Sampletown FL 32000' };
+  const noUnit = { name: '400 Example Way, Sampletown FL 32000', addressParts: { street: '400 Example Way', unit: '', zip: '32000' } };
+  const noUnitName = { name: '400 Example Way, Sampletown FL 32000' };
+  const check = (scraped) => h.importDuplicateCheck([noUnit, noUnitName, { name: scraped }], [saved715]);
+  const a = check('400 Example Way Unit 714, Sampletown, FL 32000');
+  assert.deepEqual([a.match, a.kind], [null, null], 'geocoding dropped 714; 715 is not its building');
+  const b = check('400 Example Way Unit 715, Sampletown, FL 32000');
+  assert.deepEqual([b.match && b.match.id, b.kind], ['u715', 'exact']);
+  const c = h.importDuplicateCheck([noUnit, noUnitName, { name: '400 Example Way, Sampletown, FL 32000' }], [saved715]);
+  assert.deepEqual([c.match && c.match.id, c.kind], ['u715', 'same-building'], 'a real building listing still asks');
+});
+
 test('a different zip is no match of either kind', () => {
   const res = h.importDuplicateCheck([{ name: '400 Example Way, Sampletown FL 32999' }], [SAVED_UNIT]);
   assert.deepEqual([res.match, res.kind], [null, null]);

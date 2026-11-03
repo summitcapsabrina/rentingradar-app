@@ -664,6 +664,30 @@ H.scenarios = {
     H.check(fails, isBlankImportedRecord(records[0]), 'still listed by cleanup');
     return { fails };
   },
+  'T5c both editors start empty for a "New Property" street and save nothing': async () => {
+    const fails = [];
+    const saved = { street: 'New Property', unit: '', city: '', state: '', zip: '' };
+    const parsed = (id) => ({ id, property: 'New Property', status: 'New', link: 'https://www.apartments.com/example/', propertyDetails: {} });
+    records = [
+      { ...parsed('withParts'), addressParts: { ...saved } },
+      parsed('noParts'),
+    ];
+    for (const id of ['withParts', 'noParts']) {
+      const before = JSON.stringify(records.find((r) => r.id === id));
+      showAddressEditorPopup(id);
+      H.check(fails, document.getElementById('addrEdStreet').value === '', id + ' address editor street: "' + document.getElementById('addrEdStreet').value + '"');
+      saveAddressEditor(id);
+      H.check(fails, JSON.stringify(records.find((r) => r.id === id)) === before, id + ' address editor save changed the record');
+      openCardEditor(id, 'contact');
+      const ce = document.getElementById('ce_address');
+      H.check(fails, ce && ce.value === '', id + ' contact card street: "' + (ce && ce.value) + '"');
+      saveContactCard(id);
+      const after = records.find((r) => r.id === id);
+      H.check(fails, after.property === 'New Property' && JSON.stringify(after.addressParts) === JSON.stringify(JSON.parse(before).addressParts), id + ' contact save changed name/address: ' + after.property + ' ' + JSON.stringify(after.addressParts));
+      document.getElementById('cardEditOverlay')?.remove();
+    }
+    return { fails };
+  },
   'Nit race timers are cleared, timeouts leave a trace line': async () => {
     const fails = [];
     const longTimers = new Map();

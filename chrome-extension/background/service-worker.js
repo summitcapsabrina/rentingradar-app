@@ -657,9 +657,12 @@ function marketCacheKey(lat, lng) {
 }
 
 // The cached { market, submarket } for key if it's younger than the TTL, else null.
+// An entry stamped more than a day in the future (a clock that was wrong) is a miss,
+// so it can't stay fresh forever.
 function marketCacheLookup(cache, key, now) {
   const e = cache && key ? cache[key] : null;
   if (!e || !e.market || !(now - e.at < MARKET_CACHE_TTL_MS)) return null;
+  if (e.at > now + 24 * 60 * 60 * 1000) return null;
   return { market: e.market, submarket: e.submarket || null };
 }
 
@@ -676,17 +679,21 @@ function marketCacheStore(cache, key, value, now) {
   return next;
 }
 
+// null when storage can't be read, so a write never replaces the whole cache with
+// one entry.
 async function _readMarketCache() {
   try {
     const got = await chrome.storage.local.get(MARKET_CACHE_KEY);
     return (got && got[MARKET_CACHE_KEY]) || {};
-  } catch (_) { return {}; }
+  } catch (_) { return null; }
 }
 
 // Writes queue up, so two lookups finishing together don't overwrite each other.
 function _writeMarketCache(key, value) {
   _marketCacheWrites = _marketCacheWrites.then(async () => {
-    const next = marketCacheStore(await _readMarketCache(), key, value, Date.now());
+    const current = await _readMarketCache();
+    if (!current) return;
+    const next = marketCacheStore(current, key, value, Date.now());
     await chrome.storage.local.set({ [MARKET_CACHE_KEY]: next });
   }).catch(() => {});
   return _marketCacheWrites;

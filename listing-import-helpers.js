@@ -149,6 +149,10 @@ function importDuplicateCheck(candidates, records) {
     .map((r) => ({ r, key: addressMatchKey(r.addressParts && r.addressParts.street ? r.addressParts : r.property) }));
   for (const [kind, test] of [['exact', addressKeysMatch], ['same-building', addressKeysSameBuilding]]) {
     for (const key of keys) {
+      // Geocoding can drop the unit the scraped text still has. When any candidate
+      // names a unit on this street, a unit-less one isn't evidence of the whole
+      // building, so it can't make 714 look like 715's building.
+      if (kind === 'same-building' && !key.unit && keys.some((o) => o.unit && o.street === key.street)) continue;
       const hit = saved.find((s) => test(key, s.key));
       if (hit) return { match: hit.r, key: addressKeyText(key), kind };
     }

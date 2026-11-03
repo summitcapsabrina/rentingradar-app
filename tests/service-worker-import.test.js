@@ -245,6 +245,26 @@ test('market cache: nearby coordinates share an entry, farther ones do not', asy
   assert.equal(w.counts.tabs, 2, 'about 2 km away');
 });
 
+test('market cache: a failed read never overwrites the cache', async () => {
+  const w = marketWorker([]);
+  let sets = 0;
+  w.ctx.chrome.storage.local.get = async () => { throw new Error('storage unavailable'); };
+  w.ctx.chrome.storage.local.set = async () => { sets++; };
+  const res = await w.lookup(30.38, -87.08);
+  assert.equal(res.market, 'Example Market, FL', 'the lookup still answers');
+  assert.equal(w.counts.tabs, 1);
+  assert.equal(sets, 0, 'no write');
+});
+
+test('market cache: an entry dated more than a day ahead is a miss', () => {
+  const w = marketWorker([]);
+  const now = Date.now();
+  const lookup = (at) => vm.runInContext('(c, k, n) => marketCacheLookup(c, k, n)', w.ctx)({ k: { market: 'M', submarket: null, at } }, 'k', now);
+  assert.equal(lookup(now + 2 * DAY), null);
+  assert.equal(lookup(now + 2 * 60 * 60 * 1000).market, 'M', 'a few hours of clock skew is fine');
+  assert.equal(lookup(now - DAY).market, 'M');
+});
+
 test('market cache: the cap drops the oldest entries', () => {
   const w = marketWorker([]);
   const store = vm.runInContext('(c, k, v, t) => marketCacheStore(c, k, v, t)', w.ctx);
