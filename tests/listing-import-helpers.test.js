@@ -129,9 +129,10 @@ test('importDuplicateCheck matches on any key and reports the key', () => {
   ], [rec]);
   assert.equal(res.match, rec);
   assert.equal(res.key, '8436 gulf blvd|714|32566');
+  assert.equal(res.kind, 'exact');
   const none = h.importDuplicateCheck([{ name: 'New Property' }, { name: '9 Main St, Navarre FL 32566' }], [rec]);
-  assert.deepEqual(none, { match: null, key: '9 main st||32566' });
-  assert.deepEqual(h.importDuplicateCheck([{ name: '' }], [rec]), { match: null, key: '' });
+  assert.deepEqual(none, { match: null, key: '9 main st||32566', kind: null });
+  assert.deepEqual(h.importDuplicateCheck([{ name: '' }], [rec]), { match: null, key: '', kind: null });
 });
 
 test('geocodedUnit never doubles a prefix', () => {
@@ -333,4 +334,62 @@ test('the extension and the app apply the same empty rule', () => {
     { sqft: 900 }, { bathrooms: 1 }, { bedrooms: 0 }, { units: [{ label: 'Unit 1' }], price: 1 }, { floorplans: [], price: 1 }]) {
     assert.equal(plans.scrapeIsEmpty(d), h.isEmptyImport(d), JSON.stringify(d));
   }
+});
+
+// Made-up addresses only.
+const SAVED_UNIT = { id: 'unit', property: '400 Example Way #2B, Sampletown FL 32000', addressParts: { street: '400 Example Way', unit: '2B', city: 'Sampletown', state: 'FL', zip: '32000' } };
+const SAVED_BUILDING = { id: 'bldg', property: '400 Example Way, Sampletown FL 32000', addressParts: { street: '400 Example Way', unit: '', city: 'Sampletown', state: 'FL', zip: '32000' } };
+
+test('a building listing against a saved unit is a same-building match', () => {
+  const res = h.importDuplicateCheck([{ name: '400 Example Way, Sampletown FL 32000', addressParts: { street: '400 Example Way', unit: '', zip: '32000' } }], [SAVED_UNIT]);
+  assert.equal(res.match, SAVED_UNIT);
+  assert.equal(res.kind, 'same-building');
+  assert.equal(res.key, '400 example way||32000');
+});
+
+test('a unit listing against a saved building is a same-building match', () => {
+  const res = h.importDuplicateCheck([{ name: '400 Example Way Unit 2B, Sampletown FL 32000' }], [SAVED_BUILDING]);
+  assert.equal(res.match, SAVED_BUILDING);
+  assert.equal(res.kind, 'same-building');
+});
+
+test('two different units are never a match of either kind', () => {
+  const k = (s) => h.addressMatchKey(s);
+  assert.equal(h.addressKeysSameBuilding(k('400 Example Way #714, Sampletown FL 32000'), k('400 Example Way #715, Sampletown FL 32000')), false);
+  const res = h.importDuplicateCheck([{ name: '400 Example Way #3C, Sampletown FL 32000' }], [SAVED_UNIT]);
+  assert.deepEqual([res.match, res.kind], [null, null]);
+});
+
+test('an exact match beats a same-building record listed earlier', () => {
+  const res = h.importDuplicateCheck([{ name: '400 Example Way #2B, Sampletown FL 32000' }], [SAVED_BUILDING, SAVED_UNIT]);
+  assert.equal(res.match, SAVED_UNIT);
+  assert.equal(res.kind, 'exact');
+  // and across candidates: a later candidate's exact match beats an earlier one's same-building match
+  const res2 = h.importDuplicateCheck([{ name: '400 Example Way, Sampletown FL 32000' }, { name: '400 Example Way #2B, Sampletown FL 32000' }], [SAVED_UNIT]);
+  assert.equal(res2.kind, 'exact');
+  assert.equal(res2.key, '400 example way|2b|32000');
+});
+
+test('a different zip is no match of either kind', () => {
+  const res = h.importDuplicateCheck([{ name: '400 Example Way, Sampletown FL 32999' }], [SAVED_UNIT]);
+  assert.deepEqual([res.match, res.kind], [null, null]);
+  assert.equal(h.addressKeysSameBuilding(h.addressMatchKey('400 Example Way, X FL'), h.addressMatchKey('400 Example Way #1, X FL')), true, 'a missing zip is compatible');
+});
+
+test('the old exact-only findImportDuplicate is unchanged (Co-Hosting uses it)', () => {
+  assert.equal(h.findImportDuplicate({ name: '400 Example Way, Sampletown FL 32000' }, [SAVED_UNIT]), null);
+  assert.equal(h.findImportDuplicate({ name: '400 Example Way #2B, Sampletown FL 32000' }, [SAVED_UNIT]), SAVED_UNIT);
+});
+
+test('a blank import whose street is the stand-in name is still blank', () => {
+  const r = { property: 'New Property', link: 'https://www.apartments.com/example-building/abc123/',
+    addressParts: { street: 'New Property', unit: '', city: '', state: '', zip: '' },
+    propertyDetails: { bedrooms: '', bathrooms: '', sqft: '', latitude: 42.33, longitude: -122.87 } };
+  assert.equal(h.isBlankImportedRecord(r), true);
+  assert.equal(h.isBlankImportedRecord({ ...r, addressParts: { ...r.addressParts, street: '12 Oak St' } }), false, 'a real street');
+});
+
+test('isStandInPropertyName only covers the app\'s own stand-ins', () => {
+  for (const n of ['', null, 'New Property', ' new property ', 'Single Unit', 'Multi Unit', 'New Co-Hosting Property']) assert.equal(h.isStandInPropertyName(n), true, String(n));
+  for (const n of ['Smith Duplex', 'Example Towers', '12 Oak St']) assert.equal(h.isStandInPropertyName(n), false, n);
 });

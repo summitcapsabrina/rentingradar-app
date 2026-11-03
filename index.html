@@ -9549,7 +9549,9 @@ async function geocodeExistingProperties(){
 async function _geocodeExistingPropertiesPass(){
   const toGeocode = records.filter(r => {
     const d = r.propertyDetails || {};
-    return !d.latitude && r.property && r.property.length > 5;
+    // A stand-in name ("New Property") is not an address: Places would pin it
+    // somewhere random.
+    return !d.latitude && r.property && r.property.length > 5 && !isStandInPropertyName(r.property);
   });
   if(!toGeocode.length) return;
 
@@ -12535,11 +12537,13 @@ async function handleExtensionListing(data) {
   let decidedDupId = null;
   const checkDuplicate = async () => {
     const res = importDuplicateCheck(dupCandidates, records);
-    _rrImportInFlightTrace('dup check: key=' + (res.key || '(none)') + ' records=' + records.length + ' match=' + (res.match ? res.match.id : 'none'));
+    _rrImportInFlightTrace('dup check: key=' + (res.key || '(none)') + ' records=' + records.length + ' match=' + (res.match ? res.match.id : 'none') + ' kind=' + (res.kind || 'none'));
     if (!res.match || res.match.id === decidedDupId) return 'none';
     decidedDupId = res.match.id;
-    const choice = await showDuplicateDialog(canonical, res.match);
-    if (choice === 'replace') replaceRecord = res.match;
+    const choice = await showDuplicateDialog(canonical, res.match, { kind: res.kind });
+    // A same-building match offers no Replace: a building-level record would
+    // overwrite a unit's data.
+    if (choice === 'replace' && res.kind === 'exact') replaceRecord = res.match;
     return choice;
   };
   if (!existingOnEntry) {
@@ -14218,7 +14222,10 @@ function formatDuplicateDate(r){
  *   Cancel Import  |  Keep Both  |  Replace Old
  * Returns a Promise that resolves to 'cancel', 'keep-both', or 'replace'.
  */
-function showDuplicateDialog(address, existingRecord){
+// opts.kind 'same-building': the import names no unit and a saved record does (or the
+// other way round). Keep Both and Cancel only; Replace would lose the unit's data.
+function showDuplicateDialog(address, existingRecord, opts){
+  const sameBuilding = !!(opts && opts.kind === 'same-building');
   return new Promise(function(resolve){
     const existing = document.getElementById('duplicateDialogOverlay');
     if(existing) existing.remove();
@@ -14233,12 +14240,12 @@ function showDuplicateDialog(address, existingRecord){
     overlay.id = 'duplicateDialogOverlay';
     overlay.innerHTML = `<div class="multi-editor" style="max-width:480px">
       <div class="multi-editor-header">
-        <h3>Duplicate Detected</h3>
+        <h3>${sameBuilding ? 'Possible duplicate: same building' : 'Duplicate Detected'}</h3>
         <button class="modal-close" id="dupDialogCloseBtn"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
       </div>
       <div class="multi-editor-body" style="text-align:center;padding:24px 20px">
         <div style="font-size:2.2rem;margin-bottom:12px">⚠️</div>
-        <div style="font-size:.95rem;color:var(--text);margin-bottom:8px;line-height:1.5">A property with this address already exists.</div>
+        <div style="font-size:.95rem;color:var(--text);margin-bottom:8px;line-height:1.5">${sameBuilding ? 'You already have a unit at this address. Keep both if this is a different unit or the whole building.' : 'A property with this address already exists.'}</div>
         <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:12px 16px;margin:0 auto 10px;max-width:400px;text-align:left">
           <div style="font-size:.72rem;color:var(--text3);margin-bottom:2px">Importing</div>
           <div style="font-weight:600;font-size:.9rem;color:var(--text);overflow-wrap:anywhere" id="dupDialogNewName">${newName}</div>
@@ -14253,7 +14260,7 @@ function showDuplicateDialog(address, existingRecord){
           <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
             <button class="btn btn-secondary" id="dupDialogCancelBtn" style="padding:10px 18px">Cancel Import</button>
             <button class="btn btn-secondary" id="dupDialogKeepBtn" style="padding:10px 18px">Keep Both</button>
-            <button class="btn" id="dupDialogReplaceBtn" style="padding:10px 18px;background:transparent;color:var(--danger);border:1px solid var(--danger)">Replace Old</button>
+            ${sameBuilding ? '' : '<button class="btn" id="dupDialogReplaceBtn" style="padding:10px 18px;background:transparent;color:var(--danger);border:1px solid var(--danger)">Replace Old</button>'}
           </div>
         </div>
         <div id="dupDialogConfirm" style="display:none">
@@ -14278,7 +14285,8 @@ function showDuplicateDialog(address, existingRecord){
     document.getElementById('dupDialogKeepBtn').addEventListener('click', () => dismiss('keep-both'));
 
     // Replace Old → show confirmation step
-    document.getElementById('dupDialogReplaceBtn').addEventListener('click', () => {
+    const replaceBtn = document.getElementById('dupDialogReplaceBtn');
+    if(replaceBtn) replaceBtn.addEventListener('click', () => {
       document.getElementById('dupDialogChoices').style.display = 'none';
       document.getElementById('dupDialogConfirm').style.display = 'block';
     });
@@ -35657,7 +35665,7 @@ function showAddressEditorPopup(recId){
     <div class="sp-desc">Update the property address shown in the profile header.</div>
     <div style="margin-bottom:12px;position:relative">
       <label style="display:block;font-size:.7rem;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px">Street Address</label>
-      <input type="text" id="addrEdStreet" value="${esc(fd('addrEdStreet', addr.street || r.property))}" placeholder="Start typing an address..." style="font-size:.9rem;padding:7px 10px;width:100%" autocomplete="off" data-form-type="other">
+      <input type="text" id="addrEdStreet" value="${esc(fd('addrEdStreet', addr.street || (isStandInPropertyName(r.property) ? '' : r.property)))}" placeholder="Start typing an address..." style="font-size:.9rem;padding:7px 10px;width:100%" autocomplete="off" data-form-type="other">
     </div>
     <div class="sp-grid">
       <div class="sp-field">
@@ -35749,8 +35757,12 @@ function saveAddressEditor(recId){
     if(!addrParts.zip && selected.zip) addrParts.zip = selected.zip;
   }
 
-  r.addressParts = addrParts;
-  r.property = formatAddressOneLine(addrParts);
+  // An empty address on a stand-in record stays as it was, rather than wiping the
+  // name or saving "New Property" as the street.
+  if(formatAddressOneLine(addrParts) || !isStandInPropertyName(r.property)){
+    r.addressParts = addrParts;
+    r.property = formatAddressOneLine(addrParts);
+  }
 
   // Save geolocation if captured from autocomplete
   if(window._selectedGeoLocation){
@@ -36488,7 +36500,7 @@ function openCardEditor(recId, cardType, focusField){
     const isAvailNow = d.availableDate === 'now';
     fieldsHtml = `
       ${r.recordType==='apartment' ? `<div class="prop-field" style="margin-bottom:6px"><label>Building Name</label><input type="text" id="ce_buildingName" value="${esc(fd('ce_buildingName', r.buildingName||''))}" placeholder="e.g. The Grand at Riverside"></div>` : ''}
-      <div class="prop-field" style="margin-bottom:6px;position:relative"><label>Address</label><input type="text" id="ce_address" value="${esc(fd('ce_address', ceAddr.street || r.property))}" placeholder="Start typing an address..." autocomplete="off"></div>
+      <div class="prop-field" style="margin-bottom:6px;position:relative"><label>Address</label><input type="text" id="ce_address" value="${esc(fd('ce_address', ceAddr.street || (isStandInPropertyName(r.property) ? '' : r.property)))}" placeholder="Start typing an address..." autocomplete="off"></div>
       <div class="prop-field-grid" style="margin-bottom:10px">
         <div class="prop-field"><label>Unit Type</label><select id="ce_unit_type" style="font-size:.9rem;padding:7px 10px;width:100%">
           <option value="">No unit</option>
@@ -36636,7 +36648,9 @@ function saveContactCard(recId){
     zip: zipVal || selected.zip || '',
   };
   const newAddr = formatAddressOneLine(addrParts);
-  if(newAddr !== r.property || JSON.stringify(addrParts) !== JSON.stringify(r.addressParts)){
+  // An empty address on a stand-in record stays as it was (see saveAddressEditor).
+  const keepStandIn = !newAddr && isStandInPropertyName(r.property);
+  if(!keepStandIn && (newAddr !== r.property || JSON.stringify(addrParts) !== JSON.stringify(r.addressParts))){
     r.property = newAddr;
     r.addressParts = addrParts;
   }

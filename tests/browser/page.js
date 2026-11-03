@@ -354,7 +354,7 @@ H.scenarios = {
       const out = await _rrRunListingImport('u', () => handleExtensionListing(single(8436, { address: '8436 Gulf Blvd Unit 714, Navarre, FL 32566' })));
       H.check(fails, out === 'cancelled' && shown === 'r714', 'matched r714 on the scraped address: ' + out + ' ' + shown);
     } finally { console.log = realLog; }
-    H.check(fails, traces.some((t) => /dup check: key=8436 gulf blvd\|714\|32566 records=1 match=r714$/.test(t)), 'trace line: ' + traces.filter((t) => t.includes('dup')));
+    H.check(fails, traces.some((t) => /dup check: key=8436 gulf blvd\|714\|32566 records=1 match=r714 kind=exact$/.test(t)), 'trace line: ' + traces.filter((t) => t.includes('dup')));
     return { fails };
   },
   'T5b a record that syncs in during the import is caught before saving': async () => {
@@ -595,6 +595,73 @@ H.scenarios = {
       delete auth.createUserWithEmailAndPassword;
       localStorage.removeItem(verifyEmailKey('v2'));
     }
+    return { fails };
+  },
+  'T5c a building listing against a saved unit asks "same building", no Replace': async () => {
+    const fails = [];
+    const traces = [];
+    const realLog = console.log;
+    console.log = function (a, b) { if (a === '[RR import trace]') traces.push(String(b)); return realLog.apply(console, arguments); };
+    const unit = { id: 'u2b', property: '400 Example Way #2B, Navarre FL 32566', addressParts: { street: '400 Example Way', unit: '#2B', city: 'Navarre', state: 'FL', zip: '32566' }, propertyDetails: {} };
+    records = [unit];
+    try {
+      const run = _rrRunListingImport('u', () => handleExtensionListing(single(400, { address: '400 Example Way, Navarre, FL 32566' })));
+      const shown = await H.until(() => document.getElementById('duplicateDialogOverlay'), 4000);
+      H.check(fails, shown, 'dialog shown');
+      const ov = document.getElementById('duplicateDialogOverlay');
+      const text = ov ? ov.textContent : '';
+      H.check(fails, text.includes('Possible duplicate: same building'), 'title');
+      H.check(fails, text.includes('You already have a unit at this address. Keep both if this is a different unit or the whole building.'), 'line');
+      H.check(fails, !!document.getElementById('dupDialogKeepBtn') && !!document.getElementById('dupDialogCancelBtn'), 'Keep Both and Cancel Import offered');
+      H.check(fails, !document.getElementById('dupDialogReplaceBtn') && !/Replace Old/.test(document.getElementById('dupDialogChoices').textContent), 'no Replace Old');
+      document.getElementById('dupDialogCancelBtn').click();
+      const out = await run;
+      H.check(fails, out === 'cancelled' && records.length === 1 && records[0].id === 'u2b' && H.log.saves.length === 0, 'Cancel saves nothing: ' + out + ' ' + records.map((r) => r.id) + ' saves=' + H.log.saves.length);
+    } finally { console.log = realLog; }
+    H.check(fails, traces.some((t) => / dup check: key=400 example way\|\|32566 records=1 match=u2b kind=same-building$/.test(t)), 'trace: ' + traces.filter((t) => t.includes('dup')));
+    return { fails };
+  },
+  'T5c same building: Keep Both saves the new record; an exact match keeps Replace Old': async () => {
+    const fails = [];
+    const unit = { id: 'u2b', property: '400 Example Way #2B, Navarre FL 32566', addressParts: { street: '400 Example Way', unit: '#2B', city: 'Navarre', state: 'FL', zip: '32566' }, propertyDetails: {} };
+    records = [unit];
+    const run = _rrRunListingImport('u', () => handleExtensionListing(single(400, { address: '400 Example Way, Navarre, FL 32566' })));
+    await H.until(() => document.getElementById('dupDialogKeepBtn'), 4000);
+    document.getElementById('dupDialogKeepBtn').click();
+    const out = await run;
+    H.check(fails, out === 'created' && records.length === 2 && records.some((r) => r.id === 'u2b'), 'kept both: ' + out + ' ' + records.length);
+    const p = showDuplicateDialog('400 Example Way #2B', unit, { kind: 'exact' });
+    const exact = document.getElementById('duplicateDialogOverlay').textContent;
+    H.check(fails, !!document.getElementById('dupDialogReplaceBtn') && exact.includes('Duplicate Detected') && exact.includes('A property with this address already exists.'), 'exact dialog unchanged');
+    document.getElementById('dupDialogCancelBtn').click();
+    await p;
+    return { fails };
+  },
+  'T5c a stand-in name is never geocoded, and editors keep it out of the street': async () => {
+    const fails = [];
+    const queries = [];
+    const realFetch = window.fetch;
+    window.fetch = async (url, opts) => {
+      if (String(url).includes('places.googleapis.com')) { queries.push(JSON.parse(opts.body).textQuery); return { json: async () => ({ places: [{ location: { latitude: 1, longitude: 2 } }] }) }; }
+      return realFetch(url, opts);
+    };
+    const realSet = window.setTimeout;
+    window.setTimeout = function (fn, ms, ...rest) { return realSet.call(window, fn, ms === 250 ? 0 : ms, ...rest); };
+    records = [
+      { id: 'blank', property: 'New Property', link: 'https://www.apartments.com/example/', addressParts: { street: '', unit: '', city: '', state: '', zip: '' }, propertyDetails: {} },
+      { id: 'real', property: '12 Oak St, Navarre FL 32566', propertyDetails: {} },
+    ];
+    try {
+      await _geocodeExistingPropertiesPass();
+    } finally { window.fetch = realFetch; window.setTimeout = realSet; }
+    H.check(fails, queries.join('|') === '12 Oak St, Navarre FL 32566', 'geocoded: ' + queries.join('|'));
+    H.check(fails, records[0].propertyDetails.latitude == null, 'no lat/lng on the blank record');
+    // The address editor opens with an empty street for a stand-in and saving it changes nothing.
+    showAddressEditorPopup('blank');
+    H.check(fails, document.getElementById('addrEdStreet').value === '', 'editor street prefill: ' + document.getElementById('addrEdStreet').value);
+    saveAddressEditor('blank');
+    H.check(fails, records[0].property === 'New Property' && records[0].addressParts.street === '', 'saved: ' + records[0].property + ' / ' + records[0].addressParts.street);
+    H.check(fails, isBlankImportedRecord(records[0]), 'still listed by cleanup');
     return { fails };
   },
   'Nit race timers are cleared, timeouts leave a trace line': async () => {
