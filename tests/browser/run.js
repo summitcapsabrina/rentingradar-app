@@ -41,9 +41,13 @@ async function main() {
     let id = 0;
     const waiting = new Map();
     const events = [];
+    const consoleLines = [];
     ws.onmessage = (e) => {
       const m = JSON.parse(e.data);
-      if (m.id && waiting.has(m.id)) { waiting.get(m.id)(m); waiting.delete(m.id); } else if (m.method) events.push(m);
+      if (m.id && waiting.has(m.id)) { waiting.get(m.id)(m); waiting.delete(m.id); } else if (m.method) {
+        events.push(m);
+        if (m.method === 'Runtime.consoleAPICalled') consoleLines.push(m.params.args.map((a) => (a.value !== undefined ? String(a.value) : a.description || '')).join(' '));
+      }
     };
     const send = (method, params) => new Promise((resolve, reject) => {
       const n = ++id;
@@ -100,6 +104,19 @@ async function main() {
     const ok = reloaded && log === 'first,queued';
     if (!ok) failed++;
     console.log((ok ? 'ok   ' : 'FAIL ') + 'S5 a reload waits until the queued popup import has run' + (ok ? '' : '\n       - reloaded=' + reloaded + ' ran=' + log));
+    // That reload came from the app, so the new page names it.
+    const said = consoleLines.filter((l) => l.startsWith('[RR reload]'));
+    const okReason = said.some((l) => l === '[RR reload] reload service worker update, after an import at ' + l.split(' at ')[1]);
+    if (!okReason) failed++;
+    console.log((okReason ? 'ok   ' : 'FAIL ') + 'T5b an app reload logs its reason on the next load' + (okReason ? '' : '\n       - ' + JSON.stringify(said)));
+    // A reload the app didn't start says so.
+    consoleLines.length = 0;
+    await send('Page.reload');
+    for (let i = 0; i < 40 && !consoleLines.some((l) => l.startsWith('[RR reload]')); i++) await sleep(100);
+    const plain = consoleLines.find((l) => l.startsWith('[RR reload]'));
+    const okPlain = plain === '[RR reload] reload not app-initiated';
+    if (!okPlain) failed++;
+    console.log((okPlain ? 'ok   ' : 'FAIL ') + 'T5b a user reload logs "not app-initiated"' + (okPlain ? '' : '\n       - ' + plain));
     console.log(failed ? '\n' + failed + ' scenario(s) failed' : '\nall scenarios passed');
     if (failed) process.exitCode = 1;
     ws.close();

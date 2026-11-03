@@ -341,6 +341,114 @@ H.scenarios = {
     H.check(fails, seen.join() === 'button,escape,programmatic', 'reasons: ' + seen.join());
     return { fails };
   },
+  'T5b duplicate found by the scraped address when geocoding drops the unit': async () => {
+    const fails = [];
+    const traces = [];
+    const realLog = console.log;
+    console.log = function (a, b) { if (a === '[RR import trace]') traces.push(String(b)); return realLog.apply(console, arguments); };
+    let shown = null;
+    showDuplicateDialog = async (addr, rec) => { shown = rec.id; return 'cancel'; };
+    rrGeocodeAddress = async () => ({ lat: 30, lng: -87, street: '8436 Gulf Blvd', unit: '', city: 'Navarre', state: 'FL', zip: '32566', formattedAddress: '8436 Gulf Blvd' });
+    records = [{ id: 'r714', property: '8436 Gulf Blvd #Unit 714, Navarre FL 32566', addressParts: { street: '8436 Gulf Blvd', unit: '#Unit 714', city: 'Navarre', state: 'FL', zip: '32566' }, propertyDetails: {} }];
+    try {
+      const out = await _rrRunListingImport('u', () => handleExtensionListing(single(8436, { address: '8436 Gulf Blvd Unit 714, Navarre, FL 32566' })));
+      H.check(fails, out === 'cancelled' && shown === 'r714', 'matched r714 on the scraped address: ' + out + ' ' + shown);
+    } finally { console.log = realLog; }
+    H.check(fails, traces.some((t) => /dup check: key=8436 gulf blvd\|714\|32566 records=1 match=r714$/.test(t)), 'trace line: ' + traces.filter((t) => t.includes('dup')));
+    return { fails };
+  },
+  'T5b a record that syncs in during the import is caught before saving': async () => {
+    const fails = [];
+    const traces = [];
+    const realLog = console.log;
+    console.log = function (a, b) { if (a === '[RR import trace]') traces.push(String(b)); return realLog.apply(console, arguments); };
+    let dialogs = 0;
+    showDuplicateDialog = async () => { dialogs++; return 'cancel'; };
+    const realGeo = rrGeocodeAddress;
+    // The other tab's record lands by sync while this import waits on the geocoder.
+    rrGeocodeAddress = async (a) => { const g = await realGeo(a); records.push({ id: 'synced', property: '8522 Gulf Blvd, Navarre FL 32566', addressParts: { street: '8522 Gulf Blvd', unit: '', zip: '32566' }, propertyDetails: {} }); return g; };
+    records = [];
+    try {
+      const out = await _rrRunListingImport('u', () => handleExtensionListing(single(8522)));
+      H.check(fails, out === 'cancelled' && dialogs === 1 && records.length === 1, 'caught: ' + out + ' dialogs=' + dialogs + ' records=' + records.length);
+    } finally { console.log = realLog; }
+    // Simulates the sync landing after the first check instead.
+    records = [];
+    dialogs = 0;
+    rrGeocodeAddress = realGeo;
+    const realLimit = checkPropertyLimit;
+    checkPropertyLimit = () => { records.push({ id: 'late', property: '8522 Gulf Blvd, Navarre FL 32566', propertyDetails: {} }); return true; };
+    const out2 = await _rrRunListingImport('u', () => handleExtensionListing(single(8522)));
+    checkPropertyLimit = realLimit;
+    H.check(fails, out2 === 'cancelled' && dialogs === 1 && records.length === 1 && records[0].id === 'late', 'the second check caught it: ' + out2 + ' dialogs=' + dialogs + ' ' + records.map((x) => x.id));
+    H.check(fails, traces.filter((t) => t.includes('dup check')).length >= 1, 'trace lines written');
+    return { fails };
+  },
+  'T5b the duplicate dialog shows the existing record and the new one': async () => {
+    const fails = [];
+    const p = showDuplicateDialog('8436 Gulf Blvd #714, Navarre FL 32566', { id: 'x', property: '8436 Gulf Blvd Unit 714, Navarre FL 32566', status: 'Contacted', createdAt: new Date().toISOString() });
+    const ov = document.getElementById('duplicateDialogOverlay');
+    H.check(fails, ov && document.getElementById('dupDialogNewName').textContent === '8436 Gulf Blvd #714, Navarre FL 32566', 'new name shown');
+    H.check(fails, ov && document.getElementById('dupDialogExistingName').textContent === '8436 Gulf Blvd Unit 714, Navarre FL 32566', 'existing name shown');
+    document.getElementById('dupDialogCancelBtn').click();
+    H.check(fails, (await p) === 'cancel', 'still answers');
+    return { fails };
+  },
+  'T5b cleanup lists a rent-only junk profile and one with no link, unchecked': async () => {
+    const fails = [];
+    records = [
+      { id: 'junk', property: 'Apartments for Rent in Dallas TX | Apartments.com', link: 'https://www.apartments.com/dallas-tx/', addressParts: { street: '' }, propertyDetails: { monthlyRent: 500 } },
+      { id: 'nolink', property: 'New Property', propertyDetails: {} },
+      { id: 'real', property: 'New Property', link: 'https://www.zillow.com/a', propertyDetails: { bedrooms: 2, monthlyRent: 1900 } },
+    ];
+    openBlankImportCleanupModal();
+    const boxes = Array.from(document.querySelectorAll('#blankImportCleanupOverlay input[data-blank-id]'));
+    H.check(fails, boxes.map((b) => b.getAttribute('data-blank-id')).join() === 'junk,nolink', 'listed: ' + boxes.map((b) => b.getAttribute('data-blank-id')));
+    H.check(fails, boxes.every((b) => !b.checked), 'all unchecked');
+    const text = document.getElementById('blankImportCleanupOverlay').textContent;
+    H.check(fails, text.includes('no source link') && text.includes('apartments.com/dallas-tx'), 'link or "no source link" shown');
+    // The delete-time recheck: the junk profile gains beds by sync after listing.
+    boxes.forEach((b) => { b.checked = true; });
+    records[0].propertyDetails.bedrooms = 1;
+    showAppConfirm = (msg, o) => o.onConfirm();
+    _confirmBlankImportCleanup();
+    H.check(fails, records.map((r) => r.id).join() === 'junk,real', 'recheck kept the filled-in one: ' + records.map((r) => r.id));
+    return { fails };
+  },
+  'T5b a load that never answers shows Try again, not endless loading': async () => {
+    const fails = [];
+    const warns = [];
+    const realWarn = console.warn;
+    console.warn = function (a, b) { if (a === '[RR] account load timed out:') warns.push(b); return realWarn.apply(console, arguments); };
+    const realSet = window.setTimeout;
+    window.setTimeout = function (fn, ms, ...rest) { return realSet.call(window, fn, ms === 20000 ? 40 : ms, ...rest); };
+    const hang = () => new Promise(() => {});
+    const user = { uid: 'harness2', email: 'h@example.com', displayName: 'H', emailVerified: true, providerData: [{ providerId: 'google.com' }], getIdToken: async () => 'x' };
+    try {
+      for (const step of ['user doc', 'records']) {
+        db.collection = () => new Proxy(function () {}, {
+          get(_, k) {
+            if (k === 'then') return undefined;
+            if (k === 'get') return () => (step === 'user doc' ? hang() : Promise.resolve({ exists: true, data: () => ({ tier: 'pro', subscriptionStatus: 'active', disclaimerAcknowledged: true }) }));
+            if (k === 'set' || k === 'update' || k === 'delete') return async () => {};
+            if (k === 'onSnapshot') return () => () => {};
+            if (k === 'doc') return (id) => (id === 'records' ? { get: hang, onSnapshot: () => () => {}, set: async () => {} } : db.collection());
+            return db.collection();
+          },
+          apply() { return db.collection(); },
+        });
+        _currentUid = null; _authDataLoaded = false; _authLoadError = null; records = [{ id: 'keep' }];
+        await _handleAuthUser(user);
+        await H.wait(50);
+        const area = document.getElementById('contentArea').textContent;
+        H.check(fails, _authLoadError && _authLoadError._rrLoadTimeout, step + ': _authLoadError set');
+        H.check(fails, !_currentUid, step + ': not left half signed in');
+        H.check(fails, area.includes("We couldn't load your account") && area.includes('Try again') && area.includes('Loading timed out (' + step + ')'), step + ': Try again screen: ' + area.slice(0, 160));
+        H.check(fails, warns.includes(step), step + ': step logged: ' + warns);
+      }
+    } finally { window.setTimeout = realSet; console.warn = realWarn; }
+    return { fails };
+  },
   'Nit race timers are cleared, timeouts leave a trace line': async () => {
     const fails = [];
     const longTimers = new Map();

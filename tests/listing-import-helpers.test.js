@@ -58,18 +58,78 @@ test('the same real address twice is still a duplicate', () => {
   assert.equal(h.findImportDuplicate({ name: '8522 Gulf Blvd Apt 4, Navarre FL 32566' }, [{ id: 'old', property: '8522 Gulf Blvd Apt 4, Navarre FL 32566' }]).id, 'old');
 });
 
-test('isBlankImportedRecord needs all four conditions', () => {
+test('isBlankImportedRecord: stand-in name, no street, no beds, baths or sq ft', () => {
   const blank = { property: 'New Property', link: 'https://www.apartments.com/x/y/', addressParts: { street: '' }, propertyDetails: {} };
   assert.equal(h.isBlankImportedRecord(blank), true);
-  assert.equal(h.isBlankImportedRecord({ ...blank, link: '' }), false, 'no import link');
-  assert.equal(h.isBlankImportedRecord({ ...blank, link: 'https://evil-zillow.example/x' }), false);
   assert.equal(h.isBlankImportedRecord({ ...blank, property: '12 Main St' }), false, 'real name');
   assert.equal(h.isBlankImportedRecord({ ...blank, addressParts: { street: '12 Main St' } }), false, 'has a street');
   assert.equal(h.isBlankImportedRecord({ ...blank, propertyDetails: { bedrooms: 0 } }), false, 'a studio has data');
-  assert.equal(h.isBlankImportedRecord({ ...blank, propertyDetails: { monthlyRent: 1900 } }), false);
+  assert.equal(h.isBlankImportedRecord({ ...blank, propertyDetails: { sqft: 900 } }), false);
   ['https://www.zillow.com/a', 'https://hotpads.com/a', 'https://www.facebook.com/marketplace/item/1', 'https://sfbay.craigslist.org/a'].forEach((link) => {
     assert.equal(h.isBlankImportedRecord({ ...blank, link }), true, link);
   });
+});
+
+test('a rent alone or a missing link no longer keeps a record out of cleanup', () => {
+  const junk = { property: 'Apartments for Rent in Dallas TX | Apartments.com', link: 'https://www.apartments.com/dallas-tx/', addressParts: { street: '' }, propertyDetails: { monthlyRent: 500, propertyType: 'Apartment' } };
+  assert.equal(h.isBlankImportedRecord(junk), true, 'rent 500 + apartments link');
+  assert.equal(h.blankImportSourceLink(junk), 'https://www.apartments.com/dallas-tx/');
+  const noLink = { property: 'New Property', propertyDetails: {} };
+  assert.equal(h.isBlankImportedRecord(noLink), true, 'no link');
+  assert.equal(h.blankImportSourceLink(noLink), '');
+  assert.equal(h.blankImportSourceLink({ ...noLink, link: 'https://evil-zillow.example/x' }), '', 'not a listing link');
+  assert.equal(h.blankImportSourceLink({ ...noLink, _aiSourceUrl: 'https://www.zillow.com/a' }), 'https://www.zillow.com/a');
+  assert.equal(h.isBlankImportedRecord({ ...junk, propertyDetails: { monthlyRent: 1900, bedrooms: 2 } }), false, 'a real record with beds');
+});
+
+test('unit prefixes stack and all normalize to the number', () => {
+  const key = (x) => h.addressMatchKey(x).unit;
+  for (const a of ['8436 Gulf Blvd #Unit 714, Navarre FL 32566', '8436 Gulf Blvd Unit #714, Navarre FL 32566', '8436 Gulf Blvd #714, Navarre FL 32566',
+    '8436 Gulf Blvd Apt 714, Navarre FL 32566', '8436 Gulf Blvd, #Unit 714, Navarre FL 32566', '8436 Gulf Blvd, Unit 714']) {
+    assert.equal(key(a), '714', a);
+  }
+  for (const u of ['#Unit 714', 'Unit 714', '#714', 'Apt 714', 'unit #714', '714']) assert.equal(key({ street: '8436 Gulf Blvd', unit: u }), '714', u);
+  assert.equal(h.addressMatchKey('8436 Gulf Blvd #Unit 714, Navarre FL 32566').street, '8436 gulf blvd');
+});
+
+test('different units in one building are never duplicates', () => {
+  const dup = (a, b) => h.addressKeysMatch(h.addressMatchKey(a), h.addressMatchKey(b));
+  assert.equal(dup('8436 Gulf Blvd, #Unit 714', { street: '8436 Gulf Blvd', unit: 'Unit 714' }), true);
+  assert.equal(dup('8436 Gulf Blvd, Unit 714', '8436 Gulf Blvd, Unit 715'), false, 'one-line, no zip');
+  assert.equal(dup({ street: '8436 Gulf Blvd', unit: '#Unit 714' }, { street: '8436 Gulf Blvd', unit: '714' }), true);
+  const rec = { id: 'r714', property: '8436 Gulf Blvd, #Unit 714' };
+  assert.equal(h.findImportDuplicate({ name: '8436 Gulf Blvd Unit 714, Navarre FL 32566', addressParts: { street: '8436 Gulf Blvd', unit: 'Unit 714', zip: '32566' } }, [rec]), rec);
+  assert.equal(h.findImportDuplicate({ name: '8436 Gulf Blvd, Unit 715' }, [rec]), null);
+});
+
+test('importDuplicateCheck matches on any key and reports the key', () => {
+  const rec = { id: 'r714', property: '8436 Gulf Blvd #714, Navarre FL 32566' };
+  // Geocoding lost the unit, the scraped text still has it.
+  const res = h.importDuplicateCheck([
+    { name: '8436 Gulf Blvd, Navarre FL 32566', addressParts: { street: '8436 Gulf Blvd', unit: '', zip: '32566' } },
+    { name: '8436 Gulf Blvd, Navarre FL 32566' },
+    { name: '8436 Gulf Blvd #714, Navarre, FL 32566' },
+  ], [rec]);
+  assert.equal(res.match, rec);
+  assert.equal(res.key, '8436 gulf blvd|714|32566');
+  const none = h.importDuplicateCheck([{ name: 'New Property' }, { name: '9 Main St, Navarre FL 32566' }], [rec]);
+  assert.deepEqual(none, { match: null, key: '9 main st||32566' });
+  assert.deepEqual(h.importDuplicateCheck([{ name: '' }], [rec]), { match: null, key: '' });
+});
+
+test('geocodedUnit never doubles a prefix', () => {
+  assert.equal(h.geocodedUnit('714', '8436 Gulf Blvd #714, Navarre FL'), '#714');
+  assert.equal(h.geocodedUnit('714', '8436 Gulf Blvd Unit 714, Navarre FL'), 'Unit 714');
+  assert.equal(h.geocodedUnit('Unit 714', '8436 Gulf Blvd #714, Navarre FL'), 'Unit 714');
+  assert.equal(h.geocodedUnit('#714', '8436 Gulf Blvd Unit 714'), '#714');
+  assert.equal(h.geocodedUnit('#Unit 714', ''), 'Unit 714');
+  assert.equal(h.geocodedUnit('', '8522 Gulf Blvd APT 4, Navarre FL'), 'Apt 4');
+  assert.equal(h.geocodedUnit('', '8436 Gulf Blvd #Unit 714, Navarre FL'), 'Unit 714');
+  assert.equal(h.geocodedUnit('', '8436 Gulf Blvd, Navarre FL'), '');
+  assert.equal(h.geocodedUnit('4B', '1 Main St Ste. 4B'), 'Ste 4B');
+  for (const [sub, raw] of [['714', '#Unit 714'], ['Unit 714', '#714'], ['', '#Unit 714'], ['', 'Unit #714'], ['#Unit 714', '#714']]) {
+    assert.doesNotMatch(h.geocodedUnit(sub, raw), /#\s*unit/i, sub + ' / ' + raw);
+  }
 });
 
 test('formatPlanLabel', () => {
