@@ -2030,6 +2030,7 @@ tr.unit-row-excluded{opacity:.55}
 <script src="https://unpkg.com/maplibre-gl@4.1.1/dist/maplibre-gl.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 <script src="/comp-import-helpers.js"></script>
+<script src="/email-verify-guard.js"></script>
 <script src="/listing-import-helpers.js"></script>
 </head>
 <body>
@@ -2662,6 +2663,8 @@ function mgShareLink(){
       var cred = await firebase.auth().createUserWithEmailAndPassword(email, pw);
       try { if(cred && cred.user) await cred.user.updateProfile({ displayName: name }); } catch(e){ /* non-fatal */ }
       try { if(window.rrTrackSignup) rrTrackSignup('email', email); } catch(e){}
+      // The one automatic verification email; the overlay itself never sends.
+      try { if(cred && cred.user && typeof _sendVerificationEmail === 'function') _sendVerificationEmail(cred.user, 'signup (mobile)'); } catch(e){}
       // onAuthStateChanged fires → desktop's email-verification overlay appears.
     } catch(e){
       var code = (e && e.code) || '';
@@ -21483,9 +21486,14 @@ function handleEmailSignUp(){
   if(password !== confirm){ showAuthError('Passwords do not match.'); return; }
   setAuthLoading(true);
   firebase.auth().createUserWithEmailAndPassword(email, password).then(function(result){
-    return result.user.updateProfile({ displayName: name }).then(function(){
+    // The account exists either way, so a failed display-name update must not stop the
+    // verification email (same as mgEmailSignUp).
+    return result.user.updateProfile({ displayName: name }).catch(function(e){
+      console.warn('updateProfile after signup failed:', e && (e.code || e.message));
+    }).then(function(){
       try { if(window.rrTrackSignup) rrTrackSignup('email', result.user.email); } catch(e){}
-      // Verification email is sent by showEmailVerificationScreen via onAuthStateChanged
+      // The one automatic verification email. The overlay itself never sends.
+      _sendVerificationEmail(result.user, 'signup');
       closeAuthModal();
       setUser(result.user);
     });
@@ -21526,7 +21534,64 @@ function handlePasswordReset(){
 }
 
 // ===== EMAIL VERIFICATION SCREEN =====
-let _emailVerifyResendCooldown = false;
+// Verification emails go out at signup and on Resend, never because this screen
+// rendered: each send can replace the previous link, and every app load (reload, new
+// tab, "Open RentingRadar" from the link page) shows this screen again. The guard in
+// email-verify-guard.js keeps one cooldown per user across tabs and reloads.
+const _verifyEmailSender = createVerifyEmailSender({
+  storage: (function(){ try { return window.localStorage; } catch(e){ return null; } })(),
+  now: function(){ return Date.now(); },
+});
+const RR_EMAIL_VERIFIED_KEY = 'rr_emailVerifiedAt';
+let _verifyWatch = null;
+let _verifyCheckRunning = false;
+let _verifyReloading = false;
+
+function _verifyStorage(){ try { return window.localStorage; } catch(e){ return null; } }
+
+function _setVerifyMsg(color, text){
+  const msg = document.getElementById('emailVerifyMsg');
+  if(msg){ msg.style.color = color; msg.textContent = text; }
+}
+
+// Sends through the guard and says what happened on the overlay, if it's up yet.
+function _sendVerificationEmail(user, reason){
+  if(!user) return Promise.resolve({ status: 'error', waitMs: 0 });
+  const btn = document.getElementById('emailVerifyResendBtn');
+  if(btn && reason === 'resend'){ btn.disabled = true; btn.textContent = 'Sending...'; }
+  return _verifyEmailSender.trySend(user.uid, function(){ return user.sendEmailVerification(); }).then(function(res){
+    // The send has settled, so "Sending..." is over whatever the outcome. Below, the
+    // button becomes either the countdown or an enabled Resend.
+    const sendingBtn = document.getElementById('emailVerifyResendBtn');
+    if(sendingBtn && sendingBtn.textContent === 'Sending...') sendingBtn.textContent = 'Resend Verification Email';
+    console.info('[RR] verification email:', reason, res.status);
+    if(res.status === 'sent') _setVerifyMsg('var(--success,#3fb950)', 'Verification email sent! Check your inbox.');
+    else if(res.status === 'rate-limited') _setVerifyMsg('var(--warning,#d29922)', 'Too many attempts. Please wait a few minutes, then try again.');
+    else if(res.status === 'error'){
+      console.error('sendEmailVerification error:', res.error);
+      _setVerifyMsg('var(--danger,#f85149)', 'Failed to send email. Please try again.');
+    }
+    _renderResendState();
+    return res;
+  });
+}
+
+// The Resend button follows the stored timestamp, so the countdown survives a reload
+// and matches in every tab.
+function _renderResendState(){
+  const btn = document.getElementById('emailVerifyResendBtn');
+  const user = firebase.auth().currentUser;
+  if(!btn || !user) return;
+  const waitMs = verifyEmailWaitMs(_verifyStorage(), user.uid, Date.now());
+  if(waitMs > 0){
+    btn.disabled = true;
+    btn.textContent = 'Resend in ' + Math.ceil(waitMs / 1000) + 's';
+    if(waitMs > VERIFY_EMAIL_COOLDOWN_MS) _setVerifyMsg('var(--warning,#d29922)', 'Too many attempts. Please wait a few minutes, then try again.');
+  } else if(btn.textContent !== 'Sending...'){
+    btn.disabled = false;
+    btn.textContent = 'Resend Verification Email';
+  }
+}
 
 function showEmailVerificationScreen(user){
   if(document.getElementById('emailVerifyOverlay')) return;
@@ -21537,10 +21602,10 @@ function showEmailVerificationScreen(user){
     <div style="font-size:48px;margin-bottom:16px">📧</div>
     <h2 style="color:var(--text,#e6edf3);font-size:1.4rem;margin:0 0 8px;font-weight:700">Verify Your Email</h2>
     <p style="color:var(--text2,#8b949e);font-size:.92rem;line-height:1.5;margin:0 0 20px">
-      We sent a verification link to<br><strong style="color:var(--text,#e6edf3)">${esc(user.email)}</strong>
+      Check <strong style="color:var(--text,#e6edf3)">${esc(user.email)}</strong> for a verification link
     </p>
     <p style="color:var(--text3,#6e7681);font-size:.82rem;line-height:1.5;margin:0 0 24px">
-      Please check your inbox (and spam folder) and click the verification link, then come back and click the button below.
+      Please check your inbox (and spam folder) and click the verification link. This page updates by itself once you have, or click the button below.<br>Didn't get it, or the link expired? Use Resend below.
     </p>
     <button id="emailVerifyCheckBtn" onclick="_checkEmailVerified()" style="display:block;width:100%;padding:11px 0;font-size:.92rem;font-weight:600;border:none;border-radius:8px;background:var(--primary,#2f81f7);color:#fff;cursor:pointer;font-family:inherit;margin-bottom:12px;transition:opacity .15s">I've Verified My Email</button>
     <button id="emailVerifyResendBtn" onclick="_resendVerificationEmail()" style="display:block;width:100%;padding:10px 0;font-size:.85rem;font-weight:500;border:1px solid var(--border,#30363d);border-radius:8px;background:transparent;color:var(--text2,#8b949e);cursor:pointer;font-family:inherit;margin-bottom:16px;transition:all .15s">Resend Verification Email</button>
@@ -21548,34 +21613,76 @@ function showEmailVerificationScreen(user){
     <button onclick="_signOutFromVerification()" style="background:none;border:none;color:var(--text3,#6e7681);font-size:.8rem;cursor:pointer;text-decoration:underline;font-family:inherit">Sign out &amp; use a different account</button>
   </div>`;
   document.body.appendChild(overlay);
+  _renderResendState();
+  _startVerifyWatch();
+}
 
-  // Always send a fresh verification email when this screen appears
-  // This handles both new signups AND existing unverified users signing in
-  // (whose original link may have expired)
-  user.sendEmailVerification().then(function(){
-    var msg = document.getElementById('emailVerifyMsg');
-    if(msg){ msg.style.color = 'var(--success,#3fb950)'; msg.textContent = 'Verification email sent!'; }
-    // Auto-clear the success message after a few seconds
-    setTimeout(function(){ if(msg && msg.textContent === 'Verification email sent!') msg.textContent = ''; }, 5000);
-  }).catch(function(err){
-    var msg = document.getElementById('emailVerifyMsg');
-    if(err.code === 'auth/too-many-requests'){
-      if(msg){ msg.style.color = 'var(--text3,#6e7681)'; msg.textContent = 'A verification email was recently sent. Please check your inbox and spam folder.'; }
-    } else {
-      console.error('sendEmailVerification error:', err);
-    }
-  });
+// While the screen is up, notice a verification made in another tab or on another
+// device: every 5 s while visible, on focus, and when the link page in another tab
+// leaves a note in localStorage. Reloading the user never sends an email.
+function _startVerifyWatch(){
+  _stopVerifyWatch();
+  let lastCheck = Date.now();
+  const check = function(){ lastCheck = Date.now(); _checkVerifiedQuietly(); };
+  const onVisible = function(){ if(document.visibilityState === 'visible') check(); };
+  const onStorage = function(e){
+    const user = firebase.auth().currentUser;
+    if(e.key === RR_EMAIL_VERIFIED_KEY) check();
+    else if(user && e.key === verifyEmailKey(user.uid)) _renderResendState();
+  };
+  const timer = setInterval(function(){
+    if(!document.getElementById('emailVerifyOverlay')){ _stopVerifyWatch(); return; }
+    _renderResendState();
+    if(document.visibilityState === 'visible' && Date.now() - lastCheck >= 5000) check();
+  }, 1000);
+  window.addEventListener('focus', onVisible);
+  document.addEventListener('visibilitychange', onVisible);
+  window.addEventListener('storage', onStorage);
+  _verifyWatch = { timer: timer, onVisible: onVisible, onStorage: onStorage };
+}
+
+function _stopVerifyWatch(){
+  if(!_verifyWatch) return;
+  clearInterval(_verifyWatch.timer);
+  window.removeEventListener('focus', _verifyWatch.onVisible);
+  document.removeEventListener('visibilitychange', _verifyWatch.onVisible);
+  window.removeEventListener('storage', _verifyWatch.onStorage);
+  _verifyWatch = null;
+}
+
+function _checkVerifiedQuietly(){
+  const user = firebase.auth().currentUser;
+  if(!user || _verifyCheckRunning || _verifyReloading) return;
+  _verifyCheckRunning = true;
+  user.reload().then(function(){
+    const u = firebase.auth().currentUser;
+    if(u && u.emailVerified) _onEmailVerified();
+  }).catch(function(){ /* offline or throttled: the next tick tries again */ })
+    .then(function(){ _verifyCheckRunning = false; });
+}
+
+// Shared by the button and the automatic checks. One reload, however many fire.
+function _onEmailVerified(){
+  if(_verifyReloading) return;
+  _verifyReloading = true;
+  _stopVerifyWatch();
+  _setVerifyMsg('var(--success,#3fb950)', 'Email verified! Loading your account...');
+  // Set flag so on reload we know to trigger the welcome email
+  try { sessionStorage.setItem('rr_just_verified', '1'); } catch(e){}
+  // Reload the page — onAuthStateChanged will fire fresh with emailVerified=true
+  setTimeout(function(){ _rrReload('email verified'); }, 800);
 }
 
 function _dismissEmailVerificationScreen(){
+  _stopVerifyWatch();
   const el = document.getElementById('emailVerifyOverlay');
   if(el){ el.remove(); return true; }
   return false;
 }
 
 function _checkEmailVerified(){
+  if(_verifyReloading) return;
   const btn = document.getElementById('emailVerifyCheckBtn');
-  const msg = document.getElementById('emailVerifyMsg');
   if(btn) btn.disabled = true;
   if(btn) btn.textContent = 'Checking...';
   const user = firebase.auth().currentUser;
@@ -21583,46 +21690,22 @@ function _checkEmailVerified(){
   // Reload user to get latest emailVerified status from Firebase
   user.reload().then(function(){
     if(user.emailVerified){
-      if(msg){ msg.style.color = 'var(--success,#3fb950)'; msg.textContent = 'Email verified! Loading your account...'; }
-      // Set flag so on reload we know to trigger the welcome email
-      try { sessionStorage.setItem('rr_just_verified', '1'); } catch(e){}
-      // Reload the page — onAuthStateChanged will fire fresh with emailVerified=true
-      setTimeout(function(){ _rrReload('email verified'); }, 800);
+      _onEmailVerified();
     } else {
       if(btn){ btn.disabled = false; btn.textContent = "I've Verified My Email"; }
-      if(msg){ msg.style.color = 'var(--warning,#d29922)'; msg.textContent = "Email not verified yet. Please click the link in the email we sent you."; }
+      _setVerifyMsg('var(--warning,#d29922)', "Email not verified yet. Please click the link in the email we sent you.");
     }
   }).catch(function(err){
     if(btn){ btn.disabled = false; btn.textContent = "I've Verified My Email"; }
-    if(msg){ msg.style.color = 'var(--danger,#f85149)'; msg.textContent = 'Error checking status. Please try again.'; }
+    _setVerifyMsg('var(--danger,#f85149)', 'Error checking status. Please try again.');
   });
 }
 
 function _resendVerificationEmail(){
-  if(_emailVerifyResendCooldown) return;
-  const btn = document.getElementById('emailVerifyResendBtn');
-  const msg = document.getElementById('emailVerifyMsg');
   const user = firebase.auth().currentUser;
   if(!user) return;
-  _emailVerifyResendCooldown = true;
-  if(btn){ btn.disabled = true; btn.textContent = 'Sending...'; }
-  user.sendEmailVerification().then(function(){
-    if(msg){ msg.style.color = 'var(--success,#3fb950)'; msg.textContent = 'Verification email sent! Check your inbox.'; }
-    if(btn){ btn.textContent = 'Email Sent'; }
-    // Cooldown for 60 seconds to prevent spamming
-    setTimeout(function(){
-      _emailVerifyResendCooldown = false;
-      if(btn){ btn.disabled = false; btn.textContent = 'Resend Verification Email'; }
-    }, 60000);
-  }).catch(function(err){
-    _emailVerifyResendCooldown = false;
-    if(btn){ btn.disabled = false; btn.textContent = 'Resend Verification Email'; }
-    if(err.code === 'auth/too-many-requests'){
-      if(msg){ msg.style.color = 'var(--warning,#d29922)'; msg.textContent = 'Too many attempts. Please wait a few minutes before trying again.'; }
-    } else {
-      if(msg){ msg.style.color = 'var(--danger,#f85149)'; msg.textContent = 'Failed to send email. Please try again.'; }
-    }
-  });
+  if(verifyEmailWaitMs(_verifyStorage(), user.uid, Date.now()) > 0){ _renderResendState(); return; }
+  _sendVerificationEmail(user, 'resend');
 }
 
 function _signOutFromVerification(){

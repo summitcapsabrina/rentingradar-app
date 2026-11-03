@@ -543,6 +543,60 @@ H.scenarios = {
     }
     return { fails };
   },
+  'T8 a failed Resend ends on an enabled button, not "Sending..."': async () => {
+    const fails = [];
+    const auth = firebase.auth();
+    const user = { uid: 'v1', email: 'v1@example.com', emailVerified: false, reload: async () => {},
+      sendEmailVerification: () => Promise.reject(Object.assign(new Error('offline'), { code: 'auth/network-request-failed' })) };
+    Object.defineProperty(auth, 'currentUser', { get: () => user, configurable: true });
+    try {
+      localStorage.removeItem(verifyEmailKey('v1'));
+      showEmailVerificationScreen(user);
+      const btn = document.getElementById('emailVerifyResendBtn');
+      H.check(fails, btn && !btn.disabled, 'Resend starts enabled');
+      btn.click();
+      H.check(fails, btn.textContent === 'Sending...', 'shows Sending... while it runs: ' + btn.textContent);
+      await H.until(() => btn.textContent !== 'Sending...', 2000);
+      await H.wait(50);
+      H.check(fails, !btn.disabled && btn.textContent === 'Resend Verification Email', 'ends enabled: ' + btn.disabled + ' ' + btn.textContent);
+      H.check(fails, /Failed to send email/.test(document.getElementById('emailVerifyMsg').textContent), 'failure message: ' + document.getElementById('emailVerifyMsg').textContent);
+      H.check(fails, localStorage.getItem(verifyEmailKey('v1')) === null, 'no stored cooldown');
+      await H.wait(1200);
+      H.check(fails, !btn.disabled && btn.textContent === 'Resend Verification Email', 'still enabled after the 1 s tick');
+    } finally {
+      _dismissEmailVerificationScreen();
+      delete auth.currentUser;
+    }
+    return { fails };
+  },
+  'T8 signup still sends one email when updateProfile fails': async () => {
+    const fails = [];
+    const auth = firebase.auth();
+    let sends = 0;
+    const user = { uid: 'v2', email: 'v2@example.com', emailVerified: false, displayName: null, photoURL: null,
+      updateProfile: () => Promise.reject(Object.assign(new Error('profile'), { code: 'auth/internal-error' })),
+      sendEmailVerification: async () => { sends++; } };
+    auth.createUserWithEmailAndPassword = async () => ({ user });
+    try {
+      localStorage.removeItem(verifyEmailKey('v2'));
+      showAuthModal('signup');
+      document.getElementById('authName').value = 'V Two';
+      document.getElementById('authEmail').value = 'v2@example.com';
+      document.getElementById('authPassword').value = 'password1';
+      document.getElementById('authPasswordConfirm').value = 'password1';
+      handleEmailSignUp();
+      await H.until(() => sends > 0, 2000);
+      await H.wait(300);
+      H.check(fails, sends === 1, 'exactly one send, got ' + sends);
+      H.check(fails, !document.getElementById('authModal').classList.contains('open'), 'the auth modal closed');
+      const err = document.getElementById('authError');
+      H.check(fails, !err || !err.textContent.trim() || err.style.display === 'none', 'no auth error shown: ' + (err && err.textContent));
+    } finally {
+      delete auth.createUserWithEmailAndPassword;
+      localStorage.removeItem(verifyEmailKey('v2'));
+    }
+    return { fails };
+  },
   'Nit race timers are cleared, timeouts leave a trace line': async () => {
     const fails = [];
     const longTimers = new Map();
