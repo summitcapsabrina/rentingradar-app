@@ -302,6 +302,45 @@ H.scenarios = {
     return { fails };
   },
 
+  'Empty-page guard: a price with no address or unit numbers saves nothing': async () => {
+    const fails = [];
+    const payload = { address: null, bedrooms: null, bathrooms: null, sqft: null, price: 500, propertyDetails: { propertyType: 'Apartment' }, propertyNoteBullets: [] };
+    records = [oldRecord(99)];
+    const out = await _rrRunListingImport('u', () => handleExtensionListing(JSON.parse(JSON.stringify(payload))));
+    await H.wait(50);
+    H.check(fails, out === 'failed', 'outcome failed, got ' + out);
+    H.check(fails, H.log.toasts.length === 1 && H.log.toasts[0] === 'Import failed — nothing could be read from this listing.', 'one error toast: ' + JSON.stringify(H.log.toasts));
+    H.check(fails, records.length === 1 && records[0].id === 'old_99', 'records unchanged: ' + records.map((x) => x.id));
+    H.check(fails, H.log.saves.length === 0, 'no saveData call');
+    cohostRecords = [];
+    const co = await _rrRunListingImport('u', () => handleCohostListing(JSON.parse(JSON.stringify(payload))));
+    H.check(fails, co === 'failed' && cohostRecords.length === 0 && H.log.cohostSaves.length === 0, 'Co-Hosting saves nothing either');
+    return { fails };
+  },
+  'Empty-page guard: an address and a price is still a partial import': async () => {
+    const fails = [];
+    const out = await _rrRunListingImport('u', () => handleExtensionListing({ address: '1625 Bulevar Mayor St, Gulf Breeze, FL 32561', sourceUrl: 'https://www.apartments.com/x/', price: 2750, propertyDetails: {} }));
+    H.check(fails, out === 'created' && records.length === 1, 'created, got ' + out);
+    H.check(fails, records[0] && records[0].propertyDetails.monthlyRent === 2750, 'rent kept');
+    H.check(fails, H.toastHas('Import partial'), 'partial toast: ' + H.log.toasts);
+    return { fails };
+  },
+  'Drawer close logs its source': async () => {
+    const fails = [];
+    const seen = [];
+    const realInfo = console.info;
+    console.info = function (a, b) { if (a === '[RR drawer] close') seen.push(b); return realInfo.apply(console, arguments); };
+    try {
+      openAddModal('house');
+      document.querySelector('#detailModal .modal-close').click();
+      openAddModal('house');
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      openAddModal('house');
+      closeAddModal(true);
+    } finally { console.info = realInfo; }
+    H.check(fails, seen.join() === 'button,escape,programmatic', 'reasons: ' + seen.join());
+    return { fails };
+  },
   'Nit race timers are cleared, timeouts leave a trace line': async () => {
     const fails = [];
     const longTimers = new Map();

@@ -32,9 +32,17 @@ function importHasUnitChoices(data) {
   return !!data && ((Array.isArray(data.floorplans) && data.floorplans.length > 0) || (Array.isArray(data.units) && data.units.length > 0));
 }
 
-// Nothing to save: no numbers, no real address, nothing to pick from.
+// The numbers that describe a unit. A price alone doesn't: on a page that isn't a
+// listing it can be a search filter or an ad.
+function importStructuralCount(data) {
+  if (!data) return 0;
+  return ['bedrooms', 'bathrooms', 'sqft'].filter((k) => data[k] != null && data[k] !== '').length;
+}
+
+// Nothing to save: no unit numbers, no real address, nothing to pick from, whatever
+// the price. Same rule as scrapeIsEmpty in the extension.
 function isEmptyImport(data) {
-  return importCoreCount(data) === 0 && !isUsableImportAddress(data && data.address) && !importHasUnitChoices(data);
+  return importStructuralCount(data) === 0 && !isUsableImportAddress(data && data.address) && !importHasUnitChoices(data);
 }
 
 const STREET_WORDS = { street: 'st', avenue: 'ave', boulevard: 'blvd', drive: 'dr', road: 'rd', lane: 'ln', court: 'ct', place: 'pl', parkway: 'pkwy', highway: 'hwy', terrace: 'ter', circle: 'cir' };
@@ -279,6 +287,7 @@ if (typeof module !== 'undefined' && module.exports) {
     isPlaceholderPropertyName,
     isUsableImportAddress,
     importCoreCount,
+    importStructuralCount,
     importHasUnitChoices,
     isEmptyImport,
     addressMatchKey,

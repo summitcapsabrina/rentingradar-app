@@ -12883,7 +12883,7 @@ function openAddModal(recordType){
   const panel = document.getElementById('detailPanel');
   const _kindLabel = _addModalRecordType === 'apartment' ? 'Multi Unit' : 'Single Unit';
   panel.innerHTML = `
-    <div class="modal-header"><h2>Add New ${_kindLabel} Property</h2><button class="modal-close" onclick="closeAddModal()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>
+    <div class="modal-header"><h2>Add New ${_kindLabel} Property</h2><button class="modal-close" onclick="closeAddModalButton()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>
     <div class="modal-body" id="addModalBody">
       <div id="addStep1"></div>
       <div id="addStep2" style="display:none"></div>
@@ -12901,7 +12901,7 @@ function openAddModal(recordType){
       // A confirm, card editor or other popup on top owns Escape first.
       if(document.querySelector('.multi-editor-overlay, .card-edit-popup')) return;
       e.preventDefault();
-      closeAddModal();
+      closeAddModal(false, 'escape');
     });
   }
 }
@@ -12939,7 +12939,7 @@ function showAddChoice(){
       <button type="button" class="btn btn-secondary btn-sm" onclick="showManualAddForm()">Manual Entry</button>
     </div>
     <div style="display:flex;justify-content:flex-end;margin-top:16px">
-      <button type="button" class="btn btn-secondary" onclick="closeAddModal()">Cancel</button>
+      <button type="button" class="btn btn-secondary" onclick="closeAddModalButton()">Cancel</button>
     </div>
   `;
   setTimeout(() => { const el = document.getElementById('add_choice_url'); if(el) el.focus(); }, 60);
@@ -13101,7 +13101,11 @@ function importFromChoicePaste(){
   });
 }
 
-function closeAddModal(force){
+function closeAddModalButton(){ closeAddModal(false, 'button'); }
+// reason: 'escape', 'button' or 'programmatic'. It's logged so the next unexplained
+// drawer close names its source.
+function closeAddModal(force, reason){
+  const logClose = () => console.info('[RR drawer] close', reason || 'programmatic');
   const cancelDrawerPicker = () => { if(_rrCancelPlanPicker && document.querySelector('#detailModal #rrPlanPicker')) _rrCancelPlanPicker(); };
   if(!force){
     // Check if any field in the add form has data
@@ -13114,6 +13118,7 @@ function closeAddModal(force){
         confirmText: 'Discard',
         confirmClass: 'btn-danger',
         onConfirm: function(){
+          logClose();
           cancelDrawerPicker();
           document.getElementById('detailModal').classList.remove('open');
           // Cancel pending contact-link if the user discarded
@@ -13126,6 +13131,7 @@ function closeAddModal(force){
       return;
     }
   }
+  logClose();
   cancelDrawerPicker();
   document.getElementById('detailModal').classList.remove('open');
   // Clear pending link on a clean close too — the create path already consumed
@@ -13311,7 +13317,7 @@ function showManualAddForm(){
       </div>
       <div style="display:flex;gap:8px;justify-content:flex-end;align-items:center;margin-top:20px">
         <div style="font-size:.65rem;color:var(--text3);margin-right:auto">Shift + Enter to save</div>
-        <button class="btn btn-secondary" onclick="closeAddModal()">Cancel</button>
+        <button class="btn btn-secondary" onclick="closeAddModalButton()">Cancel</button>
         <button class="btn btn-primary" onclick="saveNewRecord()">Save Property</button>
       </div>`;
     setTimeout(() => {
@@ -13377,7 +13383,7 @@ function showManualAddForm(){
       </div>
       <div style="display:flex;gap:8px;justify-content:flex-end;align-items:center;margin-top:20px">
         <div style="font-size:.65rem;color:var(--text3);margin-right:auto">Shift + Enter to save</div>
-        <button class="btn btn-secondary" onclick="closeAddModal()">Cancel</button>
+        <button class="btn btn-secondary" onclick="closeAddModalButton()">Cancel</button>
         <button class="btn btn-primary" onclick="saveNewRecord()">Save Property</button>
       </div>`;
     setTimeout(() => {
@@ -26981,7 +26987,7 @@ function openCohostAddModal(){
   if(!_currentUid) return;
   const modal = document.getElementById('detailModal');
   const panel = document.getElementById('detailPanel');
-  panel.innerHTML = '<div class="modal-header"><h2>Add New Co-Hosting Property</h2><button class="modal-close" onclick="closeAddModal()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>'+
+  panel.innerHTML = '<div class="modal-header"><h2>Add New Co-Hosting Property</h2><button class="modal-close" onclick="closeAddModalButton()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>'+
     '<div class="modal-body" id="cohostAddBody"></div>';
   modal.classList.add('open');
   _cohostShowAddChoice();
@@ -27244,13 +27250,13 @@ function openCohostLinksEditor(id){
   _fieldDraftIds = COHOST_LINKS_DRAFT_FIELD_IDS;
   const fd = function(fieldId, fallback){ const dft = _getFieldDraft(_fieldDraftCtx, fieldId); return dft != null ? dft : fallback; };
   const modal = document.getElementById('detailModal'), panel = document.getElementById('detailPanel');
-  panel.innerHTML = '<div class="modal-header"><h2>Edit Listing Links</h2><button class="modal-close" onclick="closeAddModal()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>'+
+  panel.innerHTML = '<div class="modal-header"><h2>Edit Listing Links</h2><button class="modal-close" onclick="closeAddModalButton()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>'+
     '<div class="modal-body">'+
       '<label class="field-label" for="cohost_link_airbnb">Airbnb Link</label><input id="cohost_link_airbnb" type="url" value="'+esc(fd('cohost_link_airbnb', L.airbnb||''))+'" placeholder="https://airbnb.com/rooms/…" style="width:100%;margin-bottom:10px">'+
       '<label class="field-label" for="cohost_link_vrbo">VRBO Link</label><input id="cohost_link_vrbo" type="url" value="'+esc(fd('cohost_link_vrbo', L.vrbo||''))+'" placeholder="https://vrbo.com/…" style="width:100%;margin-bottom:10px">'+
       '<label class="field-label" for="cohost_link_maps">Google Maps Link</label><input id="cohost_link_maps" type="url" value="'+esc(fd('cohost_link_maps', L.maps||''))+'" placeholder="Auto from address if blank" style="width:100%;margin-bottom:4px">'+
       '<div style="font-size:.7rem;color:var(--text3);margin-bottom:14px">Leave a link blank to grey it out. Maps auto-fills from the address.</div>'+
-      '<div style="display:flex;justify-content:flex-end;gap:8px"><button class="btn btn-secondary" onclick="closeAddModal()">Cancel</button><button class="btn btn-primary" onclick="saveCohostLinks(\''+id+'\')">Save Links</button></div>'+
+      '<div style="display:flex;justify-content:flex-end;gap:8px"><button class="btn btn-secondary" onclick="closeAddModalButton()">Cancel</button><button class="btn btn-primary" onclick="saveCohostLinks(\''+id+'\')">Save Links</button></div>'+
     '</div>';
   modal.classList.add('open');
 }
@@ -27274,13 +27280,13 @@ function openCohostContactEditor(id){
   _fieldDraftIds = COHOST_CONTACT_DRAFT_FIELD_IDS;
   const fd = function(fieldId, fallback){ const dft = _getFieldDraft(_fieldDraftCtx, fieldId); return dft != null ? dft : fallback; };
   const modal = document.getElementById('detailModal'), panel = document.getElementById('detailPanel');
-  panel.innerHTML = '<div class="modal-header"><h2>Contact</h2><button class="modal-close" onclick="closeAddModal()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>'+
+  panel.innerHTML = '<div class="modal-header"><h2>Contact</h2><button class="modal-close" onclick="closeAddModalButton()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>'+
     '<div class="modal-body">'+
       '<label class="field-label" for="cohost_c_name">Contact Name</label><input id="cohost_c_name" type="text" value="'+esc(fd('cohost_c_name', r.name||''))+'" placeholder="e.g. Sarah Johnson" style="width:100%;margin-bottom:10px">'+
       '<label class="field-label" for="cohost_c_phone">Phone</label><input id="cohost_c_phone" type="tel" value="'+esc(fd('cohost_c_phone', r.phone||''))+'" placeholder="(555) 123-4567" style="width:100%;margin-bottom:10px">'+
       '<label class="field-label" for="cohost_c_email">Email</label><input id="cohost_c_email" type="email" value="'+esc(fd('cohost_c_email', r.email||''))+'" placeholder="name@email.com" style="width:100%;margin-bottom:4px">'+
       '<div style="font-size:.7rem;color:var(--text3);margin-bottom:14px">This contact is added to the app\'s Contacts section and linked to this property.</div>'+
-      '<div style="display:flex;justify-content:flex-end;gap:8px"><button class="btn btn-secondary" onclick="closeAddModal()">Cancel</button><button class="btn btn-primary" onclick="saveCohostContact(\''+id+'\')">Save</button></div>'+
+      '<div style="display:flex;justify-content:flex-end;gap:8px"><button class="btn btn-secondary" onclick="closeAddModalButton()">Cancel</button><button class="btn btn-primary" onclick="saveCohostContact(\''+id+'\')">Save</button></div>'+
     '</div>';
   modal.classList.add('open');
   setTimeout(function(){ const el=document.getElementById('cohost_c_name'); if(el) el.focus(); }, 60);
@@ -27784,7 +27790,7 @@ function openCohostCoreEditor(id){
   };
   const inp = function(label, fid, val, type, step){ return '<div class="prop-field"><label>'+label+'</label><input type="'+(type||'text')+'" id="'+fid+'" value="'+fieldVal(val, fid)+'"'+(step?' step="'+step+'"':'')+'></div>'; };
   const statusOpts = (typeof SELECTABLE_STATUSES!=='undefined'?SELECTABLE_STATUSES:[]).map(function(s){ return '<option value="'+esc(s)+'"'+(r.status===s?' selected':'')+'>'+esc(s)+'</option>'; }).join('');
-  panel.innerHTML = '<div class="modal-header"><h2>Edit Contact &amp; Status</h2><button class="modal-close" onclick="closeAddModal()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>'+
+  panel.innerHTML = '<div class="modal-header"><h2>Edit Contact &amp; Status</h2><button class="modal-close" onclick="closeAddModalButton()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>'+
     '<div class="modal-body">'+
       '<div style="margin-bottom:12px"><label class="field-label" for="cohost_core_address">Property Address</label><input id="cohost_core_address" type="text" value="'+fieldVal(r.property, 'cohost_core_address')+'" style="width:100%"></div>'+
       '<div class="prop-field-grid">'+
@@ -27800,7 +27806,7 @@ function openCohostCoreEditor(id){
         inp('Submarket','cohost_core_submarket', d.submarket)+
       '</div>'+
       '<div style="margin-top:10px"><label class="field-label" for="cohost_core_link">Listing Link</label><input id="cohost_core_link" type="url" value="'+fieldVal(r.link, 'cohost_core_link')+'" style="width:100%"></div>'+
-      '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px"><button class="btn btn-secondary" onclick="closeAddModal()">Cancel</button><button class="btn btn-primary" onclick="saveCohostCore(\''+id+'\')">Save Changes</button></div>'+
+      '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px"><button class="btn btn-secondary" onclick="closeAddModalButton()">Cancel</button><button class="btn btn-primary" onclick="saveCohostCore(\''+id+'\')">Save Changes</button></div>'+
     '</div>';
   modal.classList.add('open');
 }

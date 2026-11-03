@@ -109,3 +109,49 @@ test('a plan picked from several, with no price of its own, does not take the of
   assert.match(d._chosenPlan, /^A1,/);
   assert.equal(d.price, null);
 });
+
+const Plans = require('../chrome-extension/lib/listing-plans.js');
+const NON_LISTING_URL = 'https://www.apartments.com/dallas-tx/under-500/';
+const withLd = (block) => (html) => html.replace('</head>', '<script type="application/ld+json">' + JSON.stringify(block) + '</script></head>');
+const dropped = (d) => d._debug.steps.includes('dropped fallback price: no address');
+
+test('a non-listing Apartments.com page keeps no fallback price and scrapes as empty', async () => {
+  const d = await scrape('apartments-nonlisting.html', NON_LISTING_URL);
+  assert.equal(d.address, null);
+  assert.equal(d.price, null);
+  assert.equal(Plans.scrapeIsEmpty(d), true);
+  assert.ok(dropped(d), 'the drop is in the debug trace');
+});
+
+test('a price from JSON-LD offers stays on a page with no address', async () => {
+  const d = await scrape('apartments-nonlisting.html', NON_LISTING_URL, withLd({ '@type': 'Product', offers: { '@type': 'Offer', price: 1750 } }));
+  assert.equal(d.price, 1750);
+  assert.ok(!dropped(d));
+  assert.equal(Plans.scrapeIsEmpty(d), true, 'still empty: a price alone is not a listing');
+});
+
+test('a fallback price stays when the page has an address', async () => {
+  const d = await scrape('apartments-nonlisting.html', NON_LISTING_URL, withLd({ '@type': 'ApartmentComplex', address: { streetAddress: '1625 Bulevar Mayor St', addressLocality: 'Gulf Breeze', addressRegion: 'FL', postalCode: '32561' } }));
+  assert.match(d.address, /^1625 Bulevar Mayor St/);
+  assert.equal(d.price, 500);
+  assert.ok(!dropped(d));
+});
+
+test('the h1 ancestor walk finds no price to keep on a page with no address', async () => {
+  const leaf = (html) => html.replace(/\$500/g, '').replace('</h1>', '</h1><div><span>$500</span></div>');
+  const d = await scrape('apartments-nonlisting.html', NON_LISTING_URL, leaf);
+  assert.equal(d.price, null);
+  assert.ok(dropped(d));
+});
+
+test('Zillow and Hotpads drop a fallback price the same way', async () => {
+  const z = await scrape('apartments-nonlisting.html', 'https://www.zillow.com/homedetails/x/1_zpid/');
+  assert.equal(z.address, null);
+  assert.equal(z.price, null);
+  assert.ok(dropped(z));
+  const hero = (html) => html.replace('</h1>', '</h1><div class="Hdp-listing-container"><span>$500</span></div>');
+  const hp = await scrape('apartments-nonlisting.html', 'https://hotpads.com/x/pad', hero);
+  assert.equal(hp.address, null);
+  assert.equal(hp.price, null);
+  assert.ok(dropped(hp));
+});

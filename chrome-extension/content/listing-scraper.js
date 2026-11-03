@@ -812,6 +812,7 @@
     const page = Plans.zillowPageType(location.href);
     log('page type', page);
     if (page.type === 'building') return parseZillowBuilding(out, candidates, log);
+    let priceIsFallback = false;
 
     let gdp = null;
     // A unit page: only the object with this URL's zpid describes this unit. The
@@ -852,7 +853,10 @@
       if (out.bedrooms == null && /\bstudio\b/i.test(ogBlob)) out.bedrooms = 0;
       if (out.bathrooms == null) out.bathrooms = num(ogBlob.match(/(\d+(?:\.\d+)?)\s*(?:ba|bath(?:room)?s?)/i)?.[1]);
       if (out.sqft == null) out.sqft = num(ogBlob.match(/([\d,]+)\s*(?:sq\s*ft|sqft|square feet)/i)?.[1]);
-      if (out.price == null) out.price = num(ogBlob.match(/\$([\d,]+)(?:\/mo)?/i)?.[1]);
+      if (out.price == null) {
+        out.price = num(ogBlob.match(/\$([\d,]+)(?:\/mo)?/i)?.[1]);
+        priceIsFallback = out.price != null;
+      }
       // Street address tends to be the first comma-delimited chunk of og:title
       if (!out.address) {
         const addrMatch = ogTitle.split('|')[0].split(/ · |  — /)[0].trim();
@@ -888,7 +892,10 @@
         '.summary-container [data-testid="price"], span[data-test="property-card-price"], ' +
         '[class*="summary"] [class*="price"], .ds-summary-row .ds-value'
       );
-      if (priceEl) out.price = num(priceEl.textContent);
+      if (priceEl) {
+        out.price = num(priceEl.textContent);
+        priceIsFallback = out.price != null;
+      }
     }
     const bbsEl = document.querySelector(
       '[data-testid="bed-bath-sqft-fact-container"], [data-testid="bed-bath-beyond"], ' +
@@ -936,6 +943,7 @@
       });
     }
 
+    dropFallbackPrice(out, priceIsFallback, log);
     log('final', {
       hasAddress: !!out.address,
       beds: out.bedrooms, baths: out.bathrooms, sqft: out.sqft, price: out.price,
@@ -1143,6 +1151,8 @@
       }
     });
     log('after JSON-LD', { beds: out.bedrooms, baths: out.bathrooms, sqft: out.sqft, price: out.price, addr: !!out.address });
+    // Every price set from here down comes from meta tags or markup.
+    const priceIsFallback = out.price == null;
 
     // ---- Pass 2: og/meta tags ----
     const ogTitle = document.querySelector('meta[property="og:title"]')?.content
@@ -1306,6 +1316,7 @@
     if (out.bathrooms != null && (out.bathrooms <= 0 || out.bathrooms > 15)) {
       log('rejected bogus bathrooms ' + out.bathrooms); out.bathrooms = null;
     }
+    dropFallbackPrice(out, priceIsFallback, log);
     applyFloorplanDecision(out, floorplans, log);
 
     // ---- Description + photo fallbacks ----
@@ -1649,6 +1660,15 @@
     log('floorplan needs a pick', floorplans.length);
   }
 
+  // A price found by searching the page's markup or meta tags, on a page with no
+  // address, is as likely a search filter or an ad as a rent. Prices from JSON-LD
+  // offers or a state blob stay.
+  function dropFallbackPrice(out, priceIsFallback, log) {
+    if (!priceIsFallback || out.price == null || Plans.isUsableAddress(out.address)) return;
+    out.price = null;
+    log('dropped fallback price: no address');
+  }
+
   // ---- Hotpads -----------------------------------------------------
   // Hotpads is a Zillow Group property and serves a Next.js app whose
   // listing object lives in __NEXT_DATA__ (and sometimes in window.HotPads
@@ -1849,6 +1869,7 @@
     // comparison" section which shows the MARKET RATE, not the rent.
     // NEVER use heroText regex — it includes text from sections below
     // the listing header that contain the wrong price.
+    let priceIsFallback = false;
     if (out.price == null) {
       const hdpContainer = document.querySelector('.Hdp-listing-container');
       if (hdpContainer) {
@@ -1857,7 +1878,7 @@
           const t = (el.textContent || '').trim();
           if (/^\$\s*[\d,]+$/.test(t) && el.children.length === 0) {
             out.price = num(t.replace(/[^0-9]/g, ''));
-            if (out.price) { log('price from Hdp hero', out.price); break; }
+            if (out.price) { priceIsFallback = true; log('price from Hdp hero', out.price); break; }
           }
         }
       }
@@ -1914,6 +1935,7 @@
       }
     }
 
+    dropFallbackPrice(out, priceIsFallback, log);
     log('final', {
       hasAddress: !!out.address,
       beds: out.bedrooms, baths: out.bathrooms, sqft: out.sqft, price: out.price,

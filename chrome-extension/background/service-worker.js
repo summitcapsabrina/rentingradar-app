@@ -592,6 +592,10 @@ async function scrapeAny(url, hint, expectedListingId) {
       data._aiEnriched = !enriched._aiError;
       data._aiModel = enriched._aiModel || 'unknown';
       if (enriched._aiError) data._aiError = enriched._aiError;
+      // The AI step must never turn an empty page into an import.
+      if (self.RRListingPlans.scrapeIsEmpty(data)) {
+        return { ok: false, error: 'listing-empty', detail: 'The page loaded without listing details. Try again.' };
+      }
       // Strip raw page text from the payload sent to the CRM
       delete data._pageText;
       delete data._fullPageText;

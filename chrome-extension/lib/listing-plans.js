@@ -136,16 +136,24 @@
     return ['bedrooms', 'bathrooms', 'sqft', 'price'].filter((k) => d[k] != null && d[k] !== '').length;
   }
 
-  // A scrape with no address, no numbers and no list of units has nothing to import.
+  // The numbers that describe a unit. A price alone doesn't: on a page that isn't a
+  // listing it can be a search filter or an ad.
+  function structuralCount(d) {
+    if (!d) return 0;
+    return ['bedrooms', 'bathrooms', 'sqft'].filter((k) => d[k] != null && d[k] !== '').length;
+  }
+
+  // A scrape with no address, no unit numbers and no list of units has nothing to
+  // import, whatever its price. Same rule as isEmptyImport in the app.
   function scrapeIsEmpty(d) {
     if (!d) return true;
     const hasList = (Array.isArray(d.floorplans) && d.floorplans.length) || (Array.isArray(d.units) && d.units.length);
-    return !isUsableAddress(d.address) && coreCount(d) === 0 && !hasList;
+    return !isUsableAddress(d.address) && structuralCount(d) === 0 && !hasList;
   }
 
   const api = {
     toNum, zillowPageType, zillowSelectedUnitId, zillowBuildingUnits, parseApartmentsPlanRow,
-    dedupePlans, plansFromContainsPlace, selectedPlanFromUrl, isUsableAddress, coreCount, scrapeIsEmpty,
+    dedupePlans, plansFromContainsPlace, selectedPlanFromUrl, isUsableAddress, coreCount, structuralCount, scrapeIsEmpty,
   };
   root.RRListingPlans = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

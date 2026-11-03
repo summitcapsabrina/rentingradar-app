@@ -61,6 +61,39 @@ test('an empty page returns listing-empty and spends no AI call', async () => {
   assert.equal(calls.ai, 0);
 });
 
+const NON_LISTING = { source: 'apartments', title: 'Apartments', address: null, bedrooms: null, bathrooms: null, sqft: null, price: 500, propertyDetails: { propertyType: 'Apartment' }, propertyNoteBullets: [] };
+
+test('a price with no address and no unit numbers returns listing-empty and spends no AI call', async () => {
+  const ctx = loadWorker();
+  const calls = stub(ctx, NON_LISTING);
+  const res = await run(ctx, 'https://www.apartments.com/not-a-listing/');
+  assert.equal(res.ok, false);
+  assert.equal(res.error, 'listing-empty');
+  assert.equal(res.detail, 'The page loaded without listing details. Try again.');
+  assert.equal(calls.ai, 0);
+});
+
+test('an empty result after the AI step is still listing-empty', async () => {
+  const ctx = loadWorker();
+  stub(ctx, { source: 'apartments', address: '1625 Bulevar Mayor St, Gulf Breeze FL 32561', price: 500, propertyDetails: {} });
+  vm.runInContext(`
+    __enrichRan = false;
+    enrichWithOllama = async (scraped) => { __enrichRan = true; scraped.address = null; return { propertyDetails: {}, propertyNoteBullets: [], core: {} }; };
+  `, ctx);
+  const res = await run(ctx, 'https://www.apartments.com/x/');
+  assert.equal(ctx.__enrichRan, true, 'the pre-AI check let this one through');
+  assert.equal(res.ok, false);
+  assert.equal(res.error, 'listing-empty');
+});
+
+test('an address and a price is still a partial import', async () => {
+  const ctx = loadWorker();
+  stub(ctx, { source: 'apartments', address: '1625 Bulevar Mayor St, Gulf Breeze FL 32561', price: 2750, propertyDetails: {} }, { bullets: [] });
+  const res = await run(ctx, 'https://www.apartments.com/x/');
+  assert.equal(res.ok, true);
+  assert.equal(res.data.price, 2750);
+});
+
 test('an address with no numbers is not empty', async () => {
   const ctx = loadWorker();
   stub(ctx, { source: 'zillow', address: '8436 Gulf Blvd, Navarre FL 32566', propertyDetails: {} });

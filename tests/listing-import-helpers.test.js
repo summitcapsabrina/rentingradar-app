@@ -19,7 +19,7 @@ test('isEmptyImport needs no numbers, no real address and nothing to pick', () =
   assert.equal(h.isEmptyImport({}), true);
   assert.equal(h.isEmptyImport({ address: 'Zillow', title: 'Zillow' }), true);
   assert.equal(h.isEmptyImport({ address: '8436 Gulf Blvd, Navarre FL 32566' }), false);
-  assert.equal(h.isEmptyImport({ price: 1900 }), false);
+  assert.equal(h.isEmptyImport({ price: 1900 }), true, 'a price alone is not a listing');
   assert.equal(h.isEmptyImport({ floorplans: [{ name: 'B4' }] }), false);
   assert.equal(h.isEmptyImport({ units: [{ label: 'Unit 714' }] }), false);
 });
@@ -236,4 +236,24 @@ test('hosting never publishes anything under node_modules', () => {
   const files = listFiles(root, firebase.hosting.ignore);
   assert.ok(files.includes('index.html'), 'the app itself is listed');
   assert.deepEqual(files.filter((f) => /(^|\/)node_modules\//.test(f)), []);
+});
+
+const NON_LISTING = { address: null, bedrooms: null, bathrooms: null, sqft: null, price: 500, propertyDetails: { propertyType: 'Apartment' }, propertyNoteBullets: [] };
+
+test('a page with no address and no unit numbers is empty, whatever its price', () => {
+  assert.equal(h.isEmptyImport(NON_LISTING), true);
+  assert.equal(h.isEmptyImport({ address: '1625 Bulevar Mayor St, Gulf Breeze FL 32561', price: 2750 }), false);
+  assert.equal(h.isEmptyImport({ address: null, bedrooms: 2, price: 1900 }), false);
+  assert.equal(h.isEmptyImport({ address: null, bedrooms: 0, price: 1900 }), false, 'a studio has a bedroom count');
+  assert.equal(h.isEmptyImport({ address: null, price: 500, floorplans: [{ name: 'B4', beds: 2 }] }), false);
+  assert.equal(h.importCoreCount(NON_LISTING), 1, 'the toast count still includes price');
+  assert.equal(h.importStructuralCount(NON_LISTING), 0);
+});
+
+test('the extension and the app apply the same empty rule', () => {
+  const plans = require('../chrome-extension/lib/listing-plans.js');
+  for (const d of [NON_LISTING, {}, { price: 1 }, { address: 'Zillow', price: 1 }, { address: '1 Main St, Navarre FL', price: 1 },
+    { sqft: 900 }, { bathrooms: 1 }, { bedrooms: 0 }, { units: [{ label: 'Unit 1' }], price: 1 }, { floorplans: [], price: 1 }]) {
+    assert.equal(plans.scrapeIsEmpty(d), h.isEmptyImport(d), JSON.stringify(d));
+  }
 });
