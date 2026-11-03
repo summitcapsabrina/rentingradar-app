@@ -228,3 +228,12 @@ test('hosting never publishes log files', () => {
   const firebase = JSON.parse(require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'firebase.json'), 'utf8'));
   assert.ok(firebase.hosting.ignore.includes('*.log'));
 });
+
+test('hosting never publishes anything under node_modules', () => {
+  const root = require('node:path').join(__dirname, '..');
+  const firebase = JSON.parse(require('node:fs').readFileSync(require('node:path').join(root, 'firebase.json'), 'utf8'));
+  const { listFiles } = require('firebase-tools/lib/listFiles');
+  const files = listFiles(root, firebase.hosting.ignore);
+  assert.ok(files.includes('index.html'), 'the app itself is listed');
+  assert.deepEqual(files.filter((f) => /(^|\/)node_modules\//.test(f)), []);
+});
