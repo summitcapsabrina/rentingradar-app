@@ -2030,6 +2030,7 @@ tr.unit-row-excluded{opacity:.55}
 <script src="https://unpkg.com/maplibre-gl@4.1.1/dist/maplibre-gl.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 <script src="/comp-import-helpers.js"></script>
+<script src="/listing-import-helpers.js"></script>
 </head>
 <body>
 <!-- Mobile gate: rendered only at <=768px via CSS; desktop ignores this block entirely -->
@@ -3409,6 +3410,7 @@ async function loadDataFromFirestore(userUid){
   geocodeExistingProperties();
   hideLoadingOverlay();
   _checkInterruptedCompImports();
+  _checkInterruptedListingImports();
 
   // Set up real-time listener for cross-device sync
   _firestoreUnsubscribe = db.collection('users').doc(userUid).collection('properties').doc('records')
@@ -3429,16 +3431,13 @@ async function loadDataFromFirestore(userUid){
       // Merge remote changes with local records (per-record, by timestamp)
       records = _mergeRecords(records, remoteRecords);
 
-      // Re-render, but not if user is actively typing in a field
-      const ae = document.activeElement;
-      const isEditing = ae && (ae.tagName==='INPUT'||ae.tagName==='TEXTAREA'||ae.tagName==='SELECT'||ae.isContentEditable);
-      if(!isEditing){
+      // Re-render, unless that would pull the page out from under the user: an
+      // import running, a modal open, a field being typed in. Then wait.
+      if(_rrRenderMustWait()){
+        _rrDeferRender();
+      } else {
         render();
         console.log('[RR] Synced data from another device');
-      } else {
-        // Defer render until user finishes editing
-        const handler = function(){ render(); console.log('[RR] Synced data from another device (deferred)'); ae.removeEventListener('blur', handler); };
-        ae.addEventListener('blur', handler, {once:true});
       }
 
       // If we had dirty local records that won out in the merge, push them back
@@ -3449,6 +3448,37 @@ async function loadDataFromFirestore(userUid){
     }, function(err){
       console.error('[RR] Firestore real-time sync error:', err);
     });
+}
+
+// A remote change arrived while re-rendering wasn't safe. The records are already
+// merged; this just holds the one render until nothing would be lost by it.
+let _rrDeferredRender = false;
+let _rrDeferredRenderTimer = null;
+function _rrRenderMustWait(){
+  if(window._rrListingImportInFlight) return true;
+  const modal = document.getElementById('detailModal');
+  if(modal && modal.classList.contains('open')) return true;
+  if(document.querySelector('.multi-editor-overlay, .card-edit-popup')) return true;
+  const ae = document.activeElement;
+  if(ae && (ae.tagName==='INPUT'||ae.tagName==='TEXTAREA'||ae.tagName==='SELECT'||ae.isContentEditable)) return true;
+  // A note editor with text in it, focused or not.
+  const editors = document.querySelectorAll('#contentArea [contenteditable="true"]');
+  for(const el of editors){ if((el.textContent || '').trim()) return true; }
+  return false;
+}
+function _rrDeferRender(){
+  _rrDeferredRender = true;
+  _rrImportInFlightTrace('render deferred');
+  if(!_rrDeferredRenderTimer) _rrDeferredRenderTimer = setInterval(_rrFlushDeferredRender, 1000);
+}
+function _rrFlushDeferredRender(){
+  if(_rrDeferredRender && _rrRenderMustWait()) return;
+  clearInterval(_rrDeferredRenderTimer);
+  _rrDeferredRenderTimer = null;
+  if(!_rrDeferredRender) return;
+  _rrDeferredRender = false;
+  render();
+  console.log('[RR] Synced data from another device (deferred)');
 }
 
 function saveData(recId){
@@ -3771,6 +3801,72 @@ async function openRecentlyDeletedModal(){
       + '<div class="settings-row-right"><button class="btn btn-primary btn-sm" onclick="restoreDeletedRecord(\'' + item.record.id + '\',\'' + item.collectionName + '\')">Restore</button></div>'
       + '</div>';
   }).join('');
+}
+
+// One-time cleanup for profiles left behind by imports that failed before Fix 2. Only
+// this account's own records, nothing checked until the owner checks it, and deleting
+// goes through the same soft delete as everywhere else, so Recently Deleted restores it.
+function openBlankImportCleanupModal(){
+  const existing = document.getElementById('blankImportCleanupOverlay');
+  if(existing) existing.remove();
+  const blanks = records.filter(isBlankImportedRecord);
+  const overlay = document.createElement('div');
+  overlay.className = 'multi-editor-overlay';
+  overlay.id = 'blankImportCleanupOverlay';
+  const rows = blanks.map(function(r){
+    const when = r.createdAt ? formatDuplicateDate(r) : (r.date || 'Unknown date');
+    return '<label class="settings-row" style="padding:10px 0;cursor:pointer;gap:10px;justify-content:flex-start">'
+      + '<input type="checkbox" data-blank-id="' + esc(r.id) + '" style="width:18px;height:18px;padding:0;margin:0;flex-shrink:0">'
+      + '<div class="settings-row-left" style="min-width:0"><div class="sr-label">' + esc(r.property || 'Untitled property') + '</div>'
+      + '<div class="sr-desc" style="overflow-wrap:anywhere">Added ' + esc(when) + ' · ' + esc(r.link || r._aiSourceUrl || '') + '</div></div>'
+      + '</label>';
+  }).join('');
+  overlay.innerHTML = `<div class="multi-editor" style="max-width:560px">
+    <div class="multi-editor-header">
+      <h3>Clean Up Blank Imported Profiles</h3>
+      <button class="modal-close" onclick="document.getElementById('blankImportCleanupOverlay').remove()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+    </div>
+    <div class="multi-editor-body" style="padding:12px 16px;max-height:60vh;overflow-y:auto">
+      ${blanks.length ? rows : '<div style="text-align:center;color:var(--text3);padding:20px 0">No blank imported profiles found.</div>'}
+      ${blanks.length ? '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px"><button class="btn btn-secondary btn-sm" onclick="document.getElementById(\'blankImportCleanupOverlay\').remove()">Cancel</button><button class="btn btn-danger btn-sm" id="blankImportDeleteBtn" disabled onclick="_confirmBlankImportCleanup()">Delete selected</button></div>' : ''}
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', function(e){ if(e.target === overlay) overlay.remove(); });
+  overlay.addEventListener('change', function(){
+    const btn = document.getElementById('blankImportDeleteBtn');
+    if(btn) btn.disabled = !overlay.querySelector('input[data-blank-id]:checked');
+  });
+}
+
+function _confirmBlankImportCleanup(){
+  const overlay = document.getElementById('blankImportCleanupOverlay');
+  if(!overlay) return;
+  const ids = Array.from(overlay.querySelectorAll('input[data-blank-id]:checked')).map(function(el){ return el.getAttribute('data-blank-id'); });
+  if(!ids.length) return;
+  showAppConfirm('Delete ' + ids.length + ' blank ' + (ids.length === 1 ? 'profile' : 'profiles') + '? You can restore ' + (ids.length === 1 ? 'it' : 'them') + ' from Recently Deleted.', {
+    title: 'Delete blank profiles',
+    icon: '⚠️',
+    confirmText: 'Delete',
+    confirmClass: 'btn-danger',
+    onConfirm: function(){
+      if(_blockIfImpersonating('Delete')) return;
+      ids.forEach(function(id){
+        const idx = records.findIndex(function(x){ return x.id === id; });
+        // Recheck at delete time: a sync may have filled the record in since it was listed.
+        if(idx === -1 || !isBlankImportedRecord(records[idx])) return;
+        const r = records[idx];
+        records.splice(idx, 1);
+        _deletedRecordIds.add(r.id);
+        _softDeleteRecordMirror(r, 'propertyRecords');
+      });
+      saveData();
+      const el = document.getElementById('blankImportCleanupOverlay');
+      if(el) el.remove();
+      render();
+      showToast('Blank profiles deleted. Restore them from Recently Deleted if needed.', 'success', 4000);
+    }
+  });
 }
 
 async function _loadRecentlyDeletedItems(){
@@ -6844,6 +6940,8 @@ function renderLockoutScreen(){
 }
 
 function render(){
+  _rrDeferredRender = false;
+  _rrImportInFlightTrace('render');
   closeInlineStatusDD();
   const area = document.getElementById('contentArea');
   // Both the Arbitrage ('profile') and Co-Hosting ('cohostProfile') profiles use the
@@ -11861,6 +11959,12 @@ function hideToast() {
   toast.classList.remove('visible', 'loading');
 }
 
+// Hides a loading toast but leaves a finished import's outcome on screen.
+function _rrHideLoadingToast(){
+  const toast = document.getElementById('rr-toast');
+  if(toast && toast.classList.contains('loading')) hideToast();
+}
+
 // A property's name for messages: building name for Multi Unit, else the address.
 function _compTargetName(r, unit){
   const name = (r.recordType === 'apartment' && r.buildingName && r.buildingName.trim()) ? r.buildingName.trim() : (r.property || 'this property');
@@ -12139,8 +12243,257 @@ function rrNormalizeAvailableDate(raw) {
   return null;
 }
 
+// ---- Listing import lifecycle ---------------------------------------------
+// One import at a time per tab, from the moment scraping starts until its one
+// visible outcome. While it runs, remote changes merge but don't re-render, a
+// service-worker reload waits, and a localStorage marker lets the next page load
+// say the import was cut off. Nothing is saved until the import has succeeded.
+window._rrListingImportInFlight = null;
+const LISTING_SCRAPE_TIMEOUT_MS = 180000; // the extension's slowest path is about 165s
+const LISTING_GEOCODE_TIMEOUT_MS = 15000;
+
+function _pendingListingImportsKey(){ return 'rr_pending_listing_imports_' + (_currentUid || ''); }
+function _readPendingListingImports(){
+  try {
+    const list = JSON.parse(localStorage.getItem(_pendingListingImportsKey()) || '[]');
+    return Array.isArray(list) ? list : [];
+  } catch(_){ return []; }
+}
+function _writePendingListingImports(list){
+  try {
+    if(list.length) localStorage.setItem(_pendingListingImportsKey(), JSON.stringify(list));
+    else localStorage.removeItem(_pendingListingImportsKey());
+  } catch(_){}
+}
+function _listingImportLockName(m){ return 'rr-listing-import:' + m.id; }
+
+// Timestamped record of what happened during an import. It's kept on the marker, so
+// after a reload the next page can log what preceded it (see the T5 PR).
+function _rrImportInFlightTrace(event){
+  const entry = window._rrListingImportInFlight;
+  if(!entry) return false;
+  const line = new Date().toISOString() + ' ' + event;
+  console.log('[RR import trace]', line);
+  entry.trace = (entry.trace || []).concat(line).slice(-20);
+  _writePendingListingImports(_readPendingListingImports().filter(m => m && m.id !== entry.id).concat([entry]));
+  return true;
+}
+window.addEventListener('beforeunload', () => { _rrImportInFlightTrace('beforeunload'); });
+
+function _rrBeginListingImport(url){
+  const entry = { id: 'li_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8), url: url || '', startedAt: Date.now() };
+  window._rrListingImportInFlight = entry;
+  _writePendingListingImports(_readPendingListingImports().concat([entry]));
+  // Held for the life of the import, so another tab's page load can tell this
+  // import is still running rather than interrupted.
+  if(navigator.locks){
+    navigator.locks.request(_listingImportLockName(entry), () => new Promise(res => { entry._release = res; })).catch(() => {});
+  }
+  return entry;
+}
+function _rrEndListingImport(entry){
+  _writePendingListingImports(_readPendingListingImports().filter(m => m && m.id !== entry.id));
+  if(entry._release) entry._release();
+  window._rrListingImportInFlight = null;
+  // A queued popup import goes first: a reload here would lose it. The timeout lets
+  // this import's caller finish with its own outcome before the next one starts.
+  if(_rrQueuedPopupListing){ setTimeout(_rrRunQueuedPopupListing, 0); return; }
+  if(window._rrReloadAfterImport){ try { window.location.reload(); } catch(e){} return; }
+  _rrFlushDeferredRender();
+}
+
+// The popup has already scraped by the time it posts here, and it can't be asked to
+// send again, so a popup import that arrives during another import waits its turn.
+// One at most. A paste import can simply be pasted again, so it gets the busy toast.
+let _rrQueuedPopupListing = null;
+function _rrImportFromPopup(data){
+  if(!window._rrListingImportInFlight){
+    return _rrRunListingImport((data && data.sourceUrl) || '', () => handleExtensionListing(data));
+  }
+  if(_rrQueuedPopupListing){
+    showToast('Another import is already queued. Import this one from the popup again when they finish.', 'info', 6000);
+    return 'busy';
+  }
+  _rrQueuedPopupListing = data;
+  _rrImportInFlightTrace('popup import queued');
+  showToast('Queued — will import when the current one finishes.', 'info', 5000);
+  return 'queued';
+}
+function _rrRunQueuedPopupListing(){
+  const data = _rrQueuedPopupListing;
+  _rrQueuedPopupListing = null;
+  if(data) _rrImportFromPopup(data);
+}
+
+// Runs one import through to one outcome. `work` returns the outcome; anything it
+// throws becomes an error toast, which also replaces the loading toast.
+async function _rrRunListingImport(url, work){
+  if(window._rrListingImportInFlight){
+    showToast('Another listing import is still running. Try again when it finishes.', 'info', 5000);
+    return 'busy';
+  }
+  const entry = _rrBeginListingImport(url);
+  try {
+    return await work();
+  } catch(e){
+    console.error('[RR] listing import failed:', e);
+    showToast('Import failed: ' + esc((e && e.message) || e), 'error', 6000);
+    return 'failed';
+  } finally {
+    _rrEndListingImport(entry);
+  }
+}
+
+// On load: a marker younger than the limit, whose tab no longer holds its lock, is
+// an import a reload or navigation cut off. Nothing was saved, since saving is its
+// last step. One toast however many there were; older markers are just dropped.
+async function _checkInterruptedListingImports(){
+  if(_isImpersonating()) return;
+  const { interrupted, stale } = classifyPendingImports(_readPendingListingImports(), Date.now());
+  const gone = stale.slice();
+  let cutOff = false;
+  for(const m of interrupted){
+    if(navigator.locks){
+      let live = false;
+      try { live = await navigator.locks.request(_listingImportLockName(m), { ifAvailable: true }, lock => !lock); } catch(_){}
+      if(live) continue;
+    }
+    console.warn('[RR] listing import interrupted:', m.url, m.trace || '(no events logged)');
+    gone.push(m);
+    cutOff = true;
+  }
+  if(gone.length) _writePendingListingImports(_readPendingListingImports().filter(m => m && !gone.some(g => g.id === m.id)));
+  if(cutOff) showToast('Your listing import was interrupted, so nothing was saved. Try again.', 'warning', 8000);
+}
+
+function _rrScrapeListing(url){
+  let watchdog;
+  return Promise.race([
+    rrScrapeViaExtension(url, 'listing'),
+    new Promise(resolve => {
+      watchdog = setTimeout(() => {
+        _rrImportInFlightTrace('scrape watchdog timeout');
+        resolve({ ok: false, error: 'timeout', detail: 'The listing took too long to load. Try again.' });
+      }, LISTING_SCRAPE_TIMEOUT_MS);
+    }),
+  ]).finally(() => clearTimeout(watchdog));
+}
+
+function _rrListingFailureMessage(res){
+  if(res && res.error === 'extension-not-installed') return 'The RentingRadar Chrome extension isn\'t installed.';
+  if(res && res.error === 'listing-empty') return 'The page loaded without listing details. Try again.';
+  return 'Could not import listing: ' + ((res && (res.detail || res.error)) || 'Unknown error');
+}
+
+// A geocoder that never answers must not hold an import open forever.
+function _rrGeocodeListing(address){
+  const local = () => Object.assign({ lat: null, lng: null, formattedAddress: address || '' }, (typeof parseAddressParts === 'function' && address) ? parseAddressParts(address) : { street: address || '', unit: '', city: '', state: '', zip: '' });
+  let cap;
+  return Promise.race([
+    rrGeocodeAddress(address).catch(local),
+    new Promise(resolve => {
+      cap = setTimeout(() => {
+        _rrImportInFlightTrace('geocode timeout');
+        resolve(local());
+      }, LISTING_GEOCODE_TIMEOUT_MS);
+    }),
+  ]).finally(() => clearTimeout(cap));
+}
+
+// Asks which unit or floor plan a building-level scrape means. Resolves to the plan,
+// 'skip' or 'cancel'. Shown in the Add drawer when that's open, else as a dialog.
+let _rrCancelPlanPicker = null;
+function _rrPickListingPlan(data){
+  return new Promise(function(resolve){
+    const isUnits = !!data._needsUnit;
+    const plans = isUnits ? data.units : data.floorplans;
+    const intro = isUnits
+      ? 'This is a building page. Open a specific unit\'s listing (or pick one) for beds, baths, sq ft and rent.'
+      : 'This listing has several floor plans. Pick one for beds, baths, sq ft and rent.';
+    const body = '<div style="font-size:.82rem;color:var(--text);margin-bottom:10px;line-height:1.45">' + esc(intro) + '</div>'
+      + '<div role="radiogroup" aria-label="' + (isUnits ? 'Units' : 'Floor plans') + '" style="max-height:40vh;overflow-y:auto;margin-bottom:12px">'
+      + plans.map(function(p, i){
+          return '<label style="display:flex;align-items:center;gap:8px;padding:6px 2px;font-size:.82rem;color:var(--text);cursor:pointer">'
+            + '<input type="radio" name="rrPlanPick" value="' + i + '" style="width:16px;height:16px;padding:0;margin:0;flex-shrink:0;accent-color:var(--primary)"> '
+            + esc(formatPlanLabel(p)) + '</label>';
+        }).join('')
+      + '</div>'
+      + '<div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">'
+      + '<button type="button" class="btn btn-secondary btn-sm" data-plan-action="cancel">Cancel Import</button>'
+      + '<button type="button" class="btn btn-secondary btn-sm" data-plan-action="skip">Skip</button>'
+      + '<button type="button" class="btn btn-primary btn-sm" data-plan-action="use" disabled>Use this ' + (isUnits ? 'unit' : 'floor plan') + '</button>'
+      + '</div>';
+
+    const status = document.getElementById('add_choice_status') || document.getElementById('cohost_paste_status');
+    const inDrawer = status && status.closest('#detailModal.open');
+    let host;
+    if(inDrawer){
+      host = document.createElement('div');
+      host.id = 'rrPlanPicker';
+      host.style.cssText = 'margin-top:10px;padding-top:10px;border-top:1px solid var(--border)';
+      host.innerHTML = body;
+      status.textContent = '';
+      status.insertAdjacentElement('afterend', host);
+    } else {
+      host = document.createElement('div');
+      host.className = 'multi-editor-overlay';
+      host.id = 'rrPlanPicker';
+      host.innerHTML = '<div class="multi-editor" style="max-width:480px"><div class="multi-editor-header"><h3>' + (isUnits ? 'Pick a Unit' : 'Pick a Floor Plan') + '</h3></div><div class="multi-editor-body" style="padding:18px 20px">' + body + '</div></div>';
+      document.body.appendChild(host);
+    }
+
+    // The drawer can be rewritten or closed under the picker ("Enter manually", a
+    // profile opening). Nobody can answer it then, and the import would hold the
+    // guard until the next page load.
+    const orphanWatch = setInterval(function(){
+      const gone = !host.isConnected || !host.getClientRects().length || (inDrawer && !host.closest('#detailModal.open'));
+      if(gone){ _rrImportInFlightTrace('plan picker orphaned'); finish('cancel'); }
+    }, 500);
+    const finish = function(result){ clearInterval(orphanWatch); _rrCancelPlanPicker = null; host.remove(); resolve(result); };
+    _rrCancelPlanPicker = function(){ finish('cancel'); };
+    host.addEventListener('change', function(e){
+      if(e.target && e.target.name === 'rrPlanPick') host.querySelector('[data-plan-action="use"]').disabled = false;
+    });
+    host.addEventListener('click', function(e){
+      const btn = e.target.closest && e.target.closest('[data-plan-action]');
+      if(!btn) return;
+      const action = btn.getAttribute('data-plan-action');
+      if(action === 'use'){
+        const picked = host.querySelector('input[name="rrPlanPick"]:checked');
+        if(picked) finish(plans[Number(picked.value)]);
+      } else {
+        finish(action);
+      }
+    });
+  });
+}
+
+// Settles a building-level scrape into one set of numbers. Resolves to the listing
+// data to import, or null if the user cancelled.
+async function _rrResolveListingPlan(data){
+  if(!importHasUnitChoices(data)) return data;
+  // Nothing is loading while this waits on the user.
+  _rrHideLoadingToast();
+  const choice = await _rrPickListingPlan(data);
+  if(choice === 'cancel') return null;
+  showToast('Importing listing…', 'loading', 30000);
+  return choice === 'skip' ? skipPlanForListing(data) : applyPlanToListing(data, choice);
+}
+
+// The note bullets that fit the numbers this record ended up with.
+function _rrBulletsForRecord(data, d){
+  return filterBulletsAgainstCore(data.propertyNoteBullets, { bedrooms: d.bedrooms, bathrooms: d.bathrooms, sqft: d.sqft, price: d.monthlyRent }, {
+    otherPlanNames: data._otherPlanNames,
+    chosenPlanName: data._chosenPlanName,
+    blankUnit: !!(data._planSkipped || data._needsUnit || data._needsFloorplan),
+  });
+}
+
+// Returns the outcome, having shown it: 'created', 'updated', 'cancelled', 'failed' or
+// 'limit'. All the waiting (dialogs, geocoding, market lookup) happens before the
+// first change to `records`, so a reload at any point leaves nothing half-saved.
 async function handleExtensionListing(data) {
-  if (!data) return;
+  if (!data) return 'failed';
   // Dump the raw extension payload so we can see exactly what landed.
   // (Open DevTools Console on app.rentingradar.com to inspect.)
   try {
@@ -12160,17 +12513,24 @@ async function handleExtensionListing(data) {
   const pendingId = window._rrPendingListingRecordId;
   window._rrPendingListingRecordId = null;
 
-  let r = null;
-  let createdNew = false;
-
-  if (pendingId) {
-    r = records.find(x => x.id === pendingId) || null;
+  // An empty scrape (blocked page, half-loaded page): say so, save nothing.
+  if (isEmptyImport(data)) {
+    showToast('Import failed — nothing could be read from this listing.', 'error', 6000);
+    return 'failed';
   }
+
+  data = await _rrResolveListingPlan(data);
+  if (!data) {
+    showToast('Import cancelled.', 'info', 3500);
+    return 'cancelled';
+  }
+
+  const existingOnEntry = pendingId ? records.find(x => x.id === pendingId) : null;
 
   // Geocode the scraped address through Places — gives us proper
   // street/unit/city/state/zip + lat/lng in one call (no new API key,
   // reuses the existing manual-entry autocomplete setup).
-  const geo = await rrGeocodeAddress(data.address);
+  const geo = await _rrGeocodeListing(data.address);
   const addrParts = {
     street: geo.street || '',
     unit: geo.unit || '',
@@ -12184,26 +12544,70 @@ async function handleExtensionListing(data) {
   // views all show "1875 Carter Ave Unit 1s, Bronx NY 10457".
   const canonical = formatAddressOneLine(addrParts) || geo.formattedAddress || data.address || data.title || 'New Property';
 
-  if (!r) {
+  let replaceRecord = null;
+  if (!existingOnEntry) {
     // ── Duplicate detection ──
-    const dupRecord = findDuplicateProperty(canonical);
+    const dupRecord = findImportDuplicate({ name: canonical, addressParts: addrParts }, records);
     if (dupRecord) {
       const choice = await showDuplicateDialog(canonical, dupRecord);
-      if (choice === 'cancel') return;
-      if (choice === 'replace') {
-        const idx = records.findIndex(x => x.id === dupRecord.id);
-        if (idx !== -1) records.splice(idx, 1);
-        _deletedRecordIds.add(dupRecord.id);
-        saveData();
-        _softDeleteRecordMirror(dupRecord, 'propertyRecords');
+      if (choice === 'cancel') {
+        showToast('Import cancelled.', 'info', 3500);
+        return 'cancelled';
       }
-      // 'keep-both' falls through and creates the new record normally
+      // 'replace' deletes the old record in the same step that saves the new one;
+      // 'keep-both' just falls through and creates the new record normally.
+      if (choice === 'replace') replaceRecord = dupRecord;
     }
 
-    // Enforce tier/property-count limits just like the manual add flow
-    if (typeof checkPropertyLimit === 'function' && !checkPropertyLimit()) return;
+    // Enforce tier/property-count limits just like the manual add flow. Replacing
+    // adds nothing to the count. The limit dialog is this path's visible outcome.
+    if (!replaceRecord && typeof checkPropertyLimit === 'function' && !checkPropertyLimit()) {
+      hideToast();
+      return 'limit';
+    }
+  }
 
-    createdNew = true;
+  // ---- v1.14.0: MARKET / SUBMARKET LOOKUP (blocking) ----
+  // Look up market/submarket BEFORE saving/rendering so the profile
+  // opens fully populated. Capped at 25s so it won't hang indefinitely.
+  const knownDetails = (existingOnEntry && existingOnEntry.propertyDetails) || {};
+  let market = null;
+  if (!knownDetails.market && !knownDetails.submarket && addrParts.city) {
+    try {
+      const extId = window.RR_EXTENSION_INSTALLED || (window.RR_EXTENSION_IDS || [])[0];
+      if (extId && chrome.runtime && chrome.runtime.sendMessage) {
+        const resp = await new Promise((resolve) => {
+          const timeout = setTimeout(() => resolve(null), 25000);
+          chrome.runtime.sendMessage(extId, {
+            type: 'LOOKUP_MARKET',
+            city: addrParts.city,
+            state: addrParts.state,
+            zip: addrParts.zip,
+            lat: geo.lat,
+            lng: geo.lng,
+          }, (result) => {
+            clearTimeout(timeout);
+            resolve(result);
+          });
+        });
+        if (resp && resp.ok && resp.market) {
+          market = resp;
+          console.log('[RR] Market auto-filled:', resp.market, '/', resp.submarket, '(source:', resp.source, ')');
+        }
+      }
+    } catch (e) {
+      console.log('[RR] Market lookup failed:', e.message);
+    }
+  }
+
+  // Everything from here to saveData() is synchronous. A remote merge during the
+  // waits above can replace record objects, so look the target up only now. A new
+  // record stays local until the swap below, so a throw while building it changes
+  // nothing.
+  let r = pendingId ? (records.find(x => x.id === pendingId) || null) : null;
+  const createdNew = !r;
+
+  if (createdNew) {
     r = {
       id: (typeof uid === 'function' ? uid() : ('r_' + Date.now())),
       property: canonical,
@@ -12223,8 +12627,7 @@ async function handleExtensionListing(data) {
       propertyNotes: [],
       createdAt: new Date().toISOString(),
     };
-    records.unshift(r);
-    _afterPropertyCreate(r);
+    if (data.buildingName && r.recordType === 'apartment') r.buildingName = data.buildingName;
   } else {
     // Fill in address parts on an existing record only if they were empty
     if (!r.addressParts) r.addressParts = { street:'', unit:'', city:'', state:'', zip:'' };
@@ -12285,11 +12688,12 @@ async function handleExtensionListing(data) {
   // Ollama didn't run or didn't return bullets, we leave the Property Note
   // empty rather than dumping the raw listing description — the raw dump
   // was unreadable and the user explicitly asked us to stop doing that.
+  // Bullets that contradict the final numbers (another floor plan's) don't go in.
   const hasExistingNote = r.propertyNote && (r.propertyNote.text || r.propertyNote.html);
-  if (!hasExistingNote && Array.isArray(data.propertyNoteBullets) && data.propertyNoteBullets.length) {
-    const bullets = data.propertyNoteBullets;
-    const noteHtml = '<ul>' + bullets.map((b) => '<li>' + esc(b) + '</li>').join('') + '</ul>';
-    const noteText = bullets.map((b) => '• ' + b).join('\n');
+  const noteBullets = _rrBulletsForRecord(data, d);
+  if (!hasExistingNote && noteBullets.length) {
+    const noteHtml = '<ul>' + noteBullets.map((b) => '<li>' + esc(b) + '</li>').join('') + '</ul>';
+    const noteText = noteBullets.map((b) => '• ' + b).join('\n');
     r.propertyNote = {
       text: noteText,
       html: noteHtml,
@@ -12298,181 +12702,64 @@ async function handleExtensionListing(data) {
     };
   }
 
-  // ---- v1.14.0: MARKET / SUBMARKET LOOKUP (blocking) ----
-  // Look up market/submarket BEFORE saving/rendering so the profile
-  // opens fully populated. Capped at 25s so it won't hang indefinitely.
-  if (!d.market && !d.submarket && addrParts.city) {
-    try {
-      const extId = window.RR_EXTENSION_INSTALLED || (window.RR_EXTENSION_IDS || [])[0];
-      if (extId && chrome.runtime && chrome.runtime.sendMessage) {
-        const resp = await new Promise((resolve) => {
-          const timeout = setTimeout(() => resolve(null), 25000);
-          chrome.runtime.sendMessage(extId, {
-            type: 'LOOKUP_MARKET',
-            city: addrParts.city,
-            state: addrParts.state,
-            zip: addrParts.zip,
-            lat: geo.lat,
-            lng: geo.lng,
-          }, (result) => {
-            clearTimeout(timeout);
-            resolve(result);
-          });
-        });
-        if (resp && resp.ok && resp.market) {
-          if (!d.market) d.market = resp.market;
-          if (!d.submarket && resp.submarket) d.submarket = resp.submarket;
-          console.log('[RR] Market auto-filled:', resp.market, '/', resp.submarket, '(source:', resp.source, ')');
-        }
-      }
-    } catch (e) {
-      console.log('[RR] Market lookup failed:', e.message);
-    }
+  if (market) {
+    if (!d.market) d.market = market.market;
+    if (!d.submarket && market.submarket) d.submarket = market.submarket;
   }
 
+  if (createdNew) {
+    _afterPropertyCreate(r);
+    // The swap and the save are one step with nothing that can throw in between, so
+    // the old record can't go without the new one landing. Same order in
+    // handleCohostListing.
+    const oldIdx = replaceRecord ? records.findIndex(x => x.id === replaceRecord.id) : -1;
+    const oldRecord = oldIdx !== -1 ? records[oldIdx] : null;
+    if (oldRecord) records.splice(oldIdx, 1);
+    records.unshift(r);
+    if (replaceRecord) _deletedRecordIds.add(replaceRecord.id);
+    if (oldRecord) _softDeleteRecordMirror(oldRecord, 'propertyRecords');
+  }
   if (typeof saveData === 'function') saveData();
   if (typeof render === 'function') render();
 
-  // ---- Toast: successful / incomplete / failed ----
-  // v0.5.0: the LLM is now async — the fast path returns dictionary-only
-  // data and the LLM enrichment lands later via LISTING_ENRICHMENT. So
-  // "import successful" no longer requires _aiEnriched to be true.
-  // We track the pending state on the record so the LISTING_ENRICHMENT
-  // handler can find it and patch it in place.
+  // ---- Toast: successful / incomplete ----
   const coreCount =
     (d.bedrooms != null && d.bedrooms !== '' ? 1 : 0) +
     (d.bathrooms != null && d.bathrooms !== '' ? 1 : 0) +
     (d.sqft != null && d.sqft !== '' ? 1 : 0) +
     (d.monthlyRent != null && d.monthlyRent !== '' ? 1 : 0);
-  const hasAnyDetails = Object.keys(d).some((k) => {
-    const v = d[k];
-    return v != null && v !== '' && (!Array.isArray(v) || v.length > 0);
-  });
 
   let toastMsg, toastTone;
   // v0.8.0: AI enrichment restored — toast reflects AI status.
   const aiOk = data._aiEnriched === true;
   const aiErr = data._aiError || '';
-  if (coreCount === 0) {
-    toastMsg = 'Import failed — nothing could be read from this listing.';
-    toastTone = 'error';
+  if (data._needsUnit) {
+    toastMsg = 'This is a building page. Open a specific unit\'s listing (or pick one) for beds, baths, sq ft and rent.';
+    toastTone = 'warning';
+  } else if (data._planSkipped) {
+    toastMsg = 'Import successful — beds, baths, sq ft and rent left blank.';
+    toastTone = 'warning';
   } else if (coreCount >= 2 && aiOk) {
     toastMsg = createdNew ? 'Import successful.' : 'Property updated from listing.';
     toastTone = 'success';
   } else if (coreCount >= 2 && !aiOk) {
     toastMsg = (createdNew ? 'Import successful' : 'Property updated') + ' — AI details may be incomplete.';
-    if (aiErr) toastMsg += ' (' + aiErr.slice(0, 80) + ')';
+    if (aiErr) toastMsg += ' (' + esc(aiErr.slice(0, 80)) + ')';
     toastTone = 'warning';
   } else {
     toastMsg = 'Import partial — some details may need manual entry.';
-    if (aiErr) toastMsg += ' (' + aiErr.slice(0, 80) + ')';
+    if (aiErr) toastMsg += ' (' + esc(aiErr.slice(0, 80)) + ')';
     toastTone = 'warning';
   }
 
-  showToast(toastMsg + (data.warning ? ' ' + data.warning : ''), toastTone, 3500);
+  showToast(toastMsg + (data.warning ? ' ' + esc(data.warning) : ''), toastTone, toastTone === 'success' ? 3500 : 6000);
 
   if (createdNew && typeof openDetail === 'function') openDetail(r.id);
 
   if (toastTone !== 'success') {
     console.warn('[RR] Import status:', toastMsg, '— debug:', data._debug || '(no debug trace)', 'ai error:', data._aiError || '(none)');
   }
-}
-
-/**
- * Async AI enrichment patcher — receives a LISTING_ENRICHMENT message
- * from the Chrome extension AFTER the initial fast-path import has
- * already opened the property profile. Finds the record by sourceUrl,
- * merges in the LLM additions (Property Note bullets, missing core
- * numbers, utilitiesIncluded, petsAllowed) without clobbering anything
- * the user has touched, and re-renders.
- */
-function handleListingEnrichment(patch) {
-  if (!patch || typeof patch !== 'object') return;
-  const url = String(patch.sourceUrl || '').trim();
-  if (!url) {
-    console.warn('[RR] LISTING_ENRICHMENT missing sourceUrl');
-    return;
-  }
-
-  // Find the matching record. Prefer _aiSourceUrl (set when the fast
-  // path landed), fall back to .link, fall back to currentProfileId.
-  const norm = (s) => String(s || '').trim().toLowerCase().replace(/\/+$/, '');
-  const target = norm(url);
-  let r = records.find((x) => norm(x._aiSourceUrl) === target)
-        || records.find((x) => norm(x.link) === target)
-        || (typeof cohostRecords !== 'undefined' ? cohostRecords.find((x) => norm(x._aiSourceUrl) === target) : null)
-        || (typeof cohostRecords !== 'undefined' ? cohostRecords.find((x) => norm(x.link) === target) : null)
-        || (currentProfileId ? records.find((x) => x.id === currentProfileId) : null);
-
-  if (!r) {
-    console.warn('[RR] LISTING_ENRICHMENT could not find target record for', url);
-    return;
-  }
-
-  console.log('[RR] applying LISTING_ENRICHMENT to record', r.id);
-
-  if (!r.propertyDetails) r.propertyDetails = {};
-  const d = r.propertyDetails;
-  function setIfEmpty(obj, key, val) {
-    if (val == null || val === '') return;
-    if (obj[key] == null || obj[key] === '' || obj[key] === 0) obj[key] = val;
-  }
-
-  // Core numbers (only fill if still missing — never clobber user edits)
-  setIfEmpty(d, 'bedrooms', patch.bedrooms);
-  setIfEmpty(d, 'bathrooms', patch.bathrooms);
-  setIfEmpty(d, 'sqft', patch.sqft);
-  setIfEmpty(d, 'monthlyRent', patch.monthlyRent || patch.price);
-
-  // Property details delta (utilitiesIncluded, petsAllowed, availableDate, etc.)
-  if (patch.propertyDetails && typeof patch.propertyDetails === 'object') {
-    if (patch.propertyDetails.availableDate != null) {
-      patch.propertyDetails.availableDate = rrNormalizeAvailableDate(patch.propertyDetails.availableDate);
-      if (patch.propertyDetails.availableDate == null) delete patch.propertyDetails.availableDate;
-    }
-    for (const k in patch.propertyDetails) {
-      if (!Object.prototype.hasOwnProperty.call(patch.propertyDetails, k)) continue;
-      const v = patch.propertyDetails[k];
-      if (v == null || v === '' || (Array.isArray(v) && v.length === 0)) continue;
-      if (Array.isArray(v)) {
-        const existing = Array.isArray(d[k]) ? d[k] : [];
-        const merged = Array.from(new Set(existing.concat(v)));
-        if (merged.length) d[k] = merged;
-      } else {
-        setIfEmpty(d, k, v);
-      }
-    }
-  }
-
-  // Property Note bullets — only fill if the note is still empty (we
-  // don't want to overwrite a user's manual notes).
-  const hasExistingNote = r.propertyNote && (r.propertyNote.text || r.propertyNote.html);
-  if (!hasExistingNote && Array.isArray(patch.propertyNoteBullets) && patch.propertyNoteBullets.length) {
-    const bullets = patch.propertyNoteBullets;
-    const noteHtml = '<ul>' + bullets.map((b) => '<li>' + esc(b) + '</li>').join('') + '</ul>';
-    const noteText = bullets.map((b) => '• ' + b).join('\n');
-    r.propertyNote = {
-      text: noteText,
-      html: noteHtml,
-      date: new Date().toISOString(),
-      source: 'Auto-Import (AI)',
-    };
-  }
-
-  // Clear the pending flag — enrichment is done.
-  r._aiPending = false;
-  if (patch._aiError) {
-    r._aiError = patch._aiError;
-  } else {
-    delete r._aiError;
-  }
-
-  // Save to the correct store — co-host records persist via saveCohostData.
-  if (r.kind === 'cohost' && typeof saveCohostData === 'function') saveCohostData();
-  else if (typeof saveData === 'function') saveData();
-  if (typeof render === 'function') render();
-
-  // v0.8.0: AI enrichment restored — enrichment patches are applied inline.
+  return createdNew ? 'created' : 'updated';
 }
 
 /**
@@ -12492,27 +12779,31 @@ function importListingFromPaste(recId) {
     return;
   }
 
-  window._rrPendingListingRecordId = recId;
-  if (input) { input.disabled = true; input.placeholder = 'Importing listing…'; }
-  showToast('Importing listing…', 'loading', 30000);
+  const restoreInput = (clear) => {
+    const el = document.getElementById('rrListingPasteInput_' + recId);
+    if (!el) return;
+    el.disabled = false;
+    el.placeholder = 'Paste a listing link (Zillow, Apartments.com, Hotpads)';
+    if (clear) el.value = '';
+  };
 
-  rrScrapeViaExtension(url, 'listing').then((res) => {
-    if (input) { input.disabled = false; input.placeholder = 'Paste a listing link (Zillow, Apartments.com, Hotpads)'; input.value = ''; }
+  _rrRunListingImport(url, async () => {
+    window._rrPendingListingRecordId = recId;
+    if (input) { input.disabled = true; input.placeholder = 'Importing listing…'; }
+    showToast('Importing listing…', 'loading', 30000);
+    const res = await _rrScrapeListing(url);
     if (!res || !res.ok) {
+      window._rrPendingListingRecordId = null;
       if (res && res.error === 'extension-not-installed') {
+        hideToast();
         showAppAlert('The RentingRadar Chrome extension isn\'t installed. Install it from the Chrome Web Store to enable auto-fill.', {title: 'Extension required', icon: '🧩'});
       } else {
-        showAppAlert('Could not import listing: ' + ((res && res.error) || 'Unknown error'), {title: 'Import failed', icon: '⚠️'});
+        showToast(esc(_rrListingFailureMessage(res)), 'error', 6000);
       }
-      showToast('Import failed.', 'error');
-      return;
+      return 'failed';
     }
-    handleExtensionListing(res.data || {});
-  }).catch((e) => {
-    if (input) { input.disabled = false; input.placeholder = 'Paste a listing link (Zillow, Apartments.com, Hotpads)'; }
-    showAppAlert('Import error: ' + (e.message || e), {title: 'Import failed', icon: '⚠️'});
-    showToast('Import failed.', 'error');
-  });
+    return handleExtensionListing(res.data || {});
+  }).then((outcome) => restoreInput(outcome === 'created' || outcome === 'updated'));
 }
 
 /**
@@ -12531,20 +12822,24 @@ function importAddModalFromPaste(){
     showAppAlert('Install the RentingRadar Chrome extension to auto-fill from listings.', {title: 'Extension required', icon: '🧩'});
     return;
   }
-  if(input){ input.disabled = true; }
-  showToast('Importing listing…', 'loading', 30000);
-  rrScrapeViaExtension(url, 'listing').then((res) => {
-    if(input){ input.disabled = false; }
+  _rrRunListingImport(url, async () => {
+    if(input){ input.disabled = true; }
+    showToast('Importing listing…', 'loading', 30000);
+    const res = await _rrScrapeListing(url);
     if(!res || !res.ok){
       if(res && res.error === 'extension-not-installed'){
+        hideToast();
         showAppAlert('The RentingRadar Chrome extension isn\'t installed.', {title: 'Extension required', icon: '🧩'});
       } else {
-        showAppAlert('Could not import: ' + ((res && res.error) || 'Unknown error'), {title: 'Import failed', icon: '⚠️'});
+        showToast(esc(_rrListingFailureMessage(res)), 'error', 6000);
       }
-      showToast('Import failed.', 'error');
-      return;
+      return 'failed';
     }
-    const d = res.data || {};
+    const d = await _rrResolveListingPlan(res.data || {});
+    if(!d){
+      showToast('Import cancelled.', 'info', 3500);
+      return 'cancelled';
+    }
     const setVal = (id, v) => {
       const el = document.getElementById(id);
       if(el && v != null && v !== '' && !el.value) el.value = v;
@@ -12560,10 +12855,8 @@ function importAddModalFromPaste(){
       if(note && !note.value) note.value = d.description.slice(0, 500);
     }
     showToast('Details auto-filled from listing.', 'success');
-  }).catch((e) => {
-    if(input){ input.disabled = false; }
-    showAppAlert('Import error: ' + (e.message || e), {title: 'Import failed', icon: '⚠️'});
-  });
+    return 'updated';
+  }).finally(() => { if(input){ input.disabled = false; } });
 }
 
 /**
@@ -12590,7 +12883,7 @@ function openAddModal(recordType){
   const panel = document.getElementById('detailPanel');
   const _kindLabel = _addModalRecordType === 'apartment' ? 'Multi Unit' : 'Single Unit';
   panel.innerHTML = `
-    <div class="modal-header"><h2>Add New ${_kindLabel} Property</h2><button class="modal-close" onclick="closeAddModal()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>
+    <div class="modal-header"><h2>Add New ${_kindLabel} Property</h2><button class="modal-close" onclick="closeAddModalButton()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>
     <div class="modal-body" id="addModalBody">
       <div id="addStep1"></div>
       <div id="addStep2" style="display:none"></div>
@@ -12608,7 +12901,7 @@ function openAddModal(recordType){
       // A confirm, card editor or other popup on top owns Escape first.
       if(document.querySelector('.multi-editor-overlay, .card-edit-popup')) return;
       e.preventDefault();
-      closeAddModal();
+      closeAddModal(false, 'escape');
     });
   }
 }
@@ -12646,7 +12939,7 @@ function showAddChoice(){
       <button type="button" class="btn btn-secondary btn-sm" onclick="showManualAddForm()">Manual Entry</button>
     </div>
     <div style="display:flex;justify-content:flex-end;margin-top:16px">
-      <button type="button" class="btn btn-secondary" onclick="closeAddModal()">Cancel</button>
+      <button type="button" class="btn btn-secondary" onclick="closeAddModalButton()">Cancel</button>
     </div>
   `;
   setTimeout(() => { const el = document.getElementById('add_choice_url'); if(el) el.focus(); }, 60);
@@ -12767,38 +13060,53 @@ function importFromChoicePaste(){
     if(statusEl){ statusEl.style.color = 'var(--warning)'; statusEl.innerHTML = 'Install the RentingRadar Chrome extension to auto-fill from listings. ' + _extInstallLink('Get it on the Chrome Web Store'); }
     return;
   }
-  if(input) input.disabled = true;
-  if(statusEl){ statusEl.style.color = 'var(--text2)'; statusEl.textContent = 'Importing listing…'; }
-  showToast('Importing listing…', 'loading', 30000);
+  // The drawer can be redrawn or closed during a long import, so look these up late.
+  const setStatus = (color, html) => {
+    const el = document.getElementById('add_choice_status');
+    if(el){ el.style.color = color; el.innerHTML = html; }
+  };
 
-  // Make sure handleExtensionListing creates a new record (not fills an existing one)
-  window._rrPendingListingRecordId = null;
+  _rrRunListingImport(url, async () => {
+    if(input) input.disabled = true;
+    setStatus('var(--text2)', 'Importing listing…');
+    showToast('Importing listing…', 'loading', 30000);
 
-  rrScrapeViaExtension(url, 'listing').then(async (res) => {
+    // Make sure handleExtensionListing creates a new record (not fills an existing one)
+    window._rrPendingListingRecordId = null;
+
+    const res = await _rrScrapeListing(url);
     if(!res || !res.ok){
-      if(input) input.disabled = false;
-      if(statusEl){
-        statusEl.style.color = 'var(--danger)';
-        if(res && res.error === 'extension-not-installed'){
-          statusEl.innerHTML = 'The RentingRadar Chrome extension isn\'t installed. ' + _extInstallLink('Get it on the Chrome Web Store');
-        } else {
-          statusEl.textContent = 'Could not import: ' + ((res && res.error) || 'Unknown error');
-        }
+      const msg = _rrListingFailureMessage(res);
+      if(res && res.error === 'extension-not-installed'){
+        setStatus('var(--danger)', esc(msg) + ' ' + _extInstallLink('Get it on the Chrome Web Store'));
+      } else {
+        setStatus('var(--danger)', esc(msg) + ' <button type="button" class="btn btn-secondary btn-sm" style="margin-left:6px" onclick="importFromChoicePaste()">Retry</button>');
       }
-      return;
+      showToast(esc(msg), 'error', 6000);
+      return 'failed';
     }
     // Keep the Add modal as-is while handleExtensionListing runs
     // (geocoding + market lookup + save). Close it once the profile opens.
-    await handleExtensionListing(res.data || {});
-    const modal = document.getElementById('detailModal');
-    if(modal) modal.classList.remove('open');
-  }).catch((e) => {
-    if(input) input.disabled = false;
-    if(statusEl){ statusEl.style.color = 'var(--danger)'; statusEl.textContent = 'Import error: ' + (e.message || e); }
+    const outcome = await handleExtensionListing(res.data || {});
+    if(outcome === 'created' || outcome === 'updated') closeAddModal(true);
+    else setStatus('var(--text3)', '');
+    return outcome;
+  }).then((outcome) => {
+    const el = document.getElementById('add_choice_url');
+    if(el && outcome !== 'busy') el.disabled = false;
+    if(outcome === 'failed'){
+      const status = document.getElementById('add_choice_status');
+      if(status && !status.textContent) setStatus('var(--danger)', 'The import failed. Try again.');
+    }
   });
 }
 
-function closeAddModal(force){
+function closeAddModalButton(){ closeAddModal(false, 'button'); }
+// reason: 'escape', 'button' or 'programmatic'. It's logged so the next unexplained
+// drawer close names its source.
+function closeAddModal(force, reason){
+  const logClose = () => console.info('[RR drawer] close', reason || 'programmatic');
+  const cancelDrawerPicker = () => { if(_rrCancelPlanPicker && document.querySelector('#detailModal #rrPlanPicker')) _rrCancelPlanPicker(); };
   if(!force){
     // Check if any field in the add form has data
     const fields = ['add_property','add_city','add_state','add_zip','add_unit_num','add_name','add_phone','add_email','add_link','add_link2','add_note','add_followup'];
@@ -12810,23 +13118,27 @@ function closeAddModal(force){
         confirmText: 'Discard',
         confirmClass: 'btn-danger',
         onConfirm: function(){
+          logClose();
+          cancelDrawerPicker();
           document.getElementById('detailModal').classList.remove('open');
           // Cancel pending contact-link if the user discarded
           _pendingContactLink = null;
           // Dismiss any in-flight "Importing listing…" loading toast — without
           // this, it sat on screen for the full 30s after the user cancelled.
-          hideToast();
+          _rrHideLoadingToast();
         }
       });
       return;
     }
   }
+  logClose();
+  cancelDrawerPicker();
   document.getElementById('detailModal').classList.remove('open');
   // Clear pending link on a clean close too — the create path already consumed
   // it if a property was successfully created, so this only fires when the
   // user closed without creating.
   if(force !== true) _pendingContactLink = null;
-  hideToast();
+  _rrHideLoadingToast();
 }
 
 function updateAddImportUI(){
@@ -13005,7 +13317,7 @@ function showManualAddForm(){
       </div>
       <div style="display:flex;gap:8px;justify-content:flex-end;align-items:center;margin-top:20px">
         <div style="font-size:.65rem;color:var(--text3);margin-right:auto">Shift + Enter to save</div>
-        <button class="btn btn-secondary" onclick="closeAddModal()">Cancel</button>
+        <button class="btn btn-secondary" onclick="closeAddModalButton()">Cancel</button>
         <button class="btn btn-primary" onclick="saveNewRecord()">Save Property</button>
       </div>`;
     setTimeout(() => {
@@ -13071,7 +13383,7 @@ function showManualAddForm(){
       </div>
       <div style="display:flex;gap:8px;justify-content:flex-end;align-items:center;margin-top:20px">
         <div style="font-size:.65rem;color:var(--text3);margin-right:auto">Shift + Enter to save</div>
-        <button class="btn btn-secondary" onclick="closeAddModal()">Cancel</button>
+        <button class="btn btn-secondary" onclick="closeAddModalButton()">Cancel</button>
         <button class="btn btn-primary" onclick="saveNewRecord()">Save Property</button>
       </div>`;
     setTimeout(() => {
@@ -13887,11 +14199,6 @@ function showPropertyLimitModal(limit){
 // ============================================================
 // DUPLICATE PROPERTY DETECTION
 // ============================================================
-function normalizeAddressForMatch(str){
-  if(!str) return '';
-  return str.toLowerCase().replace(/[.,#\-]/g, ' ').replace(/\s+/g, ' ').trim();
-}
-
 function findDuplicateProperty(address, excludeId){
   if(!address) return null;
   const norm = normalizeAddressForMatch(address);
@@ -20261,12 +20568,7 @@ window.addEventListener('message', (event) => {
     } else if(m.type === 'COMP_IMPORTED' && typeof handleExtensionComp === 'function'){
       handleExtensionComp(m.data);
     } else if(m.type === 'LISTING_IMPORTED' && typeof handleExtensionListing === 'function'){
-      handleExtensionListing(m.data);
-    } else if(m.type === 'LISTING_ENRICHMENT' && typeof handleListingEnrichment === 'function'){
-      // Async LLM enrichment patch — arrives 5-15s after the initial
-      // import landed. Patches the open record in place with bullets +
-      // any LLM-only fields.
-      handleListingEnrichment(m.patch);
+      _rrImportFromPopup(m.data);
     } else if(m.type === 'CALL_AI_ENRICH' && m.reqId){
       // Call aiEnrich via Firebase Hosting rewrite (/api/aiEnrich)
       // with a Bearer token for auth — avoids IAM issues with onCall.
@@ -20685,6 +20987,7 @@ function _idleShowSignedOutToastIfFlagged(){
 let _authLoadError = null;
 let _authLoadStartedAt = 0;
 async function _handleAuthUser(user){
+  _rrImportInFlightTrace('onAuthStateChanged');
   try {
   if(user){
     _authLoadError = null;
@@ -26684,7 +26987,7 @@ function openCohostAddModal(){
   if(!_currentUid) return;
   const modal = document.getElementById('detailModal');
   const panel = document.getElementById('detailPanel');
-  panel.innerHTML = '<div class="modal-header"><h2>Add New Co-Hosting Property</h2><button class="modal-close" onclick="closeAddModal()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>'+
+  panel.innerHTML = '<div class="modal-header"><h2>Add New Co-Hosting Property</h2><button class="modal-close" onclick="closeAddModalButton()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>'+
     '<div class="modal-body" id="cohostAddBody"></div>';
   modal.classList.add('open');
   _cohostShowAddChoice();
@@ -26718,45 +27021,50 @@ function importCohostFromPaste(){
   if(!url){ if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent='Please paste a listing URL.'; } return; }
   if(/airdna\.co/i.test(url)){ if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent='Paste a Zillow, Apartments.com, or HotPads link.'; } return; }
   if(typeof rrScrapeViaExtension !== 'function'){ if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.innerHTML='Install the RentingRadar extension to auto-fill. '+_extInstallLink('Get it on the Chrome Web Store'); } return; }
-  if(input) input.disabled = true;
-  if(statusEl){ statusEl.style.color='var(--text3)'; statusEl.textContent='Importing listing…'; }
-  showToast('Importing listing…','loading',30000);
-  rrScrapeViaExtension(url,'listing').then(async function(res){
+  _rrRunListingImport(url, async function(){
+    if(input) input.disabled = true;
+    if(statusEl){ statusEl.style.color='var(--text3)'; statusEl.textContent='Importing listing…'; }
+    showToast('Importing listing…','loading',30000);
+    const res = await _rrScrapeListing(url);
     if(!res || !res.ok){
-      if(input) input.disabled = false;
       const err = res && res.error;
-      let msg = err==='extension-not-installed' ? 'Install the RentingRadar Chrome extension to import listings.' : ('Could not import listing: '+(err||'Unknown error'));
+      let msg = err==='extension-not-installed' ? 'Install the RentingRadar Chrome extension to import listings.' : _rrListingFailureMessage(res);
       if(statusEl){ statusEl.style.color='var(--danger)'; if(err==='extension-not-installed') statusEl.innerHTML = esc(msg)+' '+_extInstallLink('Get it on the Chrome Web Store'); else statusEl.textContent=msg; }
-      showToast(msg,'error',6000); return;
+      showToast(esc(msg),'error',6000);
+      return 'failed';
     }
     // Keep the Add modal open (with its "Importing…" status) while handleCohostListing
     // runs — geocode + market lookup + save — exactly like Arbitrage's importFromChoicePaste.
     // Close it only once the profile has opened, so it never reads as a failure.
-    await handleCohostListing(res.data || {});
-    closeAddModal();
-  }).catch(function(e){
-    if(input) input.disabled = false;
-    if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent='Import error: '+(e.message||e); }
-    showToast('Import error: '+(e.message||e),'error',6000);
+    const outcome = await handleCohostListing(res.data || {});
+    if(outcome === 'created') closeAddModal(true);
+    else if(statusEl) statusEl.textContent = '';
+    return outcome;
+  }).then(function(outcome){
+    const el = document.getElementById('cohost_paste_url');
+    if(el && outcome !== 'busy') el.disabled = false;
   });
 }
 // Mirrors handleExtensionListing (Arbitrage) but writes a co-host record with the
 // calculator scaffold. The imported rent feeds both Property Details and Asking In Rent.
 async function handleCohostListing(data){
-  if(!data) return;
-  const geo = await rrGeocodeAddress(data.address);
+  if(!data) return 'failed';
+  if(isEmptyImport(data)){
+    showToast('Import failed — nothing could be read from this listing.','error',6000);
+    return 'failed';
+  }
+  data = await _rrResolveListingPlan(data);
+  if(!data){ showToast('Import cancelled.','info',3500); return 'cancelled'; }
+  const geo = await _rrGeocodeListing(data.address);
   const addrParts = { street: geo.street||'', unit: geo.unit||'', city: geo.city||'', state: geo.state||'', zip: geo.zip||'' };
   const canonical = formatAddressOneLine(addrParts) || geo.formattedAddress || data.address || data.title || 'New Co-Hosting Property';
   // Duplicate detection within the co-host store (address-based).
-  let dup = null;
-  if(typeof normalizeAddressForMatch === 'function'){
-    const normA = normalizeAddressForMatch(canonical);
-    if(normA) dup = cohostRecords.find(function(x){ return normalizeAddressForMatch(x.property) === normA; }) || null;
-  }
+  const dup = findImportDuplicate({ name: canonical, addressParts: addrParts }, cohostRecords);
+  let replaceId = null;
   if(dup){
     const choice = await showDuplicateDialog(canonical, dup);
-    if(choice === 'cancel') return;
-    if(choice === 'replace'){ const i = cohostRecords.findIndex(function(x){ return x.id===dup.id; }); if(i!==-1) cohostRecords.splice(i,1); _deletedCohostIds.add(dup.id); saveCohostData(); _softDeleteRecordMirror(dup, 'cohostRecords'); }
+    if(choice === 'cancel'){ showToast('Import cancelled.','info',3500); return 'cancelled'; }
+    if(choice === 'replace') replaceId = dup.id;
   }
   const rent = (data.price!=null && data.price!=='') ? (_cn(data.price)||'') : '';
   const r = {
@@ -26796,8 +27104,8 @@ async function handleCohostListing(data){
     }
   }
   // Property Note from AI bullets (identical to Arbitrage).
-  if(Array.isArray(data.propertyNoteBullets) && data.propertyNoteBullets.length){
-    const bullets = data.propertyNoteBullets;
+  const bullets = _rrBulletsForRecord(data, d);
+  if(bullets.length){
     r.propertyNote = { text: bullets.map(function(b){return '• '+b;}).join('\n'), html: '<ul>'+bullets.map(function(b){return '<li>'+esc(b)+'</li>';}).join('')+'</ul>', date: new Date().toISOString(), source: 'Auto-Import ('+(data.source||'listing')+')' };
   }
   if(rent && (r.cohost.askingRent==='' || r.cohost.askingRent==null)) r.cohost.askingRent = rent;
@@ -26822,12 +27130,19 @@ async function handleCohostListing(data){
       }
     } catch(e){}
   }
-  cohostRecords.unshift(r);
   if(typeof _afterPropertyCreate === 'function') _afterPropertyCreate(r);
+  // One step with nothing that can throw before the save, as in handleExtensionListing.
+  const oldIdx = replaceId ? cohostRecords.findIndex(function(x){ return x.id===replaceId; }) : -1;
+  const oldRecord = oldIdx!==-1 ? cohostRecords[oldIdx] : null;
+  if(oldRecord) cohostRecords.splice(oldIdx,1);
+  cohostRecords.unshift(r);
+  if(replaceId) _deletedCohostIds.add(replaceId);
+  if(oldRecord) _softDeleteRecordMirror(oldRecord, 'cohostRecords');
   saveCohostData();
   const coreCount = (d.bedrooms?1:0)+(d.bathrooms?1:0)+(d.sqft?1:0)+(d.monthlyRent?1:0);
   showToast(coreCount ? 'Co-Hosting property imported.' : 'Import partial — some details may need manual entry.', coreCount?'success':'warning', 3500);
   openCohostProfile(r.id);
+  return 'created';
 }
 const COHOST_MANUAL_DRAFT_FIELD_IDS = ['cohost_m_address','cohost_m_host','cohost_m_market','cohost_m_beds','cohost_m_baths','cohost_m_link','cohost_m_rent'];
 function _cohostShowManualForm(){
@@ -26935,13 +27250,13 @@ function openCohostLinksEditor(id){
   _fieldDraftIds = COHOST_LINKS_DRAFT_FIELD_IDS;
   const fd = function(fieldId, fallback){ const dft = _getFieldDraft(_fieldDraftCtx, fieldId); return dft != null ? dft : fallback; };
   const modal = document.getElementById('detailModal'), panel = document.getElementById('detailPanel');
-  panel.innerHTML = '<div class="modal-header"><h2>Edit Listing Links</h2><button class="modal-close" onclick="closeAddModal()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>'+
+  panel.innerHTML = '<div class="modal-header"><h2>Edit Listing Links</h2><button class="modal-close" onclick="closeAddModalButton()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>'+
     '<div class="modal-body">'+
       '<label class="field-label" for="cohost_link_airbnb">Airbnb Link</label><input id="cohost_link_airbnb" type="url" value="'+esc(fd('cohost_link_airbnb', L.airbnb||''))+'" placeholder="https://airbnb.com/rooms/…" style="width:100%;margin-bottom:10px">'+
       '<label class="field-label" for="cohost_link_vrbo">VRBO Link</label><input id="cohost_link_vrbo" type="url" value="'+esc(fd('cohost_link_vrbo', L.vrbo||''))+'" placeholder="https://vrbo.com/…" style="width:100%;margin-bottom:10px">'+
       '<label class="field-label" for="cohost_link_maps">Google Maps Link</label><input id="cohost_link_maps" type="url" value="'+esc(fd('cohost_link_maps', L.maps||''))+'" placeholder="Auto from address if blank" style="width:100%;margin-bottom:4px">'+
       '<div style="font-size:.7rem;color:var(--text3);margin-bottom:14px">Leave a link blank to grey it out. Maps auto-fills from the address.</div>'+
-      '<div style="display:flex;justify-content:flex-end;gap:8px"><button class="btn btn-secondary" onclick="closeAddModal()">Cancel</button><button class="btn btn-primary" onclick="saveCohostLinks(\''+id+'\')">Save Links</button></div>'+
+      '<div style="display:flex;justify-content:flex-end;gap:8px"><button class="btn btn-secondary" onclick="closeAddModalButton()">Cancel</button><button class="btn btn-primary" onclick="saveCohostLinks(\''+id+'\')">Save Links</button></div>'+
     '</div>';
   modal.classList.add('open');
 }
@@ -26965,13 +27280,13 @@ function openCohostContactEditor(id){
   _fieldDraftIds = COHOST_CONTACT_DRAFT_FIELD_IDS;
   const fd = function(fieldId, fallback){ const dft = _getFieldDraft(_fieldDraftCtx, fieldId); return dft != null ? dft : fallback; };
   const modal = document.getElementById('detailModal'), panel = document.getElementById('detailPanel');
-  panel.innerHTML = '<div class="modal-header"><h2>Contact</h2><button class="modal-close" onclick="closeAddModal()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>'+
+  panel.innerHTML = '<div class="modal-header"><h2>Contact</h2><button class="modal-close" onclick="closeAddModalButton()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>'+
     '<div class="modal-body">'+
       '<label class="field-label" for="cohost_c_name">Contact Name</label><input id="cohost_c_name" type="text" value="'+esc(fd('cohost_c_name', r.name||''))+'" placeholder="e.g. Sarah Johnson" style="width:100%;margin-bottom:10px">'+
       '<label class="field-label" for="cohost_c_phone">Phone</label><input id="cohost_c_phone" type="tel" value="'+esc(fd('cohost_c_phone', r.phone||''))+'" placeholder="(555) 123-4567" style="width:100%;margin-bottom:10px">'+
       '<label class="field-label" for="cohost_c_email">Email</label><input id="cohost_c_email" type="email" value="'+esc(fd('cohost_c_email', r.email||''))+'" placeholder="name@email.com" style="width:100%;margin-bottom:4px">'+
       '<div style="font-size:.7rem;color:var(--text3);margin-bottom:14px">This contact is added to the app\'s Contacts section and linked to this property.</div>'+
-      '<div style="display:flex;justify-content:flex-end;gap:8px"><button class="btn btn-secondary" onclick="closeAddModal()">Cancel</button><button class="btn btn-primary" onclick="saveCohostContact(\''+id+'\')">Save</button></div>'+
+      '<div style="display:flex;justify-content:flex-end;gap:8px"><button class="btn btn-secondary" onclick="closeAddModalButton()">Cancel</button><button class="btn btn-primary" onclick="saveCohostContact(\''+id+'\')">Save</button></div>'+
     '</div>';
   modal.classList.add('open');
   setTimeout(function(){ const el=document.getElementById('cohost_c_name'); if(el) el.focus(); }, 60);
@@ -27475,7 +27790,7 @@ function openCohostCoreEditor(id){
   };
   const inp = function(label, fid, val, type, step){ return '<div class="prop-field"><label>'+label+'</label><input type="'+(type||'text')+'" id="'+fid+'" value="'+fieldVal(val, fid)+'"'+(step?' step="'+step+'"':'')+'></div>'; };
   const statusOpts = (typeof SELECTABLE_STATUSES!=='undefined'?SELECTABLE_STATUSES:[]).map(function(s){ return '<option value="'+esc(s)+'"'+(r.status===s?' selected':'')+'>'+esc(s)+'</option>'; }).join('');
-  panel.innerHTML = '<div class="modal-header"><h2>Edit Contact &amp; Status</h2><button class="modal-close" onclick="closeAddModal()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>'+
+  panel.innerHTML = '<div class="modal-header"><h2>Edit Contact &amp; Status</h2><button class="modal-close" onclick="closeAddModalButton()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>'+
     '<div class="modal-body">'+
       '<div style="margin-bottom:12px"><label class="field-label" for="cohost_core_address">Property Address</label><input id="cohost_core_address" type="text" value="'+fieldVal(r.property, 'cohost_core_address')+'" style="width:100%"></div>'+
       '<div class="prop-field-grid">'+
@@ -27491,7 +27806,7 @@ function openCohostCoreEditor(id){
         inp('Submarket','cohost_core_submarket', d.submarket)+
       '</div>'+
       '<div style="margin-top:10px"><label class="field-label" for="cohost_core_link">Listing Link</label><input id="cohost_core_link" type="url" value="'+fieldVal(r.link, 'cohost_core_link')+'" style="width:100%"></div>'+
-      '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px"><button class="btn btn-secondary" onclick="closeAddModal()">Cancel</button><button class="btn btn-primary" onclick="saveCohostCore(\''+id+'\')">Save Changes</button></div>'+
+      '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px"><button class="btn btn-secondary" onclick="closeAddModalButton()">Cancel</button><button class="btn btn-primary" onclick="saveCohostCore(\''+id+'\')">Save Changes</button></div>'+
     '</div>';
   modal.classList.add('open');
 }
@@ -34844,7 +35159,7 @@ function parseAddressParts(property){
   // Try to parse "Street, City State Zip" or "Street Unit X, City State Zip"
   const parts = { street:'', unit:'', city:'', state:'', zip:'' };
   // Match unit in the string
-  const unitRe = /\s+(#|Unit|Ste|Suite|Apt|Apartment|Bldg)\s*\.?\s*(\S+)/i;
+  const unitRe = /\s+(#|Unit|Ste|Suite|Apt|Apartment|Bldg)\s*\.?\s*([^\s,]+)/i;
   let clean = property;
   const unitMatch = clean.match(unitRe);
   if(unitMatch){
@@ -37481,6 +37796,10 @@ function renderSettings(){
         <div class="settings-row">
           <div class="settings-row-left"><div class="sr-label">Recently Deleted</div><div class="sr-desc">Deleted properties are recoverable, not erased — restore one here</div></div>
           <div class="settings-row-right"><button class="btn btn-secondary btn-sm" onclick="openRecentlyDeletedModal()">View</button></div>
+        </div>
+        <div class="settings-row">
+          <div class="settings-row-left"><div class="sr-label">Clean up blank imported profiles</div><div class="sr-desc">Find profiles a failed listing import left with no address or details</div></div>
+          <div class="settings-row-right"><button class="btn btn-secondary btn-sm" onclick="openBlankImportCleanupModal()">Review</button></div>
         </div>
       </div>
     </div>
@@ -44568,8 +44887,15 @@ var MobileAdmin = (function(){
   try {
     if('serviceWorker' in navigator){
       var _swReloaded = false;
+      var _swHadController = !!navigator.serviceWorker.controller;
       navigator.serviceWorker.addEventListener('controllerchange', function(){
+        _rrImportInFlightTrace('controllerchange');
+        // The first claim isn't an update: this page is already the latest. Reloading
+        // here threw away whatever the user had open the first time alerts turned on.
+        if(!_swHadController){ _swHadController = true; return; }
         if(_swReloaded) return; _swReloaded = true;
+        // Don't cut off an import; _rrEndListingImport reloads once it has finished.
+        if(window._rrListingImportInFlight){ window._rrReloadAfterImport = true; return; }
         try { window.location.reload(); } catch(e){}
       });
     }

@@ -120,7 +120,7 @@ async function doImport() {
       return;
     }
     if (!response || !response.ok) {
-      setStatus('Import failed: ' + ((response && response.error) || 'Unknown error'), 'error');
+      setStatus('Import failed: ' + ((response && (response.detail || response.error)) || 'Unknown error'), 'error');
       return;
     }
     const data = response.data || {};
