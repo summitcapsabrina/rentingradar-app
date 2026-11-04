@@ -17,6 +17,13 @@ function isPlaceholderPropertyName(name) {
   return !/^\d+[a-z]?\s+\S/i.test(s);
 }
 
+// Only the app's own stand-ins ("New Property", or nothing at all). Unlike
+// isPlaceholderPropertyName this leaves names like "Smith Duplex" alone.
+function isStandInPropertyName(name) {
+  const s = String(name == null ? '' : name).trim().toLowerCase();
+  return !s || PLACEHOLDER_PROPERTY_NAMES.has(s);
+}
+
 // Same test the extension uses: a street number and some letters.
 function isUsableImportAddress(address) {
   const s = String(address == null ? '' : address).trim();
@@ -99,6 +106,15 @@ function addressKeysMatch(a, b) {
   return !a.zip || !b.zip || a.zip === b.zip;
 }
 
+// The same building, one side naming a unit and the other not: a building listing
+// against a saved unit, or the other way round. Two different units (714 and 715)
+// are never the same building's duplicate.
+function addressKeysSameBuilding(a, b) {
+  if (!a || !b || !a.street || !b.street || a.street !== b.street) return false;
+  if (!a.unit === !b.unit) return false;
+  return !a.zip || !b.zip || a.zip === b.zip;
+}
+
 // The existing record this import duplicates, compared on street + unit + zip.
 // A placeholder name on either side never counts: a blank "New Property" isn't an
 // address, so two of them say nothing about each other.
@@ -117,19 +133,31 @@ function findImportDuplicate(candidate, records) {
 }
 
 // Checks every way this import can name its address (geocoded parts, the one-line
-// name, the scraped text); a match on any of them is a duplicate. Returns the match
-// (or null) and the key that matched, else the first key, for the import trace.
+// name, the scraped text) against every record. An exact match anywhere beats a
+// same-building one. Returns { match, key, kind }: the record or null, the key that
+// matched (else the first key) for the import trace, and 'exact', 'same-building'
+// or null.
 function importDuplicateCheck(candidates, records) {
-  let firstKey = '';
+  const keys = [];
   for (const c of candidates || []) {
     if (!c || isPlaceholderPropertyName(c.name)) continue;
     const key = addressMatchKey(c.addressParts && c.addressParts.street ? c.addressParts : c.name);
-    if (!key.street) continue;
-    if (!firstKey) firstKey = addressKeyText(key);
-    const match = findImportDuplicate(c, records);
-    if (match) return { match, key: addressKeyText(key) };
+    if (key.street) keys.push(key);
   }
-  return { match: null, key: firstKey };
+  const saved = (Array.isArray(records) ? records : [])
+    .filter((r) => r && !isPlaceholderPropertyName(r.property))
+    .map((r) => ({ r, key: addressMatchKey(r.addressParts && r.addressParts.street ? r.addressParts : r.property) }));
+  for (const [kind, test] of [['exact', addressKeysMatch], ['same-building', addressKeysSameBuilding]]) {
+    for (const key of keys) {
+      // Geocoding can drop the unit the scraped text still has. When any candidate
+      // names a unit on this street, a unit-less one isn't evidence of the whole
+      // building, so it can't make 714 look like 715's building.
+      if (kind === 'same-building' && !key.unit && keys.some((o) => o.unit && o.street === key.street)) continue;
+      const hit = saved.find((s) => test(key, s.key));
+      if (hit) return { match: hit.r, key: addressKeyText(key), kind };
+    }
+  }
+  return { match: null, key: keys.length ? addressKeyText(keys[0]) : '', kind: null };
 }
 
 const IMPORT_LINK_RE = /(?:^|\/\/|\.)(?:zillow\.com|apartments\.com|hotpads\.com|facebook\.com\/marketplace|craigslist\.org)/i;
@@ -145,7 +173,10 @@ const _none = (list) => !Array.isArray(list) || list.length === 0;
 // nothing the owner added: no notes, no contact details.
 function isBlankImportedRecord(r) {
   if (!r || !isPlaceholderPropertyName(r.property)) return false;
-  if (r.addressParts && String(r.addressParts.street || '').trim()) return false;
+  // A street that is itself a stand-in ("New Property" copied in by an editor) is no
+  // street.
+  const street = String((r.addressParts && r.addressParts.street) || '').trim();
+  if (street && !isPlaceholderPropertyName(street)) return false;
   const d = r.propertyDetails || {};
   if (importStructuralCount({ bedrooms: d.bedrooms, bathrooms: d.bathrooms, sqft: d.sqft }) > 0) return false;
   if (blankImportSourceLink(r)) return true;
@@ -360,6 +391,7 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     normalizeAddressForMatch,
     isPlaceholderPropertyName,
+    isStandInPropertyName,
     isUsableImportAddress,
     importCoreCount,
     importStructuralCount,
@@ -367,6 +399,7 @@ if (typeof module !== 'undefined' && module.exports) {
     isEmptyImport,
     addressMatchKey,
     addressKeysMatch,
+    addressKeysSameBuilding,
     findImportDuplicate,
     addressKeyText,
     importDuplicateCheck,

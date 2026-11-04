@@ -633,7 +633,94 @@ async function lookupMarket(city, state, zip, lat, lng) {
   return fallback;
 }
 
-async function lookupMarketViaAirDNA(lat, lng, zip) {
+// ------------------------------------------------------------------
+// v1.16.17: AirDNA market lookup cache. Each lookup opens a background AirDNA tab;
+// nearby imports share one answer for 30 days instead, so the account doesn't
+// look automated. Keyed by lat/lng rounded to 2 decimals (about 1 km).
+// ------------------------------------------------------------------
+const MARKET_CACHE_KEY = 'rrMarketCache';
+const MARKET_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const MARKET_CACHE_MAX = 500;
+const _marketLookupsInFlight = new Map();
+let _marketCacheWrites = Promise.resolve();
+
+// "30.38,-87.08", or null without usable coordinates.
+function marketCacheKey(lat, lng) {
+  const round = (v) => {
+    const n = Number(v);
+    if (v == null || v === '' || !Number.isFinite(n)) return null;
+    return (Math.round(n * 100) / 100 || 0).toFixed(2);
+  };
+  const a = round(lat);
+  const b = round(lng);
+  return a == null || b == null ? null : a + ',' + b;
+}
+
+// The cached { market, submarket } for key if it's younger than the TTL, else null.
+// An entry stamped more than a day in the future (a clock that was wrong) is a miss,
+// so it can't stay fresh forever.
+function marketCacheLookup(cache, key, now) {
+  const e = cache && key ? cache[key] : null;
+  if (!e || !e.market || !(now - e.at < MARKET_CACHE_TTL_MS)) return null;
+  if (e.at > now + 24 * 60 * 60 * 1000) return null;
+  return { market: e.market, submarket: e.submarket || null };
+}
+
+// A copy of cache with key set, trimmed to the newest MARKET_CACHE_MAX entries.
+function marketCacheStore(cache, key, value, now) {
+  const next = Object.assign({}, cache || {});
+  next[key] = { market: value.market, submarket: value.submarket || null, at: now };
+  const keys = Object.keys(next);
+  if (keys.length > MARKET_CACHE_MAX) {
+    keys.sort((x, y) => (next[x].at || 0) - (next[y].at || 0))
+      .slice(0, keys.length - MARKET_CACHE_MAX)
+      .forEach((k) => { delete next[k]; });
+  }
+  return next;
+}
+
+// null when storage can't be read, so a write never replaces the whole cache with
+// one entry.
+async function _readMarketCache() {
+  try {
+    const got = await chrome.storage.local.get(MARKET_CACHE_KEY);
+    return (got && got[MARKET_CACHE_KEY]) || {};
+  } catch (_) { return null; }
+}
+
+// Writes queue up, so two lookups finishing together don't overwrite each other.
+function _writeMarketCache(key, value) {
+  _marketCacheWrites = _marketCacheWrites.then(async () => {
+    const current = await _readMarketCache();
+    if (!current) return;
+    const next = marketCacheStore(current, key, value, Date.now());
+    await chrome.storage.local.set({ [MARKET_CACHE_KEY]: next });
+  }).catch(() => {});
+  return _marketCacheWrites;
+}
+
+// Both market callers come through here. A cache hit opens no tab; a lookup already
+// running for the same key is shared. Only a real answer with a market is cached:
+// never a timeout, a login wall or a failure.
+function lookupMarketViaAirDNA(lat, lng, zip) {
+  const key = marketCacheKey(lat, lng);
+  if (!key) return _lookupMarketViaAirDNATab(lat, lng, zip);
+  if (_marketLookupsInFlight.has(key)) return _marketLookupsInFlight.get(key);
+  const lookup = (async () => {
+    const hit = marketCacheLookup(await _readMarketCache(), key, Date.now());
+    if (hit) {
+      console.log('[RR ext] market cache hit', key);
+      return hit;
+    }
+    const res = await _lookupMarketViaAirDNATab(lat, lng, zip);
+    if (res && res.market) await _writeMarketCache(key, res);
+    return res;
+  })().finally(() => { _marketLookupsInFlight.delete(key); });
+  _marketLookupsInFlight.set(key, lookup);
+  return lookup;
+}
+
+async function _lookupMarketViaAirDNATab(lat, lng, zip) {
   // Build an AirDNA URL from lat/lng or zip
   let airdnaUrl = null;
   if (lat != null && lng != null) {

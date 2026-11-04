@@ -150,3 +150,130 @@ test('grounding keeps real values and drops substring ones', () => {
   assert.deepEqual(Array.from(out.communityAmenities), ['Swimming Pool', 'Some Custom Thing']);
   assert.equal(out.parking, 'Street Only');
 });
+
+// ---- AirDNA market cache ----------------------------------------------------
+// The worker's real tab path runs against a fake chrome: every tab "loads", the
+// market scraper "answers" with the next queued result, and tabs are counted.
+function marketWorker(answers) {
+  const ctx = loadWorker();
+  const store = {};
+  const tabListeners = [];
+  const logs = [];
+  let nextId = 100;
+  const counts = { tabs: 0 };
+  ctx.console = { log: (...a) => logs.push(a.join(' ')), warn() {}, error() {} };
+  ctx.chrome.storage.local = {
+    get: async (k) => (k == null ? { ...store } : { [k]: store[k] }),
+    set: async (o) => { Object.assign(store, JSON.parse(JSON.stringify(o))); },
+    remove: async () => {},
+  };
+  ctx.chrome.tabs = {
+    create: async () => { counts.tabs++; const id = nextId++; setTimeout(() => tabListeners.slice().forEach((l) => l(id, { status: 'complete' })), 0); return { id }; },
+    remove: async () => {},
+    onUpdated: { addListener: (l) => tabListeners.push(l), removeListener: (l) => { const i = tabListeners.indexOf(l); if (i >= 0) tabListeners.splice(i, 1); } },
+    onRemoved: { addListener() {} },
+    query: async () => [],
+  };
+  ctx.chrome.scripting = {
+    executeScript: async ({ target }) => {
+      const answer = answers.length ? answers.shift() : { _type: 'market-lookup', market: 'Example Market, FL', submarket: 'Example Beach' };
+      setTimeout(() => { const p = vm.runInContext('pendingScrapes', ctx).get(target.tabId); if (p) p.resolve(answer); }, 0);
+      return [];
+    },
+  };
+  const lookup = (lat, lng) => { ctx.__ll = [lat, lng]; return vm.runInContext('lookupMarketViaAirDNA(__ll[0], __ll[1])', ctx); };
+  return { ctx, store, counts, logs, lookup };
+}
+const DAY = 24 * 60 * 60 * 1000;
+
+test('market cache: a hit within 30 days opens no tab', async () => {
+  const w = marketWorker([]);
+  const first = await w.lookup(30.3812, -87.0791);
+  assert.equal(first.market, 'Example Market, FL');
+  assert.equal(w.counts.tabs, 1);
+  const entry = w.store.rrMarketCache['30.38,-87.08'];
+  assert.equal(entry.market, 'Example Market, FL');
+  assert.equal(entry.submarket, 'Example Beach');
+  assert.equal(typeof entry.at, 'number');
+  const again = await w.lookup(30.3812, -87.0791);
+  assert.deepEqual({ ...again }, { market: 'Example Market, FL', submarket: 'Example Beach' });
+  assert.equal(w.counts.tabs, 1, 'no second tab');
+  assert.ok(w.logs.includes('[RR ext] market cache hit 30.38,-87.08'), w.logs.join('\n'));
+});
+
+test('market cache: an entry older than 30 days misses', async () => {
+  const w = marketWorker([]);
+  w.store.rrMarketCache = { '30.38,-87.08': { market: 'Old Market', submarket: null, at: Date.now() - 31 * DAY } };
+  const res = await w.lookup(30.38, -87.08);
+  assert.equal(res.market, 'Example Market, FL');
+  assert.equal(w.counts.tabs, 1);
+  assert.equal(w.store.rrMarketCache['30.38,-87.08'].market, 'Example Market, FL', 'refreshed');
+  w.store.rrMarketCache['30.38,-87.08'].at = Date.now() - 29 * DAY;
+  await w.lookup(30.38, -87.08);
+  assert.equal(w.counts.tabs, 1, '29 days old still hits');
+});
+
+test('market cache: a login wall, a failed scrape or a null answer is never cached', async () => {
+  const w = marketWorker([{ _type: 'market-lookup', _loginRequired: true }, { _type: 'something-else' }]);
+  assert.equal(await w.lookup(30.38, -87.08), null);
+  assert.equal(await w.lookup(30.38, -87.08), null);
+  assert.equal(w.counts.tabs, 2);
+  assert.equal(w.store.rrMarketCache, undefined);
+  // The timeout path resolves null too; stub the tab step to answer that way at once.
+  vm.runInContext('_lookupMarketViaAirDNATab = async () => null', w.ctx);
+  assert.equal(await w.lookup(30.38, -87.08), null);
+  assert.equal(w.store.rrMarketCache, undefined);
+});
+
+test('market cache: two lookups for the same key at once open one tab', async () => {
+  const w = marketWorker([]);
+  const [a, b] = await Promise.all([w.lookup(30.381, -87.081), w.lookup(30.379, -87.084)]);
+  assert.equal(w.counts.tabs, 1);
+  assert.equal(a.market, 'Example Market, FL');
+  assert.equal(b.market, 'Example Market, FL');
+});
+
+test('market cache: nearby coordinates share an entry, farther ones do not', async () => {
+  const w = marketWorker([]);
+  assert.equal(vm.runInContext('marketCacheKey(30.3812, -87.0791)', w.ctx), vm.runInContext('marketCacheKey(30.3849, -87.0751)', w.ctx));
+  assert.equal(vm.runInContext('marketCacheKey(-0.001, 0)', w.ctx), '0.00,0.00');
+  assert.equal(vm.runInContext('marketCacheKey(null, 1)', w.ctx), null);
+  await w.lookup(30.3812, -87.0791);
+  await w.lookup(30.3849, -87.0751);
+  assert.equal(w.counts.tabs, 1, 'same rounded key');
+  await w.lookup(30.40, -87.08);
+  assert.equal(w.counts.tabs, 2, 'about 2 km away');
+});
+
+test('market cache: a failed read never overwrites the cache', async () => {
+  const w = marketWorker([]);
+  let sets = 0;
+  w.ctx.chrome.storage.local.get = async () => { throw new Error('storage unavailable'); };
+  w.ctx.chrome.storage.local.set = async () => { sets++; };
+  const res = await w.lookup(30.38, -87.08);
+  assert.equal(res.market, 'Example Market, FL', 'the lookup still answers');
+  assert.equal(w.counts.tabs, 1);
+  assert.equal(sets, 0, 'no write');
+});
+
+test('market cache: an entry dated more than a day ahead is a miss', () => {
+  const w = marketWorker([]);
+  const now = Date.now();
+  const lookup = (at) => vm.runInContext('(c, k, n) => marketCacheLookup(c, k, n)', w.ctx)({ k: { market: 'M', submarket: null, at } }, 'k', now);
+  assert.equal(lookup(now + 2 * DAY), null);
+  assert.equal(lookup(now + 2 * 60 * 60 * 1000).market, 'M', 'a few hours of clock skew is fine');
+  assert.equal(lookup(now - DAY).market, 'M');
+});
+
+test('market cache: the cap drops the oldest entries', () => {
+  const w = marketWorker([]);
+  const store = vm.runInContext('(c, k, v, t) => marketCacheStore(c, k, v, t)', w.ctx);
+  const cache = {};
+  for (let i = 0; i < 500; i++) cache['k' + i] = { market: 'M' + i, submarket: null, at: 1000 + i };
+  const next = store(cache, 'new', { market: 'N', submarket: 'S' }, 5000);
+  assert.equal(Object.keys(next).length, 500);
+  assert.equal(next.k0, undefined, 'oldest dropped');
+  assert.ok(next.k1 && next.new);
+  assert.equal(Object.keys(cache).length, 500, 'input untouched');
+  assert.equal(vm.runInContext('MARKET_CACHE_MAX', w.ctx), 500);
+});
