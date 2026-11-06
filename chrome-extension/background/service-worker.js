@@ -326,15 +326,21 @@ async function scrapeAny(url, hint, expectedListingId) {
   // dictionary extractor over the Airbnb page text). Otherwise behaves like
   // an AirDNA scrape.
   const wantFullProperty = hint === 'cohost';
+  // v1.17.0: an Airbnb listing link imports the property itself (Co-Hosting).
+  const strSite = self.RRListingPlans.strListingSite(url);
   let kind;
   if (hint === 'airdna' || hint === 'cohost' || /airdna\.co$/i.test(host)) kind = 'airdna';
+  else if (strSite === 'airbnb') kind = 'str';
   else if (/(zillow|apartments|hotpads)\.com$/i.test(host)) kind = 'listing';
   else if (/facebook\.com$/i.test(host) && /\/marketplace\//i.test(url)) kind = 'listing';
   else if (/craigslist\.org$/i.test(host)) kind = 'listing';
-  else return { ok: false, error: 'Unsupported site. Supported: AirDNA, Zillow, Apartments.com, Hotpads, Facebook Marketplace, Craigslist.' };
+  else if (strSite === 'vrbo') return { ok: false, error: 'vrbo-unsupported', detail: "VRBO listings can't be imported yet. Use the property's Airbnb link, or enter it manually." };
+  else return { ok: false, error: 'unsupported-site', detail: 'Unsupported site. RentingRadar imports rental listings from Zillow, Apartments.com, HotPads, Facebook Marketplace and Craigslist, and Airbnb listings into Co-Hosting.' };
 
   // v0.8.0: No import cache — every import runs the full pipeline fresh.
-  const file = kind === 'airdna' ? 'content/airdna-scraper.js' : 'content/listing-scraper.js';
+  const file = kind === 'airdna' ? 'content/airdna-scraper.js'
+    : kind === 'str' ? 'content/airbnb-scraper.js'
+    : 'content/listing-scraper.js';
   // The listing this scrape must prove it read, or fail; nothing unverified comes
   // back. Falls back to the id in the URL, so CRM versions and the popup that don't
   // send one are protected too. Co-Hosting target imports ('cohost') are left alone.
@@ -362,6 +368,27 @@ async function scrapeAny(url, hint, expectedListingId) {
 
     // Tag the payload with its kind so the CRM knows how to route it
     data._kind = kind;
+
+    // ----- v1.17.0: AIRBNB LISTING → CO-HOSTING PROPERTY -----
+    // Same dictionary extractor the AirDNA co-host path runs over Airbnb text,
+    // so Property Details come out the same. No AI call: Airbnb has no rent or
+    // street address for it to find.
+    if (kind === 'str') {
+      const out = self.RRListingPlans.strListingFromAirbnb(data, url);
+      if (!out) return { ok: false, error: 'listing-empty', detail: 'The Airbnb page loaded without listing details. Try again.' };
+      try {
+        const sourceText = normalizePageText([
+          data._fullPageText || '', (out.amenities || []).join('\n'), data.description || '', data.title || '',
+        ].join('\n'));
+        const pd = extractPropertyDetailsFromText(sourceText);
+        groundPropertyDetails(pd, sourceText);
+        out.propertyDetails = pd;
+      } catch (e) {
+        console.warn('[RR ext] Airbnb Property Details extraction failed:', e.message);
+        out.propertyDetails = {};
+      }
+      return { ok: true, data: out };
+    }
 
     // ----- v0.12.0: AUTO-SCRAPE AIRBNB LISTING FOR COMPETITOR DATA -----
     // When importing an AirDNA competitor, if the AirDNA page contains a

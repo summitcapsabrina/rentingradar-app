@@ -155,3 +155,27 @@ test('Zillow and Hotpads drop a fallback price the same way', async () => {
   assert.equal(hp.price, null);
   assert.ok(dropped(hp));
 });
+
+// ── v1.17.0: Airbnb / VRBO helpers (lib/listing-plans.js) ──
+{
+  const P = require('../chrome-extension/lib/listing-plans.js');
+  const t2 = require('node:test');
+  const a2 = require('node:assert/strict');
+  t2('strListingSite tells Airbnb listing pages and VRBO apart from everything else', () => {
+    a2.equal(P.strListingSite('https://www.airbnb.com/rooms/53610702'), 'airbnb');
+    a2.equal(P.strListingSite('https://airbnb.com/rooms/53610702?adults=2&check_in=2026-12-01'), 'airbnb');
+    a2.equal(P.strListingSite('https://www.airbnb.com/rooms/plus/123'), 'airbnb');
+    a2.equal(P.strListingSite('https://www.airbnb.com/h/beach-house'), 'airbnb');
+    a2.equal(P.strListingSite('https://www.airbnb.com/s/Pensacola/homes'), null, 'search page is not a listing');
+    a2.equal(P.strListingSite('https://www.vrbo.com/1234567'), 'vrbo');
+    a2.equal(P.strListingSite('https://www.zillow.com/homedetails/x/1_zpid/'), null);
+    a2.equal(P.strListingSite('not a url'), null);
+  });
+  t2('cleanStrTitle keeps only the listing name', () => {
+    a2.equal(P.cleanStrTitle('Home in Pensacola · ★4.95 · 3 bedrooms · 4 beds · 2 baths'), 'Home in Pensacola');
+    a2.equal(P.cleanStrTitle('Condo in Navarre · ★New · 2 bedrooms'), 'Condo in Navarre');
+    a2.equal(P.cleanStrTitle('Rental unit in Destin · Studio · 1 bed · 1 bath'), 'Rental unit in Destin');
+    a2.equal(P.cleanStrTitle('Gulf View Retreat - Airbnb'), 'Gulf View Retreat');
+    a2.equal(P.cleanStrTitle(null), '');
+  });
+}

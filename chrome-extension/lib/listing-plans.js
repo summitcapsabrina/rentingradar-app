@@ -151,7 +151,50 @@
     return !isUsableAddress(d.address) && structuralCount(d) === 0 && !hasList;
   }
 
+  // Short-term-rental listing links, which only Co-Hosting imports.
+  // Returns 'airbnb' (a single listing page), 'vrbo' (any VRBO page) or null.
+  function strListingSite(url) {
+    let u;
+    try { u = new URL(url); } catch (_) { return null; }
+    const h = u.hostname.replace(/^www\./, '').toLowerCase();
+    if (/(^|\.)airbnb\.com$/.test(h) && /^\/(?:rooms\/(?:plus\/)?\d+|h\/[\w-]+)/i.test(u.pathname)) return 'airbnb';
+    if (/(^|\.)vrbo\.com$/.test(h)) return 'vrbo';
+    return null;
+  }
+
+  // Airbnb's og:title reads "Home in Pensacola · ★4.95 · 3 bedrooms · 4 beds · 2 baths".
+  // Keep the name part only.
+  function cleanStrTitle(t) {
+    return String(t || '')
+      .replace(/\s*[-–|]\s*Airbnb.*$/i, '')
+      .replace(/\s*·\s*★\s*(?:[\d.]+|New).*$/i, '')
+      .replace(/\s*·\s*\d+(?:\.\d+)?\s*(?:bedrooms?|beds?|baths?|bathrooms?|guests?)\b.*$/i, '')
+      .replace(/\s*·\s*Studio\b.*$/i, '')
+      .trim();
+  }
+
+  // The airbnb-scraper.js payload, shaped like a listing import for Co-Hosting.
+  // Airbnb hides the street address and has no monthly rent, so address and price
+  // stay blank for the user to fill in. Null when the page gave nothing usable.
+  function strListingFromAirbnb(raw, url) {
+    if (!raw) return null;
+    const title = cleanStrTitle(raw.title);
+    const n = (v) => (v == null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v));
+    const bedrooms = n(raw.bedrooms), bathrooms = n(raw.bathrooms);
+    if (!title && bedrooms == null && bathrooms == null) return null;
+    const lat = n(raw.lat), lng = n(raw.lng);
+    return {
+      source: 'airbnb', sourceUrl: url, _kind: 'str',
+      title: title || null, address: '', price: null, sqft: null,
+      bedrooms, bathrooms, beds: n(raw.beds), guests: n(raw.guests),
+      description: raw.description || null, host: raw.host || null, rating: n(raw.rating),
+      lat, lng, _approxLocation: lat != null && lng != null,
+      amenities: Array.isArray(raw.amenities) ? raw.amenities.slice(0, 150) : [],
+    };
+  }
+
   const api = {
+    strListingSite, cleanStrTitle, strListingFromAirbnb,
     toNum, zillowPageType, zillowSelectedUnitId, zillowBuildingUnits, parseApartmentsPlanRow,
     dedupePlans, plansFromContainsPlace, selectedPlanFromUrl, isUsableAddress, coreCount, structuralCount, scrapeIsEmpty,
   };
