@@ -179,3 +179,23 @@ test('Zillow and Hotpads drop a fallback price the same way', async () => {
     a2.equal(P.cleanStrTitle(null), '');
   });
 }
+
+// ── v1.17.1: the scraper starts even when the page's load event never fires ──
+test('a page whose load event never fires is still read after the fallback', async () => {
+  const raw = fs.readFileSync(path.join(__dirname, 'fixtures', 'zillow-unit-8522.html'), 'utf8');
+  const dom = new JSDOM(raw, { url: ZILLOW_UNIT, runScripts: 'outside-only', pretendToBeVisual: true });
+  const { window } = dom;
+  Object.defineProperty(window.HTMLElement.prototype, 'innerText', { get() { return this.textContent; }, configurable: true });
+  // A slow ad keeps the document from finishing: never 'complete', no load event.
+  Object.defineProperty(window.document, 'readyState', { get: () => 'interactive', configurable: true });
+  const realAdd = window.addEventListener.bind(window);
+  window.addEventListener = (type, fn, o) => { if (type !== 'load') realAdd(type, fn, o); };
+  window.__rrLoadFallbackMs = 50;
+  const d = await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('scraper never reported')), 5000);
+    window.chrome = { runtime: { sendMessage(m) { clearTimeout(timer); window.close(); m.error ? reject(new Error(m.error)) : resolve(m.payload); } } };
+    LIBS.forEach((src) => window.eval(src));
+    window.eval(SCRAPER);
+  });
+  assert.deepEqual([d.bedrooms, d.bathrooms, d.sqft, d.price], [2, 2, 1360, 1900]);
+});

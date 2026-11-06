@@ -12366,6 +12366,8 @@ async function _checkInterruptedListingImports(){
 
 // The extension release that first imports Airbnb listings (Co-Hosting).
 const RR_EXT_MIN_AIRBNB = '1.17.0';
+// The release that stops waiting for ads/trackers before reading a listing page.
+const RR_EXT_MIN_FAST_LOAD = '1.17.1';
 function _rrScrapeListing(url, opts){
   // Airbnb and VRBO pages are short-term rentals, not rental listings. Only the
   // Co-Hosting add box passes allowStr; every Single/Multi Unit box stops here.
@@ -12390,6 +12392,10 @@ function _rrListingFailureMessage(res, ctx){
   if(err === 'extension-not-installed') return 'The RentingRadar Chrome extension isn\'t installed.';
   if(err === 'listing-empty') return (res && res.detail) || 'The page loaded without listing details. Try again.';
   if(err === 'str-not-arbitrage' || err === 'vrbo-unsupported') return res.detail;
+  // Extension 1.17.0 and older wait for every ad and tracker before reading a page.
+  if(/timed out waiting for page to load/i.test(err)){
+    return 'The listing page took too long to finish loading in the background. Try once more. If it keeps happening, update the RentingRadar extension to ' + RR_EXT_MIN_FAST_LOAD + ' or newer, which reads the page without waiting for ads.';
+  }
   // 'unsupported-site' from 1.17.0+, or the older extensions' "Unsupported site. Supported: AirDNA, …".
   if(err === 'unsupported-site' || /^unsupported site/i.test(err)){
     return ctx === 'cohost'

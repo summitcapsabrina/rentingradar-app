@@ -354,3 +354,60 @@ test('Airbnb links still route to the comp path when the app asks for AirDNA', a
   await vm.runInContext(`scrapeAny(__url, 'airdna')`, ctx).catch(() => {});
   assert.deepEqual(calls.files.slice(0, 1), ['content/airdna-scraper.js']);
 });
+
+// ── v1.17.1: read the page once its document is ready, not after every ad loads ──
+test('a tab that never reaches complete is still scraped once its document is ready', async () => {
+  const ctx = loadWorker();
+  const listeners = new Set();
+  const injectedFiles = [];
+  ctx.chrome.tabs.onUpdated = { addListener: (f) => listeners.add(f), removeListener: (f) => listeners.delete(f) };
+  ctx.chrome.tabs.create = async () => ({ id: 7 });
+  ctx.chrome.scripting.executeScript = async (o) => {
+    if (o.func) return [{ result: 'interactive' }];
+    injectedFiles.push(...o.files);
+    // The scraper reports back, as the content script would.
+    setTimeout(() => vm.runInContext(`resolveScrape(7, { source: 'zillow', address: '8508 Wileyvale Rd #8508B, Houston TX 77016', price: 1915 })`, ctx), 10);
+    return [];
+  };
+  const started = Date.now();
+  const data = await vm.runInContext(`scrapeInBackgroundTab('https://www.zillow.com/homedetails/x/462588840_zpid/', 'content/listing-scraper.js')`, ctx);
+  assert.equal(data.price, 1915);
+  assert.deepEqual(injectedFiles, ['lib/amenity-match.js', 'lib/listing-plans.js', 'content/listing-scraper.js']);
+  assert.ok(Date.now() - started < 5000, 'well inside the 45s timeout');
+  assert.equal(listeners.size, 0, 'listener removed once resolved');
+});
+
+test('a probe before the document commits keeps waiting instead of failing', async () => {
+  const ctx = loadWorker();
+  const listeners = new Set();
+  let probes = 0;
+  ctx.chrome.tabs.onUpdated = { addListener: (f) => listeners.add(f), removeListener: (f) => listeners.delete(f) };
+  ctx.chrome.tabs.create = async () => ({ id: 8 });
+  ctx.chrome.scripting.executeScript = async (o) => {
+    if (o.func) { probes++; if (probes === 1) throw new Error('Frame with ID 0 is showing error page'); return [{ result: probes === 2 ? 'loading' : 'interactive' }]; }
+    setTimeout(() => vm.runInContext(`resolveScrape(8, { ok: 1 })`, ctx), 10);
+    return [];
+  };
+  const data = await vm.runInContext(`scrapeInBackgroundTab('https://hotpads.com/x/pad', 'content/listing-scraper.js')`, ctx);
+  assert.equal(data.ok, 1);
+  assert.equal(probes, 3, 'error, then loading, then interactive');
+});
+
+test('the complete event still injects at once, as before', async () => {
+  const ctx = loadWorker();
+  const listeners = new Set();
+  let probes = 0;
+  ctx.chrome.tabs.onUpdated = { addListener: (f) => listeners.add(f), removeListener: (f) => listeners.delete(f) };
+  ctx.chrome.tabs.create = async () => ({ id: 9 });
+  ctx.chrome.scripting.executeScript = async (o) => {
+    if (o.func && o.func.toString().includes('readyState')) { probes++; return [{ result: 'loading' }]; }
+    if (o.files) setTimeout(() => vm.runInContext(`resolveScrape(9, { ok: 2 })`, ctx), 10);
+    return [];
+  };
+  const p = vm.runInContext(`scrapeInBackgroundTab('https://www.zillow.com/homedetails/x/1_zpid/', 'content/listing-scraper.js')`, ctx);
+  await new Promise((r) => setTimeout(r, 20));
+  listeners.forEach((f) => f(9, { status: 'complete' }));
+  const data = await p;
+  assert.equal(data.ok, 2);
+  assert.equal(probes, 0, 'no probe needed when complete arrives first');
+});
