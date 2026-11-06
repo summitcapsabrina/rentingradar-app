@@ -2317,18 +2317,20 @@ function mgShareLink(){
   function mgRenderTierPicker(firstName, TIERS_LOCAL){
     mgWarmCheckout(); // pre-boot the checkout function while the user reads the plans
     var period = _mgBillingPeriod === 'monthly' ? 'monthly' : 'yearly';
-    // Limit copy is derived from the shared ANALYSIS_LIMITS / OPERATIONS_LIMITS constants so
+    // Limit copy is derived from the shared ANALYSIS_LIMITS / OPERATIONS_LIMITS / COHOST_LIMITS constants so
     // this picker can never drift from the real caps or from the desktop pricing cards.
     var AL = (typeof ANALYSIS_LIMITS !== 'undefined') ? ANALYSIS_LIMITS : { basic:1, standard:10, pro:Infinity };
     var OL = (typeof OPERATIONS_LIMITS !== 'undefined') ? OPERATIONS_LIMITS : { basic:1, standard:5, pro:Infinity };
+    var CL = (typeof COHOST_LIMITS !== 'undefined') ? COHOST_LIMITS : { basic:5, standard:10, pro:Infinity };
     function mgLimitLine(id){
-      var a = AL[id], o = OL[id];
+      var a = AL[id], o = OL[id], c = CL[id];
       var aStr = (a === Infinity) ? 'Unlimited analyses' : (a + (a === 1 ? ' analysis' : ' analyses') + '/mo');
       var oStr;
       if(o === Infinity) oStr = 'unlimited Operations properties';
       else if(id === 'standard') oStr = 'up to ' + o + ' Operations properties';
       else oStr = o + (o === 1 ? ' Operations property' : ' Operations properties');
-      return aStr + ' · ' + oStr;
+      var cStr = (c === Infinity) ? 'unlimited Co-Hosting properties' : 'up to ' + c + ' Co-Hosting properties';
+      return aStr + ' · ' + oStr + ' · ' + cStr;
     }
     var tiers = [
       { id:'basic',    tail:'Solo operators getting started.' },
@@ -14466,9 +14468,11 @@ function requireTier(minTier, featureName){
 // │  APP (this file):                                                                   │
 // │   1. ANALYSIS_LIMITS (here)            — per-tier monthly analysis quota            │
 // │   2. OPERATIONS_LIMITS (~120 lines below) — per-tier Operations-property cap        │
+// │   2b. COHOST_LIMITS (just after the Operations helpers) — per-tier Co-Hosting cap    │
+// │      (client-side only; no server trigger yet)                                      │
 // │   3. TIERS { monthly, yearly } (~line 12055) — display prices                       │
 // │   4. renderPricingCard() calls (~line 17870) — desktop card `analysisLimit` string  │
-// │      is HARDCODED (operationsLimit reads OPERATIONS_LIMITS; analyses does not)       │
+// │      is HARDCODED (operationsLimit/cohostLimit read the constants; analyses does not)│
 // │   5. mgRenderTierPicker() (~line 2230) — mobile picker; derives BOTH from the two    │
 // │      constants above, so it auto-syncs — no edit needed if you only change numbers  │
 // │   6. FAQ_ENTRIES "difference between Basic/Standard/Pro" (~line 36190) — hardcoded,  │
@@ -14476,8 +14480,10 @@ function requireTier(minTier, featureName){
 // │  BACKEND: functions/index.js → opsLimitForUserData() — server-enforced Operations   │
 // │      cap, hardcoded basic:1 / standard:5; MUST match OPERATIONS_LIMITS               │
 // │  STRIPE: price amounts live in Stripe; the *_PRICE env vars map tier→priceId        │
-// │  WEBSITE: rentingradar-website/index.html PLANS {} — analysisLimit + operationsLimit │
-// │      (both hardcoded there) + any pricing in JSON-LD / meta                          │
+// │  CHAT: api/chatSend.js PLAN_PRICING + "Plan pricing" block, api/chatKnowledgeSuggest │
+// │      (hardcoded) — then re-run Knowledge Base → "Seed starter" so live KB updates    │
+// │  WEBSITE: rentingradar-website/index.html TIERS {} — analysisLimit + operationsLimit │
+// │      + cohostLimit (all hardcoded there), pricing/index.html, pricing.md, llms.txt   │
 // └──────────────────────────────────────────────────────────────────────────────────┘
 const ANALYSIS_LIMITS = { basic: 1, standard: 10, pro: Infinity, affiliate: Infinity, admin: Infinity };
 let _analysisQuota = { analyzedProperties: [], cycleStart: null, signupDate: null };
@@ -14628,6 +14634,70 @@ function showOperationsLimitPrompt(){
   } else {
     try { switchView('pricing'); } catch(e){}
   }
+}
+
+// ── Co-Hosting Quota System (mirrors the Operations quota) ──
+// Basic: 5 Co-Hosting properties · Standard: 10 · Pro/Affiliate/Admin: unlimited.
+// Counts properties in the Co-Hosting pipeline only; a Co-Hosting property moved to
+// Operations counts against the Operations cap instead (never both). Trial users get
+// unlimited. EXISTING over-limit users are GRANDFATHERED: we only block ADDING new
+// ones past the cap. Client-side only today (no server trigger yet).
+// Changing these numbers? See the plan-change checklist above ANALYSIS_LIMITS.
+const COHOST_LIMITS = { basic: 5, standard: 10, pro: Infinity, affiliate: Infinity, admin: Infinity };
+
+function getCohostLimit(){
+  if(currentTier === 'pro' || currentTier === 'affiliate' || currentTier === 'admin') return Infinity;
+  if(_subscriptionStatus === 'trialing') return Infinity; // trial = full access
+  return COHOST_LIMITS[currentTier] ?? COHOST_LIMITS.basic;
+}
+function getCohostUsed(){
+  try { return cohostRecords.filter(function(r){ return !isOpsProperty(r); }).length; } catch(e){ return 0; }
+}
+function getCohostRemaining(){
+  const lim = getCohostLimit();
+  return lim === Infinity ? Infinity : Math.max(0, lim - getCohostUsed());
+}
+function canAddCohost(n){
+  const rem = getCohostRemaining();
+  return rem === Infinity || rem >= (n || 1);
+}
+// Upgrade prompt shown when the Co-Hosting cap is hit (same shape as Operations).
+function showCohostLimitPrompt(){
+  const lim = getCohostLimit();
+  let msg;
+  if(currentTier === 'standard'){
+    const diff = (TIERS.pro && TIERS.standard) ? Math.round(TIERS.pro.monthly - TIERS.standard.monthly) : 10;
+    msg = 'You’re tracking ' + lim + ' Co-Hosting properties — nice work! Upgrade to <strong>Pro</strong> for <strong>unlimited</strong> Co-Hosting properties (just $' + diff + '/mo more). Your current properties stay exactly as they are.';
+  } else if(currentTier === 'basic'){
+    msg = 'Basic includes <strong>' + lim + '</strong> Co-Hosting properties. Upgrade to <strong>Standard</strong> for up to ' + COHOST_LIMITS.standard + ', or <strong>Pro</strong> for unlimited. Your current properties stay exactly as they are.';
+  } else {
+    const limTxt = lim === Infinity ? 'unlimited' : lim;
+    msg = 'You’ve reached your plan’s Co-Hosting limit (' + limTxt + '). Upgrade to add more — your existing Co-Hosting properties are unaffected.';
+  }
+  if(typeof showAppConfirm === 'function'){
+    showAppConfirm(msg, {
+      title: 'Co-Hosting limit reached',
+      icon: '🔒',
+      confirmText: 'View Plans',
+      cancelText: 'Not now',
+      confirmClass: 'btn-primary',
+      onConfirm: function(){ try { switchView('pricing'); } catch(e){} }
+    });
+  } else {
+    try { switchView('pricing'); } catch(e){}
+  }
+}
+// Always-on usage indicator at the top of the Co-Hosting list. Hidden for
+// unlimited tiers (Pro/Affiliate/Admin/trial) — no cap to communicate.
+function renderCohostUsageIndicator(){
+  const lim = getCohostLimit();
+  if(lim === Infinity) return '';
+  const used = getCohostUsed();
+  const atCap = used >= lim;
+  return '<div style="font-size:.8rem;padding:0 2px 10px;color:' + (atCap ? 'var(--warning)' : 'var(--text3)') + '">'
+    + '<span style="font-weight:600;color:' + (atCap ? 'var(--warning)' : 'var(--text2)') + '">Co-Hosting: ' + used + ' of ' + lim + ' used</span>'
+    + (atCap ? ' — you’re ' + (used > lim ? 'above' : 'at') + ' your plan’s limit · <span style="color:var(--primary);cursor:pointer;font-weight:600" onclick="showCohostLimitPrompt()">Upgrade</span>' : '')
+    + '</div>';
 }
 
 // Bulk-import Operations cap gate. `candidates` = array of {key,label} for rows
@@ -20008,6 +20078,7 @@ function renderPricing(opts){
       ${renderPricingCard('basic', {
         analysisLimit: '1 analysis / month',
         operationsLimit: OPERATIONS_LIMITS.basic + (OPERATIONS_LIMITS.basic === 1 ? ' Operations property' : ' Operations properties'),
+        cohostLimit: 'Up to ' + COHOST_LIMITS.basic + ' Co-Hosting properties',
         features: [
           'Pipeline management',
           'Full-scope property profiles',
@@ -20025,6 +20096,7 @@ function renderPricing(opts){
         popular: true,
         analysisLimit: '10 analyses / month',
         operationsLimit: 'Up to ' + OPERATIONS_LIMITS.standard + ' Operations properties',
+        cohostLimit: 'Up to ' + COHOST_LIMITS.standard + ' Co-Hosting properties',
         features: [
           'Everything in Basic',
           'Dark mode & 8 color themes',
@@ -20035,6 +20107,7 @@ function renderPricing(opts){
       ${renderPricingCard('pro', {
         analysisLimit: 'Unlimited analyses',
         operationsLimit: 'Unlimited Operations properties',
+        cohostLimit: 'Unlimited Co-Hosting properties',
         features: [
           'Everything in Standard',
           'Priority feature requests',
@@ -20114,6 +20187,7 @@ function renderPricingCard(tier, opts){
     <ul class="pc-features">
       ${opts.analysisLimit ? `<li class="pc-feat-limit">${opts.analysisLimit}</li>` : ''}
       ${opts.operationsLimit ? `<li class="pc-feat-limit">${opts.operationsLimit}</li>` : ''}
+      ${opts.cohostLimit ? `<li class="pc-feat-limit">${opts.cohostLimit}</li>` : ''}
       ${opts.features.map(f => `<li>${f}</li>`).join('')}
       ${(opts.disabled||[]).map(f => `<li class="disabled">${f}</li>`).join('')}
     </ul>
@@ -27110,12 +27184,13 @@ function renderCoHostingList(){
       '<div style="font-size:.88rem;line-height:1.5">Use the <strong style="color:var(--text2)">+ Add Property</strong> menu (top right) and choose <strong style="color:var(--text2)">Co-Hosting</strong> to import a listing (Zillow, Apartments.com, HotPads) or enter one manually.</div>'+
     '</div>';
   }
-  return renderDashboard();
+  return renderCohostUsageIndicator() + renderDashboard();
 }
 
 /* ---------- Add flow (AirDNA import + manual) ---------- */
 function openCohostAddModal(){
   if(!_currentUid) return;
+  if(!canAddCohost()){ showCohostLimitPrompt(); return; }
   const modal = document.getElementById('detailModal');
   const panel = document.getElementById('detailPanel');
   panel.innerHTML = '<div class="modal-header"><h2>Add New Co-Hosting Property</h2><button class="modal-close" onclick="closeAddModalButton()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>'+
@@ -27269,6 +27344,8 @@ async function handleCohostListing(data){
       }
     } catch(e){}
   }
+  // Replacing an existing record keeps the count flat, so only a net-new add is capped.
+  if(!replaceId && !canAddCohost()){ showCohostLimitPrompt(); return 'failed'; }
   if(typeof _afterPropertyCreate === 'function') _afterPropertyCreate(r);
   // One step with nothing that can throw before the save, as in handleExtensionListing.
   const oldIdx = replaceId ? cohostRecords.findIndex(function(x){ return x.id===replaceId; }) : -1;
@@ -27317,6 +27394,7 @@ function saveCohostManual(){
   const get = function(id){ const el=document.getElementById(id); return el?(el.value||'').trim():''; };
   const address = get('cohost_m_address');
   if(!address){ showAppAlert('Please enter a property address.', {title:'Address required', icon:'⚠️'}); return; }
+  if(!canAddCohost()){ showCohostLimitPrompt(); return; }
   const rent = _cn(get('cohost_m_rent'))||'';
   const r = {
     id: uid(), kind: 'cohost', status: 'New', property: address,
@@ -41712,7 +41790,7 @@ var _KB_STARTER_ENTRIES = [
   { question: "What does the map view show?", answer: "Every property you're tracking, plotted by address. It respects your current market filter, so you only see properties in the selected market.", tags: ["arbitrage", "map", "view"] },
   { question: "How do I search for a property?", answer: "Use the search box at the top of the Houses (or Apartments) section to find a property by address, contact, or status.", tags: ["arbitrage", "search"] },
   { question: "How do I delete a property?", answer: "Open the property profile and use the delete (trash) action. Deletion is permanent, so please confirm carefully before removing it.", tags: ["arbitrage", "delete"] },
-  { question: "Is there a limit on how many properties I can track?", answer: "In Houses or Apartments, no — every plan (Basic, Standard, and Pro) includes unlimited properties to source and analyze. Operations (properties you're actively managing) is tiered: Basic includes 1, Standard up to 5, and Pro unlimited. Anything already in your Operations always stays accessible.", tags: ["arbitrage", "operations", "limits", "billing"] },
+  { question: "Is there a limit on how many properties I can track?", answer: "In Houses or Apartments, no — every plan (Basic, Standard, and Pro) includes unlimited properties to source and analyze. Operations (properties you're actively managing) is tiered: Basic includes 1, Standard up to 5, and Pro unlimited. Co-Hosting is tiered too: Basic up to 5 Co-Hosting properties, Standard up to 10, and Pro unlimited. Anything already in your Operations or Co-Hosting always stays accessible.", tags: ["arbitrage", "cohosting", "operations", "limits", "billing"] },
 
   // ---- Importing ----
   { question: "How do I import a spreadsheet?", answer: "From the Houses section, open the import option and pick your format: CSV, Monday.com XLSX, or Custom XLSX. Every import is logged in Import History.", tags: ["import", "spreadsheet", "csv", "xlsx"] },
@@ -41760,6 +41838,8 @@ var _KB_STARTER_ENTRIES = [
   { question: "How do I move a property to Operations?", answer: "Open the property profile and click Move to Operations in the top-right. Its status switches to Operating, and if you ever move it back, the prior status is restored.", tags: ["operations", "move-to-ops"] },
   { question: "Why can't I move a property to Operations? Why is it locked?", answer: "Operations has a per-plan limit on how many properties you can actively manage at once: Basic includes 1, Standard up to 5, and Pro unlimited. If Move to Operations shows a lock, you've reached your plan's limit. Anything already in your Operations stays fully accessible — upgrading just lets you add more. You can upgrade anytime from the Plan page.", tags: ["operations", "limits", "locked", "upgrade", "billing"] },
   { question: "How many properties can I have in Operations?", answer: "Basic includes 1 property in Operations, Standard up to 5, and Pro unlimited. It's a running total of properties you're actively managing — removing one frees a slot. (Houses and Apartments properties stay unlimited on every plan.)", tags: ["operations", "limits", "billing"] },
+  { question: "How many Co-Hosting properties can I have?", answer: "Basic includes up to 5 Co-Hosting properties, Standard up to 10, and Pro unlimited. It's a running count of properties in your Co-Hosting section — deleting one, or moving it to Operations, frees a slot. A Co-Hosting property moved to Operations counts toward your Operations limit instead. Properties already in Co-Hosting always stay accessible, even if you're over the limit after a plan change; you just can't add new ones past it. The counter at the top of the Co-Hosting section shows how many you've used.", tags: ["cohosting", "limits", "billing"] },
+  { question: "What happens when I hit my Co-Hosting limit?", answer: "You'll see a \"Co-Hosting limit reached\" prompt when you try to add another, with a link to the Plan page to upgrade. Nothing is lost — your existing Co-Hosting properties stay fully accessible and editable. Standard raises the limit to 10, and Pro removes it.", tags: ["cohosting", "limits", "billing", "upgrade"] },
   { question: "How do I add more properties to Operations or raise my limit?", answer: "Upgrade your plan from the Plan page — Standard allows up to 5 properties in Operations, and Pro allows unlimited. Your existing Operations properties carry over unchanged.", tags: ["operations", "limits", "upgrade", "billing"] },
   { question: "What happens to my Operations properties if I'm over my plan's limit?", answer: "Nothing is lost — properties already in Operations stay fully accessible and editable. You just can't add new ones beyond your plan's limit until you upgrade or remove some. (If your plan changed, existing properties are grandfathered in.)", tags: ["operations", "limits", "grandfather", "billing"] },
   { question: "How do I navigate Operations or find a managed property?", answer: "Open Operations from the left sidebar. It lists every property you're actively managing — use the market filter and search to narrow it, then click a property to open its profile, where you'll find its Tasks, Meetings, Expenses, Maintenance, Contracts, Reviews, Purchases, and Contacts. To add a property here, open it in Houses or Apartments and click Move to Operations, or bulk-import a list.", tags: ["operations", "navigation"] },
@@ -41781,7 +41861,7 @@ var _KB_STARTER_ENTRIES = [
 
   // ---- Plan / billing ----
   { question: "How much does RentingRadar cost?", answer: "Basic is $9.99/mo ($89.99/yr), Standard is $19.99/mo ($199.99/yr), and Pro is $29.99/mo ($289.99/yr). Yearly billing saves you roughly two months versus paying monthly.", tags: ["billing", "pricing"] },
-  { question: "What's the difference between Basic, Standard, and Pro?", answer: "All three let you upload and track unlimited properties. What's tiered is how many you can Analyze and how many you can Operate. Basic: 1 analysis per month and 1 Operations property, no dark mode. Standard: 10 analyses per month and up to 5 Operations properties, plus dark mode and themes. Pro: unlimited analyses and unlimited Operations properties, plus dark mode and themes.", tags: ["billing", "pricing", "tiers", "features"] },
+  { question: "What's the difference between Basic, Standard, and Pro?", answer: "All three let you upload and track unlimited properties. What's tiered is how many you can Analyze, how many you can Operate, and how many Co-Hosting properties you can track. Basic: 1 analysis per month, 1 Operations property, and up to 5 Co-Hosting properties, no dark mode. Standard: 10 analyses per month, up to 5 Operations properties, and up to 10 Co-Hosting properties, plus dark mode and themes. Pro: unlimited analyses, unlimited Operations properties, and unlimited Co-Hosting properties, plus dark mode and themes.", tags: ["billing", "pricing", "tiers", "features"] },
   { question: "Is there a yearly plan?", answer: "Yes — every tier has a yearly option ($89.99 Basic, $199.99 Standard, $289.99 Pro) that saves roughly two months compared to paying monthly.", tags: ["billing", "pricing", "yearly"] },
   { question: "How do I upgrade or change my plan?", answer: "Click Plan in the sidebar and choose the tier you want. Stripe applies the change to your billing.", tags: ["billing", "plan-change"] },
   { question: "What payment methods do you accept?", answer: "Payments are processed securely through Stripe (major credit/debit cards). For anything specific to your billing, please email help@rentingradar.com.", tags: ["billing", "payments", "stripe"] },
@@ -41833,7 +41913,7 @@ var _KB_STARTER_ENTRIES = [
   // ---- Co-Hosting (second business model) ----
   { question: "What is Co-Hosting?", answer: "Co-Hosting is RentingRadar's second business model. Instead of leasing a property yourself and re-listing it (that's Arbitrage — the Houses and Apartments pipelines), you manage an owner's property as a short-term rental for a management fee. RentingRadar helps you import the property, estimate its short-term-rental potential from comparable listings, run the management-fee economics, and build a pitch that shows the owner what they'd earn.", tags: ["cohosting", "overview"] },
   { question: "What's the difference between Arbitrage and Co-Hosting?", answer: "Arbitrage (Houses and Apartments) = you lease a property from the landlord and re-list it on Airbnb/Vrbo, keeping the upside. Co-Hosting = you don't lease it; you manage the owner's property as a short-term rental for a percentage management fee, and the owner keeps the rest. They're separate sections, each with their own properties.", tags: ["cohosting", "arbitrage", "overview"] },
-  { question: "Who can use Co-Hosting?", answer: "Co-Hosting is available to you alongside Houses and Apartments — you'll find it in the left sidebar. It's RentingRadar's second business model: instead of leasing a property yourself, you manage an owner's existing property as a short-term rental for a management fee.", tags: ["cohosting", "access"] },
+  { question: "Who can use Co-Hosting?", answer: "Every plan includes Co-Hosting — you'll find it in the left sidebar alongside Houses and Apartments. Basic includes up to 5 Co-Hosting properties, Standard up to 10, and Pro unlimited. It's RentingRadar's second business model: instead of leasing a property yourself, you manage an owner's existing property as a short-term rental for a management fee.", tags: ["cohosting", "access", "limits"] },
   { question: "How do I add a Co-Hosting property?", answer: "Click + Add Property in the top-right and choose Co-Hosting. You can paste a listing link (Zillow, Apartments.com, or HotPads) to auto-fill the address, beds/baths, square footage, rent, and a property summary — or choose Manual Entry to type the details in yourself.", tags: ["cohosting", "add-property", "import"] },
   { question: "Which sites can I import a Co-Hosting listing from?", answer: "The same rental-listing sites as Houses/Apartments: Zillow, Apartments.com, and HotPads. Paste the listing link in the Co-Hosting add screen and the property auto-fills, just like adding a House or Apartment property.", tags: ["cohosting", "import", "zillow", "apartments", "hotpads"] },
   { question: "What are the tabs on a Co-Hosting property?", answer: "Three: Property Details (the property's specifics and the owner's contact), Market Potential (comparable short-term rentals it could perform like), and Calculator (your management-fee economics and break-even).", tags: ["cohosting", "tabs", "overview"] },
