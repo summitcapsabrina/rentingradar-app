@@ -688,6 +688,129 @@ H.scenarios = {
     }
     return { fails };
   },
+  // T10: Co-Hosting import runs the same duplicate check as listing import, against
+  // cohostRecords only. Made-up addresses.
+  'T10 Co-Hosting: a unit-less listing against a saved co-host unit asks "same building", no Replace': async () => {
+    const fails = [];
+    const traces = [];
+    const realLog = console.log;
+    console.log = function (a, b) { if (a === '[RR import trace]') traces.push(String(b)); return realLog.apply(console, arguments); };
+    const unit = { id: 'c2b', kind: 'cohost', property: '400 Example Way #2B, Navarre FL 32566', addressParts: { street: '400 Example Way', unit: '#2B', city: 'Navarre', state: 'FL', zip: '32566' }, status: 'New', cohost: {}, propertyDetails: {} };
+    cohostRecords = [unit];
+    records = [];
+    openCohostProfile = () => {};
+    try {
+      const run = _rrRunListingImport('u', () => handleCohostListing(single(400, { address: '400 Example Way, Navarre, FL 32566' })));
+      const shown = await H.until(() => document.getElementById('duplicateDialogOverlay'), 4000);
+      H.check(fails, shown, 'dialog shown');
+      const ov = document.getElementById('duplicateDialogOverlay');
+      const text = ov ? ov.textContent : '';
+      H.check(fails, text.includes('Possible duplicate: same building'), 'title');
+      H.check(fails, !!document.getElementById('dupDialogKeepBtn') && !!document.getElementById('dupDialogCancelBtn'), 'Keep Both and Cancel Import offered');
+      H.check(fails, !document.getElementById('dupDialogReplaceBtn') && !/Replace Old/.test((document.getElementById('dupDialogChoices') || {}).textContent || ''), 'no Replace Old');
+      if (document.getElementById('dupDialogCancelBtn')) document.getElementById('dupDialogCancelBtn').click();
+      const out = await run;
+      H.check(fails, out === 'cancelled', 'Cancel cancels: ' + out);
+      H.check(fails, cohostRecords.length === 1 && cohostRecords[0].id === 'c2b' && !_deletedCohostIds.has('c2b'), 'old co-host record untouched: ' + cohostRecords.map((r) => r.id));
+      H.check(fails, H.log.cohostSaves.length === 0 && H.log.saves.length === 0 && H.log.softDeletes.length === 0, 'Cancel saves nothing: cohostSaves=' + H.log.cohostSaves.length + ' saves=' + H.log.saves.length);
+    } finally { console.log = realLog; }
+    H.check(fails, traces.some((t) => / dup check: key=400 example way\|\|32566 records=1 match=c2b kind=same-building$/.test(t)), 'trace: ' + traces.filter((t) => t.includes('dup')));
+    return { fails };
+  },
+  'T10 Co-Hosting same building: Keep Both adds the new record and leaves the old one; a stray replace is ignored': async () => {
+    const fails = [];
+    const unit = { id: 'c2b', kind: 'cohost', property: '400 Example Way #2B, Navarre FL 32566', addressParts: { street: '400 Example Way', unit: '#2B', city: 'Navarre', state: 'FL', zip: '32566' }, status: 'New', cohost: {}, propertyDetails: {} };
+    cohostRecords = [unit];
+    records = [];
+    openCohostProfile = () => {};
+    const run = _rrRunListingImport('u', () => handleCohostListing(single(400, { address: '400 Example Way, Navarre, FL 32566' })));
+    await H.until(() => document.getElementById('dupDialogKeepBtn'), 4000);
+    if (document.getElementById('dupDialogKeepBtn')) document.getElementById('dupDialogKeepBtn').click();
+    const out = await run;
+    H.check(fails, out === 'created' && cohostRecords.length === 2 && cohostRecords.some((r) => r.id === 'c2b'), 'kept both: ' + out + ' ' + cohostRecords.map((r) => r.id));
+    H.check(fails, !_deletedCohostIds.has('c2b') && H.log.softDeletes.length === 0, 'old not deleted');
+    H.check(fails, H.log.cohostSaves.length === 1 && H.log.cohostSaves[0].ids.length === 2 && H.log.saves.length === 0, 'one co-host save, no arbitrage save: ' + JSON.stringify(H.log.cohostSaves) + ' saves=' + H.log.saves.length);
+    // Belt and braces: a 'replace' answer to a same-building match must not replace.
+    cohostRecords = [unit];
+    H.log.cohostSaves.length = 0;
+    let kind = null;
+    showDuplicateDialog = async (addr, rec, opts) => { kind = opts && opts.kind; return 'replace'; };
+    const out2 = await _rrRunListingImport('u', () => handleCohostListing(single(400, { address: '400 Example Way, Navarre, FL 32566' })));
+    H.check(fails, kind === 'same-building', 'dialog told the kind: ' + kind);
+    H.check(fails, out2 === 'created' && cohostRecords.length === 2 && cohostRecords.some((r) => r.id === 'c2b') && !_deletedCohostIds.has('c2b') && H.log.softDeletes.length === 0, 'replace ignored for same-building: ' + out2 + ' ' + cohostRecords.map((r) => r.id));
+    return { fails };
+  },
+  'T10 Co-Hosting exact match still offers Replace Old, and Replace swaps the old co-host record': async () => {
+    const fails = [];
+    const traces = [];
+    const realLog = console.log;
+    console.log = function (a, b) { if (a === '[RR import trace]') traces.push(String(b)); return realLog.apply(console, arguments); };
+    const unit = { id: 'c2b', kind: 'cohost', property: '400 Example Way #2B, Navarre FL 32566', addressParts: { street: '400 Example Way', unit: '#2B', city: 'Navarre', state: 'FL', zip: '32566' }, status: 'New', cohost: {}, propertyDetails: {} };
+    cohostRecords = [unit];
+    records = [];
+    openCohostProfile = () => {};
+    try {
+      // The geocoder stub drops the unit; the scraped text still has it, so this is exact.
+      const run = _rrRunListingImport('u', () => handleCohostListing(single(400, { address: '400 Example Way #2B, Navarre, FL 32566' })));
+      const shown = await H.until(() => document.getElementById('duplicateDialogOverlay'), 4000);
+      H.check(fails, shown, 'dialog shown');
+      const ov = document.getElementById('duplicateDialogOverlay');
+      const text = ov ? ov.textContent : '';
+      H.check(fails, text.includes('Duplicate Detected') && text.includes('A property with this address already exists.'), 'exact dialog');
+      H.check(fails, !!document.getElementById('dupDialogReplaceBtn'), 'Replace Old offered');
+      if (document.getElementById('dupDialogCancelBtn')) document.getElementById('dupDialogCancelBtn').click();
+      const out = await run;
+      H.check(fails, out === 'cancelled' && cohostRecords.length === 1 && H.log.cohostSaves.length === 0, 'Cancel saves nothing: ' + out);
+    } finally { console.log = realLog; }
+    H.check(fails, traces.some((t) => / dup check: key=400 example way\|2b\|32566 records=1 match=c2b kind=exact$/.test(t)), 'trace: ' + traces.filter((t) => t.includes('dup')));
+    // Replace Old: the old co-host record goes, the new one is saved.
+    let kind = null;
+    showDuplicateDialog = async (addr, rec, opts) => { kind = opts && opts.kind; cohostRecords = cohostRecords.map((x) => Object.assign({}, x, { _mark: 'merged' })); return 'replace'; };
+    const out2 = await _rrRunListingImport('u', () => handleCohostListing(single(400, { address: '400 Example Way #2B, Navarre, FL 32566' })));
+    H.check(fails, kind === 'exact', 'dialog told the kind: ' + kind);
+    H.check(fails, out2 === 'created' && cohostRecords.length === 1 && cohostRecords[0].id !== 'c2b', 'swapped: ' + out2 + ' ' + cohostRecords.map((r) => r.id));
+    H.check(fails, _deletedCohostIds.has('c2b'), 'old marked deleted');
+    H.check(fails, H.log.softDeletes.length === 1 && H.log.softDeletes[0].id === 'c2b' && H.log.softDeletes[0].mark === 'merged' && H.log.softDeletes[0].c === 'cohostRecords', 'current object soft-deleted: ' + JSON.stringify(H.log.softDeletes));
+    H.check(fails, H.log.cohostSaves.length === 1 && H.log.cohostSaves[0].ids.length === 1 && H.log.cohostSaves[0].ids[0] === cohostRecords[0].id, 'one save after the swap: ' + JSON.stringify(H.log.cohostSaves));
+    return { fails };
+  },
+  'T10 Co-Hosting: another unit is no match, and Single/Multi Unit records never count': async () => {
+    const fails = [];
+    const traces = [];
+    const realLog = console.log;
+    console.log = function (a, b) { if (a === '[RR import trace]') traces.push(String(b)); return realLog.apply(console, arguments); };
+    let dialogs = 0;
+    showDuplicateDialog = async () => { dialogs++; return 'cancel'; };
+    openCohostProfile = () => {};
+    const u715 = { id: 'c715', kind: 'cohost', property: '400 Example Way Unit 715, Navarre FL 32566', addressParts: { street: '400 Example Way', unit: 'Unit 715', city: 'Navarre', state: 'FL', zip: '32566' }, status: 'New', cohost: {}, propertyDetails: {} };
+    // The geocoder drops the unit, as Places does for many listings (the default stub keeps it in the street).
+    rrGeocodeAddress = async () => ({ lat: 30, lng: -87, street: '400 Example Way', unit: '', city: 'Navarre', state: 'FL', zip: '32566', formattedAddress: '400 Example Way' });
+    try {
+      // M1: the geocoder drops 714, the scraped text keeps it; 715 is not 714's building.
+      cohostRecords = [u715];
+      records = [];
+      const out = await _rrRunListingImport('u', () => handleCohostListing(single(400, { address: '400 Example Way Unit 714, Navarre, FL 32566' })));
+      H.check(fails, out === 'created' && dialogs === 0 && cohostRecords.length === 2 && cohostRecords.some((r) => r.id === 'c715'), '714 vs 715: ' + out + ' dialogs=' + dialogs + ' ' + cohostRecords.map((r) => r.id));
+      H.check(fails, traces.some((t) => / dup check: key=400 example way\|\|32566 records=1 match=none kind=none$/.test(t)), 'trace: ' + traces.filter((t) => t.includes('dup')));
+      // All candidates unit-less against the saved 715: that is the building, so it asks.
+      traces.length = 0;
+      cohostRecords = [u715];
+      const out2 = await _rrRunListingImport('u', () => handleCohostListing(single(400, { address: '400 Example Way, Navarre, FL 32566' })));
+      H.check(fails, out2 === 'cancelled' && dialogs === 1, 'building vs 715 asks: ' + out2 + ' dialogs=' + dialogs);
+      H.check(fails, traces.some((t) => / dup check: key=400 example way\|\|32566 records=1 match=c715 kind=same-building$/.test(t)), 'trace: ' + traces.filter((t) => t.includes('dup')));
+      // A Single Unit / Multi Unit record at the same address is not a co-host duplicate.
+      traces.length = 0;
+      dialogs = 0;
+      cohostRecords = [];
+      records = [{ id: 'arb2b', property: '400 Example Way #2B, Navarre FL 32566', addressParts: { street: '400 Example Way', unit: '#2B', city: 'Navarre', state: 'FL', zip: '32566' }, propertyDetails: {} },
+        { id: 'arbBldg', property: '400 Example Way, Navarre FL 32566', addressParts: { street: '400 Example Way', unit: '', city: 'Navarre', state: 'FL', zip: '32566' }, propertyDetails: {} }];
+      const out3 = await _rrRunListingImport('u', () => handleCohostListing(single(400, { address: '400 Example Way, Navarre, FL 32566' })));
+      H.check(fails, out3 === 'created' && dialogs === 0 && cohostRecords.length === 1, 'arbitrage records ignored: ' + out3 + ' dialogs=' + dialogs + ' cohost=' + cohostRecords.length);
+      H.check(fails, records.length === 2 && records.every((r) => r.id === 'arb2b' || r.id === 'arbBldg') && H.log.saves.length === 0, 'arbitrage records untouched');
+      H.check(fails, traces.some((t) => / dup check: key=400 example way\|\|32566 records=0 match=none kind=none$/.test(t)), 'trace counts cohostRecords: ' + traces.filter((t) => t.includes('dup')));
+    } finally { console.log = realLog; }
+    return { fails };
+  },
   'T9 a successful Resend says when the new email went out': async () => {
     const fails = [];
     const auth = firebase.auth();

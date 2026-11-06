@@ -27210,13 +27210,21 @@ async function handleCohostListing(data){
   const geo = await _rrGeocodeListing(data.address);
   const addrParts = { street: geo.street||'', unit: geo.unit||'', city: geo.city||'', state: geo.state||'', zip: geo.zip||'' };
   const canonical = formatAddressOneLine(addrParts) || geo.formattedAddress || data.address || data.title || 'New Co-Hosting Property';
-  // Duplicate detection within the co-host store (address-based).
-  const dup = findImportDuplicate({ name: canonical, addressParts: addrParts }, cohostRecords);
+  // Duplicate detection within the co-host store only (never the Single Unit /
+  // Multi Unit records). The same check as listing import: every form of the
+  // address counts (geocoded parts, the one-line name, the scraped text), and a
+  // same-building match (one side names a unit, the other does not) asks without
+  // offering Replace, so a building-level import can't overwrite a unit's record.
+  const dupCandidates = [{ name: canonical, addressParts: addrParts }, { name: canonical }, { name: data.address }];
+  const res = importDuplicateCheck(dupCandidates, cohostRecords);
+  _rrImportInFlightTrace('dup check: key=' + (res.key || '(none)') + ' records=' + cohostRecords.length + ' match=' + (res.match ? res.match.id : 'none') + ' kind=' + (res.kind || 'none'));
   let replaceId = null;
-  if(dup){
-    const choice = await showDuplicateDialog(canonical, dup);
+  if(res.match){
+    const choice = await showDuplicateDialog(canonical, res.match, { kind: res.kind });
     if(choice === 'cancel'){ showToast('Import cancelled.','info',3500); return 'cancelled'; }
-    if(choice === 'replace') replaceId = dup.id;
+    // Replace only on an exact match. The same-building dialog never offers it;
+    // this guard holds even if a 'replace' came back some other way.
+    if(choice === 'replace' && res.kind === 'exact') replaceId = res.match.id;
   }
   const rent = (data.price!=null && data.price!=='') ? (_cn(data.price)||'') : '';
   const r = {
