@@ -389,9 +389,27 @@ test('a different zip is no match of either kind', () => {
   assert.equal(h.addressKeysSameBuilding(h.addressMatchKey('400 Example Way, X FL'), h.addressMatchKey('400 Example Way #1, X FL')), true, 'a missing zip is compatible');
 });
 
-test('the old exact-only findImportDuplicate is unchanged (Co-Hosting uses it)', () => {
+test('the old exact-only findImportDuplicate is unchanged (no app caller since T10; kept for now)', () => {
   assert.equal(h.findImportDuplicate({ name: '400 Example Way, Sampletown FL 32000' }, [SAVED_UNIT]), null);
   assert.equal(h.findImportDuplicate({ name: '400 Example Way #2B, Sampletown FL 32000' }, [SAVED_UNIT]), SAVED_UNIT);
+});
+
+// T10: Co-Hosting import runs importDuplicateCheck with the same three candidates,
+// against co-host records only.
+test('Co-Hosting records take the same check: same-building asks, 714 vs 715 does not, other stores never count', () => {
+  const cohost = (id, property, unit) => ({ id, kind: 'cohost', property, addressParts: { street: '400 Example Way', unit, city: 'Sampletown', state: 'FL', zip: '32000' }, cohost: {} });
+  const saved2b = cohost('c2b', '400 Example Way #2B, Sampletown FL 32000', '#2B');
+  const saved715 = cohost('c715', '400 Example Way Unit 715, Sampletown FL 32000', 'Unit 715');
+  const parts = { street: '400 Example Way', unit: '', city: 'Sampletown', state: 'FL', zip: '32000' };
+  const candidates = (scraped) => [{ name: '400 Example Way, Sampletown FL 32000', addressParts: parts }, { name: '400 Example Way, Sampletown FL 32000' }, { name: scraped }];
+  const bldg = h.importDuplicateCheck(candidates('400 Example Way, Sampletown, FL 32000'), [saved2b]);
+  assert.deepEqual([bldg.match && bldg.match.id, bldg.kind, bldg.key], ['c2b', 'same-building', '400 example way||32000']);
+  const exact = h.importDuplicateCheck(candidates('400 Example Way #2B, Sampletown, FL 32000'), [saved2b]);
+  assert.deepEqual([exact.match && exact.match.id, exact.kind], ['c2b', 'exact']);
+  const other = h.importDuplicateCheck(candidates('400 Example Way Unit 714, Sampletown, FL 32000'), [saved715]);
+  assert.deepEqual([other.match, other.kind], [null, null], 'M1: a dropped 714 is not 715\'s building');
+  const none = h.importDuplicateCheck(candidates('400 Example Way, Sampletown, FL 32000'), []);
+  assert.deepEqual([none.match, none.kind], [null, null], 'arbitrage records are not passed, so they cannot match');
 });
 
 test('a blank import whose street is the stand-in name is still blank', () => {
