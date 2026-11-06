@@ -314,6 +314,39 @@ H.scenarios = {
     return { fails };
   },
 
+  'T11 KB seed: a reworded starter question renames the existing entry in place': async () => {
+    const fails = [];
+    const saved = { admin: _isAdmin, kb: _kbState, confirm: window.confirm, embed: kbCallEmbeddingApi, col: db.collection };
+    const calls = { update: [], add: [], del: [] };
+    _isAdmin = true;
+    window.confirm = () => true;
+    kbCallEmbeddingApi = async () => ({ embedding: [0], model: 'stub' });
+    db.collection = (name) => ({
+      doc: (id) => ({ update: async (d) => { calls.update.push({ id, d }); }, delete: async () => { calls.del.push(id); } }),
+      add: async (d) => { calls.add.push(d); },
+    });
+    const onlyRenamed = _KB_STARTER_ENTRIES.filter((e) => e.prevQuestions && e.prevQuestions.length);
+    H.check(fails, onlyRenamed.length >= 5, 'starter has renamed entries: ' + onlyRenamed.length);
+    // Live KB: every starter question already present and in sync, except two seeded
+    // under the OLD wording — one active, one inactive.
+    const a = onlyRenamed[0], b = onlyRenamed[1];
+    _kbState = { entries: _KB_STARTER_ENTRIES.map((e, i) => {
+      const old = e === a || e === b;
+      return { id: 'e' + i, question: old ? e.prevQuestions[0] : e.question, answer: old ? 'stale' : e.answer, seededAnswer: old ? 'stale' : e.answer, tags: e.tags || [], active: e !== b, seededByScript: true,
+        notifyHumanNow: !!e.notifyHumanNow, escalateToHuman: !e.notifyHumanNow && (!!e.escalateToHuman || (e.tags || []).indexOf('escalate') !== -1) };
+    }) };
+    await kbSeedStarter();
+    H.check(fails, calls.add.length === 0, 'no duplicates created, added ' + calls.add.length);
+    H.check(fails, calls.del.length === 0, 'old-wording inactive entry not deleted');
+    const ua = calls.update.find((u) => u.d.question === a.question);
+    const ub = calls.update.find((u) => u.d.question === b.question);
+    H.check(fails, ua && ua.d.answer === a.answer && ua.d.reviewPending === true, 'active entry renamed in place and flagged for review');
+    H.check(fails, ub && ub.d.answer === b.answer && !('reviewPending' in ub.d), 'inactive entry renamed in place, stays inactive');
+    H.check(fails, calls.update.filter((u) => 'answer' in u.d).length === 2, 'only the two stale entries rewritten: ' + calls.update.filter((u) => 'answer' in u.d).length);
+    _isAdmin = saved.admin; _kbState = saved.kb; window.confirm = saved.confirm; kbCallEmbeddingApi = saved.embed; db.collection = saved.col;
+    return { fails };
+  },
+
   'S5 popup import during an import queues one, then runs it': async () => {
     const fails = [];
     let release;
