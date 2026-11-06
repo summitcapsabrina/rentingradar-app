@@ -2802,7 +2802,7 @@ function mgShareLink(){
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21V10a1 1 0 0 1 1-1h5a1 1 0 0 1 1 1v11"/><path d="M13 21V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v17"/><path d="M3 21h18"/><path d="M6 13h1M6 17h1M16 8h1M16 12h1M16 16h1M19 8h1M19 12h1M19 16h1"/></svg>
         <span>Multi Unit</span>
       </div>
-      <div class="nav-item" data-view="coHosting" data-cohost-only onclick="switchView('coHosting')" title="Co-Hosting" style="display:none">
+      <div class="nav-item" data-view="coHosting" onclick="switchView('coHosting')" title="Co-Hosting">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m11 17 2 2a1 1 0 1 0 3-3"/><path d="m14 14 2.5 2.5a1 1 0 1 0 3-3l-3.88-3.88a3 3 0 0 0-4.24 0l-.88.88a1 1 0 1 1-3-3l2.81-2.81a5.79 5.79 0 0 1 7.06-.87l.47.28a2 2 0 0 0 1.42.25L21 4"/><path d="m21 3 1 11h-2"/><path d="M3 3 2 14l6.5 6.5a1 1 0 1 0 3-3"/><path d="M3 4h8"/></svg>
         <span>Co-Hosting</span>
       </div>
@@ -2899,7 +2899,7 @@ function mgShareLink(){
           <div class="user-menu" id="addMenu">
             <div class="user-menu-item" onclick="closeAddMenu();_addPropertyChoice('house')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg> Single Unit</div>
             <div class="user-menu-item" onclick="closeAddMenu();_addPropertyChoice('apartment')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21V10a1 1 0 0 1 1-1h5a1 1 0 0 1 1 1v11"/><path d="M13 21V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v17"/><path d="M3 21h18"/><path d="M6 13h1M6 17h1M16 8h1M16 12h1M16 16h1M19 8h1M19 12h1M19 16h1"/></svg> Multi Unit</div>
-            <div class="user-menu-item" onclick="closeAddMenu();_addPropertyChoice('cohost')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m11 17 2 2a1 1 0 1 0 3-3"/><path d="m14 14 2.5 2.5a1 1 0 1 0 3-3l-3.88-3.88a3 3 0 0 0-4.24 0l-.88.88a1 1 0 1 1-3-3l2.81-2.81a5.79 5.79 0 0 1 7.06-.87l.47.28a2 2 0 0 0 1.42.25L21 4"/><path d="m21 3 1 11h-2"/><path d="M3 3 2 14l6.5 6.5a1 1 0 1 0 3-3"/><path d="M3 4h8"/></svg> Co-Hosting <span data-cohost-lock style="margin-left:auto;font-size:.78rem;opacity:.7">🔒</span></div>
+            <div class="user-menu-item" onclick="closeAddMenu();_addPropertyChoice('cohost')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m11 17 2 2a1 1 0 1 0 3-3"/><path d="m14 14 2.5 2.5a1 1 0 1 0 3-3l-3.88-3.88a3 3 0 0 0-4.24 0l-.88.88a1 1 0 1 1-3-3l2.81-2.81a5.79 5.79 0 0 1 7.06-.87l.47.28a2 2 0 0 0 1.42.25L21 4"/><path d="m21 3 1 11h-2"/><path d="M3 3 2 14l6.5 6.5a1 1 0 1 0 3-3"/><path d="M3 4h8"/></svg> Co-Hosting</div>
           </div>
         </div>
         <div style="position:relative" id="themePickerWrap">
@@ -2977,7 +2977,7 @@ function statusClass(s){ return 'st-' + (s||'new').toLowerCase().replace(/\s+/g,
 function statusPill(s){ return `<span class="status-pill ${statusClass(s)}">${s||'New'}</span>` }
 
 let records = [];
-// ── Co-Hosting (Admin + Affiliate, in development) ──────────────────────────
+// ── Co-Hosting (available to all users) ─────────────────────────────────────
 // Co-Hosting properties live in a SEPARATE store from `records` so they can
 // never leak into Prospecting search, maps, or KPIs. The one deliberate
 // exception is Operations: once a Co-Hosting property is moved there (same
@@ -3392,7 +3392,7 @@ async function loadDataFromFirestore(userUid){
   }
   // Load standalone contacts in parallel — fire-and-forget so the UI shows fast.
   loadContacts(userUid).catch(function(e){ console.error('loadContacts failed:', e); });
-  // Load the isolated Co-Hosting store in parallel (Admin + Affiliate feature).
+  // Load the isolated Co-Hosting store in parallel.
   loadCohostDataFromFirestore(userUid).then(function(){
     if(_isImpersonating()) return;
     return db.collection('users').doc(userUid).get().then(function(userDoc){
@@ -7024,13 +7024,11 @@ function _renderCurrentView(area){
     case 'operations': area.innerHTML = renderOperationsList(); setTimeout(initOperationsMap, 50); break;
     case 'opsProfile': area.innerHTML = renderOpsProfile(); break;
     case 'coHosting':
-      if(!_isAdmin && !_isAffiliate){ area.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text2)">Access denied. Co-Hosting is in limited release.</div>'; break; }
       _setDashMode(DASH_MODES.cohost);
       area.innerHTML = renderCoHostingList();
       if(typeof cohostRecords !== 'undefined' && cohostRecords.length) setTimeout(initDashboardMap, 50);
       break;
     case 'cohostProfile':
-      if(!_isAdmin && !_isAffiliate){ area.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text2)">Access denied. Co-Hosting is in limited release.</div>'; break; }
       // Stamp lastAccessed once per navigation (not on re-renders) so EVERY way of
       // reaching a cohost profile — list, search, back/forward, reload — surfaces it
       // in Recently Viewed, exactly like Arbitrage.
@@ -21329,22 +21327,7 @@ function applyAdminUI(){
   document.querySelectorAll('[data-affiliate-only]').forEach(el => {
     el.style.display = (_isAffiliate && !_isAdmin) ? '' : 'none';
   });
-  // Co-Hosting (in development): visible to Admin OR Affiliate while the Chrome
-  // extension is being tested (Sabrina's AirDNA subscription is on an Affiliate
-  // profile). Will widen to all tiers once ironed out.
-  document.querySelectorAll('[data-cohost-only]').forEach(el => {
-    el.style.display = (_isAdmin || _isAffiliate) ? '' : 'none';
-  });
-  // The 🔒 badge on the "Co-Hosting" Add-Property menu item shows for everyone
-  // who doesn't have access yet (inverse of data-cohost-only).
-  document.querySelectorAll('[data-cohost-lock]').forEach(el => {
-    el.style.display = (_isAdmin || _isAffiliate) ? 'none' : '';
-    // Hover explains the lock on the whole menu row, not just the tiny icon.
-    const _lockRow = el.closest('.user-menu-item');
-    const _lockTip = (_isAdmin || _isAffiliate) ? '' : 'Co-Hosting is in limited release and not on any plan yet. Coming soon.';
-    if(_lockRow) _lockRow.title = _lockTip;
-    el.title = _lockTip;
-  });
+  // Co-Hosting is live for every tier (widened from Admin + Affiliate on 2026-11-05).
   // Floating chat widget — LAUNCH: available to ALL signed-in users. Admins never
   // see it (they are the recipients — user chats land in the sidebar Inbox).
   // Eligibility lives in _chatWidgetEligible() so the audience can be changed in
@@ -21919,7 +21902,7 @@ function closeDataMenu(){
   const menu = document.getElementById('dataMenu');
   if(menu) menu.classList.remove('open');
 }
-// + Add Property dropdown — Arbitrage (everyone) vs Co-Hosting (Admin + Affiliate).
+// + Add Property dropdown — Single Unit / Multi Unit (Arbitrage) vs Co-Hosting. All available to everyone.
 function toggleAddMenu(){
   const menu = document.getElementById('addMenu');
   if(menu) menu.classList.toggle('open');
@@ -21931,10 +21914,6 @@ function closeAddMenu(){
 }
 function _addPropertyChoice(kind){
   if(kind === 'cohost'){
-    if(!(_isAdmin || _isAffiliate)){
-      showToast('Co-Hosting is in limited release — coming soon.', 'warning');
-      return;
-    }
     openCohostAddModal();
   } else if(kind === 'apartment'){
     openAptProspectModal();
@@ -26936,7 +26915,7 @@ function _opsFocusCard(subtab, itemId){
 }
 
 /* ========================================================================
-   CO-HOSTING MODULE (Admin + Affiliate, in development)
+   CO-HOSTING MODULE (available to all users)
    Fully isolated from `records`. Operates only on `cohostRecords`.
    ======================================================================== */
 let cohostActiveTab = 'details';
@@ -41717,7 +41696,7 @@ var _KB_STARTER_ENTRIES = [
 
   // ---- Getting started ----
   { question: "How do I get started with RentingRadar?", answer: "Start in the Houses or Apartments section, where you add and analyze candidate properties. Installing the Chrome extension is the fastest way to pull listing data in automatically rather than typing it by hand.", tags: ["getting-started", "onboarding"] },
-  { question: "How do I add my first property?", answer: "Click + Add Property in the top-right and choose House or Apartment (Admin/Affiliate accounts also see a Co-Hosting option). From there, paste a listing link — Zillow, Apartments.com, or HotPads — to auto-fill the property's details, or choose Manual Entry to type them in yourself.", tags: ["getting-started", "add-property"] },
+  { question: "How do I add my first property?", answer: "Click + Add Property in the top-right and choose Single Unit, Multi Unit, or Co-Hosting. From there, paste a listing link — Zillow, Apartments.com, or HotPads — to auto-fill the property's details, or choose Manual Entry to type them in yourself.", tags: ["getting-started", "add-property"] },
   { question: "What is the Chrome extension for?", answer: "It auto-fills property data into RentingRadar so you skip manual entry. It reads rental listings — Zillow, Apartments.com, and HotPads — to import a property's details, and on the Houses/Apartments side it also pulls competitor/comp data from AirDNA and Airbnb.", tags: ["chrome-extension", "scraping", "airdna", "airbnb", "import"] },
   { question: "How do I install the Chrome extension?", answer: "Add it from the [Chrome Web Store](https://chromewebstore.google.com/detail/rentingradar/eambgkhnefkigdndllhmakfedkncgmoh), then sign in to RentingRadar in the same browser. Settings shows whether the extension is connected.", tags: ["chrome-extension", "install", "settings"] },
   { question: "What is AirDNA and why does RentingRadar use it?", answer: "AirDNA is a short-term rental market-data source. RentingRadar pulls AirDNA comp and revenue data (via the Chrome extension) so your ROI projections are based on real nearby performance, not guesses.", tags: ["airdna", "comps", "data"] },
