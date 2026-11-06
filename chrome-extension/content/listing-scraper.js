@@ -2116,6 +2116,15 @@
     setTimeout(() => run(attempt + 1), 400);
   }
 
-  if (document.readyState === 'complete') setTimeout(() => run(0), 200);
-  else window.addEventListener('load', () => setTimeout(() => run(0), 200), { once: true });
+  // Start on the page's load event as before, but no later than LOAD_FALLBACK_MS
+  // after injection (v1.17.1): a slow ad or tracker can hold 'load' back past the
+  // service worker's timeout, while the listing data is already in the HTML.
+  const LOAD_FALLBACK_MS = window.__rrLoadFallbackMs || 8000;
+  let started = false;
+  const start = () => { if (started) return; started = true; setTimeout(() => run(0), 200); };
+  if (document.readyState === 'complete') start();
+  else {
+    window.addEventListener('load', start, { once: true });
+    setTimeout(start, LOAD_FALLBACK_MS);
+  }
 })();

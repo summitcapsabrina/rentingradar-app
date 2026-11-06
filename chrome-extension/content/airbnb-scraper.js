@@ -271,6 +271,13 @@
     setTimeout(() => run(attempt + 1), 800);
   }
 
-  if (document.readyState === 'complete') setTimeout(() => run(0), 500);
-  else window.addEventListener('load', () => setTimeout(() => run(0), 500), { once: true });
+  // Same start rule as listing-scraper.js (v1.17.1): load event, or LOAD_FALLBACK_MS.
+  const LOAD_FALLBACK_MS = window.__rrLoadFallbackMs || 8000;
+  let started = false;
+  const start = () => { if (started) return; started = true; setTimeout(() => run(0), 500); };
+  if (document.readyState === 'complete') start();
+  else {
+    window.addEventListener('load', start, { once: true });
+    setTimeout(start, LOAD_FALLBACK_MS);
+  }
 })();

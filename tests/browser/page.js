@@ -434,6 +434,28 @@ H.scenarios = {
     return { fails };
   },
 
+  'T13 a scrape timeout explains itself and names the extension fix, in both boxes': async () => {
+    const fails = [];
+    const saved = rrScrapeViaExtension;
+    rrScrapeViaExtension = async () => ({ ok: false, error: 'Timed out waiting for page to load.' });
+    _addPropertyChoice('cohost');
+    document.getElementById('cohost_paste_url').value = 'https://www.zillow.com/homedetails/8508-Wileyvale-Rd-8508B-Houston-TX-77016/462588840_zpid/';
+    importCohostFromPaste();
+    await H.until(() => !window._rrListingImportInFlight, 4000); await H.wait(50);
+    let t = (document.getElementById('cohost_paste_status') || {}).textContent || '';
+    H.check(fails, /took too long to finish loading/.test(t) && /1\.17\.1/.test(t) && !/^Could not import/.test(t), 'cohost: ' + t);
+    closeAddModal(true);
+    openAddModal('house');
+    document.getElementById('add_choice_url').value = 'https://www.zillow.com/homedetails/8508-Wileyvale-Rd-8508B-Houston-TX-77016/462588840_zpid/';
+    importFromChoicePaste();
+    await H.until(() => !window._rrListingImportInFlight, 4000); await H.wait(50);
+    t = (document.getElementById('add_choice_status') || {}).textContent || '';
+    H.check(fails, /took too long to finish loading/.test(t), 'single unit: ' + t);
+    closeAddModal(true);
+    rrScrapeViaExtension = saved;
+    return { fails };
+  },
+
   'S5 popup import during an import queues one, then runs it': async () => {
     const fails = [];
     let release;

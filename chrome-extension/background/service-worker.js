@@ -16,6 +16,11 @@ importScripts('../lib/amenity-match.js', '../lib/listing-plans.js');
 
 const CRM_ORIGIN = 'https://app.rentingradar.com';
 const SCRAPE_TIMEOUT_MS = 45000;
+// v1.17.1: how often to check whether a background tab's document is readable.
+// Listing pages carry their data in the initial HTML, but the tab's 'complete'
+// status waits for every ad and tracker; on a slow connection that can take
+// longer than SCRAPE_TIMEOUT_MS, so the scrape timed out without ever reading.
+const READY_PROBE_MS = 1500;
 const MARKET_LOOKUP_TIMEOUT_MS = 20000;
 
 // Static city→market fallback mapping
@@ -2029,6 +2034,7 @@ function resolveScrape(tabId, payload, error) {
   const entry = pendingScrapes.get(tabId);
   if (!entry) return;
   clearTimeout(entry.timer);
+  if (entry.cleanup) entry.cleanup();
   pendingScrapes.delete(tabId);
   chrome.tabs.remove(tabId).catch(function(){});
   if (error) entry.reject(new Error(error));
@@ -2039,23 +2045,35 @@ async function scrapeInBackgroundTab(url, contentScriptPath, opts) {
   opts = opts || {};
   const tab = await chrome.tabs.create({ url, active: false });
   return new Promise((resolve, reject) => {
+    let probeTimer = null;
+    const cleanup = () => {
+      clearTimeout(probeTimer);
+      chrome.tabs.onUpdated.removeListener(listener);
+    };
     const timer = setTimeout(() => {
+      cleanup();
       pendingScrapes.delete(tab.id);
       chrome.tabs.remove(tab.id).catch(function(){});
       reject(new Error('Timed out waiting for page to load.'));
     }, SCRAPE_TIMEOUT_MS);
 
-    pendingScrapes.set(tab.id, { resolve, reject, timer });
+    pendingScrapes.set(tab.id, { resolve, reject, timer, cleanup });
 
     const fail = (e) => {
+      cleanup();
       pendingScrapes.delete(tab.id);
       clearTimeout(timer);
       chrome.tabs.remove(tab.id).catch(function(){});
       reject(e);
     };
-    const listener = async (tabId, changeInfo) => {
-      if (tabId !== tab.id || changeInfo.status !== 'complete') return;
-      chrome.tabs.onUpdated.removeListener(listener);
+    // Injects the scraper into the tab's current document. Runs on the first of:
+    // the tab reaching 'complete', or a probe finding the document past
+    // 'loading' (v1.17.1). Each scraper guards against running twice in one
+    // document, so a later 'complete' (say, after a redirect) re-injects safely.
+    let injecting = false, injected = false;
+    const inject = async (fromProbe) => {
+      if (injecting || !pendingScrapes.has(tab.id)) return;
+      injecting = true;
       try {
         // For Co-Hosting imports, set a flag in the page (ISOLATED world, shared
         // with the content script) so the AirDNA scraper waits for the AI Summary
@@ -2080,9 +2098,28 @@ async function scrapeInBackgroundTab(url, contentScriptPath, opts) {
             ? ['lib/amenity-match.js', 'lib/listing-plans.js', contentScriptPath]
             : [contentScriptPath],
         });
-      } catch (e) { fail(e); }
+        injected = true;
+      } catch (e) {
+        // A probe can land mid-navigation; the next probe or 'complete' retries.
+        // Once a scraper is in, a failed re-injection must not end the scrape.
+        if (!fromProbe && !injected) fail(e);
+      } finally { injecting = false; }
+    };
+    function listener(tabId, changeInfo) {
+      if (tabId !== tab.id || changeInfo.status !== 'complete') return;
+      inject(false);
+    }
+    const probe = async () => {
+      if (injected || !pendingScrapes.has(tab.id)) return;
+      try {
+        const res = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: function () { return document.readyState; } });
+        const state = res && res[0] && res[0].result;
+        if (state && state !== 'loading') await inject(true);
+      } catch (_) { /* not committed yet, or an error page: keep waiting */ }
+      if (!injected && pendingScrapes.has(tab.id)) probeTimer = setTimeout(probe, READY_PROBE_MS);
     };
     chrome.tabs.onUpdated.addListener(listener);
+    probeTimer = setTimeout(probe, READY_PROBE_MS);
   });
 }
 
