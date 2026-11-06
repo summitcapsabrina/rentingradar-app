@@ -2317,18 +2317,20 @@ function mgShareLink(){
   function mgRenderTierPicker(firstName, TIERS_LOCAL){
     mgWarmCheckout(); // pre-boot the checkout function while the user reads the plans
     var period = _mgBillingPeriod === 'monthly' ? 'monthly' : 'yearly';
-    // Limit copy is derived from the shared ANALYSIS_LIMITS / OPERATIONS_LIMITS constants so
+    // Limit copy is derived from the shared ANALYSIS_LIMITS / OPERATIONS_LIMITS / COHOST_LIMITS constants so
     // this picker can never drift from the real caps or from the desktop pricing cards.
     var AL = (typeof ANALYSIS_LIMITS !== 'undefined') ? ANALYSIS_LIMITS : { basic:1, standard:10, pro:Infinity };
     var OL = (typeof OPERATIONS_LIMITS !== 'undefined') ? OPERATIONS_LIMITS : { basic:1, standard:5, pro:Infinity };
+    var CL = (typeof COHOST_LIMITS !== 'undefined') ? COHOST_LIMITS : { basic:5, standard:10, pro:Infinity };
     function mgLimitLine(id){
-      var a = AL[id], o = OL[id];
+      var a = AL[id], o = OL[id], c = CL[id];
       var aStr = (a === Infinity) ? 'Unlimited analyses' : (a + (a === 1 ? ' analysis' : ' analyses') + '/mo');
       var oStr;
       if(o === Infinity) oStr = 'unlimited Operations properties';
       else if(id === 'standard') oStr = 'up to ' + o + ' Operations properties';
       else oStr = o + (o === 1 ? ' Operations property' : ' Operations properties');
-      return aStr + ' · ' + oStr;
+      var cStr = (c === Infinity) ? 'unlimited Co-Hosting properties' : 'up to ' + c + ' Co-Hosting properties';
+      return aStr + ' · ' + oStr + ' · ' + cStr;
     }
     var tiers = [
       { id:'basic',    tail:'Solo operators getting started.' },
@@ -14466,9 +14468,11 @@ function requireTier(minTier, featureName){
 // │  APP (this file):                                                                   │
 // │   1. ANALYSIS_LIMITS (here)            — per-tier monthly analysis quota            │
 // │   2. OPERATIONS_LIMITS (~120 lines below) — per-tier Operations-property cap        │
+// │   2b. COHOST_LIMITS (just after the Operations helpers) — per-tier Co-Hosting cap    │
+// │      (client-side only; no server trigger yet)                                      │
 // │   3. TIERS { monthly, yearly } (~line 12055) — display prices                       │
 // │   4. renderPricingCard() calls (~line 17870) — desktop card `analysisLimit` string  │
-// │      is HARDCODED (operationsLimit reads OPERATIONS_LIMITS; analyses does not)       │
+// │      is HARDCODED (operationsLimit/cohostLimit read the constants; analyses does not)│
 // │   5. mgRenderTierPicker() (~line 2230) — mobile picker; derives BOTH from the two    │
 // │      constants above, so it auto-syncs — no edit needed if you only change numbers  │
 // │   6. FAQ_ENTRIES "difference between Basic/Standard/Pro" (~line 36190) — hardcoded,  │
@@ -14476,8 +14480,10 @@ function requireTier(minTier, featureName){
 // │  BACKEND: functions/index.js → opsLimitForUserData() — server-enforced Operations   │
 // │      cap, hardcoded basic:1 / standard:5; MUST match OPERATIONS_LIMITS               │
 // │  STRIPE: price amounts live in Stripe; the *_PRICE env vars map tier→priceId        │
-// │  WEBSITE: rentingradar-website/index.html PLANS {} — analysisLimit + operationsLimit │
-// │      (both hardcoded there) + any pricing in JSON-LD / meta                          │
+// │  CHAT: api/chatSend.js PLAN_PRICING + "Plan pricing" block, api/chatKnowledgeSuggest │
+// │      (hardcoded) — then re-run Knowledge Base → "Seed starter" so live KB updates    │
+// │  WEBSITE: rentingradar-website/index.html TIERS {} — analysisLimit + operationsLimit │
+// │      + cohostLimit (all hardcoded there), pricing/index.html, pricing.md, llms.txt   │
 // └──────────────────────────────────────────────────────────────────────────────────┘
 const ANALYSIS_LIMITS = { basic: 1, standard: 10, pro: Infinity, affiliate: Infinity, admin: Infinity };
 let _analysisQuota = { analyzedProperties: [], cycleStart: null, signupDate: null };
@@ -14628,6 +14634,70 @@ function showOperationsLimitPrompt(){
   } else {
     try { switchView('pricing'); } catch(e){}
   }
+}
+
+// ── Co-Hosting Quota System (mirrors the Operations quota) ──
+// Basic: 5 Co-Hosting properties · Standard: 10 · Pro/Affiliate/Admin: unlimited.
+// Counts properties in the Co-Hosting pipeline only; a Co-Hosting property moved to
+// Operations counts against the Operations cap instead (never both). Trial users get
+// unlimited. EXISTING over-limit users are GRANDFATHERED: we only block ADDING new
+// ones past the cap. Client-side only today (no server trigger yet).
+// Changing these numbers? See the plan-change checklist above ANALYSIS_LIMITS.
+const COHOST_LIMITS = { basic: 5, standard: 10, pro: Infinity, affiliate: Infinity, admin: Infinity };
+
+function getCohostLimit(){
+  if(currentTier === 'pro' || currentTier === 'affiliate' || currentTier === 'admin') return Infinity;
+  if(_subscriptionStatus === 'trialing') return Infinity; // trial = full access
+  return COHOST_LIMITS[currentTier] ?? COHOST_LIMITS.basic;
+}
+function getCohostUsed(){
+  try { return cohostRecords.filter(function(r){ return !isOpsProperty(r); }).length; } catch(e){ return 0; }
+}
+function getCohostRemaining(){
+  const lim = getCohostLimit();
+  return lim === Infinity ? Infinity : Math.max(0, lim - getCohostUsed());
+}
+function canAddCohost(n){
+  const rem = getCohostRemaining();
+  return rem === Infinity || rem >= (n || 1);
+}
+// Upgrade prompt shown when the Co-Hosting cap is hit (same shape as Operations).
+function showCohostLimitPrompt(){
+  const lim = getCohostLimit();
+  let msg;
+  if(currentTier === 'standard'){
+    const diff = (TIERS.pro && TIERS.standard) ? Math.round(TIERS.pro.monthly - TIERS.standard.monthly) : 10;
+    msg = 'You’re tracking ' + lim + ' Co-Hosting properties — nice work! Upgrade to <strong>Pro</strong> for <strong>unlimited</strong> Co-Hosting properties (just $' + diff + '/mo more). Your current properties stay exactly as they are.';
+  } else if(currentTier === 'basic'){
+    msg = 'Basic includes <strong>' + lim + '</strong> Co-Hosting properties. Upgrade to <strong>Standard</strong> for up to ' + COHOST_LIMITS.standard + ', or <strong>Pro</strong> for unlimited. Your current properties stay exactly as they are.';
+  } else {
+    const limTxt = lim === Infinity ? 'unlimited' : lim;
+    msg = 'You’ve reached your plan’s Co-Hosting limit (' + limTxt + '). Upgrade to add more — your existing Co-Hosting properties are unaffected.';
+  }
+  if(typeof showAppConfirm === 'function'){
+    showAppConfirm(msg, {
+      title: 'Co-Hosting limit reached',
+      icon: '🔒',
+      confirmText: 'View Plans',
+      cancelText: 'Not now',
+      confirmClass: 'btn-primary',
+      onConfirm: function(){ try { switchView('pricing'); } catch(e){} }
+    });
+  } else {
+    try { switchView('pricing'); } catch(e){}
+  }
+}
+// Always-on usage indicator at the top of the Co-Hosting list. Hidden for
+// unlimited tiers (Pro/Affiliate/Admin/trial) — no cap to communicate.
+function renderCohostUsageIndicator(){
+  const lim = getCohostLimit();
+  if(lim === Infinity) return '';
+  const used = getCohostUsed();
+  const atCap = used >= lim;
+  return '<div style="font-size:.8rem;padding:0 2px 10px;color:' + (atCap ? 'var(--warning)' : 'var(--text3)') + '">'
+    + '<span style="font-weight:600;color:' + (atCap ? 'var(--warning)' : 'var(--text2)') + '">Co-Hosting: ' + used + ' of ' + lim + ' used</span>'
+    + (atCap ? ' — you’re ' + (used > lim ? 'above' : 'at') + ' your plan’s limit · <span style="color:var(--primary);cursor:pointer;font-weight:600" onclick="showCohostLimitPrompt()">Upgrade</span>' : '')
+    + '</div>';
 }
 
 // Bulk-import Operations cap gate. `candidates` = array of {key,label} for rows
@@ -20008,6 +20078,7 @@ function renderPricing(opts){
       ${renderPricingCard('basic', {
         analysisLimit: '1 analysis / month',
         operationsLimit: OPERATIONS_LIMITS.basic + (OPERATIONS_LIMITS.basic === 1 ? ' Operations property' : ' Operations properties'),
+        cohostLimit: 'Up to ' + COHOST_LIMITS.basic + ' Co-Hosting properties',
         features: [
           'Pipeline management',
           'Full-scope property profiles',
@@ -20025,6 +20096,7 @@ function renderPricing(opts){
         popular: true,
         analysisLimit: '10 analyses / month',
         operationsLimit: 'Up to ' + OPERATIONS_LIMITS.standard + ' Operations properties',
+        cohostLimit: 'Up to ' + COHOST_LIMITS.standard + ' Co-Hosting properties',
         features: [
           'Everything in Basic',
           'Dark mode & 8 color themes',
@@ -20035,6 +20107,7 @@ function renderPricing(opts){
       ${renderPricingCard('pro', {
         analysisLimit: 'Unlimited analyses',
         operationsLimit: 'Unlimited Operations properties',
+        cohostLimit: 'Unlimited Co-Hosting properties',
         features: [
           'Everything in Standard',
           'Priority feature requests',
@@ -20114,6 +20187,7 @@ function renderPricingCard(tier, opts){
     <ul class="pc-features">
       ${opts.analysisLimit ? `<li class="pc-feat-limit">${opts.analysisLimit}</li>` : ''}
       ${opts.operationsLimit ? `<li class="pc-feat-limit">${opts.operationsLimit}</li>` : ''}
+      ${opts.cohostLimit ? `<li class="pc-feat-limit">${opts.cohostLimit}</li>` : ''}
       ${opts.features.map(f => `<li>${f}</li>`).join('')}
       ${(opts.disabled||[]).map(f => `<li class="disabled">${f}</li>`).join('')}
     </ul>
@@ -27110,12 +27184,13 @@ function renderCoHostingList(){
       '<div style="font-size:.88rem;line-height:1.5">Use the <strong style="color:var(--text2)">+ Add Property</strong> menu (top right) and choose <strong style="color:var(--text2)">Co-Hosting</strong> to import a listing (Zillow, Apartments.com, HotPads) or enter one manually.</div>'+
     '</div>';
   }
-  return renderDashboard();
+  return renderCohostUsageIndicator() + renderDashboard();
 }
 
 /* ---------- Add flow (AirDNA import + manual) ---------- */
 function openCohostAddModal(){
   if(!_currentUid) return;
+  if(!canAddCohost()){ showCohostLimitPrompt(); return; }
   const modal = document.getElementById('detailModal');
   const panel = document.getElementById('detailPanel');
   panel.innerHTML = '<div class="modal-header"><h2>Add New Co-Hosting Property</h2><button class="modal-close" onclick="closeAddModalButton()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>'+
@@ -27269,6 +27344,8 @@ async function handleCohostListing(data){
       }
     } catch(e){}
   }
+  // Replacing an existing record keeps the count flat, so only a net-new add is capped.
+  if(!replaceId && !canAddCohost()){ showCohostLimitPrompt(); return 'failed'; }
   if(typeof _afterPropertyCreate === 'function') _afterPropertyCreate(r);
   // One step with nothing that can throw before the save, as in handleExtensionListing.
   const oldIdx = replaceId ? cohostRecords.findIndex(function(x){ return x.id===replaceId; }) : -1;
@@ -27317,6 +27394,7 @@ function saveCohostManual(){
   const get = function(id){ const el=document.getElementById(id); return el?(el.value||'').trim():''; };
   const address = get('cohost_m_address');
   if(!address){ showAppAlert('Please enter a property address.', {title:'Address required', icon:'⚠️'}); return; }
+  if(!canAddCohost()){ showCohostLimitPrompt(); return; }
   const rent = _cn(get('cohost_m_rent'))||'';
   const r = {
     id: uid(), kind: 'cohost', status: 'New', property: address,
@@ -41690,32 +41768,34 @@ async function kbDeleteEntry(id){
 // ============================================================================
 var _KB_STARTER_ENTRIES = [
   // ---- About RentingRadar ----
-  { question: "What is RentingRadar?", answer: "RentingRadar is a CRM for short-term rental operators. It supports two business models: Arbitrage — lease a property from a landlord and re-list it on Airbnb/Vrbo, whether it's a single house or an apartment building — and Co-Hosting — manage an owner's existing property as a short-term rental for a management fee. The Arbitrage side has two pipelines, Houses and Apartments, each with two stages: sourcing and analyzing deals, then Operations, where you manage active properties.", tags: ["overview", "about", "cohosting"] },
+  { question: "What is RentingRadar?", answer: "RentingRadar is a CRM for short-term rental operators. It supports two business models: Arbitrage — lease a property from a landlord and re-list it on Airbnb/Vrbo, whether it's a single house or an apartment building — and Co-Hosting — manage an owner's existing property as a short-term rental for a management fee. The Arbitrage side has two pipelines: Single Unit (one property or one unit, including a single apartment inside a complex) and Multi Unit (several units in the same building or complex, analyzed as one deal). Both flow from sourcing and analyzing deals into Operations, where you manage active properties.", tags: ["overview", "about", "cohosting"] },
   { question: "What is rental arbitrage?", answer: "Rental arbitrage is leasing a property from a landlord on a long-term lease and then re-listing it for short stays on Airbnb or Vrbo. RentingRadar helps you find arbitrage deals that pencil out, negotiate the lease, and manage them once they're live.", tags: ["overview", "about", "arbitrage"] },
   { question: "Who is RentingRadar for?", answer: "It's for short-term rental operators — whether you run rental arbitrage (leasing properties and re-listing them on Airbnb/Vrbo) or co-host and manage other owners' properties for a fee — from sourcing your first deal to managing a full portfolio.", tags: ["overview", "about", "cohosting"] },
 
   // ---- Getting started ----
-  { question: "How do I get started with RentingRadar?", answer: "Start in the Houses or Apartments section, where you add and analyze candidate properties. Installing the Chrome extension is the fastest way to pull listing data in automatically rather than typing it by hand.", tags: ["getting-started", "onboarding"] },
+  { question: "How do I get started with RentingRadar?", answer: "Start in the Single Unit section (or Multi Unit, if you're pursuing several units in one building), where you add and analyze candidate properties. Installing the Chrome extension is the fastest way to pull listing data in automatically rather than typing it by hand.", tags: ["getting-started", "onboarding"] },
   { question: "How do I add my first property?", answer: "Click + Add Property in the top-right and choose Single Unit, Multi Unit, or Co-Hosting. From there, paste a listing link — Zillow, Apartments.com, or HotPads — to auto-fill the property's details, or choose Manual Entry to type them in yourself.", tags: ["getting-started", "add-property"] },
-  { question: "What is the Chrome extension for?", answer: "It auto-fills property data into RentingRadar so you skip manual entry. It reads rental listings — Zillow, Apartments.com, and HotPads — to import a property's details, and on the Houses/Apartments side it also pulls competitor/comp data from AirDNA and Airbnb.", tags: ["chrome-extension", "scraping", "airdna", "airbnb", "import"] },
+  { question: "What is the Chrome extension for?", answer: "It auto-fills property data into RentingRadar so you skip manual entry. It reads rental listings — Zillow, Apartments.com, and HotPads — to import a property's details, and on the Single Unit/Multi Unit side it also pulls competitor/comp data from AirDNA and Airbnb.", tags: ["chrome-extension", "scraping", "airdna", "airbnb", "import"] },
   { question: "How do I install the Chrome extension?", answer: "Add it from the [Chrome Web Store](https://chromewebstore.google.com/detail/rentingradar/eambgkhnefkigdndllhmakfedkncgmoh), then sign in to RentingRadar in the same browser. Settings shows whether the extension is connected.", tags: ["chrome-extension", "install", "settings"] },
   { question: "What is AirDNA and why does RentingRadar use it?", answer: "AirDNA is a short-term rental market-data source. RentingRadar pulls AirDNA comp and revenue data (via the Chrome extension) so your ROI projections are based on real nearby performance, not guesses.", tags: ["airdna", "comps", "data"] },
 
   // ---- Arbitrage section & pipeline ----
-  { question: "What does the Houses section do?", answer: "The Houses section is your single-family deal pipeline (Apartments has its own matching Pipeline sub-tab for buildings). You list candidate properties, analyze their ROI against AirDNA comps, and track each one through outreach from first contact to close.", tags: ["arbitrage", "overview"] },
-  { question: "How do I navigate the Houses section, or where do I find things?", answer: "Houses is your default home view. The dashboard at the top shows your Pipeline, Map, KPIs, and activity cards. Use the market filter and search bar to narrow the list, click + Add Property in the top-right to add one, and open any property to analyze it or move it through the pipeline. Switch between Houses, Apartments, Operations, and Co-Hosting using the left sidebar.", tags: ["arbitrage", "navigation", "getting-started"] },
-  { question: "How do I switch between Houses and Operations?", answer: "Use the left sidebar — Houses (or Apartments) is your deal pipeline (sourcing and analyzing), and Operations is for properties you're actively managing. A property moves to Operations when you open it and click Move to Operations.", tags: ["arbitrage", "operations", "navigation"] },
-  { question: "What are the pipeline statuses in the Houses section?", answer: "The active pipeline statuses are New, Messaged, Left Voicemail, Follow Up, Interested, and Meeting. Closed statuses are HOA Issues, Not Good Fit, Not Interested, and Un-Listed. Apartments uses the same statuses.", tags: ["arbitrage", "pipeline", "status"] },
+  { question: "What does the Single Unit section do?", prevQuestions: ["What does the Houses section do?"], answer: "Single Unit is your deal pipeline for one property at a time: a house, condo, townhome, or a single apartment inside a complex. (Multi Unit is the matching pipeline for several units in the same building.) You list candidate properties, analyze their ROI against AirDNA comps, and track each one through outreach from first contact to close.", tags: ["arbitrage", "overview", "single-unit"] },
+  { question: "What's the difference between Single Unit and Multi Unit?", answer: "It's about how many units are in the deal, not the kind of building. Single Unit is one property or one unit — a house, condo, townhome, or a single apartment inside a complex — analyzed on its own. Multi Unit is several units in the same building or complex, analyzed together as one deal: its Units tab lists each unit (beds, baths, sq ft, rent) and rolls them up into one Income & Expenses view and Projected ROI. Rule of thumb: one unit, use Single Unit; two or more units in the same place, use Multi Unit.", tags: ["arbitrage", "single-unit", "multi-unit", "overview", "getting-started"] },
+  { question: "I'm looking at one apartment in a complex — is that Single Unit or Multi Unit?", answer: "Single Unit. One apartment is analyzed like any other single property, even though it sits inside a larger building. Use + Add Property → Single Unit and paste the Apartments.com, Zillow, or HotPads link; if the listing covers several floor plans, RentingRadar asks you to pick the one you're pursuing so beds, baths, square footage, and rent match that unit. Choose Multi Unit only when you're going after multiple units in the same complex as one deal.", tags: ["arbitrage", "single-unit", "multi-unit", "add-property", "apartments"] },
+  { question: "How do I navigate the Single Unit section, or where do I find things?", prevQuestions: ["How do I navigate the Houses section, or where do I find things?"], answer: "Single Unit is your default home view. The dashboard at the top shows your Pipeline, Map, KPIs, and activity cards. Use the market filter and search bar to narrow the list, click + Add Property in the top-right to add one, and open any property to analyze it or move it through the pipeline. Switch between Single Unit, Multi Unit, Operations, and Co-Hosting using the left sidebar.", tags: ["arbitrage", "navigation", "getting-started"] },
+  { question: "How do I switch between Single Unit and Operations?", prevQuestions: ["How do I switch between Houses and Operations?"], answer: "Use the left sidebar — Single Unit (or Multi Unit) is your deal pipeline (sourcing and analyzing), and Operations is for properties you're actively managing. A property moves to Operations when you open it and click Move to Operations.", tags: ["arbitrage", "operations", "navigation"] },
+  { question: "What are the pipeline statuses in the Single Unit section?", prevQuestions: ["What are the pipeline statuses in the Houses section?"], answer: "The active pipeline statuses are New, Messaged, Left Voicemail, Follow Up, Interested, and Meeting. Closed statuses are HOA Issues, Not Good Fit, Not Interested, and Un-Listed. Multi Unit uses the same statuses.", tags: ["arbitrage", "pipeline", "status"] },
   { question: "How are the pipeline statuses grouped?", answer: "Into four categories: New Leads (New), In Outreach (Messaged, Left Voicemail, Follow Up), Qualified (Interested, Meeting), and Closed/Lost (HOA Issues, Not Good Fit, Not Interested, Un-Listed).", tags: ["arbitrage", "pipeline", "categories"] },
   { question: "How do I change a property's status?", answer: "Open the property and choose a new status from its status selector. The pipeline view and dashboard counts update automatically.", tags: ["arbitrage", "status"] },
-  { question: "How do I filter properties by market?", answer: "Use the market filter at the top of the Houses (or Apartments) section. Choose All Markets to see every property across all markets at once.", tags: ["arbitrage", "market", "filter"] },
+  { question: "How do I filter properties by market?", answer: "Use the market filter at the top of the Single Unit (or Multi Unit) section. Choose All Markets to see every property across all markets at once.", tags: ["arbitrage", "market", "filter"] },
   { question: "What does the map view show?", answer: "Every property you're tracking, plotted by address. It respects your current market filter, so you only see properties in the selected market.", tags: ["arbitrage", "map", "view"] },
-  { question: "How do I search for a property?", answer: "Use the search box at the top of the Houses (or Apartments) section to find a property by address, contact, or status.", tags: ["arbitrage", "search"] },
+  { question: "How do I search for a property?", answer: "Use the search box at the top of the Single Unit (or Multi Unit) section to find a property by address, contact, or status.", tags: ["arbitrage", "search"] },
   { question: "How do I delete a property?", answer: "Open the property profile and use the delete (trash) action. Deletion is permanent, so please confirm carefully before removing it.", tags: ["arbitrage", "delete"] },
-  { question: "Is there a limit on how many properties I can track?", answer: "In Houses or Apartments, no — every plan (Basic, Standard, and Pro) includes unlimited properties to source and analyze. Operations (properties you're actively managing) is tiered: Basic includes 1, Standard up to 5, and Pro unlimited. Anything already in your Operations always stays accessible.", tags: ["arbitrage", "operations", "limits", "billing"] },
+  { question: "Is there a limit on how many properties I can track?", answer: "In Single Unit or Multi Unit, no — every plan (Basic, Standard, and Pro) includes unlimited properties to source and analyze. Operations (properties you're actively managing) is tiered: Basic includes 1, Standard up to 5, and Pro unlimited. Co-Hosting is tiered too: Basic up to 5 Co-Hosting properties, Standard up to 10, and Pro unlimited. Anything already in your Operations or Co-Hosting always stays accessible.", tags: ["arbitrage", "cohosting", "operations", "limits", "billing"] },
 
   // ---- Importing ----
-  { question: "How do I import a spreadsheet?", answer: "From the Houses section, open the import option and pick your format: CSV, Monday.com XLSX, or Custom XLSX. Every import is logged in Import History.", tags: ["import", "spreadsheet", "csv", "xlsx"] },
+  { question: "How do I import a spreadsheet?", answer: "From the Single Unit section, open the import option and pick your format: CSV, Monday.com XLSX, or Custom XLSX. Every import is logged in Import History.", tags: ["import", "spreadsheet", "csv", "xlsx"] },
   { question: "Which spreadsheet formats can I import?", answer: "Three: CSV, Monday.com XLSX (which auto-detects its sub-tabs), and Custom XLSX where you map your own columns to RentingRadar fields.", tags: ["import", "formats", "xlsx"] },
   { question: "Can I import data from Monday.com?", answer: "Yes. Choose the Monday.com option and it auto-detects sub-tabs like VA Schedule, Maintenance, Cases, Reviews, and Purchases, routing each to the right place in RentingRadar.", tags: ["import", "monday-com", "xlsx"] },
   { question: "What if my spreadsheet has different column names than RentingRadar?", answer: "Use the Custom XLSX option — you'll map each of your columns to a RentingRadar field by hand, so the names don't need to match.", tags: ["import", "custom-xlsx", "column-mapping"] },
@@ -41725,23 +41805,23 @@ var _KB_STARTER_ENTRIES = [
   { question: "Will importing create duplicates of properties I already have?", answer: "Imports flag likely duplicates by address so you can skip them or import anyway. The same address with a different unit number is treated as a separate property.", tags: ["import", "duplicates"] },
 
   // ---- ROI / analysis ----
-  { question: "How does the analysis / deal math work?", answer: "The deal math is set up differently on each side of RentingRadar — Houses/Apartments (Projected ROI) vs Co-Hosting (the Calculator). Which one are you working in? Tell me and I'll explain how it works for that side.", tags: ["analysis", "roi", "projected-roi", "calculator", "cohosting", "disambiguation"] },
-  { question: "How do I get an accurate revenue projection?", answer: "Revenue is projected differently on each side of RentingRadar — Houses/Apartments vs Co-Hosting. Which one are you working in? Let me know and I'll tell you how to make that projection as accurate as possible.", tags: ["analysis", "comps", "projections", "projected-roi", "market-potential", "cohosting", "disambiguation"] },
-  { question: "What are comps?", answer: "Comps (comparables) are nearby short-term rentals you measure a property against to gauge its revenue potential. You add them in the Competitor Analysis tab on the Houses/Apartments side, or the Market Potential tab on the Co-Hosting side.", tags: ["analysis", "comps", "cohosting"] },
+  { question: "How does the analysis / deal math work?", answer: "The deal math is set up differently on each side of RentingRadar — Single Unit/Multi Unit (Projected ROI) vs Co-Hosting (the Calculator). Which one are you working in? Tell me and I'll explain how it works for that side.", tags: ["analysis", "roi", "projected-roi", "calculator", "cohosting", "disambiguation"] },
+  { question: "How do I get an accurate revenue projection?", answer: "Revenue is projected differently on each side of RentingRadar — Single Unit/Multi Unit vs Co-Hosting. Which one are you working in? Let me know and I'll tell you how to make that projection as accurate as possible.", tags: ["analysis", "comps", "projections", "projected-roi", "market-potential", "cohosting", "disambiguation"] },
+  { question: "What are comps?", answer: "Comps (comparables) are nearby short-term rentals you measure a property against to gauge its revenue potential. You add them in the Competitor Analysis tab on the Single Unit/Multi Unit side, or the Market Potential tab on the Co-Hosting side.", tags: ["analysis", "comps", "cohosting"] },
   { question: "What does the deal recommendation mean?", answer: "It's a quick read on how strong a deal looks, based on your comps and projected returns — a shortcut for deciding which properties are worth pursuing.", tags: ["analysis", "deal-temperature", "recommendation"] },
   { question: "How is the AirBNB Service Fee calculated?", answer: "It's a percentage of revenue, defaulting to 15.5%. You can edit that percentage on the Income & Expenses tab (per unit for Multi Unit buildings), so it stays accurate if Airbnb's fee for your listing is different.", tags: ["math", "airbnb", "service-fee"] },
   { question: "What does Cash Flow mean on the projection?", answer: "Cash Flow = Net Operating Income minus rent — your projected monthly take-home after all expenses and rent, before tax.", tags: ["math", "cash-flow"] },
   { question: "What does Average Revenue mean on the analysis?", answer: "It's the actual annual revenue averaged from your comp properties — not a figure recalculated from rate × days × occupancy.", tags: ["math", "revenue", "comps"] },
   { question: "What is NOI?", answer: "Net Operating Income — revenue minus operating expenses (before rent and financing). It's a measure of how much the property earns on its own.", tags: ["math", "noi"] },
-  { question: "What is an analysis, and is it limited?", answer: "The monthly analysis limit applies to the Houses/Apartments side. Are you asking about Houses/Apartments, or about Co-Hosting? Tell me which and I'll give you the exact details for that side.", tags: ["analysis", "limits", "billing", "cohosting", "disambiguation"] },
+  { question: "What is an analysis, and is it limited?", answer: "The monthly analysis limit applies to the Single Unit/Multi Unit side. Are you asking about Single Unit/Multi Unit, or about Co-Hosting? Tell me which and I'll give you the exact details for that side.", tags: ["analysis", "limits", "billing", "cohosting", "disambiguation"] },
 
   // ---- Property analysis sections: Property Details · Income & Expenses · Competitor Analysis · Projected ROI ----
-  { question: "What are the sections or tabs of a property?", answer: "A property's tabs are different on each side of RentingRadar — Houses/Apartments and Co-Hosting each have their own set (Apartments also adds a Units tab for defining individual units). Which one are you asking about? Let me know and I'll list that side's tabs.", tags: ["analysis", "property-details", "tabs", "cohosting", "overview", "disambiguation"] },
+  { question: "What are the sections or tabs of a property?", answer: "A property's tabs are different on each side of RentingRadar — Single Unit/Multi Unit and Co-Hosting each have their own set (Multi Unit also adds a Units tab for defining individual units). Which one are you asking about? Let me know and I'll list that side's tabs.", tags: ["analysis", "property-details", "tabs", "cohosting", "overview", "disambiguation"] },
   { question: "What are the Property Details and Income & Expenses tabs?", answer: "Property Details is where you capture the property's specifics, and Income & Expenses is where you enter the expected income and operating costs. Both feed into your Projected ROI alongside your Competitor Analysis.", tags: ["property-details", "income-expenses", "analysis"] },
   { question: "What is the Competitor Analysis tab?", answer: "It's where you build a property's comparison set: you add nearby short-term rentals that are genuinely comparable to the property you're analyzing. Once you've entered at least 3 competitors, it unlocks your Projected ROI.", tags: ["competitor-analysis", "comps", "projected-roi", "analysis"] },
   { question: "What is the Projected ROI tab?", answer: "Projected ROI estimates how a property could perform — projecting revenue, expenses, and cash flow across pessimistic, realistic, and optimistic scenarios — based on your Property Details, Income & Expenses, and the competitors you assessed. It unlocks once you've entered at least 3 competitors in Competitor Analysis.", tags: ["projected-roi", "competitor-analysis", "analysis", "projections"] },
   { question: "Why is my Competitor Analysis or Projected ROI empty or not working?", answer: "Both the Competitor Analysis and Projected ROI tabs come to life once you've entered at least 3 competitors in the Competitor Analysis tab. If either looks empty or inactive, add 3 or more comparable properties there and assess each one — that unlocks the full analysis.", tags: ["competitor-analysis", "projected-roi", "troubleshooting", "unlock", "analysis"] },
-  { question: "How many competitors or comps do I need to add?", answer: "At least 3 in either section. On the Houses/Apartments side, 3 competitors in the Competitor Analysis tab unlock your Projected ROI; on the Co-Hosting side, 3 comparables in Market Potential unlock the revenue dial and break-even. More comps make the projection more accurate.", tags: ["competitor-analysis", "market-potential", "comps", "unlock", "cohosting"] },
+  { question: "How many competitors or comps do I need to add?", answer: "At least 3 in either section. On the Single Unit/Multi Unit side, 3 competitors in the Competitor Analysis tab unlock your Projected ROI; on the Co-Hosting side, 3 comparables in Market Potential unlock the revenue dial and break-even. More comps make the projection more accurate.", tags: ["competitor-analysis", "market-potential", "comps", "unlock", "cohosting"] },
   { question: "How do I use the Competitor Analysis tab?", answer: "Add comparable properties — similar location, size, and amenities to the one you're analyzing. Picking genuinely comparable listings (not ones clearly above or below it) is what makes your Projected ROI reliable.", tags: ["competitor-analysis", "comps", "analysis"] },
   { question: "What makes a good comp?", answer: "A comp should be genuinely comparable to the property you're analyzing — similar location, size, condition, and amenities. Avoid listings that are clearly nicer or clearly weaker; the closer the match, the more reliable your Projected ROI.", tags: ["competitor-analysis", "comps", "analysis"] },
   { question: "How can I make my Projected ROI more accurate?", answer: "Add more competitors that are genuinely comparable to the property — similar location, size, condition, and amenities. The more accurate and comparable your comps, the more reliable your Projected ROI.", tags: ["projected-roi", "competitor-analysis", "comps", "accuracy", "analysis"] },
@@ -41756,13 +41836,15 @@ var _KB_STARTER_ENTRIES = [
   { question: "What does 'X mo faster · Saves $Y' mean in the concessions panel?", answer: "$Y is the rent waived — the dollar value of the free weeks (monthly rent × free weeks ÷ 4). 'X mo faster' is roughly how much sooner you reach break-even because that amount comes off your upfront investment instead of having to be earned back over time.", tags: ["negotiation", "rental-concession", "free-rent", "break-even"] },
 
   // ---- Operations ----
-  { question: "What's the difference between the Houses/Apartments section and Operations?", answer: "Houses and Apartments are for deals you're still evaluating. Operations is for properties you're actively managing — each gets tasks, meetings, expenses, maintenance, contracts, reviews, purchases, and contacts.", tags: ["operations", "arbitrage", "overview"] },
+  { question: "What's the difference between the Single Unit/Multi Unit sections and Operations?", prevQuestions: ["What's the difference between the Houses/Apartments section and Operations?"], answer: "Single Unit and Multi Unit are for deals you're still evaluating. Operations is for properties you're actively managing — each gets tasks, meetings, expenses, maintenance, contracts, reviews, purchases, and contacts.", tags: ["operations", "arbitrage", "overview"] },
   { question: "How do I move a property to Operations?", answer: "Open the property profile and click Move to Operations in the top-right. Its status switches to Operating, and if you ever move it back, the prior status is restored.", tags: ["operations", "move-to-ops"] },
   { question: "Why can't I move a property to Operations? Why is it locked?", answer: "Operations has a per-plan limit on how many properties you can actively manage at once: Basic includes 1, Standard up to 5, and Pro unlimited. If Move to Operations shows a lock, you've reached your plan's limit. Anything already in your Operations stays fully accessible — upgrading just lets you add more. You can upgrade anytime from the Plan page.", tags: ["operations", "limits", "locked", "upgrade", "billing"] },
-  { question: "How many properties can I have in Operations?", answer: "Basic includes 1 property in Operations, Standard up to 5, and Pro unlimited. It's a running total of properties you're actively managing — removing one frees a slot. (Houses and Apartments properties stay unlimited on every plan.)", tags: ["operations", "limits", "billing"] },
+  { question: "How many properties can I have in Operations?", answer: "Basic includes 1 property in Operations, Standard up to 5, and Pro unlimited. It's a running total of properties you're actively managing — removing one frees a slot. (Single Unit and Multi Unit properties stay unlimited on every plan.)", tags: ["operations", "limits", "billing"] },
+  { question: "How many Co-Hosting properties can I have?", answer: "Basic includes up to 5 Co-Hosting properties, Standard up to 10, and Pro unlimited. It's a running count of properties in your Co-Hosting section — deleting one, or moving it to Operations, frees a slot. A Co-Hosting property moved to Operations counts toward your Operations limit instead. Properties already in Co-Hosting always stay accessible, even if you're over the limit after a plan change; you just can't add new ones past it. The counter at the top of the Co-Hosting section shows how many you've used.", tags: ["cohosting", "limits", "billing"] },
+  { question: "What happens when I hit my Co-Hosting limit?", answer: "You'll see a \"Co-Hosting limit reached\" prompt when you try to add another, with a link to the Plan page to upgrade. Nothing is lost — your existing Co-Hosting properties stay fully accessible and editable. Standard raises the limit to 10, and Pro removes it.", tags: ["cohosting", "limits", "billing", "upgrade"] },
   { question: "How do I add more properties to Operations or raise my limit?", answer: "Upgrade your plan from the Plan page — Standard allows up to 5 properties in Operations, and Pro allows unlimited. Your existing Operations properties carry over unchanged.", tags: ["operations", "limits", "upgrade", "billing"] },
   { question: "What happens to my Operations properties if I'm over my plan's limit?", answer: "Nothing is lost — properties already in Operations stay fully accessible and editable. You just can't add new ones beyond your plan's limit until you upgrade or remove some. (If your plan changed, existing properties are grandfathered in.)", tags: ["operations", "limits", "grandfather", "billing"] },
-  { question: "How do I navigate Operations or find a managed property?", answer: "Open Operations from the left sidebar. It lists every property you're actively managing — use the market filter and search to narrow it, then click a property to open its profile, where you'll find its Tasks, Meetings, Expenses, Maintenance, Contracts, Reviews, Purchases, and Contacts. To add a property here, open it in Houses or Apartments and click Move to Operations, or bulk-import a list.", tags: ["operations", "navigation"] },
+  { question: "How do I navigate Operations or find a managed property?", answer: "Open Operations from the left sidebar. It lists every property you're actively managing — use the market filter and search to narrow it, then click a property to open its profile, where you'll find its Tasks, Meetings, Expenses, Maintenance, Contracts, Reviews, Purchases, and Contacts. To add a property here, open it in Single Unit or Multi Unit and click Move to Operations, or bulk-import a list.", tags: ["operations", "navigation"] },
   { question: "Can I track tasks per property?", answer: "Yes — every property has its own Tasks list, and you can tag each task by type (Email, Call, Text, Other). All open tasks also roll up onto your dashboard.", tags: ["operations", "tasks"] },
   { question: "How do I add a task or follow-up?", answer: "On the property profile, open the Tasks & Follow-Ups card and click Add New. Set a date, an optional time and time zone, the type, and a note.", tags: ["operations", "tasks", "follow-up"] },
   { question: "How do I log an expense?", answer: "Open the property in Operations, go to the Expenses tab, and click Add Expense. You can attach a receipt.", tags: ["operations", "expenses"] },
@@ -41781,7 +41863,7 @@ var _KB_STARTER_ENTRIES = [
 
   // ---- Plan / billing ----
   { question: "How much does RentingRadar cost?", answer: "Basic is $9.99/mo ($89.99/yr), Standard is $19.99/mo ($199.99/yr), and Pro is $29.99/mo ($289.99/yr). Yearly billing saves you roughly two months versus paying monthly.", tags: ["billing", "pricing"] },
-  { question: "What's the difference between Basic, Standard, and Pro?", answer: "All three let you upload and track unlimited properties. What's tiered is how many you can Analyze and how many you can Operate. Basic: 1 analysis per month and 1 Operations property, no dark mode. Standard: 10 analyses per month and up to 5 Operations properties, plus dark mode and themes. Pro: unlimited analyses and unlimited Operations properties, plus dark mode and themes.", tags: ["billing", "pricing", "tiers", "features"] },
+  { question: "What's the difference between Basic, Standard, and Pro?", answer: "All three let you upload and track unlimited properties. What's tiered is how many you can Analyze, how many you can Operate, and how many Co-Hosting properties you can track. Basic: 1 analysis per month, 1 Operations property, and up to 5 Co-Hosting properties, no dark mode. Standard: 10 analyses per month, up to 5 Operations properties, and up to 10 Co-Hosting properties, plus dark mode and themes. Pro: unlimited analyses, unlimited Operations properties, and unlimited Co-Hosting properties, plus dark mode and themes.", tags: ["billing", "pricing", "tiers", "features"] },
   { question: "Is there a yearly plan?", answer: "Yes — every tier has a yearly option ($89.99 Basic, $199.99 Standard, $289.99 Pro) that saves roughly two months compared to paying monthly.", tags: ["billing", "pricing", "yearly"] },
   { question: "How do I upgrade or change my plan?", answer: "Click Plan in the sidebar and choose the tier you want. Stripe applies the change to your billing.", tags: ["billing", "plan-change"] },
   { question: "What payment methods do you accept?", answer: "Payments are processed securely through Stripe (major credit/debit cards). For anything specific to your billing, please email help@rentingradar.com.", tags: ["billing", "payments", "stripe"] },
@@ -41828,14 +41910,14 @@ var _KB_STARTER_ENTRIES = [
   { question: "What's on the Expenses tab?", answer: "Two panels: Investment Details on the left (one-time upfront costs like application fees, deposits, furnishing, and move-in costs) and Monthly Operating Expenses on the right (recurring costs like insurance, Wi-Fi, utilities, cleaning, and co-host fees).", tags: ["expenses", "property-profile"] },
   { question: "What is 'Copy from Property'?", answer: "A shortcut on the Expenses tab that pulls expenses from another property in the same submarket with similar utilities and cost structure — handy when you're evaluating several deals in one area so you don't re-enter everything.", tags: ["expenses", "copy-from-property"] },
   { question: "What is the Activity Log?", answer: "A timestamped history on each property where you log calls, texts, emails, and notes — so you always have the full record of every conversation about that deal.", tags: ["property-profile", "activity-log", "contacts"] },
-  { question: "How do I add a competitor (comp)?", answer: "Open the property and go to its comps section — the Competitor Analysis tab on the Houses/Apartments side, or the Market Potential tab on the Co-Hosting side — then add a nearby comparable short-term rental. Add at least 3 to unlock the full analysis.", tags: ["analysis", "comps", "add-competitor", "market-potential", "cohosting"] },
+  { question: "How do I add a competitor (comp)?", answer: "Open the property and go to its comps section — the Competitor Analysis tab on the Single Unit/Multi Unit side, or the Market Potential tab on the Co-Hosting side — then add a nearby comparable short-term rental. Add at least 3 to unlock the full analysis.", tags: ["analysis", "comps", "add-competitor", "market-potential", "cohosting"] },
 
   // ---- Co-Hosting (second business model) ----
-  { question: "What is Co-Hosting?", answer: "Co-Hosting is RentingRadar's second business model. Instead of leasing a property yourself and re-listing it (that's Arbitrage — the Houses and Apartments pipelines), you manage an owner's property as a short-term rental for a management fee. RentingRadar helps you import the property, estimate its short-term-rental potential from comparable listings, run the management-fee economics, and build a pitch that shows the owner what they'd earn.", tags: ["cohosting", "overview"] },
-  { question: "What's the difference between Arbitrage and Co-Hosting?", answer: "Arbitrage (Houses and Apartments) = you lease a property from the landlord and re-list it on Airbnb/Vrbo, keeping the upside. Co-Hosting = you don't lease it; you manage the owner's property as a short-term rental for a percentage management fee, and the owner keeps the rest. They're separate sections, each with their own properties.", tags: ["cohosting", "arbitrage", "overview"] },
-  { question: "Who can use Co-Hosting?", answer: "Co-Hosting is available to you alongside Houses and Apartments — you'll find it in the left sidebar. It's RentingRadar's second business model: instead of leasing a property yourself, you manage an owner's existing property as a short-term rental for a management fee.", tags: ["cohosting", "access"] },
+  { question: "What is Co-Hosting?", answer: "Co-Hosting is RentingRadar's second business model. Instead of leasing a property yourself and re-listing it (that's Arbitrage — the Single Unit and Multi Unit pipelines), you manage an owner's property as a short-term rental for a management fee. RentingRadar helps you import the property, estimate its short-term-rental potential from comparable listings, run the management-fee economics, and build a pitch that shows the owner what they'd earn.", tags: ["cohosting", "overview"] },
+  { question: "What's the difference between Arbitrage and Co-Hosting?", answer: "Arbitrage (Single Unit and Multi Unit) = you lease a property from the landlord and re-list it on Airbnb/Vrbo, keeping the upside. Co-Hosting = you don't lease it; you manage the owner's property as a short-term rental for a percentage management fee, and the owner keeps the rest. They're separate sections, each with their own properties.", tags: ["cohosting", "arbitrage", "overview"] },
+  { question: "Who can use Co-Hosting?", answer: "Every plan includes Co-Hosting — you'll find it in the left sidebar alongside Single Unit and Multi Unit. Basic includes up to 5 Co-Hosting properties, Standard up to 10, and Pro unlimited. It's RentingRadar's second business model: instead of leasing a property yourself, you manage an owner's existing property as a short-term rental for a management fee.", tags: ["cohosting", "access", "limits"] },
   { question: "How do I add a Co-Hosting property?", answer: "Click + Add Property in the top-right and choose Co-Hosting. You can paste a listing link (Zillow, Apartments.com, or HotPads) to auto-fill the address, beds/baths, square footage, rent, and a property summary — or choose Manual Entry to type the details in yourself.", tags: ["cohosting", "add-property", "import"] },
-  { question: "Which sites can I import a Co-Hosting listing from?", answer: "The same rental-listing sites as Houses/Apartments: Zillow, Apartments.com, and HotPads. Paste the listing link in the Co-Hosting add screen and the property auto-fills, just like adding a House or Apartment property.", tags: ["cohosting", "import", "zillow", "apartments", "hotpads"] },
+  { question: "Which sites can I import a Co-Hosting listing from?", answer: "The same rental-listing sites as Single Unit/Multi Unit: Zillow, Apartments.com, and HotPads. Paste the listing link in the Co-Hosting add screen and the property auto-fills, just like adding a Single Unit or Multi Unit property.", tags: ["cohosting", "import", "zillow", "apartments", "hotpads"] },
   { question: "What are the tabs on a Co-Hosting property?", answer: "Three: Property Details (the property's specifics and the owner's contact), Market Potential (comparable short-term rentals it could perform like), and Calculator (your management-fee economics and break-even).", tags: ["cohosting", "tabs", "overview"] },
   { question: "What is the Co-Hosting Calculator?", answer: "It lays the management deal out as line items: the investment to set the property up, average monthly cleaning, the owner's asking rent, the expected monthly revenue (from your comparables), the revenue you're modeling, the owner's payout, the additional revenue the owner earns versus their current rent, your management fee, and the break-even timeline.", tags: ["cohosting", "calculator", "economics"] },
   { question: "How is the Co-Hosting management fee determined?", answer: "It's set automatically by the gross-after-cleaning revenue (revenue minus cleaning): 10% under $4,000, 15% from $4,000 to $6,000, and 20% at $6,000 and above — a smaller cut in slower months and a larger one when the property earns more.", tags: ["cohosting", "calculator", "management-fee"] },
@@ -41999,12 +42081,24 @@ async function kbSeedStarter(){
   var byQ = {};
   _kbState.entries.forEach(function(e){ byQ[(e.question || '').trim().toLowerCase()] = e; });
   var starterQs = {};
-  _KB_STARTER_ENTRIES.forEach(function(s){ starterQs[s.question.trim().toLowerCase()] = 1; });
+  _KB_STARTER_ENTRIES.forEach(function(s){
+    starterQs[s.question.trim().toLowerCase()] = 1;
+    (s.prevQuestions || []).forEach(function(pq){ starterQs[pq.trim().toLowerCase()] = 1; });
+  });
   var toCreate = [], toUpdate = [], toActiveUpdate = [], toBaseline = [], skippedActive = 0;
   _KB_STARTER_ENTRIES.forEach(function(s){
     var ex = byQ[s.question.trim().toLowerCase()];
+    // A reworded question (prevQuestions) matches the entry seeded under its old
+    // wording, so the rename lands on that record (active or not) instead of
+    // creating a duplicate and leaving the old one live.
+    var renamed = false;
+    if(!ex){
+      (s.prevQuestions || []).some(function(pq){ ex = byQ[pq.trim().toLowerCase()]; return !!ex; });
+      renamed = !!ex;
+    }
     if(!ex){ toCreate.push(s); return; }
     if(!ex.active){ toUpdate.push({ id: ex.id, s: s }); return; }
+    if(renamed){ toActiveUpdate.push({ id: ex.id, s: s }); return; }
     // Active entry. Compare the starter content against the baseline it was last
     // seeded from. If no baseline exists yet (legacy), fall back to the live answer
     // so a genuine canonical change still lands on first run.
@@ -42053,6 +42147,7 @@ async function kbSeedStarter(){
       var embU = await kbCallEmbeddingApi(kbEmbedInput(up.s.question, up.s.answer));
       var nowU = firebase.firestore.FieldValue.serverTimestamp();
       await db.collection('chatKnowledge').doc(up.id).update({
+        question: up.s.question,
         answer: up.s.answer,
         tags: up.s.tags || [],
         notifyHumanNow: !!up.s.notifyHumanNow,
@@ -42081,6 +42176,7 @@ async function kbSeedStarter(){
       var embA = await kbCallEmbeddingApi(kbEmbedInput(au.s.question, au.s.answer));
       var nowA = firebase.firestore.FieldValue.serverTimestamp();
       await db.collection('chatKnowledge').doc(au.id).update({
+        question: au.s.question,
         answer: au.s.answer,
         tags: au.s.tags || [],
         notifyHumanNow: !!au.s.notifyHumanNow,

@@ -258,6 +258,95 @@ H.scenarios = {
     return { fails };
   },
 
+  'T11 Co-Hosting cap: counts only pipeline records; tier and trial set the limit': async () => {
+    const fails = [];
+    const saved = { tier: currentTier, sub: _subscriptionStatus };
+    cohostRecords = [1, 2, 3, 4, 5].map((n) => oldRecord(9100 + n, { kind: 'cohost' }));
+    cohostRecords[0].stage = 'operations'; // moved to Operations: counts there, not here
+    currentTier = 'basic'; _subscriptionStatus = 'active';
+    H.check(fails, getCohostLimit() === 5, 'basic limit 5, got ' + getCohostLimit());
+    H.check(fails, getCohostUsed() === 4, 'ops-stage record excluded, used=' + getCohostUsed());
+    H.check(fails, canAddCohost() === true, 'basic with 4 pipeline records can add');
+    cohostRecords[0].stage = undefined;
+    H.check(fails, getCohostUsed() === 5 && canAddCohost() === false, 'basic at 5 cannot add');
+    currentTier = 'standard';
+    H.check(fails, getCohostLimit() === 10 && canAddCohost() === true, 'standard limit 10');
+    currentTier = 'pro';
+    H.check(fails, getCohostLimit() === Infinity, 'pro unlimited');
+    currentTier = 'basic'; _subscriptionStatus = 'trialing';
+    H.check(fails, getCohostLimit() === Infinity, 'trial unlimited');
+    _subscriptionStatus = 'active';
+    H.check(fails, /Co-Hosting: 5 of 5 used/.test(renderCohostUsageIndicator()), 'usage indicator shows 5 of 5');
+    currentTier = 'pro';
+    H.check(fails, renderCohostUsageIndicator() === '', 'no indicator on unlimited tiers');
+    currentTier = saved.tier; _subscriptionStatus = saved.sub;
+    return { fails };
+  },
+  'T11 Co-Hosting cap: at the cap an import is refused with the upgrade prompt, Replace still works': async () => {
+    const fails = [];
+    const saved = { tier: currentTier, sub: _subscriptionStatus, confirm: showAppConfirm };
+    const prompts = [];
+    showAppConfirm = (msg, opts) => { prompts.push((opts && opts.title) || ''); };
+    cohostRecords = [1, 2, 3, 4, 5].map((n) => oldRecord(9200 + n, { kind: 'cohost' }));
+    currentTier = 'basic'; _subscriptionStatus = 'active';
+    H.log.cohostSaves.length = 0; H.log.softDeletes.length = 0;
+    openCohostProfile = () => {};
+    // Net-new address: refused.
+    const out1 = await _rrRunListingImport('u', () => handleCohostListing(single(9300)));
+    H.check(fails, out1 === 'failed', 'net-new import failed, got ' + out1);
+    H.check(fails, cohostRecords.length === 5, 'still 5 records');
+    H.check(fails, H.log.cohostSaves.length === 0, 'no save');
+    H.check(fails, prompts.length === 1 && prompts[0] === 'Co-Hosting limit reached', 'upgrade prompt shown: ' + JSON.stringify(prompts));
+    // Exact duplicate with Replace: count stays flat, so it goes through.
+    showDuplicateDialog = async () => 'replace';
+    const out2 = await _rrRunListingImport('u', () => handleCohostListing(single(9203)));
+    H.check(fails, out2 === 'created', 'replace import created, got ' + out2);
+    H.check(fails, cohostRecords.length === 5 && !cohostRecords.some((x) => x.id === 'old_9203'), 'swapped, still 5');
+    H.check(fails, prompts.length === 1, 'no second prompt');
+    // Add menu: prompt instead of the modal. Manual save: prompt, nothing added.
+    openCohostAddModal();
+    H.check(fails, !document.getElementById('cohostAddBody') && prompts.length === 2, 'add modal replaced by the prompt');
+    const inp = document.createElement('input'); inp.id = 'cohost_m_address'; inp.value = '1 Cap St, Navarre, FL 32566'; document.body.appendChild(inp);
+    saveCohostManual();
+    inp.remove();
+    H.check(fails, cohostRecords.length === 5 && prompts.length === 3, 'manual save refused');
+    showAppConfirm = saved.confirm; currentTier = saved.tier; _subscriptionStatus = saved.sub;
+    return { fails };
+  },
+
+  'T11 KB seed: a reworded starter question renames the existing entry in place': async () => {
+    const fails = [];
+    const saved = { admin: _isAdmin, kb: _kbState, confirm: window.confirm, embed: kbCallEmbeddingApi, col: db.collection };
+    const calls = { update: [], add: [], del: [] };
+    _isAdmin = true;
+    window.confirm = () => true;
+    kbCallEmbeddingApi = async () => ({ embedding: [0], model: 'stub' });
+    db.collection = (name) => ({
+      doc: (id) => ({ update: async (d) => { calls.update.push({ id, d }); }, delete: async () => { calls.del.push(id); } }),
+      add: async (d) => { calls.add.push(d); },
+    });
+    const onlyRenamed = _KB_STARTER_ENTRIES.filter((e) => e.prevQuestions && e.prevQuestions.length);
+    H.check(fails, onlyRenamed.length >= 5, 'starter has renamed entries: ' + onlyRenamed.length);
+    // Live KB: every starter question already present and in sync, except two seeded
+    // under the OLD wording — one active, one inactive.
+    const a = onlyRenamed[0], b = onlyRenamed[1];
+    _kbState = { entries: _KB_STARTER_ENTRIES.map((e, i) => {
+      const old = e === a || e === b;
+      return { id: 'e' + i, question: old ? e.prevQuestions[0] : e.question, answer: old ? 'stale' : e.answer, seededAnswer: old ? 'stale' : e.answer, tags: e.tags || [], active: e !== b, seededByScript: true,
+        notifyHumanNow: !!e.notifyHumanNow, escalateToHuman: !e.notifyHumanNow && (!!e.escalateToHuman || (e.tags || []).indexOf('escalate') !== -1) };
+    }) };
+    await kbSeedStarter();
+    H.check(fails, calls.add.length === 0, 'no duplicates created, added ' + calls.add.length);
+    H.check(fails, calls.del.length === 0, 'old-wording inactive entry not deleted');
+    const ua = calls.update.find((u) => u.d.question === a.question);
+    const ub = calls.update.find((u) => u.d.question === b.question);
+    H.check(fails, ua && ua.d.answer === a.answer && ua.d.reviewPending === true, 'active entry renamed in place and flagged for review');
+    H.check(fails, ub && ub.d.answer === b.answer && !('reviewPending' in ub.d), 'inactive entry renamed in place, stays inactive');
+    H.check(fails, calls.update.filter((u) => 'answer' in u.d).length === 2, 'only the two stale entries rewritten: ' + calls.update.filter((u) => 'answer' in u.d).length);
+    _isAdmin = saved.admin; _kbState = saved.kb; window.confirm = saved.confirm; kbCallEmbeddingApi = saved.embed; db.collection = saved.col;
+    return { fails };
+  },
+
   'S5 popup import during an import queues one, then runs it': async () => {
     const fails = [];
     let release;

@@ -25,11 +25,12 @@ const MAX_OUTPUT_TOKENS = 1024;
 // human support rep handled before the AI was re-enabled), not just the recent tail.
 const MAX_HISTORY_TURNS = 150;
 
-// Canonical plan pricing (keep in sync with the TIERS object in index.html).
+// Canonical plan pricing and limits (keep in sync with TIERS / ANALYSIS_LIMITS /
+// OPERATIONS_LIMITS / COHOST_LIMITS in index.html).
 const PLAN_PRICING = {
-  basic:    { name: "Basic",    monthly: 9.99,  yearly: 89.99,  analyses: "1 analysis / month",   darkMode: false },
-  standard: { name: "Standard", monthly: 19.99, yearly: 199.99, analyses: "10 analyses / month",  darkMode: true },
-  pro:      { name: "Pro",      monthly: 29.99, yearly: 289.99, analyses: "Unlimited analyses",    darkMode: true },
+  basic:    { name: "Basic",    monthly: 9.99,  yearly: 89.99,  analyses: "1 analysis / month",   operations: "1 Operations property",            cohosting: "up to 5 Co-Hosting properties",  darkMode: false },
+  standard: { name: "Standard", monthly: 19.99, yearly: 199.99, analyses: "10 analyses / month",  operations: "up to 5 Operations properties",    cohosting: "up to 10 Co-Hosting properties", darkMode: true },
+  pro:      { name: "Pro",      monthly: 29.99, yearly: 289.99, analyses: "Unlimited analyses",    operations: "unlimited Operations properties", cohosting: "unlimited Co-Hosting properties", darkMode: true },
 };
 
 const OPENAI_EMBED_URL = "https://api.openai.com/v1/embeddings";
@@ -355,7 +356,7 @@ function buildSystemPrompt(user, context, opts) {
   // on (NOT any personal discount — see the pricing rules below).
   const planInfo = PLAN_PRICING[String(tier).toLowerCase()];
   const planLine = planInfo
-    ? `\nPlan price (standard): $${planInfo.monthly}/mo or $${planInfo.yearly}/yr — ${planInfo.analyses}`
+    ? `\nPlan price (standard): $${planInfo.monthly}/mo or $${planInfo.yearly}/yr — ${planInfo.analyses} · ${planInfo.operations} · ${planInfo.cohosting}`
     : "";
   // First name = first whitespace-separated token. Empty string when we don't
   // have a usable name (no userName provided, or it looks like an email) — the
@@ -461,17 +462,19 @@ All imports are logged in Import History. Users can undo any import within 24 ho
 
 **Prospecting (Dashboard).** Property list with ROI analysis, comp data from AirDNA, status pipeline (prospect → contacted → in negotiation → contract → operating), map view, market filter, search.
 
+**Single Unit vs Multi Unit (the two Arbitrage pipelines, left sidebar).** Single Unit = one property or one unit — a house, condo, townhome, OR a single apartment inside a complex — analyzed on its own. Multi Unit = several units in the same building/complex analyzed together as one deal (added via "Add Building"; has a Units tab listing each unit, and per-unit tabs that roll up into one Income & Expenses view and Projected ROI). The choice is about how many units are in the deal, NOT the building type: one apartment in a complex is Single Unit. These sections were once called "Houses" and "Apartments" — if a user says those, they mean Single Unit / Multi Unit; always use the current names.
+
 **Operations.** For properties currently under management. Each operations property gets its own profile with: tasks, meetings, expenses, contracts, maintenance requests, AirBNB reviews, purchases, contacts.
 
 **Property profile (per property) — four sections:** (1) **Property Details** — the property's specifics; (2) **Income & Expenses** — expected income and operating costs; (3) **Competitor Analysis** — add comparable properties and, for EACH, the user decides whether the property they're analyzing BEATS, COMPETES WITH, or LOSES TO it (their own judgment call); (4) **Projected ROI** — revenue, expenses, and cash flow across pessimistic / realistic / optimistic scenarios. IMPORTANT: Competitor Analysis AND Projected ROI only unlock once the user has entered **at least 3 competitors** in the Competitor Analysis tab. If a user reports trouble with Competitor Analysis or Projected ROI, FIRST check that they've added ≥3 competitors. The more comparable properties they add — and the more carefully they assess each one — the more accurate the Projected ROI. Also available per property: Negotiation Tools (rent dial, rental concessions, position adjustment 55–100%), Contacts, Notes/activity log.
 
-**Co-Hosting (SECOND business model — a separate section from Arbitrage, available to the user).** Instead of leasing a property and re-listing it (that's Arbitrage), the operator MANAGES an owner's property as a short-term rental for a management fee; the owner keeps the rest. Add via + Add Property → Co-Hosting (paste a Zillow / Apartments.com / HotPads link to auto-fill, or enter manually). A co-host property has THREE tabs: (1) **Property Details**; (2) **Market Potential** — add comparable short-term rentals it could aspire to; their averages set the **Expected Revenue range = comps' average monthly revenue ±15%** (the revenue dial + break-even graph appear once **≥3 comparables** are added); (3) **Calculator** — the management-deal economics: investment to set up, average monthly cleaning, the owner's asking rent, expected/modeled revenue, owner payout, additional revenue for the owner vs their current rent, your management fee, and break-even. (A Summary/pitch tab is not currently available.) Management fee is **auto-tiered on gross-after-cleaning revenue: 10% under $4,000, 15% $4,000–$6,000, 20% $6,000+**. Co-host **break-even = upfront investment ÷ the additional revenue the owner earns over their current rent**. Submarket auto-fills only when it resolves reliably, otherwise it's left blank for manual entry. Co-Hosting has **NO Projected ROI, deal temperature, rent dial, or Operations stage** — those are Arbitrage-only. The monthly analysis limit applies to running an Arbitrage analysis; Co-Hosting does not currently consume that quota.
+**Co-Hosting (SECOND business model — a separate section from Arbitrage, included on every plan: Basic up to 5 Co-Hosting properties, Standard up to 10, Pro unlimited; the counter at the top of the Co-Hosting section shows usage, and existing properties are never removed when a limit is reached).** Instead of leasing a property and re-listing it (that's Arbitrage), the operator MANAGES an owner's property as a short-term rental for a management fee; the owner keeps the rest. Add via + Add Property → Co-Hosting (paste a Zillow / Apartments.com / HotPads link to auto-fill, or enter manually). A co-host property has THREE tabs: (1) **Property Details**; (2) **Market Potential** — add comparable short-term rentals it could aspire to; their averages set the **Expected Revenue range = comps' average monthly revenue ±15%** (the revenue dial + break-even graph appear once **≥3 comparables** are added); (3) **Calculator** — the management-deal economics: investment to set up, average monthly cleaning, the owner's asking rent, expected/modeled revenue, owner payout, additional revenue for the owner vs their current rent, your management fee, and break-even. (A Summary/pitch tab is not currently available.) Management fee is **auto-tiered on gross-after-cleaning revenue: 10% under $4,000, 15% $4,000–$6,000, 20% $6,000+**. Co-host **break-even = upfront investment ÷ the additional revenue the owner earns over their current rent**. Submarket auto-fills only when it resolves reliably, otherwise it's left blank for manual entry. Co-Hosting has **NO Projected ROI, deal temperature, rent dial, or Operations stage** — those are Arbitrage-only. The monthly analysis limit applies to running an Arbitrage analysis; Co-Hosting does not currently consume that quota.
 
 **Contacts.** Unified contacts list — landlords, contractors, guests, etc.
 
 **Notifications.** Task reminders, meeting reminders, daily and weekly digests via email.
 
-**Plans.** Basic $9.99/mo · Standard $19.99/mo · Pro $29.99/mo. Yearly plans are roughly 10× monthly (so 2 months free). All tiers include unlimited properties; Standard+ unlocks dark mode and themes.
+**Plans.** Basic $9.99/mo · Standard $19.99/mo · Pro $29.99/mo. Yearly plans are roughly 10× monthly (so 2 months free). All tiers include unlimited Single Unit / Multi Unit (Arbitrage prospecting) properties. What's tiered: analyses per month (Basic 1 · Standard 10 · Pro unlimited), Operations properties (Basic 1 · Standard 5 · Pro unlimited), and Co-Hosting properties (Basic 5 · Standard 10 · Pro unlimited). Standard+ unlocks dark mode and themes.
 
 **Affiliate program.** Affiliate-tier users get unique referral codes. Commission = 50% × (gross subscription revenue − $3/user/month operating cost). Paid out via monthly commission report.
 
@@ -486,7 +489,7 @@ ASK FIRST (ONE short question — "Are you asking about Arbitrage or Co-Hosting?
 - the property's tabs/sections (Arbitrage: Property Details / Income & Expenses / Competitor Analysis / Projected ROI · Co-Hosting: Property Details / Market Potential / Calculator / Summary)
 - how the ROI / deal economics work (Arbitrage: Projected ROI + deal temperature · Co-Hosting: Calculator + management fee + break-even)
 - the revenue projection — how it's computed / how to make it accurate
-- whether an "analysis" is limited (the monthly quota applies to Arbitrage; Co-Hosting doesn't consume it)
+- whether an "analysis" is limited (the monthly quota applies to Arbitrage; Co-Hosting doesn't consume it — Co-Hosting has its own per-plan property count instead: Basic 5 · Standard 10 · Pro unlimited)
 When clarifying is warranted, this OVERRIDES the "answer from the best-match knowledge-base entry" instruction. Once the model is known (stated or clear from context), answer ONLY for that model using the facts above.
 
 DON'T ask when the concept is essentially the SAME on both sides — just answer directly, naming the relevant tab on each side if the only difference is location. These do NOT need clarification:
@@ -504,10 +507,11 @@ Default to answering. Only ask when answering would genuinely require picking on
 
 # Plan pricing (you MAY share these freely)
 You know the standard plan pricing and can quote it to anyone who asks:
-- Basic — $9.99/month or $89.99/year. 1 analysis/month. No dark mode.
-- Standard — $19.99/month or $199.99/year. 10 analyses/month. Dark mode + themes.
-- Pro — $29.99/month or $289.99/year. Unlimited analyses. Dark mode + themes.
-- All plans include UNLIMITED properties. Yearly billing saves roughly two months vs. paying monthly.
+- Basic — $9.99/month or $89.99/year. 1 analysis/month. 1 Operations property. Up to 5 Co-Hosting properties. No dark mode.
+- Standard — $19.99/month or $199.99/year. 10 analyses/month. Up to 5 Operations properties. Up to 10 Co-Hosting properties. Dark mode + themes.
+- Pro — $29.99/month or $289.99/year. Unlimited analyses. Unlimited Operations properties. Unlimited Co-Hosting properties. Dark mode + themes.
+- All plans include UNLIMITED Single Unit and Multi Unit properties to source and analyze. Yearly billing saves roughly two months vs. paying monthly.
+- Limits never delete anything: properties already in Operations or Co-Hosting stay accessible; the user just can't add more past the cap until they upgrade (Plan page).
 IMPORTANT: Share only these STANDARD prices. NEVER reference, confirm, or speculate about any personal discount, coupon, promo, or affiliate rate a specific user may have on their account — if they ask about their own discount or a billing adjustment, warmly direct them to email help@rentingradar.com.
 
 # Memory & recall (use the conversation history above)

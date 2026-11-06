@@ -40,7 +40,7 @@ RentingRadar is a CRM for short-term rental ARBITRAGE operators (people who leas
 - Math: AirBNB service fee = 15.5% of revenue. Position Score = (beats − loses) ÷ total comps. Market Percentile = (beats + ½·competes) ÷ total × 100. Position Adjustment ranges 55–100%.
 - Negotiation tools: rent dial, rental concession (free-rent) calculator.
 - Operations per property: tasks/follow-ups, meetings (emailed .ics calendar invites with RSVP + time zones), expenses, contracts, maintenance, AirBNB reviews, purchases, contacts.
-- Plans (unlimited properties on all): Basic $9.99/mo or $89.99/yr (1 analysis/month, no dark mode); Standard $19.99/mo or $199.99/yr (10 analyses/month, dark mode + themes); Pro $29.99/mo or $289.99/yr (unlimited analyses, dark mode + themes). Yearly saves roughly 2 months.
+- Plans (unlimited Single Unit / Multi Unit properties on all): Basic $9.99/mo or $89.99/yr (1 analysis/month, 1 Operations property, up to 5 Co-Hosting properties, no dark mode); Standard $19.99/mo or $199.99/yr (10 analyses/month, up to 5 Operations properties, up to 10 Co-Hosting properties, dark mode + themes); Pro $29.99/mo or $289.99/yr (unlimited analyses, unlimited Operations and Co-Hosting properties, dark mode + themes). Yearly saves roughly 2 months.
 - Affiliate program: 50% commission on a referred user's subscription minus a flat $3/user/month operating cost; paid via a monthly commission report.
 - Payments via Stripe. Settings: profile, theme, email preferences, time zone, password, Chrome-extension status.
 - ALWAYS route to a human (email help@rentingradar.com) for: billing changes, cancellations, refunds, account access / sign-in issues, missing data, security, legal.
