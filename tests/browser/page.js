@@ -347,6 +347,93 @@ H.scenarios = {
     return { fails };
   },
 
+  'T12 Co-Hosting: an Airbnb link imports a property with no street and no rent': async () => {
+    const fails = [];
+    const saved = { health: extensionHealth, rev: rrReverseGeocodeParts, scrape: rrScrapeViaExtension };
+    extensionHealth = Object.assign({}, extensionHealth || {}, { extension: true, version: '1.17.0' });
+    rrReverseGeocodeParts = async () => ({ city: 'Pensacola', state: 'FL', zip: '32503' });
+    const scraped = [];
+    rrScrapeViaExtension = async (url) => { scraped.push(url); return { ok: true, data: { source: 'airbnb', _kind: 'str', sourceUrl: url, title: 'Home in Pensacola', address: '', price: null, bedrooms: 3, bathrooms: 2, beds: 4, guests: 8, host: 'Dana', rating: 4.95, lat: 30.41, lng: -87.21, _approxLocation: true, description: 'Walk to the beach.', propertyDetails: { parking: 'Free parking on premises' } } }; };
+    openCohostProfile = () => {};
+    cohostRecords = []; H.log.toasts.length = 0; H.log.cohostSaves.length = 0;
+    _addPropertyChoice('cohost');
+    document.getElementById('cohost_paste_url').value = 'https://www.airbnb.com/rooms/53610702?adults=2';
+    importCohostFromPaste();
+    await H.until(() => cohostRecords.length === 1 && !window._rrListingImportInFlight, 6000);
+    const r = cohostRecords[0] || {};
+    H.check(fails, scraped.length === 1, 'scraped once: ' + scraped.length);
+    H.check(fails, r.property === 'Home in Pensacola', 'name from title (city already in it): ' + r.property);
+    H.check(fails, r.addressParts && r.addressParts.zip === '32503', 'zip kept');
+    H.check(fails, r.addressParts && r.addressParts.street === '' && r.addressParts.city === 'Pensacola' && r.addressParts.state === 'FL', 'no street, city/state kept: ' + JSON.stringify(r.addressParts));
+    H.check(fails, r.links && r.links.airbnb && /rooms\/53610702/.test(r.links.airbnb), 'airbnb link kept');
+    H.check(fails, r.cohost && r.cohost.hostName === 'Dana' && r.cohost.askingRent === '', 'host kept, rent blank');
+    H.check(fails, r.propertyDetails && r.propertyDetails.bedrooms === 3 && r.propertyDetails.bathrooms === 2 && !r.propertyDetails.monthlyRent, 'beds/baths, no rent');
+    H.check(fails, r.propertyDetails && r.propertyDetails.parking === 'Free parking on premises', 'property details carried over');
+    H.check(fails, r.propertyNote && /Sleeps 8/.test(r.propertyNote.text) && /approximate/.test(r.propertyNote.text), 'note has guests and the approximate-location warning');
+    H.check(fails, r.importSource === 'airbnb' && r._aiPending === false, 'marked airbnb, no AI pending');
+    H.check(fails, H.toastHas('Imported from Airbnb'), 'airbnb toast: ' + JSON.stringify(H.log.toasts));
+    // Same listing again (different query string): exact duplicate, Replace offered.
+    let dupKind = null;
+    showDuplicateDialog = async (name, match, o) => { dupKind = o && o.kind; return 'cancel'; };
+    closeAddModal(true);
+    _addPropertyChoice('cohost');
+    document.getElementById('cohost_paste_url').value = 'https://airbnb.com/rooms/53610702';
+    importCohostFromPaste();
+    await H.until(() => dupKind !== null && !window._rrListingImportInFlight, 6000);
+    H.check(fails, dupKind === 'exact' && cohostRecords.length === 1, 'second import is an exact duplicate: ' + dupKind);
+    closeAddModal(true);
+    extensionHealth = saved.health; rrReverseGeocodeParts = saved.rev; rrScrapeViaExtension = saved.scrape;
+    return { fails };
+  },
+  'T12 Co-Hosting: old extension, VRBO and AirDNA links get a clear message and no scrape': async () => {
+    const fails = [];
+    const saved = { health: extensionHealth, scrape: rrScrapeViaExtension };
+    const scraped = [];
+    rrScrapeViaExtension = async (url) => { scraped.push(url); return { ok: false, error: 'Unsupported site. Supported: AirDNA, Zillow, Apartments.com, Hotpads, Facebook Marketplace, Craigslist.' }; };
+    const tryUrl = async (url) => {
+      _addPropertyChoice('cohost');
+      document.getElementById('cohost_paste_url').value = url;
+      importCohostFromPaste();
+      await H.until(() => !window._rrListingImportInFlight, 4000);
+      await H.wait(50);
+      const t = (document.getElementById('cohost_paste_status') || {}).textContent || '';
+      closeAddModal(true);
+      return t;
+    };
+    extensionHealth = Object.assign({}, extensionHealth || {}, { extension: true, version: '1.16.17' });
+    let t = await tryUrl('https://www.airbnb.com/rooms/53610702');
+    H.check(fails, /needs RentingRadar extension 1\.17\.0 or newer \(you have 1\.16\.17\)/.test(t), 'old extension message: ' + t);
+    t = await tryUrl('https://www.vrbo.com/1234567');
+    H.check(fails, /VRBO listings can't be imported yet/.test(t), 'vrbo message: ' + t);
+    t = await tryUrl('https://app.airdna.co/data/rentalizer?listing_id=abnb_1');
+    H.check(fails, /Market Potential/.test(t), 'airdna message: ' + t);
+    H.check(fails, scraped.length === 0, 'none of these scraped: ' + scraped.length);
+    // A site the old extension refuses: Co-Hosting wording, not the AirDNA list.
+    extensionHealth = Object.assign({}, extensionHealth, { version: '1.17.0' });
+    t = await tryUrl('https://www.example.com/listing/1');
+    H.check(fails, /Co-Hosting imports an Airbnb listing/.test(t) && !/AirDNA/.test(t), 'unsupported wording: ' + t);
+    extensionHealth = saved.health; rrScrapeViaExtension = saved.scrape;
+    return { fails };
+  },
+  'T12 Single Unit: an Airbnb link is refused before scraping and points to Co-Hosting': async () => {
+    const fails = [];
+    const saved = rrScrapeViaExtension;
+    const scraped = [];
+    rrScrapeViaExtension = async (url) => { scraped.push(url); return { ok: true, data: {} }; };
+    records = []; H.log.toasts.length = 0;
+    openAddModal('house');
+    document.getElementById('add_choice_url').value = 'https://www.airbnb.com/rooms/53610702';
+    importFromChoicePaste();
+    await H.until(() => !window._rrListingImportInFlight, 4000);
+    await H.wait(50);
+    const t = (document.getElementById('add_choice_status') || {}).textContent || '';
+    H.check(fails, scraped.length === 0 && records.length === 0, 'nothing scraped or saved');
+    H.check(fails, /Airbnb and VRBO links are for Co-Hosting/.test(t) && !/^Could not import/.test(t), 'status points to Co-Hosting: ' + t);
+    closeAddModal(true);
+    rrScrapeViaExtension = saved;
+    return { fails };
+  },
+
   'S5 popup import during an import queues one, then runs it': async () => {
     const fails = [];
     let release;

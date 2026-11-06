@@ -424,3 +424,32 @@ test('isStandInPropertyName only covers the app\'s own stand-ins', () => {
   for (const n of ['', null, 'New Property', ' new property ', 'Single Unit', 'Multi Unit', 'New Co-Hosting Property']) assert.equal(h.isStandInPropertyName(n), true, String(n));
   for (const n of ['Smith Duplex', 'Example Towers', '12 Oak St']) assert.equal(h.isStandInPropertyName(n), false, n);
 });
+
+// ── Airbnb / VRBO links (Co-Hosting only) ──
+{
+  const H2 = require('../listing-import-helpers.js');
+  const t2 = require('node:test');
+  const a2 = require('node:assert/strict');
+  t2('strListingSite matches the extension helper', () => {
+    const P = require('../chrome-extension/lib/listing-plans.js');
+    for (const u of ['https://www.airbnb.com/rooms/53610702', 'https://airbnb.com/rooms/1?adults=2', 'https://www.airbnb.com/h/x', 'https://www.airbnb.com/s/Pensacola/homes', 'https://www.vrbo.com/123', 'https://www.zillow.com/homedetails/x/1_zpid/', 'nope']) {
+      a2.equal(H2.strListingSite(u), P.strListingSite(u), u);
+    }
+  });
+  t2('strListingKey ignores the query string and the www prefix', () => {
+    a2.equal(H2.strListingKey('https://www.airbnb.com/rooms/53610702?adults=2&check_in=2026-12-01'), 'airbnb:53610702');
+    a2.equal(H2.strListingKey('https://airbnb.com/rooms/53610702'), 'airbnb:53610702');
+    a2.equal(H2.strListingKey('https://www.airbnb.com/h/Beach-House'), 'airbnb:h/beach-house');
+    a2.equal(H2.strListingKey('https://www.vrbo.com/123'), null);
+    a2.equal(H2.strListingKey(''), null);
+  });
+  t2('extVersionAtLeast compares dotted versions numerically', () => {
+    a2.equal(H2.extVersionAtLeast('1.17.0', '1.17.0'), true);
+    a2.equal(H2.extVersionAtLeast('1.17.1', '1.17.0'), true);
+    a2.equal(H2.extVersionAtLeast('1.16.17', '1.17.0'), false);
+    a2.equal(H2.extVersionAtLeast('1.9.0', '1.17.0'), false);
+    a2.equal(H2.extVersionAtLeast('2.0', '1.17.0'), true);
+    a2.equal(H2.extVersionAtLeast('test', '1.17.0'), false);
+    a2.equal(H2.extVersionAtLeast(null, '1.17.0'), false);
+  });
+}

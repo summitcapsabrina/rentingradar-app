@@ -277,3 +277,80 @@ test('market cache: the cap drops the oldest entries', () => {
   assert.equal(Object.keys(cache).length, 500, 'input untouched');
   assert.equal(vm.runInContext('MARKET_CACHE_MAX', w.ctx), 500);
 });
+
+// ── v1.17.0: Airbnb listing → Co-Hosting property ──
+function stubAirbnb(ctx, scraped) {
+  const calls = { files: [], ai: 0 };
+  ctx.__scraped = scraped;
+  ctx.__onScrape = (url, file) => calls.files.push(file);
+  ctx.__onAi = () => { calls.ai++; };
+  vm.runInContext(`
+    scrapeInBackgroundTab = async (url, file) => { __onScrape(url, file); return JSON.parse(JSON.stringify(__scraped)); };
+    callClaudeProxy = async () => { __onAi(); return {}; };
+  `, ctx);
+  return calls;
+}
+const URL_A = 'https://www.airbnb.com/rooms/53610702';
+
+test('an Airbnb listing link scrapes the Airbnb page and returns a Co-Hosting payload', async () => {
+  const ctx = loadWorker();
+  const calls = stubAirbnb(ctx, {
+    title: 'Home in Pensacola · ★4.95 · 3 bedrooms · 4 beds · 2 baths', description: 'Walk to the beach.',
+    guests: 8, bedrooms: 3, beds: 4, bathrooms: 2, host: 'Dana', rating: 4.95, lat: 30.41, lng: -87.21,
+    amenities: ['Pool', 'Wifi', 'Washer'], _fullPageText: 'Pool\nWifi\nWasher\nFree parking on premises',
+  });
+  const res = await run(ctx, URL_A);
+  assert.equal(res.ok, true, JSON.stringify(res));
+  assert.deepEqual(calls.files, ['content/airbnb-scraper.js']);
+  assert.equal(calls.ai, 0, 'no AI call for Airbnb');
+  const d = res.data;
+  assert.equal(d._kind, 'str');
+  assert.equal(d.source, 'airbnb');
+  assert.equal(d.sourceUrl, URL_A);
+  assert.equal(d.title, 'Home in Pensacola');
+  assert.equal(d.address, '');
+  assert.equal(d.price, null);
+  assert.equal(d.bedrooms, 3);
+  assert.equal(d.bathrooms, 2);
+  assert.equal(d.guests, 8);
+  assert.equal(d.host, 'Dana');
+  assert.equal(d._approxLocation, true);
+  assert.equal(typeof d.propertyDetails, 'object');
+  assert.equal(d._fullPageText, undefined, 'raw page text is not sent to the app');
+});
+
+test('an Airbnb page with nothing readable is listing-empty', async () => {
+  const ctx = loadWorker();
+  stubAirbnb(ctx, { title: null, bedrooms: null, bathrooms: null, amenities: [] });
+  const res = await run(ctx, URL_A);
+  assert.equal(res.ok, false);
+  assert.equal(res.error, 'listing-empty');
+});
+
+test('a VRBO link is refused without opening a tab', async () => {
+  const ctx = loadWorker();
+  const calls = stubAirbnb(ctx, {});
+  const res = await run(ctx, 'https://www.vrbo.com/1234567');
+  assert.equal(res.ok, false);
+  assert.equal(res.error, 'vrbo-unsupported');
+  assert.match(res.detail, /Airbnb link/);
+  assert.equal(calls.files.length, 0);
+});
+
+test('an unsupported site says what is supported, without sending users to AirDNA', async () => {
+  const ctx = loadWorker();
+  const res = await run(ctx, 'https://www.example.com/listing/1');
+  assert.equal(res.ok, false);
+  assert.equal(res.error, 'unsupported-site');
+  assert.match(res.detail, /Zillow, Apartments\.com, HotPads/);
+  assert.match(res.detail, /Airbnb listings into Co-Hosting/);
+  assert.doesNotMatch(res.detail, /AirDNA/);
+});
+
+test('Airbnb links still route to the comp path when the app asks for AirDNA', async () => {
+  const ctx = loadWorker();
+  const calls = stubAirbnb(ctx, { listingTitle: 'x' });
+  ctx.__url = URL_A;
+  await vm.runInContext(`scrapeAny(__url, 'airdna')`, ctx).catch(() => {});
+  assert.deepEqual(calls.files.slice(0, 1), ['content/airdna-scraper.js']);
+});

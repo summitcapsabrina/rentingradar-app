@@ -387,8 +387,44 @@ function filterBulletsAgainstCore(bullets, core, opts) {
   });
 }
 
+// Short-term-rental listing links, which only Co-Hosting imports. Mirrors
+// strListingSite in chrome-extension/lib/listing-plans.js.
+function strListingSite(url) {
+  let u;
+  try { u = new URL(url); } catch (_) { return null; }
+  const h = u.hostname.replace(/^www\./, '').toLowerCase();
+  if (/(^|\.)airbnb\.com$/.test(h) && /^\/(?:rooms\/(?:plus\/)?\d+|h\/[\w-]+)/i.test(u.pathname)) return 'airbnb';
+  if (/(^|\.)vrbo\.com$/.test(h)) return 'vrbo';
+  return null;
+}
+
+// One key per Airbnb listing, whatever the query string: 'airbnb:53610702'.
+function strListingKey(url) {
+  if (strListingSite(url) !== 'airbnb') return null;
+  const p = new URL(url).pathname;
+  const m = p.match(/\/rooms\/(?:plus\/)?(\d+)/i);
+  if (m) return 'airbnb:' + m[1];
+  const h = p.match(/\/h\/([\w-]+)/i);
+  return h ? 'airbnb:h/' + h[1].toLowerCase() : null;
+}
+
+// '1.16.17' >= '1.17.0'? Missing parts count as 0; anything unparseable is false.
+function extVersionAtLeast(version, min) {
+  const parse = (v) => String(v || '').split('.').map((x) => parseInt(x, 10));
+  const a = parse(version), b = parse(min);
+  if (!a.length || a.some((x) => !Number.isFinite(x))) return false;
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const x = a[i] || 0, y = b[i] || 0;
+    if (x !== y) return x > y;
+  }
+  return true;
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
+    strListingSite,
+    strListingKey,
+    extVersionAtLeast,
     normalizeAddressForMatch,
     isPlaceholderPropertyName,
     isStandInPropertyName,

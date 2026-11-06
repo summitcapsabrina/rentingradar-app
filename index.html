@@ -12113,6 +12113,22 @@ async function rrReverseGeocode(lat, lng){
   return null;
 }
 
+// City / state / zip for coordinates, from the geocoder's address components (not
+// the formatted string). Used by Airbnb imports. Null on any failure.
+async function rrReverseGeocodeParts(lat, lng){
+  try {
+    if(typeof GPLACES_KEY !== 'string' || !GPLACES_KEY) return null;
+    if(lat == null || lng == null || isNaN(lat) || isNaN(lng)) return null;
+    const resp = await fetch('https://maps.googleapis.com/maps/api/geocode/json?latlng=' + lat + ',' + lng + '&key=' + GPLACES_KEY);
+    const data = await resp.json();
+    if(!(data && data.status === 'OK' && Array.isArray(data.results) && data.results.length)) return null;
+    const comps = (data.results[0].address_components || []);
+    const get = function(type, short){ const c = comps.find(function(x){ return (x.types||[]).indexOf(type) !== -1; }); return c ? (short ? c.short_name : c.long_name) : ''; };
+    const out = { city: get('locality') || get('postal_town') || get('sublocality') || get('administrative_area_level_3'), state: get('administrative_area_level_1', true), zip: get('postal_code') };
+    return (out.city || out.state || out.zip) ? out : null;
+  } catch(e){ return null; }
+}
+
 async function rrGeocodeAddress(rawAddress) {
   const fallback = () => {
     const local = (typeof parseAddressParts === 'function' && rawAddress)
@@ -12348,7 +12364,14 @@ async function _checkInterruptedListingImports(){
   if(cutOff) showToast('Your listing import was interrupted, so nothing was saved. Try again.', 'warning', 8000);
 }
 
-function _rrScrapeListing(url){
+// The extension release that first imports Airbnb listings (Co-Hosting).
+const RR_EXT_MIN_AIRBNB = '1.17.0';
+function _rrScrapeListing(url, opts){
+  // Airbnb and VRBO pages are short-term rentals, not rental listings. Only the
+  // Co-Hosting add box passes allowStr; every Single/Multi Unit box stops here.
+  if(!(opts && opts.allowStr) && typeof strListingSite === 'function' && strListingSite(url)){
+    return Promise.resolve({ ok: false, error: 'str-not-arbitrage', detail: 'Airbnb and VRBO links are for Co-Hosting. To add this property there, click + Add Property → Co-Hosting. Single Unit and Multi Unit need a rental listing from Zillow, Apartments.com, or HotPads.' });
+  }
   let watchdog;
   return Promise.race([
     rrScrapeViaExtension(url, 'listing'),
@@ -12361,10 +12384,34 @@ function _rrScrapeListing(url){
   ]).finally(() => clearTimeout(watchdog));
 }
 
-function _rrListingFailureMessage(res){
-  if(res && res.error === 'extension-not-installed') return 'The RentingRadar Chrome extension isn\'t installed.';
-  if(res && res.error === 'listing-empty') return 'The page loaded without listing details. Try again.';
+// ctx 'cohost' = the Co-Hosting add box, which also takes Airbnb links.
+function _rrListingFailureMessage(res, ctx){
+  const err = (res && res.error) || '';
+  if(err === 'extension-not-installed') return 'The RentingRadar Chrome extension isn\'t installed.';
+  if(err === 'listing-empty') return (res && res.detail) || 'The page loaded without listing details. Try again.';
+  if(err === 'str-not-arbitrage' || err === 'vrbo-unsupported') return res.detail;
+  // 'unsupported-site' from 1.17.0+, or the older extensions' "Unsupported site. Supported: AirDNA, …".
+  if(err === 'unsupported-site' || /^unsupported site/i.test(err)){
+    return ctx === 'cohost'
+      ? 'That link isn\'t supported. Co-Hosting imports an Airbnb listing, or a Zillow, Apartments.com, or HotPads rental listing.'
+      : 'That link isn\'t supported. Paste a rental listing from Zillow, Apartments.com, HotPads, Facebook Marketplace, or Craigslist.';
+  }
   return 'Could not import listing: ' + ((res && (res.detail || res.error)) || 'Unknown error');
+}
+
+// Approximate location for an Airbnb import. Airbnb fuzzes the pin and hides the
+// street, so keep city / state / zip (for the market lookup and the map) and leave
+// the street for the user. Never waits more than LISTING_GEOCODE_TIMEOUT_MS.
+async function _rrApproxGeoForStr(data){
+  const out = { street: '', unit: '', city: '', state: '', zip: '', lat: data.lat != null ? data.lat : null, lng: data.lng != null ? data.lng : null, formattedAddress: '' };
+  if(out.lat == null || out.lng == null || typeof rrReverseGeocodeParts !== 'function') return out;
+  let cap;
+  const p = await Promise.race([
+    rrReverseGeocodeParts(out.lat, out.lng).catch(function(){ return null; }),
+    new Promise(function(resolve){ cap = setTimeout(function(){ resolve(null); }, LISTING_GEOCODE_TIMEOUT_MS); }),
+  ]).finally(function(){ clearTimeout(cap); });
+  if(p){ out.city = p.city || ''; out.state = p.state || ''; out.zip = p.zip || ''; }
+  return out;
 }
 
 // A geocoder that never answers must not hold an import open forever.
@@ -27181,7 +27228,7 @@ function renderCoHostingList(){
     return '<div style="padding:56px 24px;text-align:center;color:var(--text3);max-width:520px;margin:0 auto">'+
       '<div style="font-size:2rem;margin-bottom:12px">🏠</div>'+
       '<div style="font-size:1.05rem;font-weight:600;margin-bottom:8px;color:var(--text)">No co-hosting properties yet</div>'+
-      '<div style="font-size:.88rem;line-height:1.5">Use the <strong style="color:var(--text2)">+ Add Property</strong> menu (top right) and choose <strong style="color:var(--text2)">Co-Hosting</strong> to import a listing (Zillow, Apartments.com, HotPads) or enter one manually.</div>'+
+      '<div style="font-size:.88rem;line-height:1.5">Use the <strong style="color:var(--text2)">+ Add Property</strong> menu (top right) and choose <strong style="color:var(--text2)">Co-Hosting</strong> to import a listing (Airbnb, Zillow, Apartments.com, HotPads) or enter one manually.</div>'+
     '</div>';
   }
   return renderCohostUsageIndicator() + renderDashboard();
@@ -27201,11 +27248,11 @@ function openCohostAddModal(){
 function _cohostShowAddChoice(){
   const body = document.getElementById('cohostAddBody'); if(!body) return;
   body.innerHTML =
-    '<div style="padding:4px 2px 8px;font-size:.85rem;color:var(--text2)">Import the rental listing you will co-host — same as Houses.</div>'+
+    '<div style="padding:4px 2px 8px;font-size:.85rem;color:var(--text2)">Import the property you\'ll co-host from its Airbnb listing, or from a Zillow, Apartments.com, or HotPads rental listing.</div>'+
     '<div class="field-group" style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:14px">'+
       '<label class="field-label" style="font-weight:600">🔗 Import from a listing link</label>'+
-      '<div style="font-size:.72rem;color:var(--text3);margin:4px 0 8px">Paste a Zillow, Apartments.com, or HotPads URL. We will pull the address, beds/baths, sq ft, rent, and a property summary.</div>'+
-      '<div style="display:flex;gap:6px"><input id="cohost_paste_url" type="url" placeholder="Paste a listing link (Zillow, Apartments.com, Hotpads)" style="flex:1" onkeydown="if(event.key===\'Enter\'){event.preventDefault();importCohostFromPaste()}"><button type="button" class="btn btn-primary btn-sm" style="white-space:nowrap" onclick="importCohostFromPaste()">Import</button></div>'+
+      '<div style="font-size:.72rem;color:var(--text3);margin:4px 0 8px">Paste an Airbnb, Zillow, Apartments.com, or HotPads link. Rental listings fill in the address, beds/baths, sq ft, rent, and a property summary. Airbnb fills in beds/baths, amenities, and the area; you add the street address and the owner\'s rent.</div>'+
+      '<div style="display:flex;gap:6px"><input id="cohost_paste_url" type="url" placeholder="Paste a listing link (Airbnb, Zillow, Apartments.com, HotPads)" style="flex:1" onkeydown="if(event.key===\'Enter\'){event.preventDefault();importCohostFromPaste()}"><button type="button" class="btn btn-primary btn-sm" style="white-space:nowrap" onclick="importCohostFromPaste()">Import</button></div>'+
       '<div id="cohost_paste_status" style="font-size:.72rem;color:var(--text3);margin-top:6px;min-height:1em"></div>'+
       '<div id="addModalAiStatus" style="margin-top:8px"></div>'+
     '</div>'+
@@ -27224,17 +27271,25 @@ function importCohostFromPaste(){
   const input = document.getElementById('cohost_paste_url');
   const statusEl = document.getElementById('cohost_paste_status');
   const url = (input && input.value || '').trim();
-  if(!url){ if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent='Please paste a listing URL.'; } return; }
-  if(/airdna\.co/i.test(url)){ if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent='Paste a Zillow, Apartments.com, or HotPads link.'; } return; }
+  const _say = function(msg){ if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent=msg; } };
+  if(!url){ _say('Please paste a listing URL.'); return; }
+  if(/airdna\.co/i.test(url)){ _say('AirDNA links go in the Market Potential tab once the property is added. Here, paste the property\'s Airbnb listing, or a Zillow, Apartments.com, or HotPads rental listing.'); return; }
+  const _site = (typeof strListingSite === 'function') ? strListingSite(url) : null;
+  if(_site === 'vrbo'){ _say('VRBO listings can\'t be imported yet. Paste the property\'s Airbnb link if it has one, or use Manual Entry below.'); return; }
+  const _extV = (typeof extensionHealth !== 'undefined' && extensionHealth && extensionHealth.version) || null;
+  if(_site === 'airbnb' && _extV && !extVersionAtLeast(_extV, RR_EXT_MIN_AIRBNB)){
+    _say('Importing Airbnb listings needs RentingRadar extension ' + RR_EXT_MIN_AIRBNB + ' or newer (you have ' + _extV + '). Chrome updates extensions on its own, usually within a day. To update now, open chrome://extensions, turn on Developer mode, and click Update. Or use Manual Entry below.');
+    return;
+  }
   if(typeof rrScrapeViaExtension !== 'function'){ if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.innerHTML='Install the RentingRadar extension to auto-fill. '+_extInstallLink('Get it on the Chrome Web Store'); } return; }
   _rrRunListingImport(url, async function(){
     if(input) input.disabled = true;
     if(statusEl){ statusEl.style.color='var(--text3)'; statusEl.textContent='Importing listing…'; }
     showToast('Importing listing…','loading',30000);
-    const res = await _rrScrapeListing(url);
+    const res = await _rrScrapeListing(url, { allowStr: true });
     if(!res || !res.ok){
       const err = res && res.error;
-      let msg = err==='extension-not-installed' ? 'Install the RentingRadar Chrome extension to import listings.' : _rrListingFailureMessage(res);
+      let msg = err==='extension-not-installed' ? 'Install the RentingRadar Chrome extension to import listings.' : _rrListingFailureMessage(res, 'cohost');
       if(statusEl){ statusEl.style.color='var(--danger)'; if(err==='extension-not-installed') statusEl.innerHTML = esc(msg)+' '+_extInstallLink('Get it on the Chrome Web Store'); else statusEl.textContent=msg; }
       showToast(esc(msg),'error',6000);
       return 'failed';
@@ -27261,16 +27316,24 @@ async function handleCohostListing(data){
   }
   data = await _rrResolveListingPlan(data);
   if(!data){ showToast('Import cancelled.','info',3500); return 'cancelled'; }
-  const geo = await _rrGeocodeListing(data.address);
+  // An Airbnb listing (extension 1.17.0+): no street address, no rent, fuzzed pin.
+  const isStr = data._kind === 'str' || data.source === 'airbnb';
+  const geo = isStr ? await _rrApproxGeoForStr(data) : await _rrGeocodeListing(data.address);
   const addrParts = { street: geo.street||'', unit: geo.unit||'', city: geo.city||'', state: geo.state||'', zip: geo.zip||'' };
-  const canonical = formatAddressOneLine(addrParts) || geo.formattedAddress || data.address || data.title || 'New Co-Hosting Property';
+  const _strPlace = [addrParts.city, addrParts.state].filter(Boolean).join(', ');
+  const canonical = isStr
+    ? ((data.title || 'Airbnb listing') + (_strPlace && String(data.title||'').toLowerCase().indexOf(addrParts.city.toLowerCase()) === -1 ? ' — ' + _strPlace : ''))
+    : (formatAddressOneLine(addrParts) || geo.formattedAddress || data.address || data.title || 'New Co-Hosting Property');
   // Duplicate detection within the co-host store only (never the Single Unit /
   // Multi Unit records). The same check as listing import: every form of the
   // address counts (geocoded parts, the one-line name, the scraped text), and a
   // same-building match (one side names a unit, the other does not) asks without
   // offering Replace, so a building-level import can't overwrite a unit's record.
   const dupCandidates = [{ name: canonical, addressParts: addrParts }, { name: canonical }, { name: data.address }];
-  const res = importDuplicateCheck(dupCandidates, cohostRecords);
+  // Airbnb imports have no street to compare, so the listing itself is the key.
+  const _strKey = isStr ? strListingKey(data.sourceUrl) : null;
+  const _strMatch = _strKey ? cohostRecords.find(function(x){ return strListingKey(x.link) === _strKey || strListingKey(x.links && x.links.airbnb) === _strKey; }) : null;
+  const res = isStr ? (_strMatch ? { match: _strMatch, kind: 'exact', key: _strKey } : { match: null, key: _strKey }) : importDuplicateCheck(dupCandidates, cohostRecords);
   _rrImportInFlightTrace('dup check: key=' + (res.key || '(none)') + ' records=' + cohostRecords.length + ' match=' + (res.match ? res.match.id : 'none') + ' kind=' + (res.kind || 'none'));
   let replaceId = null;
   if(res.match){
@@ -27286,9 +27349,11 @@ async function handleCohostListing(data){
     property: canonical, addressParts: addrParts,
     name: '', phone: '', email: '',
     link: data.sourceUrl || '', _aiSourceUrl: data.sourceUrl || '',
-    links: { maps: canonical ? 'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(canonical) : '' },
+    links: isStr
+      ? { airbnb: data.sourceUrl || '', maps: (geo.lat!=null && geo.lng!=null) ? 'https://www.google.com/maps/search/?api=1&query='+geo.lat+','+geo.lng : '' }
+      : { maps: canonical ? 'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(canonical) : '' },
     cohost: {
-      hostName: '',
+      hostName: isStr ? (data.host || '') : '',
       setupInvestment: 3000,
       cleaningPerMonth: '',
       expectedRevenue: '', expectedRevenueLow: '', expectedRevenueHigh: '',
@@ -27297,9 +27362,10 @@ async function handleCohostListing(data){
     propertyDetails: {},
     details: { comps: [] },
     notes: [], tasks: [], meetings: [], propertyNotes: [],
-    _aiPending: true,
+    _aiPending: !isStr,
     createdAt: new Date().toISOString()
   };
+  if(isStr){ r.importSource = 'airbnb'; r.approxLocation = !!data._approxLocation; }
   const d = r.propertyDetails;
   function setIfEmpty(obj,key,val){ if(val==null||val==='') return; if(obj[key]==null||obj[key]===''||obj[key]===0) obj[key]=val; }
   setIfEmpty(d,'bedrooms',data.bedrooms);
@@ -27317,8 +27383,15 @@ async function handleCohostListing(data){
       else setIfEmpty(d,k,v);
     }
   }
-  // Property Note from AI bullets (identical to Arbitrage).
-  const bullets = _rrBulletsForRecord(data, d);
+  // Property Note from AI bullets (identical to Arbitrage). Airbnb imports have no
+  // AI bullets; their note carries what Property Details has no field for.
+  const bullets = isStr ? [
+    'Imported from Airbnb' + (data.title ? ': ' + data.title : ''),
+    (data.guests != null ? 'Sleeps ' + data.guests : '') + (data.beds != null ? (data.guests != null ? ' · ' : '') + data.beds + (data.beds === 1 ? ' bed' : ' beds') : ''),
+    data.host ? 'Hosted on Airbnb by ' + data.host + (data.rating != null ? ' (★' + data.rating + ')' : '') : '',
+    'Location is approximate: Airbnb hides the street address. Add it in Property Details.',
+    data.description ? 'Airbnb description: ' + String(data.description).slice(0, 400) : '',
+  ].filter(Boolean) : _rrBulletsForRecord(data, d);
   if(bullets.length){
     r.propertyNote = { text: bullets.map(function(b){return '• '+b;}).join('\n'), html: '<ul>'+bullets.map(function(b){return '<li>'+esc(b)+'</li>';}).join('')+'</ul>', date: new Date().toISOString(), source: 'Auto-Import ('+(data.source||'listing')+')' };
   }
@@ -27356,7 +27429,8 @@ async function handleCohostListing(data){
   if(oldRecord) _softDeleteRecordMirror(oldRecord, 'cohostRecords');
   saveCohostData();
   const coreCount = (d.bedrooms?1:0)+(d.bathrooms?1:0)+(d.sqft?1:0)+(d.monthlyRent?1:0);
-  showToast(coreCount ? 'Co-Hosting property imported.' : 'Import partial — some details may need manual entry.', coreCount?'success':'warning', 3500);
+  if(isStr) showToast('Imported from Airbnb. Add the street address and the owner\'s asking rent in Property Details.', 'success', 6000);
+  else showToast(coreCount ? 'Co-Hosting property imported.' : 'Import partial — some details may need manual entry.', coreCount?'success':'warning', 3500);
   openCohostProfile(r.id);
   return 'created';
 }
@@ -41774,8 +41848,8 @@ var _KB_STARTER_ENTRIES = [
 
   // ---- Getting started ----
   { question: "How do I get started with RentingRadar?", answer: "Start in the Single Unit section (or Multi Unit, if you're pursuing several units in one building), where you add and analyze candidate properties. Installing the Chrome extension is the fastest way to pull listing data in automatically rather than typing it by hand.", tags: ["getting-started", "onboarding"] },
-  { question: "How do I add my first property?", answer: "Click + Add Property in the top-right and choose Single Unit, Multi Unit, or Co-Hosting. From there, paste a listing link — Zillow, Apartments.com, or HotPads — to auto-fill the property's details, or choose Manual Entry to type them in yourself.", tags: ["getting-started", "add-property"] },
-  { question: "What is the Chrome extension for?", answer: "It auto-fills property data into RentingRadar so you skip manual entry. It reads rental listings — Zillow, Apartments.com, and HotPads — to import a property's details, and on the Single Unit/Multi Unit side it also pulls competitor/comp data from AirDNA and Airbnb.", tags: ["chrome-extension", "scraping", "airdna", "airbnb", "import"] },
+  { question: "How do I add my first property?", answer: "Click + Add Property in the top-right and choose Single Unit, Multi Unit, or Co-Hosting. From there, paste a listing link — Zillow, Apartments.com, or HotPads — to auto-fill the property's details, or choose Manual Entry to type them in yourself. Co-Hosting also accepts an Airbnb listing link.", tags: ["getting-started", "add-property"] },
+  { question: "What is the Chrome extension for?", answer: "It auto-fills property data into RentingRadar so you skip manual entry. It reads rental listings — Zillow, Apartments.com, and HotPads — to import a property's details, imports Airbnb listings into Co-Hosting (extension 1.17.0 or newer), and on the Single Unit/Multi Unit side it also pulls competitor/comp data from AirDNA and Airbnb.", tags: ["chrome-extension", "scraping", "airdna", "airbnb", "import"] },
   { question: "How do I install the Chrome extension?", answer: "Add it from the [Chrome Web Store](https://chromewebstore.google.com/detail/rentingradar/eambgkhnefkigdndllhmakfedkncgmoh), then sign in to RentingRadar in the same browser. Settings shows whether the extension is connected.", tags: ["chrome-extension", "install", "settings"] },
   { question: "What is AirDNA and why does RentingRadar use it?", answer: "AirDNA is a short-term rental market-data source. RentingRadar pulls AirDNA comp and revenue data (via the Chrome extension) so your ROI projections are based on real nearby performance, not guesses.", tags: ["airdna", "comps", "data"] },
 
@@ -41916,8 +41990,9 @@ var _KB_STARTER_ENTRIES = [
   { question: "What is Co-Hosting?", answer: "Co-Hosting is RentingRadar's second business model. Instead of leasing a property yourself and re-listing it (that's Arbitrage — the Single Unit and Multi Unit pipelines), you manage an owner's property as a short-term rental for a management fee. RentingRadar helps you import the property, estimate its short-term-rental potential from comparable listings, run the management-fee economics, and build a pitch that shows the owner what they'd earn.", tags: ["cohosting", "overview"] },
   { question: "What's the difference between Arbitrage and Co-Hosting?", answer: "Arbitrage (Single Unit and Multi Unit) = you lease a property from the landlord and re-list it on Airbnb/Vrbo, keeping the upside. Co-Hosting = you don't lease it; you manage the owner's property as a short-term rental for a percentage management fee, and the owner keeps the rest. They're separate sections, each with their own properties.", tags: ["cohosting", "arbitrage", "overview"] },
   { question: "Who can use Co-Hosting?", answer: "Every plan includes Co-Hosting — you'll find it in the left sidebar alongside Single Unit and Multi Unit. Basic includes up to 5 Co-Hosting properties, Standard up to 10, and Pro unlimited. It's RentingRadar's second business model: instead of leasing a property yourself, you manage an owner's existing property as a short-term rental for a management fee.", tags: ["cohosting", "access", "limits"] },
-  { question: "How do I add a Co-Hosting property?", answer: "Click + Add Property in the top-right and choose Co-Hosting. You can paste a listing link (Zillow, Apartments.com, or HotPads) to auto-fill the address, beds/baths, square footage, rent, and a property summary — or choose Manual Entry to type the details in yourself.", tags: ["cohosting", "add-property", "import"] },
-  { question: "Which sites can I import a Co-Hosting listing from?", answer: "The same rental-listing sites as Single Unit/Multi Unit: Zillow, Apartments.com, and HotPads. Paste the listing link in the Co-Hosting add screen and the property auto-fills, just like adding a Single Unit or Multi Unit property.", tags: ["cohosting", "import", "zillow", "apartments", "hotpads"] },
+  { question: "How do I add a Co-Hosting property?", answer: "Click + Add Property in the top-right and choose Co-Hosting. Paste the property's Airbnb listing link, or a Zillow, Apartments.com, or HotPads rental listing, and click Import — or choose Manual Entry to type the details in yourself. A rental listing fills in the address, beds/baths, square footage, rent, and a property summary. An Airbnb link fills in beds/baths, amenities, the host, and the area; Airbnb hides the street address and has no monthly rent, so you add the address and the owner's asking rent in Property Details.", tags: ["cohosting", "add-property", "import", "airbnb"] },
+  { question: "Which sites can I import a Co-Hosting listing from?", answer: "Airbnb, plus the same rental-listing sites as Single Unit/Multi Unit: Zillow, Apartments.com, and HotPads. Paste the link in the Co-Hosting add screen and the property auto-fills. Airbnb import needs RentingRadar Chrome extension 1.17.0 or newer; if yours is older, the add screen says so, and Chrome updates it on its own, usually within a day. VRBO links can't be imported yet — use the property's Airbnb link or Manual Entry. AirDNA links don't go here; add them as comparables in the Market Potential tab.", tags: ["cohosting", "import", "airbnb", "vrbo", "zillow", "apartments", "hotpads"] },
+  { question: "Why won't my Airbnb or VRBO link import into Single Unit or Multi Unit?", answer: "Single Unit and Multi Unit analyze rental arbitrage deals, so they need a long-term rental listing from Zillow, Apartments.com, or HotPads — that's where the rent, square footage, and address come from. Airbnb and VRBO are short-term rental listings, which belong in Co-Hosting: click + Add Property → Co-Hosting and paste the Airbnb link there. (VRBO links can't be imported yet.)", tags: ["import", "airbnb", "vrbo", "single-unit", "multi-unit", "cohosting", "troubleshooting"] },
   { question: "What are the tabs on a Co-Hosting property?", answer: "Three: Property Details (the property's specifics and the owner's contact), Market Potential (comparable short-term rentals it could perform like), and Calculator (your management-fee economics and break-even).", tags: ["cohosting", "tabs", "overview"] },
   { question: "What is the Co-Hosting Calculator?", answer: "It lays the management deal out as line items: the investment to set the property up, average monthly cleaning, the owner's asking rent, the expected monthly revenue (from your comparables), the revenue you're modeling, the owner's payout, the additional revenue the owner earns versus their current rent, your management fee, and the break-even timeline.", tags: ["cohosting", "calculator", "economics"] },
   { question: "How is the Co-Hosting management fee determined?", answer: "It's set automatically by the gross-after-cleaning revenue (revenue minus cleaning): 10% under $4,000, 15% from $4,000 to $6,000, and 20% at $6,000 and above — a smaller cut in slower months and a larger one when the property earns more.", tags: ["cohosting", "calculator", "management-fee"] },

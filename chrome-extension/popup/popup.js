@@ -86,6 +86,8 @@ function detectKind(url) {
   try {
     const h = new URL(url).hostname.replace(/^www\./, '').toLowerCase();
     if (/airdna\.co$/.test(h)) return 'airdna-rejected';
+    if (/(^|\.)airbnb\.com$/.test(h)) return 'airbnb-cohost';
+    if (/(^|\.)vrbo\.com$/.test(h)) return 'vrbo';
     if (/(zillow|apartments|hotpads)\.com$/.test(h)) return 'listing';
     if (/facebook\.com$/.test(h) && /\/marketplace\//.test(url)) return 'listing';
     if (/craigslist\.org$/.test(h)) return 'listing';
@@ -103,6 +105,14 @@ async function doImport() {
   const kind = detectKind(url);
   if (kind === 'airdna-rejected') {
     setStatus('AirDNA links belong in the <strong>Competitor Analysis</strong> tab inside the CRM, not here. Open a property in the CRM and paste the AirDNA link into the Loses To / Competes With / Beats section.', 'error');
+    return;
+  }
+  if (kind === 'airbnb-cohost') {
+    setStatus('Airbnb listings import into <strong>Co-Hosting</strong>. In RentingRadar, click <strong>+ Add Property → Co-Hosting</strong> and paste the link there.', 'error');
+    return;
+  }
+  if (kind === 'vrbo') {
+    setStatus('VRBO listings can\'t be imported yet. Use the property\'s Airbnb link in <strong>+ Add Property → Co-Hosting</strong>, or enter it manually.', 'error');
     return;
   }
   if (!kind) {
@@ -137,7 +147,7 @@ urlInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') doImport();
 // user click Import in one motion while browsing a listing.
 chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
   const t = tabs && tabs[0];
-  if (t && t.url && detectKind(t.url)) {
+  if (t && t.url && detectKind(t.url) === 'listing') {
     urlInput.value = t.url;
   }
 });
