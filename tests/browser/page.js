@@ -688,6 +688,30 @@ H.scenarios = {
     }
     return { fails };
   },
+  'T9 a successful Resend says when the new email went out': async () => {
+    const fails = [];
+    const auth = firebase.auth();
+    let sends = 0;
+    const user = { uid: 'v9', email: 'v9@example.com', emailVerified: false, reload: async () => {}, sendEmailVerification: async () => { sends++; } };
+    Object.defineProperty(auth, 'currentUser', { get: () => user, configurable: true });
+    try {
+      localStorage.removeItem(verifyEmailKey('v9'));
+      showEmailVerificationScreen(user);
+      const msg = document.getElementById('emailVerifyMsg');
+      msg.textContent = 'Verification email sent! Check your inbox.';
+      document.getElementById('emailVerifyResendBtn').click();
+      await H.until(() => /New verification email sent at/.test(msg.textContent), 2000);
+      H.check(fails, sends === 1, 'one send, got ' + sends);
+      H.check(fails, /^New verification email sent at \d{1,2}:\d{2}\s?[AP]M\. Use the newest email; older links stop working\.$/.test(msg.textContent), 'status: ' + msg.textContent);
+      const btn = document.getElementById('emailVerifyResendBtn');
+      H.check(fails, btn.disabled && /^Resend in \d+s$/.test(btn.textContent), 'cooldown: ' + btn.textContent);
+    } finally {
+      _dismissEmailVerificationScreen();
+      delete auth.currentUser;
+      localStorage.removeItem(verifyEmailKey('v9'));
+    }
+    return { fails };
+  },
   'Nit race timers are cleared, timeouts leave a trace line': async () => {
     const fails = [];
     const longTimers = new Map();

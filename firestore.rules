@@ -16,14 +16,16 @@ service cloud.firestore {
         )
       );
 
-      // Owner may create their doc, but never with admin/referral grants.
+      // Owner may create their doc, but never with admin/referral grants or the
+      // server's welcome-email markers.
       allow create: if isSupportAdmin() || (
         request.auth != null && request.auth.uid == userId &&
-        !request.resource.data.keys().hasAny(['admin', 'referralCodes', 'referralCode'])
+        !request.resource.data.keys().hasAny(['admin', 'referralCodes', 'referralCode', 'welcomeEmailSentAt', 'welcomeEmailClaimedAt'])
       );
 
       // Owner may update anything EXCEPT: setting admin to anything but false/absent,
-      // or adding/changing referralCodes/referralCode (removing them is allowed).
+      // adding/changing referralCodes/referralCode (removing them is allowed), or
+      // touching the welcome-email markers at all (only functions/ writes them).
       // tier / subscriptionStatus / manualOverride are intentionally NOT locked here (T1b).
       allow update: if isSupportAdmin() || (
         request.auth != null && request.auth.uid == userId &&
@@ -37,7 +39,8 @@ service cloud.firestore {
         let d = request.resource.data;
         return (!changed.hasAny(['admin']) || d.get('admin', false) == false)
           && (!changed.hasAny(['referralCodes']) || !('referralCodes' in d))
-          && (!changed.hasAny(['referralCode'])  || !('referralCode' in d));
+          && (!changed.hasAny(['referralCode'])  || !('referralCode' in d))
+          && !changed.hasAny(['welcomeEmailSentAt', 'welcomeEmailClaimedAt']);
       }
 
       // {document=**} also matches zero segments, which would re-open users/{uid}

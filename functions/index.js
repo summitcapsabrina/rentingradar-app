@@ -4,6 +4,7 @@ const stripe = require("stripe");
 const cors = require("cors")({ origin: true });
 const sgMail = require("@sendgrid/mail");
 const Busboy = require("busboy");
+const { sendWelcomeOnce, welcomeClaimDecision } = require("./welcome-email");
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -775,28 +776,14 @@ exports.testAllEmails = functions.https.onRequest((req, res) => {
 
 
 // ============================================================
-// 5. WELCOME EMAIL — triggered on new user creation
-//    Sends welcome email immediately for all users (Google & email/password).
+// 5. NEW SIGNUP — admin notification on new user creation.
+//    The welcome email no longer goes out here: it arrived before the user had
+//    verified their email. onUserDocCreated (5d) sends it once, after verification.
 // ============================================================
 exports.onUserCreated = functions.auth.user().onCreate(async (user) => {
   const { uid, email, displayName } = user;
   console.log(`onUserCreated triggered for ${uid} / ${email}`);
   if (!email) return null;
-
-  // Send welcome email immediately for all users.
-  // sendEmail() catches its own errors and returns boolean — DON'T claim success
-  // unless it actually returned true. Without this check, logs lie and the real
-  // SendGrid error gets buried (a recent debugging cost us hours of confusion).
-  try {
-    initSendGrid();
-    const html = welcomeEmailHtml(displayName);
-    console.log("Sending welcome email to", email);
-    const ok = await sendEmail(email, "🎉 Welcome to RentingRadar! Here's how to get started", html, { category: "welcome" });
-    if (ok) console.log("Welcome email sent successfully to", email);
-    else console.error("Welcome email FAILED for", email, "— see SendGrid error above");
-  } catch (err) {
-    console.error("Failed to send welcome email:", err);
-  }
 
   // Notify admin(s) about new signup
   try {
@@ -840,16 +827,9 @@ exports.onUserCreated = functions.auth.user().onCreate(async (user) => {
     console.error("Failed to send admin notification:", err);
   }
 
-  try {
-    await db.collection("emailLog").add({
-      uid: uid,
-      email: email,
-      type: "welcome",
-      sentAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
-  } catch (err) {
-    console.error("Failed to log email:", err);
-  }
+  // No "welcome" emailLog entry here any more: that row now means the welcome email
+  // really went out (onUserDocCreated, 5d). Rows written here by the old code still
+  // count as "already welcomed", alongside the WELCOME_AFTER_VERIFY_SINCE cutoff.
 
   // Set up email preferences
   try {
@@ -1013,7 +993,73 @@ exports.onUserPlanChanged = functions.firestore
 
 
 // ============================================================
-// 5c. WELCOME EMAIL — HTTP endpoint called by frontend
+// 5d. WELCOME EMAIL — once, after the email is verified.
+//     The app creates users/{uid} only after the verification gate (password users)
+//     or on first load (Google users, verified at sign-up), so the doc's creation is
+//     the moment to send. The trigger still checks emailVerified through the Admin
+//     SDK, and a claim on the user doc plus the emailLog entry keep it to one email
+//     however many times this or the HTTP endpoint below runs.
+//     welcomeEmailSentAt / welcomeEmailClaimedAt are server-only (firestore.rules).
+// ============================================================
+const WELCOME_SUBJECT = "🎉 Welcome to RentingRadar! Here's how to get started";
+
+const welcomeStore = {
+  async claim(uid, now) {
+    const logged = await db.collection("emailLog")
+      .where("uid", "==", uid)
+      .where("type", "==", "welcome")
+      .limit(1)
+      .get();
+    const ref = db.collection("users").doc(uid);
+    return db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      const decision = welcomeClaimDecision(snap.exists ? snap.data() : null, !logged.empty, now);
+      if (decision !== "claim") return decision;
+      tx.update(ref, { welcomeEmailClaimedAt: admin.firestore.Timestamp.fromMillis(now) });
+      return "claimed";
+    });
+  },
+  async release(uid) {
+    await db.collection("users").doc(uid).update({ welcomeEmailClaimedAt: admin.firestore.FieldValue.delete() });
+  },
+  async markSent(uid, now, email) {
+    await db.collection("users").doc(uid).update({
+      welcomeEmailSentAt: admin.firestore.Timestamp.fromMillis(now),
+      welcomeEmailClaimedAt: admin.firestore.FieldValue.delete(),
+    });
+    try {
+      await db.collection("emailLog").add({ uid, email, type: "welcome", sentAt: admin.firestore.FieldValue.serverTimestamp() });
+    } catch (err) {
+      console.error("Failed to log welcome email:", err);
+    }
+  },
+};
+
+function welcomeDeps() {
+  return {
+    getUser: (uid) => admin.auth().getUser(uid).catch((err) => { console.error("welcome: getUser failed:", err); return null; }),
+    store: welcomeStore,
+    // sendEmail() catches its own errors and returns a boolean; only true counts.
+    send: async (user) => {
+      initSendGrid();
+      return sendEmail(user.email, WELCOME_SUBJECT, welcomeEmailHtml(user.displayName), { category: "welcome" });
+    },
+    now: () => Date.now(),
+  };
+}
+
+exports.onUserDocCreated = functions.firestore
+  .document("users/{uid}")
+  .onCreate(async (snap, context) => {
+    const uid = context.params.uid;
+    const res = await sendWelcomeOnce(uid, welcomeDeps());
+    console.log(`welcome email for ${uid}: ${res.status}`);
+    return null;
+  });
+
+// ============================================================
+// 5c. WELCOME EMAIL — HTTP endpoint (no app code calls it today). Goes through the
+//     same once-only path as 5d, so a manual retry after a failed send is safe.
 //     when user first reaches the dashboard (after user doc creation).
 //     Served via Firebase Hosting rewrite (no allUsers IAM needed).
 // ============================================================
@@ -1041,59 +1087,12 @@ exports.sendWelcomeEmail = functions.https.onRequest((req, res) => {
     const uid = decoded.uid;
     console.log(`sendWelcomeEmail HTTP called for uid=${uid}`);
 
-    // Get full auth user to check emailVerified
-    let authUser;
-    try {
-      authUser = await admin.auth().getUser(uid);
-    } catch (err) {
-      console.error("Failed to get auth user:", err);
-      return res.status(500).json({ error: "Failed to get user" });
-    }
-
-    if (!authUser.emailVerified) {
-      console.log(`User ${uid} email not verified, skipping.`);
-      return res.status(400).json({ error: "Email not verified" });
-    }
-
-    // Check for duplicate welcome email
-    const existingLog = await db.collection("emailLog")
-      .where("uid", "==", uid)
-      .where("type", "==", "welcome")
-      .limit(1)
-      .get();
-
-    if (!existingLog.empty) {
-      console.log(`Welcome email already sent to ${uid}, skipping.`);
-      return res.status(200).json({ ok: true, message: "Already sent" });
-    }
-
-    // Send the welcome email
-    const email = authUser.email;
-    const displayName = authUser.displayName;
-    try {
-      initSendGrid();
-      const html = welcomeEmailHtml(displayName);
-      console.log("Sending post-verification welcome email to", email);
-      await sendEmail(email, "🎉 Welcome to RentingRadar! Here's how to get started", html, { category: "welcome" });
-      console.log("Post-verification welcome email sent successfully to", email);
-    } catch (err) {
-      console.error("Failed to send welcome email:", err);
-      return res.status(500).json({ error: "Failed to send email" });
-    }
-
-    // Log it
-    try {
-      await db.collection("emailLog").add({
-        uid: uid,
-        email: email,
-        type: "welcome",
-        sentAt: admin.firestore.FieldValue.serverTimestamp(),
-      });
-    } catch (err) {
-      console.error("Failed to log welcome email:", err);
-    }
-
-    return res.status(200).json({ ok: true });
+    const result = await sendWelcomeOnce(uid, welcomeDeps());
+    console.log(`welcome email for ${uid}: ${result.status}`);
+    if (result.status === "not-verified") return res.status(400).json({ error: "Email not verified" });
+    if (result.status === "failed") return res.status(500).json({ error: "Failed to send email" });
+    if (result.status === "sent") return res.status(200).json({ ok: true });
+    return res.status(200).json({ ok: true, message: result.status });
   });
 });
 

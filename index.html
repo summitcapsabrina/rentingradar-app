@@ -21573,7 +21573,11 @@ function _sendVerificationEmail(user, reason){
     const sendingBtn = document.getElementById('emailVerifyResendBtn');
     if(sendingBtn && sendingBtn.textContent === 'Sending...') sendingBtn.textContent = 'Resend Verification Email';
     console.info('[RR] verification email:', reason, res.status);
-    if(res.status === 'sent') _setVerifyMsg('var(--success,#3fb950)', 'Verification email sent! Check your inbox.');
+    if(res.status === 'sent' && reason === 'resend'){
+      // A visible change, so a second click isn't needed to tell a new email went out.
+      const at = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      _setVerifyMsg('var(--success,#3fb950)', 'New verification email sent at ' + at + '. Use the newest email; older links stop working.');
+    } else if(res.status === 'sent') _setVerifyMsg('var(--success,#3fb950)', 'Verification email sent! Check your inbox.');
     else if(res.status === 'rate-limited') _setVerifyMsg('var(--warning,#d29922)', 'Too many attempts. Please wait a few minutes, then try again.');
     else if(res.status === 'error'){
       console.error('sendEmailVerification error:', res.error);
@@ -21675,7 +21679,8 @@ function _onEmailVerified(){
   _verifyReloading = true;
   _stopVerifyWatch();
   _setVerifyMsg('var(--success,#3fb950)', 'Email verified! Loading your account...');
-  // Set flag so on reload we know to trigger the welcome email
+  // Nothing reads this flag; the welcome email is sent by functions (onUserDocCreated)
+  // once the verified user's doc exists.
   try { sessionStorage.setItem('rr_just_verified', '1'); } catch(e){}
   // Reload the page — onAuthStateChanged will fire fresh with emailVerified=true
   setTimeout(function(){ _rrReload('email verified'); }, 800);
