@@ -135,6 +135,34 @@ test('owner cannot add or change referral codes but can remove them', async () =
   await assertSucceeds(updateDoc(ref, { referralCode: deleteField() }));
 });
 
+test('owner cannot create, set, change or remove the welcome-email markers', async () => {
+  const ref = doc(as('alice'), 'users/alice');
+  await assertFails(setDoc(ref, signUpDoc({ welcomeEmailSentAt: serverTimestamp() })));
+  await assertFails(setDoc(ref, signUpDoc({ welcomeEmailClaimedAt: serverTimestamp() })));
+
+  await seed('users/alice', { name: 'Alice' });
+  await assertFails(updateDoc(ref, { welcomeEmailSentAt: serverTimestamp() }));
+  await assertFails(setDoc(ref, { welcomeEmailClaimedAt: 1 }, { merge: true }));
+
+  await seed('users/bob', { name: 'Bob', welcomeEmailSentAt: 123, welcomeEmailClaimedAt: 456 });
+  const bob = doc(as('bob'), 'users/bob');
+  await assertFails(updateDoc(bob, { welcomeEmailSentAt: deleteField() }));
+  await assertFails(updateDoc(bob, { welcomeEmailSentAt: 999 }));
+  await assertFails(updateDoc(bob, { welcomeEmailClaimedAt: deleteField() }));
+});
+
+test('owner can still update other fields when the welcome markers are set', async () => {
+  await seed('users/bob', { name: 'Bob', welcomeEmailSentAt: 123 });
+  const bob = doc(as('bob'), 'users/bob');
+  await assertSucceeds(updateDoc(bob, { lastLogin: serverTimestamp() }));
+  await assertSucceeds(setDoc(bob, { photo: 'https://example.com/b.png' }, { merge: true }));
+});
+
+test('support admin can write the welcome markers', async () => {
+  await seed('users/bob', { name: 'Bob' });
+  await assertSucceeds(updateDoc(doc(asAdmin(), 'users/bob'), { welcomeEmailSentAt: serverTimestamp() }));
+});
+
 test('affiliate with unchanged codes can update other fields', async () => {
   await seed('users/aff', { referralCodes: ['AFF1'] });
   await assertSucceeds(updateDoc(doc(as('aff'), 'users/aff'), { lastLogin: serverTimestamp() }));
