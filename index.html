@@ -15371,6 +15371,11 @@ let _adminUserSearch = '';
 let _adminUserFilterTier = 'all';
 let _adminUserFilterStatus = 'all';
 let _adminUserFilterPaid = 'all';
+let _adminUserFilterVerified = 'all';
+// uid -> emailVerified from Firebase Auth (adminEmailVerified function). Kept apart
+// from _adminUsers so it never rides along into a Firestore write; the edit modal
+// also swaps those objects for fresh docs.
+let _adminEmailVerified = {};
 let _adminViewMode = localStorage.getItem('rr_admin_view') || 'table';
 let _adminImpersonating = null;
 
@@ -15419,6 +15424,11 @@ function renderAdminUsers(){
         <option value="paid" ${_adminUserFilterPaid==='paid'?'selected':''}>Paid Only</option>
         <option value="unpaid" ${_adminUserFilterPaid==='unpaid'?'selected':''}>Unpaid Only</option>
       </select>
+      <select id="adminFilterVerified" onchange="_adminUserFilterVerified=this.value;_adminRenderUserList()" style="padding:7px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);font-size:.82rem">
+        <option value="all">Verified & Unverified</option>
+        <option value="verified" ${_adminUserFilterVerified==='verified'?'selected':''}>Verified Only</option>
+        <option value="unverified" ${_adminUserFilterVerified==='unverified'?'selected':''}>Unverified Only</option>
+      </select>
     </div>
     <!-- User list -->
     <div id="adminUserListContainer" style="margin-bottom:20px">
@@ -15452,6 +15462,7 @@ async function _adminRefreshUsers(){
     // on-demand sync that fires whenever the admin loads or refreshes this page.
     // Doesn't block the user list render; quietly updates the list when done.
     _adminSyncAllUsersFromStripeBackground();
+    _adminLoadEmailVerifiedBackground();
   } catch(e){
     console.error('Admin: failed to load users', e);
     if(container) container.innerHTML = '<div style="text-align:center;padding:60px;color:var(--danger)">Failed to load users: ' + esc(e.message) + '</div>';
@@ -15526,6 +15537,31 @@ async function _adminSyncAllUsersFromStripeBackground(){
   } else {
     _adminSetSyncStatus('Synced — no changes');
     setTimeout(() => _adminSetSyncStatus(''), 2000);
+  }
+}
+
+// Fills the Verified column. Auth holds emailVerified, so this asks the admin-only
+// adminEmailVerified Firebase Function (via the Hosting rewrite, like
+// triggerCommissionReport) for every listed uid in one request. On failure the
+// column just stays blank.
+async function _adminLoadEmailVerifiedBackground(){
+  const uids = (_adminUsers || []).map(u => u.uid).filter(Boolean);
+  if(!uids.length) return;
+  try {
+    const user = firebase.auth().currentUser;
+    if(!user) return;
+    const token = await user.getIdToken();
+    const res = await fetch('/api/adminEmailVerified', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ data: { uids } })
+    });
+    const json = await res.json();
+    if(json.error) throw new Error(json.error.message || 'Function returned error');
+    _adminEmailVerified = (json.result && json.result.verified) || {};
+    _adminRenderUserList();
+  } catch(e){
+    console.warn('[admin email verified]', e.message);
   }
 }
 
@@ -18171,6 +18207,10 @@ function _adminGetFilteredUsers(){
     if(_adminUserFilterPaid === 'paid') list = list.filter(u => !u.manualOverride && u.stripeSubscriptionId);
     else list = list.filter(u => u.manualOverride || !u.stripeSubscriptionId);
   }
+  if(_adminUserFilterVerified !== 'all'){
+    if(_adminUserFilterVerified === 'verified') list = list.filter(u => _adminEmailVerified[u.uid] === true);
+    else list = list.filter(u => _adminEmailVerified[u.uid] !== true);
+  }
   return list;
 }
 
@@ -18267,6 +18307,13 @@ function _adminPaidBadge(u){
   return '<span style="font-size:.7rem;padding:2px 6px;border-radius:4px;background:rgba(107,114,128,.15);color:#6b7280;font-weight:600">—</span>';
 }
 
+// Green check when Firebase Auth says the email is verified; empty when it's
+// unverified, unknown to Auth, or the lookup hasn't returned.
+function _adminVerifiedCheck(u){
+  if(_adminEmailVerified[u.uid] !== true) return '';
+  return '<span role="img" aria-label="Verified" title="Email verified" style="display:inline-flex;vertical-align:middle;color:#10b981"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg></span>';
+}
+
 function _adminUserAvatar(u, size){
   size = size || 32;
   // flex-shrink:0 + align-self:center keep the avatar a rigid square inside
@@ -18297,6 +18344,7 @@ function _adminRenderTable(users){
         <th style="text-align:left;padding:10px 8px;color:var(--text3);font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.5px">Plan</th>
         <th style="text-align:left;padding:10px 8px;color:var(--text3);font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.5px">Status</th>
         <th style="text-align:center;padding:10px 8px;color:var(--text3);font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.5px">Paid</th>
+        <th style="text-align:center;padding:10px 8px;color:var(--text3);font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.5px" title="Email verified">Verified</th>
         <th style="text-align:left;padding:10px 8px;color:var(--text3);font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.5px">Joined</th>
         <th style="text-align:left;padding:10px 8px;color:var(--text3);font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.5px">Next Billing</th>
         <th style="text-align:left;padding:10px 8px;color:var(--text3);font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.5px">Last Login</th>
@@ -18323,6 +18371,7 @@ function _adminRenderTable(users){
       <td style="padding:8px;font-size:.78rem;color:var(--text2);white-space:nowrap">${u.billingInterval === 'year' ? 'Yearly' : (u.billingInterval === 'month' ? 'Monthly' : '<span style="color:var(--text3)">—</span>')}</td>
       <td style="padding:8px">${_adminStatusDot(_adminDisplayStatus(u))}</td>
       <td style="padding:8px;text-align:center">${_adminPaidBadge(u)}</td>
+      <td style="padding:8px;text-align:center">${_adminVerifiedCheck(u)}</td>
       <td style="padding:8px;font-size:.78rem;color:var(--text2)">${_adminFormatDate(u.createdAt)}</td>
       <td style="padding:8px;font-size:.78rem;color:var(--text2)${willBill?'':';opacity:.4'}">${willBill ? _adminFormatDate(u.currentPeriodEnd) : '—'}</td>
       <td style="padding:8px;font-size:.78rem;color:var(--text2)">${_adminFormatDate(u.lastLogin || u.createdAt)}</td>

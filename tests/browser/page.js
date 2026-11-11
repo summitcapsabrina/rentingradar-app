@@ -1048,6 +1048,57 @@ H.scenarios = {
     }
     return { fails };
   },
+  'T14 admin Users: Verified column, its filter, one batched lookup': async () => {
+    const fails = [];
+    const saved = { users: _adminUsers, loaded: _adminUsersLoaded, view: _adminViewMode, fv: _adminUserFilterVerified, ev: _adminEmailVerified, fetch: window.fetch, auth: firebase.auth };
+    const requests = [];
+    let reply = { result: { verified: { a: true, b: false } } };
+    firebase.auth = () => ({ currentUser: { getIdToken: async () => 'tok' } });
+    window.fetch = async (url, opts) => {
+      requests.push({ url: String(url), auth: opts.headers.Authorization, body: JSON.parse(opts.body) });
+      return { json: async () => reply };
+    };
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    try {
+      // a = verified, b = unverified, c = not in Auth (left out of the reply).
+      _adminUsers = [{ uid: 'a', name: 'Ann', email: 'a@x.com' }, { uid: 'b', name: 'Ben', email: 'b@x.com' }, { uid: 'c', name: 'Cy', email: 'c@x.com' }];
+      _adminUsersLoaded = true; _adminViewMode = 'table'; _adminUserFilterVerified = 'all'; _adminEmailVerified = {};
+      host.innerHTML = renderAdminUsers();
+      _adminRenderUserList();
+      const col = () => [...host.querySelectorAll('thead th')].findIndex((th) => th.textContent.trim() === 'Verified');
+      const cells = () => [...host.querySelectorAll('tbody tr')].map((tr) => tr.children[col()]);
+      H.check(fails, col() > 0, 'Verified header present');
+      H.check(fails, host.querySelectorAll('[aria-label="Verified"]').length === 0, 'blank before the lookup returns');
+      await _adminLoadEmailVerifiedBackground();
+      H.check(fails, requests.length === 1 && requests[0].url === '/api/adminEmailVerified', 'one request to the Hosting rewrite: ' + JSON.stringify(requests.map((r) => r.url)));
+      H.check(fails, requests[0].auth === 'Bearer tok' && requests[0].body.data.uids.join() === 'a,b,c', 'sends the ID token and every uid');
+      const [ca, cb, cc] = cells();
+      const mark = ca && ca.querySelector('[role="img"][aria-label="Verified"]');
+      H.check(fails, !!mark && mark.querySelector('svg[aria-hidden="true"]') && mark.style.color === 'rgb(16, 185, 129)', 'green check with label "Verified" for a');
+      H.check(fails, cb && cb.innerHTML === '' && cc && cc.innerHTML === '', 'unverified and unknown cells empty');
+      H.check(fails, _adminUsers.every((u) => !('emailVerified' in u)), 'status kept off the user objects');
+      // Filter, same pattern as Paid.
+      const sel = host.querySelector('#adminFilterVerified');
+      const names = () => [...host.querySelectorAll('tbody tr')].map((tr) => tr.textContent.match(/Ann|Ben|Cy/)[0]).join();
+      sel.value = 'verified'; sel.dispatchEvent(new Event('change'));
+      H.check(fails, names() === 'Ann', 'Verified Only: ' + names());
+      sel.value = 'unverified'; sel.dispatchEvent(new Event('change'));
+      H.check(fails, names() === 'Ben,Cy', 'Unverified Only: ' + names());
+      sel.value = 'all'; sel.dispatchEvent(new Event('change'));
+      H.check(fails, names() === 'Ann,Ben,Cy', 'all: ' + names());
+      // A refused or failed lookup leaves the column blank and doesn't throw.
+      _adminEmailVerified = {}; reply = { error: { message: 'Admin only' } };
+      await _adminLoadEmailVerifiedBackground();
+      _adminRenderUserList();
+      H.check(fails, host.querySelectorAll('[aria-label="Verified"]').length === 0, 'blank after a refused lookup');
+    } finally {
+      host.remove();
+      _adminUsers = saved.users; _adminUsersLoaded = saved.loaded; _adminViewMode = saved.view; _adminUserFilterVerified = saved.fv; _adminEmailVerified = saved.ev;
+      window.fetch = saved.fetch; firebase.auth = saved.auth;
+    }
+    return { fails };
+  },
   'Nit the enrichment message no longer touches records': async () => {
     const fails = [];
     records = [oldRecord(8522, { link: 'https://www.zillow.com/8522', propertyDetails: {} })];
