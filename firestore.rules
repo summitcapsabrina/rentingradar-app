@@ -1,8 +1,21 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Support admin: the help@ account, and only once its email is verified.
     function isSupportAdmin() {
-      return request.auth != null && request.auth.token.email == "help@rentingradar.com";
+      return request.auth != null
+        && request.auth.token.email == "help@rentingradar.com"
+        && request.auth.token.email_verified == true;
+    }
+
+    // Billing state. Only the server (Admin SDK, after checking Stripe) and the
+    // support admin write these; owners can't create, change or remove them.
+    function billingFields() {
+      return ['tier', 'subscriptionStatus', 'manualOverride',
+        'stripeCustomerId', 'stripeSubscriptionId',
+        'trialEnd', 'currentPeriodEnd', 'cancelAtPeriodEnd',
+        'discountCode', 'discountAmountOff', 'discountPercentOff', 'discountDuration',
+        'priceUnitAmount', 'billingInterval'];
     }
 
     match /users/{userId} {
@@ -16,17 +29,22 @@ service cloud.firestore {
         )
       );
 
-      // Owner may create their doc, but never with admin/referral grants or the
-      // server's welcome-email markers.
+      // Owner may create their doc, but never with admin/referral grants, the
+      // server's welcome-email markers, or billing state beyond "no plan"
+      // (tier null, subscriptionStatus 'none', or both left out). referredBy is allowed.
       allow create: if isSupportAdmin() || (
         request.auth != null && request.auth.uid == userId &&
-        !request.resource.data.keys().hasAny(['admin', 'referralCodes', 'referralCode', 'welcomeEmailSentAt', 'welcomeEmailClaimedAt'])
+        !request.resource.data.keys().hasAny(['admin', 'referralCodes', 'referralCode', 'welcomeEmailSentAt', 'welcomeEmailClaimedAt']) &&
+        !request.resource.data.keys().removeAll(['tier', 'subscriptionStatus']).hasAny(billingFields()) &&
+        request.resource.data.get('tier', null) == null &&
+        request.resource.data.get('subscriptionStatus', 'none') == 'none'
       );
 
       // Owner may update anything EXCEPT: setting admin to anything but false/absent,
-      // adding/changing referralCodes/referralCode (removing them is allowed), or
-      // touching the welcome-email markers at all (only functions/ writes them).
-      // tier / subscriptionStatus / manualOverride are intentionally NOT locked here (T1b).
+      // adding/changing referralCodes/referralCode (removing them is allowed),
+      // touching the welcome-email markers at all (only functions/ writes them),
+      // or changing billing state or referredBy (functions/ syncs those from Stripe).
+      // Diff-based, so rewriting a field with its current value still passes.
       allow update: if isSupportAdmin() || (
         request.auth != null && request.auth.uid == userId &&
         ownerSafeUpdate()
@@ -40,7 +58,9 @@ service cloud.firestore {
         return (!changed.hasAny(['admin']) || d.get('admin', false) == false)
           && (!changed.hasAny(['referralCodes']) || !('referralCodes' in d))
           && (!changed.hasAny(['referralCode'])  || !('referralCode' in d))
-          && !changed.hasAny(['welcomeEmailSentAt', 'welcomeEmailClaimedAt']);
+          && !changed.hasAny(['welcomeEmailSentAt', 'welcomeEmailClaimedAt'])
+          && !changed.hasAny(billingFields())
+          && !changed.hasAny(['referredBy']);
       }
 
       // {document=**} also matches zero segments, which would re-open users/{uid}

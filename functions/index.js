@@ -6,6 +6,13 @@ const sgMail = require("@sendgrid/mail");
 const Busboy = require("busboy");
 const { sendWelcomeOnce, welcomeClaimDecision } = require("./welcome-email");
 const { MAX_UIDS, parseUids, lookupEmailVerified } = require("./admin-email-verified");
+const { defineSecret } = require("firebase-functions/params");
+const billing = require("./billing-sync");
+
+// Stripe key for the billing endpoints, from Secret Manager:
+//   firebase functions:secrets:set STRIPE_SECRET_KEY
+// Bound with runWith({ secrets }), which also exposes it as process.env.STRIPE_SECRET_KEY.
+const STRIPE_SECRET_KEY = defineSecret("STRIPE_SECRET_KEY");
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -3002,21 +3009,35 @@ exports.createPortalSession = functions.https.onRequest((req, res) => {
 // ============================================================
 // 3. VERIFY CHECKOUT
 // ============================================================
-exports.verifyCheckout = functions.https.onRequest((req, res) => {
+// Stripe return page (?checkout=success&session_id=…). Confirms the session is the
+// caller's and paid (or a trial), then writes the billing fields to the caller's doc.
+// Owners can't write these themselves (firestore.rules, T1b). No email is sent here:
+// the admin hears about it through onUserPlanChanged.
+exports.verifyCheckout = functions
+  .runWith({ secrets: [STRIPE_SECRET_KEY] })
+  .https.onRequest((req, res) => {
   cors(req, res, async () => {
-    const user = await verifyAuth(req);
-    if (!user) return sendError(res, 401, "You must be signed in.");
+    if (req.method === "OPTIONS") return res.status(200).end();
+    if (req.method !== "POST") return sendError(res, 405, "Method not allowed");
+    const authHeader = req.headers.authorization || "";
+    if (!authHeader.startsWith("Bearer ")) return sendError(res, 401, "You must be signed in.");
+    let user;
+    try {
+      user = await admin.auth().verifyIdToken(authHeader.slice(7));
+    } catch (err) {
+      return sendError(res, 401, "Invalid auth token.");
+    }
 
-    const body = req.body.data || req.body;
+    const body = (req.body && (req.body.data || req.body)) || {};
     const { sessionId } = body;
-    if (!sessionId) return sendError(res, 400, "Missing session ID.");
+    if (!sessionId || typeof sessionId !== "string") return sendError(res, 400, "Missing session ID.");
 
     try {
       const stripeClient = getStripe();
       const uid = user.uid;
 
       const session = await stripeClient.checkout.sessions.retrieve(sessionId, {
-        expand: ["subscription"],
+        expand: ["subscription"].concat(billing.SUB_EXPAND.map((f) => "subscription." + f)),
       });
 
       if (session.metadata?.firebaseUID !== uid) {
@@ -3031,47 +3052,25 @@ exports.verifyCheckout = functions.https.onRequest((req, res) => {
       const tier = session.metadata?.tier;
       if (!tier) return sendError(res, 500, "No tier found in session metadata.");
 
-      // Get previous tier before updating
-      const userDoc = await db.collection("users").doc(uid).get();
-      const previousTier = userDoc.exists ? (userDoc.data().tier || null) : null;
-
-      // Determine subscription status and trial end
-      const sub = session.subscription;
-      const subStatus = sub?.status || "active";
-      let trialEnd = null;
-      if (subStatus === "trialing" && sub?.trial_end) {
-        trialEnd = new Date(sub.trial_end * 1000).toISOString();
+      let sub = session.subscription;
+      if (!sub) return sendError(res, 500, "No subscription on this checkout session.");
+      if (typeof sub === "string") {
+        sub = await stripeClient.subscriptions.retrieve(sub, { expand: billing.SUB_EXPAND });
       }
 
-      const updateData = {
-        tier: tier,
-        stripeCustomerId: session.customer,
-        stripeSubscriptionId: sub?.id || sub,
-        subscriptionStatus: subStatus,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      };
-      if (trialEnd) {
-        updateData.trialEnd = trialEnd;
+      const userRef = db.collection("users").doc(uid);
+      const userDoc = await userRef.get();
+      const userData = userDoc.exists ? userDoc.data() : {};
+
+      const data = await billing.readBilling(stripeClient, sub, process.env, { tier: tier });
+      if (!data.stripeCustomerId && session.customer) {
+        data.stripeCustomerId = typeof session.customer === "string" ? session.customer : session.customer.id;
       }
+      await userRef.set(billing.firestoreUpdate(data, userData, admin.firestore.FieldValue), { merge: true });
+      console.log(`User ${uid} verified checkout: tier=${data.tier}, status=${data.subscriptionStatus}`);
 
-      await db.collection("users").doc(uid).update(updateData);
-
-      console.log(`User ${uid} verified and upgraded to ${tier}`);
-
-      // Send upgrade confirmation email
-      try {
-        const email = user.email;
-        if (email) {
-          const tierDisplay = tier.charAt(0).toUpperCase() + tier.slice(1);
-          const html = upgradeConfirmationEmailHtml(user.name || user.email, tier, previousTier);
-          await sendEmail(email, `🎉 Welcome to ${tierDisplay}! Your upgrade is confirmed`, html, { category: "upgrade_confirmation" });
-          console.log(`Upgrade confirmation email sent to ${email} for ${previousTier} → ${tier}`);
-        }
-      } catch (emailErr) {
-        console.error("Failed to send upgrade confirmation email:", emailErr);
-      }
-
-      sendSuccess(res, { tier: tier, status: "active" });
+      // `status` is the key the client has always read for this endpoint.
+      sendSuccess(res, Object.assign({ status: data.subscriptionStatus }, data));
     } catch (err) {
       console.error("verifyCheckout error:", err);
       sendError(res, 500, err.message || "Failed to verify checkout.");
@@ -3083,117 +3082,80 @@ exports.verifyCheckout = functions.https.onRequest((req, res) => {
 // ============================================================
 // 4. SYNC SUBSCRIPTION
 // ============================================================
-exports.syncSubscription = functions.https.onRequest((req, res) => {
+// Syncs the CALLER's own doc from Stripe (renewals, failed payments, cancellations,
+// plan or coupon changes). Stripe IDs come from the caller's doc, never the request.
+// Body { search: true } (the client sends it at most once per browser session) lets a
+// doc with no Stripe IDs look for a subscription tagged with the caller's uid: the
+// paid-but-never-redirected case. Admin sync of other users stays on the Vercel route.
+exports.syncSubscription = functions
+  .runWith({ secrets: [STRIPE_SECRET_KEY] })
+  .https.onRequest((req, res) => {
   cors(req, res, async () => {
-    const user = await verifyAuth(req);
-    if (!user) return sendError(res, 401, "You must be signed in.");
+    if (req.method === "OPTIONS") return res.status(200).end();
+    if (req.method !== "POST") return sendError(res, 405, "Method not allowed");
+    const authHeader = req.headers.authorization || "";
+    if (!authHeader.startsWith("Bearer ")) return sendError(res, 401, "You must be signed in.");
+    let user;
+    try {
+      user = await admin.auth().verifyIdToken(authHeader.slice(7));
+    } catch (err) {
+      return sendError(res, 401, "Invalid auth token.");
+    }
 
+    const body = (req.body && (req.body.data || req.body)) || {};
     const uid = user.uid;
-    const userDoc = await db.collection("users").doc(uid).get();
-
-    if (!userDoc.exists) return sendError(res, 404, "User not found.");
-
-    const userData = userDoc.data();
-
-    // Skip Stripe sync for manually overridden accounts (testers/internal)
-    if (userData.manualOverride) {
-      return sendSuccess(res, {
-        tier: userData.tier,
-        subscriptionStatus: userData.subscriptionStatus || "active",
-        changed: false,
-      });
-    }
-
-    const subscriptionId = userData.stripeSubscriptionId;
-    const customerId = userData.stripeCustomerId;
-
-    if (!subscriptionId && !customerId) {
-      return sendSuccess(res, { tier: null, subscriptionStatus: "none", changed: false });
-    }
+    const userRef = db.collection("users").doc(uid);
 
     try {
+      const userDoc = await userRef.get();
+      if (!userDoc.exists) return sendError(res, 404, "User not found.");
+      const userData = userDoc.data();
+
+      // Skip Stripe sync for manually overridden accounts (testers/internal)
+      if (userData.manualOverride) {
+        return sendSuccess(res, {
+          tier: userData.tier || null,
+          subscriptionStatus: userData.subscriptionStatus || "active",
+          changed: false,
+          skipped: "manualOverride",
+        });
+      }
+
       const stripeClient = getStripe();
+      const subscriptionId = userData.stripeSubscriptionId || null;
+      const customerId = userData.stripeCustomerId || null;
       let subscription = null;
 
-      if (subscriptionId) {
+      if (!subscriptionId && !customerId) {
+        // No Stripe data → no active plan. Nothing is written, so a fresh signup stays on 'none'.
+        const none = { tier: null, subscriptionStatus: "none", changed: false };
+        if (body.search !== true) return sendSuccess(res, none);
         try {
-          subscription = await stripeClient.subscriptions.retrieve(subscriptionId);
+          subscription = await billing.searchSubscriptionByUid(stripeClient, uid);
         } catch (err) {
-          console.warn(`Subscription ${subscriptionId} not found:`, err.message);
+          console.warn(`syncSubscription: search for ${uid} failed:`, err.message);
+          return sendSuccess(res, none);
         }
+        if (!subscription) return sendSuccess(res, none);
+      } else {
+        subscription = await billing.findSubscription(stripeClient, subscriptionId, customerId);
       }
 
-      if (!subscription && customerId) {
-        try {
-          const subs = await stripeClient.subscriptions.list({
-            customer: customerId,
-            status: "all",
-            limit: 1,
-          });
-          if (subs.data.length > 0) subscription = subs.data[0];
-        } catch (err) {
-          console.warn(`Could not list subscriptions for customer ${customerId}:`, err.message);
-        }
-      }
-
+      let data;
       if (!subscription) {
-        const wasChanged = userData.tier !== null || userData.subscriptionStatus !== "expired";
-        if (wasChanged) {
-          await db.collection("users").doc(uid).update({
-            tier: null,
-            subscriptionStatus: "expired",
-            stripeSubscriptionId: null,
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-          });
+        data = billing.noSubscriptionBilling();
+      } else {
+        // The stored IDs may predate T1b, when owners could write them, so check them.
+        if (!(await billing.ownsSubscription(stripeClient, subscription, user))) {
+          return sendError(res, 403, "Subscription does not belong to this user.");
         }
-        return sendSuccess(res, { tier: null, subscriptionStatus: "expired", changed: wasChanged });
+        data = await billing.readBilling(stripeClient, subscription, process.env);
       }
 
-      const priceId = subscription.items?.data?.[0]?.price?.id;
-      const stripeTier = getTierFromPriceId(priceId) || subscription.metadata?.tier || userData.tier;
-      const stripeStatus = subscription.status;
-
-      let newTier = stripeTier;
-      let newStatus = stripeStatus;
-
-      // Handle trial status
-      let trialEnd = null;
-      if (stripeStatus === "trialing" && subscription.trial_end) {
-        trialEnd = new Date(subscription.trial_end * 1000).toISOString();
-      }
-
-      if (stripeStatus === "canceled" || stripeStatus === "unpaid" || stripeStatus === "incomplete_expired") {
-        newTier = null;
-        newStatus = "expired";
-      }
-
-      const changed = userData.tier !== newTier || userData.subscriptionStatus !== newStatus;
-
-      if (changed) {
-        const update = {
-          tier: newTier,
-          subscriptionStatus: newStatus,
-          stripeSubscriptionId: subscription.id,
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        };
-
-        if (stripeStatus === "active" || stripeStatus === "trialing") {
-          update.currentPeriodEnd = new Date(subscription.current_period_end * 1000).toISOString();
-        }
-
-        if (trialEnd) {
-          update.trialEnd = trialEnd;
-        }
-
-        if (newTier === null) {
-          update.stripeSubscriptionId = null;
-        }
-
-        await db.collection("users").doc(uid).update(update);
-        console.log(`Synced user ${uid}: tier=${newTier}, status=${newStatus}`);
-      }
-
-      sendSuccess(res, { tier: newTier, subscriptionStatus: newStatus, trialEnd: trialEnd, changed: changed });
+      const changed = (userData.tier || null) !== (data.tier || null) || (userData.subscriptionStatus || null) !== data.subscriptionStatus;
+      await userRef.update(billing.firestoreUpdate(data, userData, admin.firestore.FieldValue));
+      console.log(`Synced user ${uid}: tier=${data.tier}, status=${data.subscriptionStatus}`);
+      sendSuccess(res, Object.assign({}, data, { changed: changed }));
     } catch (err) {
       console.error("syncSubscription error:", err);
       sendError(res, 500, err.message || "Failed to sync subscription.");
