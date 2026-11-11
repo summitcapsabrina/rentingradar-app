@@ -5,6 +5,7 @@ const cors = require("cors")({ origin: true });
 const sgMail = require("@sendgrid/mail");
 const Busboy = require("busboy");
 const { sendWelcomeOnce, welcomeClaimDecision } = require("./welcome-email");
+const { MAX_UIDS, parseUids, lookupEmailVerified } = require("./admin-email-verified");
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -2569,6 +2570,44 @@ exports.verifyPropertyDataMirrors = functions
         });
       } catch (err) {
         console.error("verifyPropertyDataMirrors failed:", err);
+        res.status(500).json({ error: { message: err.message } });
+      }
+    });
+  });
+
+// Admin Users table: the "Verified" column. Email-verified status lives in Firebase
+// Auth, which the browser can't read for other users. POST { data: { uids: [...] } }
+// with the admin's ID token; returns { result: { verified: { uid: bool } } } and
+// nothing else from the Auth record. Same admin gate as triggerCommissionReport.
+exports.adminEmailVerified = functions
+  .runWith({ timeoutSeconds: 60, memory: "256MB" })
+  .https.onRequest((req, res) => {
+    cors(req, res, async () => {
+      if (req.method === "OPTIONS") return res.status(200).end();
+      if (req.method !== "POST") return res.status(405).json({ error: { message: "Method not allowed" } });
+      const authHeader = req.headers.authorization || "";
+      if (!authHeader.startsWith("Bearer ")) {
+        return res.status(401).json({ error: { message: "Bearer token required" } });
+      }
+      let callingUser;
+      try {
+        callingUser = await admin.auth().verifyIdToken(authHeader.slice(7));
+      } catch (err) {
+        return res.status(401).json({ error: { message: "Invalid auth token" } });
+      }
+      if (!callingUser.email || callingUser.email.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
+        return res.status(403).json({ error: { message: "Admin only" } });
+      }
+      const uids = parseUids(req.body && (req.body.data || req.body));
+      if (!uids) {
+        return res.status(400).json({ error: { message: `uids must be an array of up to ${MAX_UIDS} uid strings` } });
+      }
+      try {
+        const auth = admin.auth();
+        const verified = await lookupEmailVerified((ids) => auth.getUsers(ids), uids);
+        res.status(200).json({ result: { verified } });
+      } catch (err) {
+        console.error("adminEmailVerified failed:", err);
         res.status(500).json({ error: { message: err.message } });
       }
     });

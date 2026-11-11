@@ -13,6 +13,7 @@
       { "source": "/api/testAdminNotification", "function": "testAdminNotification" },
       { "source": "/api/testAllEmails", "function": "testAllEmails" },
       { "source": "/api/triggerCommissionReport", "function": "triggerCommissionReport" },
+      { "source": "/api/adminEmailVerified", "function": "adminEmailVerified" },
       { "source": "/api/sendWelcomeEmail", "function": "sendWelcomeEmail" },
       { "source": "/api/aiEnrich", "function": "aiEnrich" },
       { "source": "/auth-action", "destination": "/auth-action.html" },
