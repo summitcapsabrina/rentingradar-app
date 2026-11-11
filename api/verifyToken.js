@@ -50,6 +50,7 @@ async function verifyFirebaseToken(idToken) {
   return {
     uid: payload.sub,
     email: payload.email || "",
+    email_verified: payload.email_verified === true,
   };
 }
 

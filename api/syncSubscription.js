@@ -1,6 +1,40 @@
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const { verifyFirebaseToken } = require("./verifyToken");
 
+const ADMIN_EMAILS = ["help@rentingradar.com"];
+
+function isAdminUser(user) {
+  return !!user.email && ADMIN_EMAILS.includes(user.email.toLowerCase()) && user.email_verified === true;
+}
+
+// Non-admins may only sync their own subscription. Ownership: the subscription's or
+// the customer's metadata.firebaseUID is the caller, or (legacy customers found by
+// email in createCheckoutSession, which have no firebaseUID) the customer's email is
+// the caller's verified email. Any lookup failure counts as not owned.
+async function belongsToUser(subscription, user) {
+  const subUid = subscription.metadata?.firebaseUID;
+  if (subUid && subUid === user.uid) return true;
+
+  const custId = typeof subscription.customer === "string" ? subscription.customer : subscription.customer?.id;
+  if (!custId) return false;
+  let customer;
+  try {
+    customer = await stripe.customers.retrieve(custId);
+  } catch (err) {
+    console.warn("[syncSubscription] ownership customer lookup failed:", err.message);
+    return false;
+  }
+  if (!customer || customer.deleted) return false;
+
+  const custUid = customer.metadata?.firebaseUID;
+  if (custUid && custUid === user.uid) return true;
+
+  if (!subUid && !custUid && user.email_verified === true && user.email && customer.email) {
+    return customer.email.toLowerCase() === user.email.toLowerCase();
+  }
+  return false;
+}
+
 function getTierFromPriceId(priceId) {
   if (priceId === process.env.BASIC_MONTHLY_PRICE || priceId === process.env.BASIC_YEARLY_PRICE) return "basic";
   if (priceId === process.env.STANDARD_MONTHLY_PRICE || priceId === process.env.STANDARD_YEARLY_PRICE) return "standard";
@@ -84,6 +118,11 @@ module.exports = async function handler(req, res) {
           },
         },
       });
+    }
+
+    // Verify the subscription belongs to this user (admin may sync anyone)
+    if (!isAdminUser(user) && !(await belongsToUser(subscription, user))) {
+      return res.status(403).json({ error: { message: "Subscription does not belong to this user." } });
     }
 
     const priceObj = subscription.items?.data?.[0]?.price || null;
