@@ -1099,6 +1099,93 @@ H.scenarios = {
     }
     return { fails };
   },
+  'T1b billing: Functions write billing, the client only mirrors it': async () => {
+    const fails = [];
+    const saved = { fetch: window.fetch, auth: firebase.auth, coll: db.collection, sv: switchView, imp: _isImpersonating,
+      tier: currentTier, st: _subscriptionStatus, te: _trialEnd, bi: _billingInterval, dc: _discountCode, url: location.href };
+    const requests = [];
+    const writes = [];
+    let doc = {};
+    let reply = {};
+    const user = { uid: 'u1', getIdToken: async () => 'tok' };
+    firebase.auth = () => ({ currentUser: user, onAuthStateChanged: (cb) => { setTimeout(() => cb(user), 0); return () => {}; } });
+    window.fetch = async (url, opts) => {
+      requests.push({ url: String(url), auth: opts.headers.Authorization, body: JSON.parse(opts.body) });
+      return { json: async () => reply };
+    };
+    const ref = { get: async () => ({ exists: true, data: () => Object.assign({}, doc) }) };
+    ['set', 'update', 'delete'].forEach((op) => { ref[op] = async (d) => { writes.push({ op, d }); }; });
+    db.collection = () => ({ doc: () => ref });
+    switchView = () => {};
+    _isImpersonating = () => false;
+    const clear = () => { requests.length = 0; writes.length = 0; H.log.toasts.length = 0; };
+    try {
+      // setTier: memory + localStorage only.
+      setTier('pro', 'active', null);
+      await H.wait(20);
+      H.check(fails, writes.length === 0, 'setTier wrote Firestore: ' + JSON.stringify(writes));
+      H.check(fails, currentTier === 'pro' && localStorage.getItem('rr_tier') === 'pro', 'setTier kept memory + localStorage');
+
+      // Login/portal sync: same-origin Function, no IDs in the body, no client write.
+      clear();
+      const trialEnd = new Date(Date.now() + 5 * 86400000 - 3600000).toISOString();
+      doc = { tier: 'pro', subscriptionStatus: 'trialing', stripeCustomerId: 'cus_1', stripeSubscriptionId: 'sub_1', trialEnd, billingInterval: 'year', discountCode: 'AIRPRENEURYEARLY', priceUnitAmount: 289.99 };
+      reply = { result: { data: Object.assign({ changed: true }, doc) } };
+      await _doSyncSubscription();
+      H.check(fails, requests.length === 1 && requests[0].url === '/api/syncSubscription', 'one request to the Hosting rewrite: ' + JSON.stringify(requests.map((r) => r.url)));
+      H.check(fails, requests[0] && requests[0].auth === 'Bearer tok' && JSON.stringify(requests[0].body) === '{"data":{}}', 'token sent, no Stripe IDs in the body: ' + JSON.stringify(requests[0] && requests[0].body));
+      H.check(fails, writes.length === 0, 'sync wrote Firestore from the client: ' + JSON.stringify(writes));
+      H.check(fails, _billingInterval === 'year' && _discountCode === 'AIRPRENEURYEARLY' && _priceUnitAmount === 289.99, 'billing mirrored in memory');
+      H.check(fails, _subscriptionStatus === 'trialing' && _trialEnd === trialEnd, 'tier state applied');
+      H.check(fails, H.toastHas('Free Trial Active') && H.toastHas('5 days remaining'), 'trial toast: ' + H.log.toasts.join(' | '));
+
+      // No Stripe IDs and no search: nothing sent.
+      clear();
+      doc = { tier: null, subscriptionStatus: 'none' };
+      await _doSyncSubscription();
+      H.check(fails, requests.length === 0, 'no IDs → no request');
+
+      // Search fallback that finds nothing: one request with search:true, silent.
+      clear();
+      setTier(null, 'none', null);
+      reply = { result: { data: { tier: null, subscriptionStatus: 'none', changed: false } } };
+      await _doSyncSubscription({ search: true });
+      H.check(fails, requests.length === 1 && requests[0].body.data.search === true, 'search flag sent');
+      H.check(fails, H.log.toasts.length === 0 && writes.length === 0 && currentTier === null, 'search miss is silent: ' + H.log.toasts.join(' | '));
+      // A refused/failed call is silent too.
+      clear();
+      reply = { error: { message: 'Too many requests' } };
+      await _doSyncSubscription({ search: true });
+      H.check(fails, H.log.toasts.length === 0 && writes.length === 0, 'search error is silent');
+
+      // Once per browser session.
+      sessionStorage.removeItem(_BILLING_SEARCH_KEY);
+      H.check(fails, _billingSearchDue() === true, 'search due on a fresh session');
+      _markBillingSearchDone();
+      H.check(fails, _billingSearchDue() === false, 'search not due again this session');
+
+      // Stripe return page: verifyCheckout Function, no client write, same toasts.
+      clear();
+      history.replaceState({}, '', location.pathname + '?checkout=success&session_id=cs_test_1');
+      doc = { tier: 'pro', subscriptionStatus: 'trialing', stripeCustomerId: 'cus_1', stripeSubscriptionId: 'sub_1', trialEnd, billingInterval: 'month' };
+      reply = { result: { data: Object.assign({ status: 'trialing' }, doc) } };
+      checkCheckoutReturn();
+      H.check(fails, _checkoutReturnPending === true, 'login sync held back on the return page');
+      H.check(fails, location.search === '', 'URL cleaned');
+      await H.until(() => H.toastHas('Plan activated!'));
+      await H.wait(20);
+      H.check(fails, requests.length === 1 && requests[0].url === '/api/verifyCheckout' && requests[0].body.data.sessionId === 'cs_test_1', 'verifyCheckout via Hosting: ' + JSON.stringify(requests));
+      H.check(fails, writes.length === 0, 'checkout return wrote Firestore from the client: ' + JSON.stringify(writes));
+      H.check(fails, H.toastHas('Activating your subscription') && H.toastHas('Plan activated! Pro plan ready.') && H.toastHas('Free Trial Active'), 'toasts: ' + H.log.toasts.join(' | '));
+      H.check(fails, currentTier === 'pro' && _subscriptionStatus === 'trialing' && _billingInterval === 'month', 'plan applied in memory');
+      H.check(fails, _checkoutReturnPending === false, 'flag released');
+    } finally {
+      window.fetch = saved.fetch; firebase.auth = saved.auth; db.collection = saved.coll; switchView = saved.sv; _isImpersonating = saved.imp;
+      currentTier = saved.tier; _subscriptionStatus = saved.st; _trialEnd = saved.te; _billingInterval = saved.bi; _discountCode = saved.dc;
+      history.replaceState({}, '', saved.url);
+    }
+    return { fails };
+  },
   'Nit the enrichment message no longer touches records': async () => {
     const fails = [];
     records = [oldRecord(8522, { link: 'https://www.zillow.com/8522', propertyDetails: {} })];

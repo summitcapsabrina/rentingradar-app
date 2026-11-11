@@ -2452,12 +2452,8 @@ function mgShareLink(){
       var url = result && result.data && result.data.url;
       if(!url) throw new Error('Could not create checkout session.');
 
-      // Save stripeCustomerId before redirect (matches desktop handleUpgrade)
-      try {
-        if(result.data.stripeCustomerId && typeof db !== 'undefined'){
-          db.collection('users').doc(user.uid).set({ stripeCustomerId: result.data.stripeCustomerId }, { merge: true });
-        }
-      } catch(e){ /* non-fatal */ }
+      // stripeCustomerId is stored by the verifyCheckout Function on return (owners
+      // can't write billing fields; firestore.rules T1b).
 
       // Stash the amount + email for the Google Ads purchase conversion that fires on Stripe return.
       try {
@@ -14472,15 +14468,8 @@ function setTier(tier, subStatus, trialEnd){
   try { localStorage.setItem('rr_tier', tier || '') } catch(e){}
   try { localStorage.setItem('rr_sub_status', _subscriptionStatus || '') } catch(e){}
   try { localStorage.setItem('rr_trial_end', _trialEnd || '') } catch(e){}
-  // Sync tier to Firestore — skip during impersonation (would pollute admin's own doc).
-  try {
-    if(!_isImpersonating()){
-      const user = firebase.auth().currentUser;
-      if(user && db) db.collection('users').doc(user.uid).update({ tier: tier, subscriptionStatus: _subscriptionStatus, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }).catch(()=>{});
-    } else {
-      console.log('[impersonate] skipping tier sync to Firestore');
-    }
-  } catch(e){}
+  // In-memory + localStorage only. tier/subscriptionStatus in Firestore are written
+  // by the verifyCheckout/syncSubscription Functions or the admin (firestore.rules T1b).
   // Show disclaimer if not yet acknowledged (any tier)
   if(!_disclaimerAcknowledged && _authDataLoaded){
     setTimeout(() => showDisclaimerOverlay(), 400);
@@ -20348,10 +20337,7 @@ async function handleUpgrade(tier){
     } catch(e){ /* attribution is best-effort; don't block checkout */ }
     const result = await callFunction('createCheckoutSession', { tier: tier, period: billingPeriod, stripeCustomerId: custId, referralCode: _refForCheckout });
     if(result.data && result.data.url){
-      // Save stripeCustomerId to Firestore before redirect
-      if(user && result.data.stripeCustomerId){
-        db.collection('users').doc(user.uid).set({ stripeCustomerId: result.data.stripeCustomerId }, { merge: true });
-      }
+      // stripeCustomerId is stored by the verifyCheckout Function on return (T1b).
       // Stash the amount + email for the Google Ads purchase conversion that fires on Stripe return.
       try {
         var _rrAmt = (typeof TIERS!=='undefined' && TIERS[tier]) ? (billingPeriod==='yearly' ? TIERS[tier].yearly : TIERS[tier].monthly) : 0;
@@ -20398,68 +20384,105 @@ async function openStripePortal(){
   }
 }
 
-// Shared: sync subscription with Stripe and write results to Firestore
-async function _doSyncSubscription(){
-  // Skip during impersonation — this hits Stripe with admin's customer ID and would
-  // overwrite the impersonated user's cached billing fields with admin's subscription.
+// Billing endpoints are Firebase Functions (Admin SDK), reached through the Hosting
+// rewrite rather than callFunction (which routes to Vercel). They check Stripe and
+// write the billing fields themselves; owners can't (firestore.rules T1b).
+async function _billingFunction(name, data){
+  var user = firebase.auth().currentUser;
+  if(!user) throw new Error('Not signed in');
+  var token = await user.getIdToken();
+  var res = await fetch('/api/' + name, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+    body: JSON.stringify({ data: data || {} })
+  });
+  var json = await res.json();
+  if(json.error) throw new Error(json.error.message || 'Function call failed');
+  return json.result || json;
+}
+
+// Mirror billing fields (a Function response or the user doc: same names) into the
+// in-memory state Settings and the pricing "Current Plan" highlight read.
+function _applyBillingInMemory(d){
+  _discountCode = d.discountCode || null;
+  _discountAmountOff = (typeof d.discountAmountOff === 'number') ? d.discountAmountOff : null;
+  _discountPercentOff = (typeof d.discountPercentOff === 'number') ? d.discountPercentOff : null;
+  _discountDuration = d.discountDuration || null;
+  _priceUnitAmount = (typeof d.priceUnitAmount === 'number') ? d.priceUnitAmount : null;
+  _billingInterval = d.billingInterval || null;
+  _currentPeriodEnd = d.currentPeriodEnd || null;
+}
+
+// After a Function wrote the doc: re-read it for the display fields (falls back to the
+// response if the read fails), and take tier/status/trialEnd from the response, as
+// before (the doc keeps an old trialEnd after a trial converts).
+async function _applyBillingFromDoc(uid, d){
+  var m = d;
+  try {
+    var snap = await db.collection('users').doc(uid).get();
+    if(snap.exists) m = snap.data();
+  } catch(e){ console.warn('Billing re-read failed:', e); }
+  _applyBillingInMemory(m);
+  setTier(d.tier || null, d.subscriptionStatus || 'none', d.trialEnd || null);
+}
+
+function _showTrialToast(trialEnd){
+  // Compute days left from trialEnd (ISO string). Math.ceil so a sub-24h
+  // remainder still shows as "1 day" instead of "0 days".
+  const trialEndMs = trialEnd ? new Date(trialEnd).getTime() : 0;
+  const daysLeft = trialEndMs ? Math.max(0, Math.ceil((trialEndMs - Date.now()) / 86400000)) : null;
+  const sub = daysLeft !== null
+    ? '<div style="font-size:.82em;opacity:.85;margin-top:2px;font-weight:400">' + daysLeft + ' day' + (daysLeft === 1 ? '' : 's') + ' remaining</div>'
+    : '';
+  showToast('<div style="font-weight:700">Free Trial Active</div>' + sub, 'success', 5000);
+}
+
+// Paid-but-never-redirected fallback: a doc with no Stripe IDs asks the server to
+// search Stripe for a subscription tagged with this uid, once per browser session.
+const _BILLING_SEARCH_KEY = 'rr_billing_search_done';
+function _billingSearchDue(){
+  try { return sessionStorage.getItem(_BILLING_SEARCH_KEY) !== '1'; } catch(e){ return false; }
+}
+function _markBillingSearchDone(){
+  try { sessionStorage.setItem(_BILLING_SEARCH_KEY, '1'); } catch(e){}
+}
+
+// Set while the Stripe return page verifies the session, so the login sync doesn't
+// run alongside it (verifyCheckout writes the same fields and shows the toasts).
+let _checkoutReturnPending = false;
+
+// Shared: ask the syncSubscription Function to sync the caller's doc from Stripe,
+// then mirror the result in memory. The Function reads the Stripe IDs from the doc.
+// opts.search: the doc has no Stripe IDs; look the subscription up by uid instead.
+async function _doSyncSubscription(opts){
+  // Skip during impersonation — this would sync the admin's own doc and overwrite the
+  // impersonated view with admin's subscription.
   if(_isImpersonating()){ console.log('[impersonate] skipping syncSubscription'); return; }
   var user = firebase.auth().currentUser;
   if(!user) return;
-  var udoc = await db.collection('users').doc(user.uid).get();
-  var custId = udoc.exists ? udoc.data().stripeCustomerId : null;
-  var subId = udoc.exists ? udoc.data().stripeSubscriptionId : null;
-  if(!custId && !subId) return;
+  var search = !!(opts && opts.search);
+  var oldTier = null;
   try {
-    var result = await callFunction('syncSubscription', { stripeCustomerId: custId, stripeSubscriptionId: subId });
+    var udoc = await db.collection('users').doc(user.uid).get();
+    var ud = udoc.exists ? udoc.data() : {};
+    oldTier = ud.tier || null;
+    if(!search && !ud.stripeCustomerId && !ud.stripeSubscriptionId) return;
+  } catch(e){ if(!search) return; }
+  try {
+    var result = await _billingFunction('syncSubscription', search ? { search: true } : {});
     if(result.data){
       var d = result.data;
-      var updates = { tier: d.tier, subscriptionStatus: d.subscriptionStatus, updatedAt: firebase.firestore.FieldValue.serverTimestamp() };
-      if(d.stripeCustomerId) updates.stripeCustomerId = d.stripeCustomerId;
-      if(d.stripeSubscriptionId) updates.stripeSubscriptionId = d.stripeSubscriptionId;
-      else if(d.stripeSubscriptionId === null) updates.stripeSubscriptionId = null;
-      if(d.currentPeriodEnd) updates.currentPeriodEnd = d.currentPeriodEnd;
-      updates.cancelAtPeriodEnd = !!d.cancelAtPeriodEnd;
-      if(d.trialEnd) updates.trialEnd = d.trialEnd;
-      // Discount fields — store whatever Stripe reports (including null/undefined deletion
-      // when the user removes a coupon via the Portal). Settings reads these to show the
-      // active coupon line and the effective discounted rate.
-      updates.discountCode        = d.discountCode || firebase.firestore.FieldValue.delete();
-      updates.discountAmountOff   = (typeof d.discountAmountOff === 'number') ? d.discountAmountOff : firebase.firestore.FieldValue.delete();
-      updates.discountPercentOff  = (typeof d.discountPercentOff === 'number') ? d.discountPercentOff : firebase.firestore.FieldValue.delete();
-      updates.discountDuration    = d.discountDuration || firebase.firestore.FieldValue.delete();
-      // Subscribed price + interval — used by Settings to display the accurate plan amount.
-      updates.priceUnitAmount     = (typeof d.priceUnitAmount === 'number') ? d.priceUnitAmount : firebase.firestore.FieldValue.delete();
-      updates.billingInterval     = d.billingInterval || firebase.firestore.FieldValue.delete();
-      // Affiliate attribution fallback: if the user manually entered an affiliate code
-      // at Stripe Checkout (instead of coming through a ?ref=CODE link), Stripe applies
-      // the discount but no `referredBy` ever gets written. Backfill it from the Stripe
-      // promo code so the affiliate dashboard + commission report pick them up.
-      // Only set if not already attributed — never overwrite an existing referredBy
-      // (that field can be admin-managed and shouldn't be silently changed by a sync).
-      var existingReferredBy = udoc.exists ? (udoc.data().referredBy || '') : '';
-      if(d.discountCode && !existingReferredBy){
-        updates.referredBy = String(d.discountCode).toUpperCase().trim();
-      }
-      await db.collection('users').doc(user.uid).update(updates);
-      var oldTier = udoc.exists ? udoc.data().tier : null;
-      // Mirror the Firestore write into in-memory state so renderPricing's "Current Plan"
-      // highlighting (which keys off _billingInterval) is correct without a page reload.
-      _billingInterval = d.billingInterval || null;
-      setTier(d.tier, d.subscriptionStatus, d.trialEnd);
+      // Search found nothing (or failed quietly): nothing was written, say nothing.
+      if(search && !d.tier && !d.stripeSubscriptionId) return;
+      if(d.skipped) return;
+      await _applyBillingFromDoc(user.uid, d);
       if(d.subscriptionStatus === 'expired'){
         showToast('Your trial has ended. Please choose a plan to continue.', 'warning', 8000);
       } else if(d.subscriptionStatus === 'past_due'){
         showToast('Your last payment failed. Please update your payment method.', 'warning', 8000);
       } else if(d.subscriptionStatus === 'trialing'){
-        // Compute days left from trialEnd (ISO string). Math.ceil so a sub-24h
-        // remainder still shows as "1 day" instead of "0 days".
-        const trialEndMs = d.trialEnd ? new Date(d.trialEnd).getTime() : 0;
-        const daysLeft = trialEndMs ? Math.max(0, Math.ceil((trialEndMs - Date.now()) / 86400000)) : null;
-        const sub = daysLeft !== null
-          ? '<div style="font-size:.82em;opacity:.85;margin-top:2px;font-weight:400">' + daysLeft + ' day' + (daysLeft === 1 ? '' : 's') + ' remaining</div>'
-          : '';
-        showToast('<div style="font-weight:700">Free Trial Active</div>' + sub, 'success', 5000);
-      } else if(d.tier !== oldTier){
+        _showTrialToast(d.trialEnd);
+      } else if((d.tier || null) !== oldTier){
         showToast('Subscription updated!', 'success', 3000);
       }
       render();
@@ -20467,8 +20490,9 @@ async function _doSyncSubscription(){
   } catch(e){ console.warn('Subscription sync failed:', e); }
 }
 
-// On page load, check if Stripe redirected back after successful checkout
-// Calls verifyCheckout to verify payment with Stripe, then writes to Firestore client-side
+// On page load, check if Stripe redirected back after successful checkout.
+// The verifyCheckout Function checks the session with Stripe and writes the billing
+// fields to the user's doc; the client re-reads and mirrors them in memory.
 function checkCheckoutReturn(){
   const params = new URLSearchParams(window.location.search);
   const checkoutStatus = params.get('checkout');
@@ -20478,31 +20502,30 @@ function checkCheckoutReturn(){
     const cleanUrl = window.location.origin + window.location.pathname;
     window.history.replaceState({}, document.title, cleanUrl);
     showToast('Activating your subscription...', 'success', 5000);
+    _checkoutReturnPending = true;
     // Wait for auth to be ready, then verify with Stripe
     var unsubVerify = firebase.auth().onAuthStateChanged(function(user){
       unsubVerify();
       if(user){
-        callFunction('verifyCheckout', { sessionId: sessionId }).then(function(result){
-          if(result.data && result.data.tier){
-            // Write verified data to Firestore
-            var updates = {
-              tier: result.data.tier,
-              subscriptionStatus: result.data.status || 'active',
-              stripeCustomerId: result.data.stripeCustomerId,
-              stripeSubscriptionId: result.data.stripeSubscriptionId,
-              trialEnd: result.data.trialEnd || null,
-              updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-            };
-            db.collection('users').doc(user.uid).update(updates).then(function(){
-              setTier(result.data.tier, result.data.status || 'active', result.data.trialEnd || null);
-              showToast('Plan activated! ' + result.data.tier.charAt(0).toUpperCase() + result.data.tier.slice(1) + ' plan ready.', 'success', 4000);
-              switchView('pricing');
-            });
+        _billingFunction('verifyCheckout', { sessionId: sessionId }).then(async function(result){
+          var d = result && result.data;
+          if(d && d.tier){
+            await _applyBillingFromDoc(user.uid, Object.assign({ subscriptionStatus: d.status || 'active' }, d));
+            showToast('Plan activated! ' + d.tier.charAt(0).toUpperCase() + d.tier.slice(1) + ' plan ready.', 'success', 4000);
+            if((d.status || d.subscriptionStatus) === 'trialing') _showTrialToast(d.trialEnd);
+            switchView('pricing');
           }
         }).catch(function(err){
           console.error('Verify checkout error:', err);
           showAppAlert('Trial activation successful but we had trouble updating your account. Please refresh the page.', {title:'Activation Pending', icon:'⚠️'});
-        });
+          // The login sync was held back for this page; run it now (it searches by uid
+          // when the doc has no Stripe IDs yet).
+          _checkoutReturnPending = false;
+          _markBillingSearchDone();
+          _doSyncSubscription({ search: true });
+        }).finally(function(){ _checkoutReturnPending = false; });
+      } else {
+        _checkoutReturnPending = false;
       }
     });
   } else if(checkoutStatus === 'success' && !sessionId){
@@ -21396,9 +21419,16 @@ async function _handleAuthUser(user){
       }
       // Sync subscription status with Stripe in the background
       // Covers: renewals, failed payments, cancellations, plan changes
-      // Skip if manualOverride is set (for testers/internal accounts)
-      if((data.stripeSubscriptionId || data.stripeCustomerId) && !data.manualOverride){
-        _doSyncSubscription();
+      // Skip if manualOverride is set (for testers/internal accounts), and on the
+      // Stripe return page (verifyCheckout is already writing the same fields).
+      if(!data.manualOverride && !_checkoutReturnPending){
+        if(data.stripeSubscriptionId || data.stripeCustomerId){
+          _doSyncSubscription();
+        } else if(!data.tier && !_isAdmin && _billingSearchDue()){
+          // No Stripe IDs on file: paid but never came back from Checkout? Look once per session.
+          _markBillingSearchDone();
+          _doSyncSubscription({ search: true });
+        }
       }
     }
   } else {

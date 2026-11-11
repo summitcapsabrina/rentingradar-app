@@ -1,4 +1,4 @@
-// Firestore rules tests for T1a. Run with `npm run test:rules` (needs a JDK).
+// Firestore rules tests for T1a and T1b. Run with `npm run test:rules` (needs a JDK).
 // Uses the emulator and a fake demo- project, so it never touches production.
 const { test, before, after, beforeEach } = require('node:test');
 const fs = require('node:fs');
@@ -37,7 +37,10 @@ beforeEach(async () => {
 });
 
 const as = (uid) => env.authenticatedContext(uid, { email: uid + '@example.com' }).firestore();
-const asAdmin = () => env.authenticatedContext('support', { email: ADMIN_EMAIL }).firestore();
+const asAdmin = () =>
+  env.authenticatedContext('support', { email: ADMIN_EMAIL, email_verified: true }).firestore();
+const asUnverifiedAdmin = () =>
+  env.authenticatedContext('support', { email: ADMIN_EMAIL, email_verified: false }).firestore();
 const seed = (path, data) =>
   env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), path), data));
 
@@ -91,19 +94,111 @@ test('owner can update ordinary fields', async () => {
   await assertSucceeds(updateDoc(ref, { analysisQuota: { used: 1 } }));
 });
 
-// Deliberately still open so subscriptions keep activating. T1b closes this and
-// must flip this test.
-test('owner can still update billing fields (T1b closes this)', async () => {
-  await seed('users/alice', { name: 'Alice' });
+// T1b: billing state is written only by functions/ (Admin SDK) or the admin.
+// One sample value per field; each is tried on its own.
+const BILLING_SAMPLES = {
+  tier: 'pro',
+  subscriptionStatus: 'active',
+  manualOverride: true,
+  stripeCustomerId: 'cus_test',
+  stripeSubscriptionId: 'sub_test',
+  trialEnd: '2030-01-01T00:00:00.000Z',
+  currentPeriodEnd: '2030-01-01T00:00:00.000Z',
+  cancelAtPeriodEnd: false,
+  discountCode: 'FREE100',
+  discountAmountOff: 29.99,
+  discountPercentOff: 100,
+  discountDuration: 'forever',
+  priceUnitAmount: 0.01,
+  billingInterval: 'year',
+};
+
+test('owner cannot update any billing field', async () => {
+  await seed('users/alice', { name: 'Alice', tier: null, subscriptionStatus: 'none' });
+  const ref = doc(as('alice'), 'users/alice');
+  for (const [k, v] of Object.entries(BILLING_SAMPLES)) {
+    await assertFails(updateDoc(ref, { [k]: v }), 'update ' + k);
+    await assertFails(setDoc(ref, { [k]: v }, { merge: true }), 'merge-set ' + k);
+  }
+});
+
+test('owner cannot remove or change existing billing fields', async () => {
+  await seed('users/paid', Object.assign({ name: 'Paid' }, BILLING_SAMPLES, { tier: 'basic', manualOverride: false }));
+  const ref = doc(as('paid'), 'users/paid');
+  await assertFails(updateDoc(ref, { tier: 'pro' }));
+  await assertFails(updateDoc(ref, { manualOverride: true }));
+  await assertFails(updateDoc(ref, { subscriptionStatus: 'trialing' }));
+  await assertFails(updateDoc(ref, { trialEnd: '2099-01-01T00:00:00.000Z' }));
+  for (const k of Object.keys(BILLING_SAMPLES)) {
+    await assertFails(updateDoc(ref, { [k]: deleteField() }), 'delete ' + k);
+  }
+});
+
+test('owner cannot create own doc with billing state', async () => {
+  const ref = doc(as('alice'), 'users/alice');
+  for (const [k, v] of Object.entries(BILLING_SAMPLES)) {
+    await assertFails(setDoc(ref, signUpDoc({ [k]: v })), 'create ' + k);
+  }
+  await assertFails(setDoc(ref, signUpDoc({ subscriptionStatus: 'trialing' })));
+  await assertFails(setDoc(ref, signUpDoc({ tier: 'basic', subscriptionStatus: 'none' })));
+});
+
+test('owner can create own doc with tier and status left out', async () => {
+  const data = signUpDoc();
+  delete data.tier;
+  delete data.subscriptionStatus;
+  await assertSucceeds(setDoc(doc(as('alice'), 'users/alice'), data));
+});
+
+test('writing an unchanged billing value still passes', async () => {
+  await seed('users/paid', { name: 'Paid', tier: 'pro', subscriptionStatus: 'active', manualOverride: false, stripeCustomerId: 'cus_1' });
+  const ref = doc(as('paid'), 'users/paid');
+  await assertSucceeds(updateDoc(ref, { tier: 'pro', subscriptionStatus: 'active', lastLogin: serverTimestamp() }));
+  await assertSucceeds(setDoc(ref, { manualOverride: false, stripeCustomerId: 'cus_1', photo: 'x.png' }, { merge: true }));
+});
+
+test('owner keeps ordinary writes on a paid doc', async () => {
+  await seed('users/paid', Object.assign({ name: 'Paid', referredBy: 'AFF1' }, BILLING_SAMPLES));
+  const ref = doc(as('paid'), 'users/paid');
+  await assertSucceeds(updateDoc(ref, { lastLogin: serverTimestamp() }));
+  await assertSucceeds(updateDoc(ref, { photo: 'https://example.com/p.png' }));
   await assertSucceeds(
-    updateDoc(doc(as('alice'), 'users/alice'), {
-      tier: 'pro',
-      subscriptionStatus: 'active',
-      manualOverride: true,
-      trialEnd: '2030-01-01T00:00:00.000Z',
-      stripeCustomerId: 'cus_test',
-    })
+    updateDoc(ref, { disclaimerAcknowledged: true, disclaimerVersion: 3, disclaimerAcknowledgedAt: serverTimestamp() })
   );
+  await assertSucceeds(updateDoc(ref, { analysisQuota: { used: 2 } }));
+  await assertSucceeds(updateDoc(ref, { tutorialsSeen: ['intro'] }));
+  await assertSucceeds(updateDoc(ref, { supportFirstName: 'Pat', updatedAt: serverTimestamp() }));
+  await assertSucceeds(setDoc(ref, { propertyRecordsMigratedAt: '2026-11-11' }, { merge: true }));
+});
+
+test('referredBy: allowed on create, locked on update', async () => {
+  await assertSucceeds(setDoc(doc(as('alice'), 'users/alice'), signUpDoc({ referredBy: 'AFF1' })));
+  const ref = doc(as('alice'), 'users/alice');
+  await assertFails(updateDoc(ref, { referredBy: 'AFF2' }));
+  await assertFails(updateDoc(ref, { referredBy: deleteField() }));
+
+  await seed('users/bob', { name: 'Bob' });
+  await assertFails(updateDoc(doc(as('bob'), 'users/bob'), { referredBy: 'AFF1' }));
+});
+
+test('verified support admin can write every billing field on any user', async () => {
+  await seed('users/alice', { name: 'Alice' });
+  const ref = doc(asAdmin(), 'users/alice');
+  await assertSucceeds(updateDoc(ref, Object.assign({}, BILLING_SAMPLES, { referredBy: 'AFF1' })));
+  await assertSucceeds(updateDoc(ref, { tier: null, subscriptionStatus: 'none', manualOverride: false }));
+  await assertSucceeds(setDoc(doc(asAdmin(), 'users/newbie'), { tier: 'pro', manualOverride: true }));
+});
+
+test('admin email without email_verified is not admin', async () => {
+  await seed('users/alice', { name: 'Alice' });
+  await seed('chatConversations/c1', { userId: 'alice' });
+  const db = asUnverifiedAdmin();
+  for (const [k, v] of Object.entries(BILLING_SAMPLES)) {
+    await assertFails(updateDoc(doc(db, 'users/alice'), { [k]: v }), 'unverified admin ' + k);
+  }
+  await assertFails(getDoc(doc(db, 'users/alice')));
+  await assertFails(getDoc(doc(db, 'chatConversations/c1')));
+  await assertFails(setDoc(doc(db, 'tutorialContent/t1'), { title: 'x' }));
 });
 
 test('owner cannot give themselves admin', async () => {
